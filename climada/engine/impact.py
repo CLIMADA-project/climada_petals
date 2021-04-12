@@ -36,12 +36,10 @@ import pandas as pd
 import xlsxwriter
 from tqdm import tqdm
 
-#imports by Robert Blass
 from pathlib import Path
 import subprocess
 import platform
 import time    
-#from scipy.stats import beta
 
 from climada.entity import Exposures, Tag
 from climada.entity.exposures import INDICATOR_IF, INDICATOR_CENTR
@@ -273,7 +271,23 @@ class Impact():
             elif indicator == 'vulnerability': 
                 cmd = (path_exe_ktools + 'vulnerabilitytobin -d' + str(max_information) + ' < vulnerability.csv > vulnerability.bin')
                 subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=data_path)
-                print(cmd)             
+                print(cmd)
+            elif indicator == 'occurrences':  
+                cmd = (path_exe_ktools + 'occurrencetobin -P' + str(max_information) + ' -D  < occurrence.csv > occurrence.bin')
+                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=data_path)
+                print(cmd)
+            elif indicator == 'return_period': 
+                cmd = (path_exe_ktools + 'returnperiodtobin < returnperiods.csv > returnperiods.bin')
+                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=data_path)
+                print(cmd)
+            elif indicator == 'periods': 
+                cmd = (path_exe_ktools + 'periodstobin < periods.csv > periods.bin')
+                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=data_path)
+                print(cmd)
+            elif indicator == 'gul_summary': 
+                cmd = (path_exe_ktools + 'gulsummaryxreftobin < gulsummaryxref.csv > gulsummaryxref.bin')
+                subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=data_path)
+                print(cmd)
         else:
             if indicator == 'events':
                 cmd = 'evetobin < events.csv > events.bin'
@@ -299,15 +313,78 @@ class Impact():
                 cmd = 'vulnerabilitytobin -d ' + str(max_information) + ' < vulnerability.csv > vulnerability.bin'
                 subprocess.Popen(cmd, shell=True, cwd=data_path)
                 print(cmd)
+            elif indicator == 'occurences': 
+                cmd = 'occurrencetobin -P' + str(max_information) + ' -D < occurrence.csv > occurrence.bin'
+                subprocess.Popen(cmd, shell=True, cwd=data_path)
+                print(cmd)
+            elif indicator == 'return_period': 
+                cmd = 'returnperiodtobin < returnperiods.csv > returnperiods.bin'
+                subprocess.Popen(cmd, shell=True, cwd=data_path)
+                print(cmd)
+            elif indicator == 'periods': 
+                cmd = 'periodstobin < periods.csv > periods.bin'
+                subprocess.Popen(cmd, shell=True, cwd=data_path)
+                print(cmd)
+            elif indicator == 'gul_summary': 
+                cmd = 'gulsummaryxreftobin < gulsummaryxref.csv > gulsummaryxref.bin'
+                subprocess.Popen(cmd, shell=True, cwd=data_path)
+                print(cmd)
                
-    def compute_impact_ktools(self, data_path, path_exe_ktools):
+    def compute_impact_ktools(self, data_path, path_exe_ktools, sample_size = 1):
         """Compute impact by calling ktools executables pipeline.
         
         Parameters
             data_path (Path): path where the files are saved
             path_exe_ktools (Path): path to ktools executables
+            sample_size (Integer, optional): how many samples should be used
+                multiple samples only needed when doing uncertainty calculations
         """
         if(platform.system() == 'Windows'):
+            #compute eltcalc output
+            cmd = (path_exe_ktools + 'eve 1 1 ')
+            p1 = subprocess.Popen(cmd, shell=True, stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd)
+            cmd = (path_exe_ktools + 'getmodel')
+            p2 = subprocess.Popen(cmd, shell=True, stdin = p1.stdout,
+                                  stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd) 
+            cmd = (path_exe_ktools + 'gulcalc -S' + str(sample_size) + ' -c -')
+            p3 = subprocess.Popen(cmd, shell=True, stdin = p2.stdout,
+                                  cwd=data_path,stdout = subprocess.PIPE)
+            print(cmd) 
+            cmd = (path_exe_ktools + 'summarycalc -g -1 - ') #1: portfolio level
+            p4 = subprocess.Popen(cmd, shell=True, stdin = p3.stdout,
+                                  stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd) 
+            cmd = (path_exe_ktools + 'eltcalc > eltcalc.csv')
+            subprocess.Popen(cmd, shell=True, stdin = p4.stdout,
+                                  stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd)
+            """
+            #generate leccalc output
+            cmd = (path_exe_ktools + 'eve 1 1 ')
+            p1 = subprocess.Popen(cmd, shell=True, stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd)
+            cmd = (path_exe_ktools + 'getmodel')
+            p2 = subprocess.Popen(cmd, shell=True, stdin = p1.stdout,
+                                  stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd) 
+            cmd = (path_exe_ktools + 'gulcalc -S' + str(sample_size) + ' -c -')
+            p3 = subprocess.Popen(cmd, shell=True, stdin = p2.stdout,
+                                  cwd=data_path,stdout = subprocess.PIPE)
+            print(cmd)  
+            cmd = (path_exe_ktools + 'summarycalc -g -1 - > work/sum/summarycalc1.bin') #1: portfolio level
+            p4 = subprocess.Popen(cmd, shell=True, stdin = p3.stdout,
+                                  stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd) 
+            time.sleep(5)
+            cmd = (path_exe_ktools + 'leccalc -Ksum -S leccalc.csv')
+            p5 = subprocess.Popen(cmd, shell=True, 
+                                  stdout = subprocess.PIPE, cwd=data_path)
+            print(cmd)   
+            """            
+            """
+            #generating the gulcalc as output
             cmd = (path_exe_ktools + 'eve 1 1 ')
             #cmd = (path_exe_ktools + 'eve 1 1 > events.bin')
             p1 = subprocess.Popen(cmd, shell=True, stdout = subprocess.PIPE, cwd=data_path)
@@ -316,38 +393,37 @@ class Impact():
             p2 = subprocess.Popen(cmd, shell=True, stdin = p1.stdout,
                                   stdout = subprocess.PIPE, cwd=data_path)
             print(cmd) 
-            cmd = (path_exe_ktools + 'gulcalc -S1 -c - > gulcalc.bin') #HERE WOULD BE SAMPLESIZE instead of 100
+            cmd = (path_exe_ktools + 'gulcalc -S' + str(sample_size) + ' -c -')
             subprocess.Popen(cmd, shell=True, stdin = p2.stdout,
-                                  cwd=data_path) #stdout = subprocess.PIPE, cwd=data_path)
+                                  cwd=data_path)#,stdout = subprocess.PIPE)
             print(cmd)            
             time.sleep(2)
             cmd = (path_exe_ktools + 'gultocsv < gulcalc.bin > gulcalc.csv')
             subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=data_path)
-            print(cmd)              
-            """
-            cmd = (path_exe_ktools + 'summarycalc -g -1 - ') #1: portfolio level
-            p4 = subprocess.Popen(cmd, shell=True, stdin = p3.stdout,
-                                  stdout = subprocess.PIPE, cwd=data_path)
-            print(cmd)             
-            cmd = (path_exe_ktools + 'eltcalc > elt.csv')
-            p5 = subprocess.Popen(cmd, shell=True, stdin = p4.stdout,
-                                  stdout = subprocess.PIPE, cwd=data_path)
-            print(cmd)
+            print(cmd) 
             """
         else:
-            #cmd = 'eve 1 1 > events.bin'
-            #cmd = 'eve 1 1 | getmodel | gulcalc -S100 -c - | summarycalc -g -1 - | eltcalc > elt.csv'
-            cmd = 'eve 1 1 | getmodel | gulcalc -S100 -c - > gulcalc.bin'
+            #generating the gulcalc as output
+            #cmd = 'eve 1 1 | getmodel | gulcalc -S' + str(sample_size) + ' -c - > gulcalc.bin'
+            #use to generate the lec calc output with section below
+            #cmd = 'eve 1 1 | getmodel | gulcalc -S' + str(sample_size) + ' -c - | summarycalc -g -1 - > work/sum/summarycalc1.bin'
+            #compute eltcalc output
+            cmd = 'eve 1 1 | getmodel | gulcalc -S' + str(sample_size) + ' -c - | summarycalc -g -1 - | eltcalc > eltcalc.csv'
             p1 = subprocess.Popen(cmd, shell=True, cwd=data_path)
-            print(cmd)            
-            time.sleep(2)
-            cmd = 'gultocsv < gulcalc.bin > gulcalc.csv'
+            print(cmd)  
+            """
+            #for generating the lec-output
+            #use this section with the commented cmd (summarycalc) above
+            time.sleep(5)
+            #cmd = 'gultocsv < gulcalc.bin > gulcalc.csv'
+            cmd = 'leccalc -Ksum -S leccalc.csv'            
             p1 = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, cwd=data_path)
             print(cmd)
+            """
             
-    def generate_damage_bins(self, haz_imp, nDamageBins, data_path, path_exe_ktools):
+    def generate_damage_bins(self, imp_func, nDamageBins, data_path, path_exe_ktools):
         """Divides intensities and corresponding mdr-values into damage bins.
-           Save as csv file.
+           Save as csv and binary file.
 
         Parameters
             haz_imp (ImpactFuncSet): impact functions
@@ -358,12 +434,12 @@ class Impact():
         Returns
             discrete_intensity_range (np.array): discretized intensity range
         """     
-        [imp_func] = haz_imp
+        #define intensity bins
         imp_func_intens = imp_func.intensity
         discrete_intensity_range = np.linspace(min(imp_func_intens), 
                                                max(imp_func_intens), nDamageBins)
+        #compute damage bins
         discrete_mdr_range = imp_func.calc_mdr(discrete_intensity_range)
-        
         damage_bin_from = discrete_mdr_range
         damage_bin_to = np.append(discrete_mdr_range[1:], 
                                   imp_func.calc_mdr(max(imp_func_intens)))
@@ -384,7 +460,7 @@ class Impact():
         
     def generate_footprint(self, hazard, discrete_intensity_range, data_path, path_exe_ktools):
         """Discretize hazard intensities into bins given by discrete_intensity_range.
-           Save as csv file.
+           Save as csv an binary file.
 
         Parameters
             hazard (Hazard): hazard
@@ -395,33 +471,39 @@ class Impact():
         Returns
             discrete_hazard_intensity (np.array): discretized hazard intensity
         """
-        hazard_event_id, centroid_idx, hazard_intensity_values, footprint_prob = [], [], [], []
+        hazard_event_id, centroid_idx, hazard_intensity_values = [], [], []
+        #read hazard intensities from climada
         for r in range(hazard.intensity.shape[0]):
             for ind in range(hazard.intensity.indptr[r], hazard.intensity.indptr[r+1]):
                 hazard_event_id.append(hazard.event_id[r])
                 #centroid index in ktools starts at 1 -> +1. Also accounted for in generate_items
                 centroid_idx.append(hazard.intensity.indices[ind] + 1) 
                 hazard_intensity_values.append(hazard.intensity.data[ind])
-                footprint_prob.append(1) #append(hazard.fraction.data[ind]) #TODO find solution or delete
-                
+         
+        #put hazard intensities into intensity bins. Starts at 1. Values in [1, nDamageBins]
         discrete_hazard_intensity = np.digitize(hazard_intensity_values, 
-                                        discrete_intensity_range) #starts at 1. Values in [1, nDamageBins]
+                                        discrete_intensity_range) 
         
         df = pd.DataFrame(data = {'event_id': hazard_event_id, 
                                   'areaperil_id': centroid_idx, 
                                   'intensity_bin_index': discrete_hazard_intensity,
-                                  'prob': footprint_prob},
+                                  #all probability 1 for data translation
+                                  'prob': np.full(shape=len(hazard_event_id), fill_value=1)},
                           dtype='int32')        
         df.to_csv(data_path / 'footprint.csv', index=False)
         self.data_conversion_ktools('footprint', data_path, path_exe_ktools, 
                                     max(discrete_hazard_intensity))        
         return discrete_hazard_intensity
-    
-    
+        
     def generate_vulnerability(self, imp_ids, discrete_hazard_intensity, data_path, path_exe_ktools):        
         df = pd.DataFrame(data = {'vulnerability_id': imp_ids,
+                                  #by only defining same intensity and damage bins, 
+                                  #we are translating the CLIMADA impact function to ktools.
+                                  #We apply a restriction to the combination of every intensity
+                                  #with every damage bin.
                                   'intensity_bin_index': discrete_hazard_intensity,
                                   'damage_bin_index': discrete_hazard_intensity,
+                                  #all probability 1 for data translation
                                   'prob':  np.full(shape=len(discrete_hazard_intensity), fill_value=1)},
                           dtype='int32')        
         df.to_csv(data_path / 'vulnerability.csv', index=False)
@@ -453,6 +535,41 @@ class Impact():
         itm.to_csv(data_path / 'items.csv', index=False)
         self.data_conversion_ktools('items', data_path, path_exe_ktools)
         
+    def generate_gul_summary(self, exposures, data_path, path_exe_ktools):
+        l = exposures.centr_TC.size
+        coverage_id = range(1, l+1)
+        gsr = pd.DataFrame(data = {'coverage_id': coverage_id,
+                                   'summary_id': range(1, l+1), #no influence
+                                   'summaryset_id': 1}, #no influence
+                           dtype='int32')
+        gsr.to_csv(data_path / 'gulsummaryxref.csv', index=False)
+        self.data_conversion_ktools('gul_summary', data_path, path_exe_ktools)
+    
+    def generate_occurence(self, hazard, data_path, path_exe_ktools):     
+        #ktools has reference date 01.01.1900. 693597 from 01.01.01 to 01.01.1900
+        dates = hazard.date - 693597
+        period_year = np.floor(dates / 365.25) #every year a period
+        occ = pd.DataFrame(data = {'event_id': hazard.event_id,
+                                   'period_no': period_year,
+                                   'occ_date_id': dates},
+                           dtype='int32')
+        occ.to_csv(data_path / 'occurrence.csv', index=False)
+        self.data_conversion_ktools('occurrences', data_path, path_exe_ktools, max(period_year))
+        
+        return period_year
+        
+    def generate_return_period(self, data_path, path_exe_ktools):
+        df = pd.DataFrame(data = {'return_period': 365}, dtype='int32', index = [0])        
+        df.to_csv(data_path / 'returnperiods.csv', index=False)        
+        self.data_conversion_ktools('return_period', data_path, path_exe_ktools)
+                    
+    def generate_periods(self, period_no, hazard, data_path, path_exe_ktools):
+        occ = pd.DataFrame(data = {'period_no': period_no,
+                                   'weigth': 1},
+                           dtype='int32')
+        occ.to_csv(data_path / 'periods.csv', index=False)
+        self.data_conversion_ktools('periods', data_path, path_exe_ktools)
+                       
     def exp_impact_ktools(self, exposures, hazard, data_path):  
         """Compute impact for input exposures and hazard.
         
@@ -461,8 +578,9 @@ class Impact():
             exposures (Exposures): exposures instance
             data_path (Path): path to output file
         """
-        #import output file of ktools
-        time.sleep(2)  
+        """
+        #if gulcalc file is produced: import of data
+        time.sleep(5)  
         if(platform.system() == 'Windows'):
             text = str(data_path) + "\gulcalc.csv"
             elt_file = pd.read_csv(text, index_col=None)   
@@ -474,25 +592,35 @@ class Impact():
         sidx = elt_file['sidx'].to_numpy() #if -1: mean for each event and coverage
         eve_id = elt_file['event_id'].to_numpy()
         cov = elt_file['coverage_id'].to_numpy()
+        """    
+        #import output file of ktools (here eltcalc). Adapt if other output file generated
+        time.sleep(5)  
+        if(platform.system() == 'Windows'):
+            text = str(data_path) + "\eltcalc.csv"
+            elt_file = pd.read_csv(text, index_col=None)   
+        else:
+            text = str(data_path) + "/eltcalc.csv"       
+            elt_file = pd.read_csv(text, index_col=None)
+        
+        mean_imp = elt_file['mean'].to_numpy()
+        sidx = elt_file['type'].to_numpy() #if 2: mean and sd by numerical integration
+        eve_id = elt_file['event_id'].to_numpy()
+        cov = elt_file['summary_id'].to_numpy()
         
         ind = 0
         for i in hazard.event_id:
             for j in range(len(mean_imp)):
-                #sidx = -1 are the numerically integrated means
-                if eve_id[j] == i and sidx[j] == -1:
-                    self.at_event[ind] += mean_imp[j]  * hazard.fraction.data[cov[j] - 1]
+                if eve_id[j] == i and sidx[j] == 1:
+                    self.at_event[ind] += mean_imp[j]
             ind += 1
-        
+
         ind = 0
         for i in range(1, len(exposures.centr_TC)+1):
             for j in range(len(mean_imp)):
-                #sidx = -1 are the numerically integrated means
-                if cov[j] == i and sidx[j] == -1:
-                    self.eai_exp[ind] += mean_imp[j]  * hazard.fraction.data[cov[j] - 1] * \
-                        hazard.frequency[hazard.event_id == eve_id[j]]
+                if cov[j] == i and sidx[j] == 1:
+                    self.eai_exp[ind] += mean_imp[j] * hazard.frequency[hazard.event_id == eve_id[j]]             
             ind += 1
-            
-            
+                 
     def calc_ktools(self, exposures, impact_funcs, hazard, nDamageBins = 1000, path_exe_ktools='/usr/local/bin/', save_mat=False):
         """Compute impact of an hazard to exposures with ktools.
 
@@ -533,47 +661,46 @@ class Impact():
         LOGGER.info('Calculating damage for %s assets (>0) and %s events.',
                     exp_idx.size, num_events)
 
-        # Get damage functions for this hazard
-        if_haz = INDICATOR_IF + hazard.tag.haz_type
-        haz_imp = impact_funcs.get_func(hazard.tag.haz_type)
-        if if_haz not in exposures and INDICATOR_IF not in exposures:
-            LOGGER.error('Missing exposures impact functions %s.', INDICATOR_IF)
-            raise ValueError
-        if if_haz not in exposures:
-            LOGGER.info('Missing exposures impact functions for hazard %s. '
-                        'Using impact functions in %s.', if_haz, INDICATOR_IF)
-            if_haz = INDICATOR_IF
-
-
         #build folder structure according to ktools
         #Unix as default given       
         if(platform.system() == 'Windows'):
             path_exe_ktools = "C:/msys32/mingw64/bin/"
         climada_path = Path.home()
-        Path.mkdir(climada_path / 'climada', exist_ok=True) #overwrite if exists
+        #exist_ok=True: overwrite dictionary if already existing
+        Path.mkdir(climada_path / 'climada', exist_ok=True) 
         input_data_path = climada_path / 'climada' / 'ktools_data'         
         Path.mkdir(input_data_path, exist_ok=True)
         Path.mkdir(input_data_path / 'input', exist_ok=True)
         ktools_input_dir = input_data_path / 'input'
         Path.mkdir(input_data_path / 'static', exist_ok=True)
         ktools_static_dir = input_data_path / 'static'
+        Path.mkdir(input_data_path / 'work', exist_ok=True)
+        ktools_work_dir = input_data_path / 'work'
+        Path.mkdir(ktools_work_dir / 'sum', exist_ok=True)
         
+        #generate necessary binary files for ktools
+        [imp_fun] = impact_funcs.get_func(fun_id = exposures.if_TC[0])
         #translate climada, save in csv files and conversion to binary files
         self.generate_events(hazard, ktools_input_dir, path_exe_ktools)   
-        discrete_intensity_range = self.generate_damage_bins(haz_imp, nDamageBins, ktools_static_dir, path_exe_ktools)                     
+        discrete_intensity_range = self.generate_damage_bins(imp_fun, nDamageBins, ktools_static_dir, path_exe_ktools)                     
         self.generate_coverages(exposures, ktools_input_dir, path_exe_ktools)        
         self.generate_items(exposures, ktools_input_dir, path_exe_ktools)                    
         discrete_hazard_intensity = self.generate_footprint(hazard, discrete_intensity_range, ktools_static_dir, path_exe_ktools)                    
-        [imp_ids] = np.unique(exposures.if_TC.values) #TODO only works with one impact func
+        [imp_ids] = np.unique(exposures.if_TC.values)
         self.generate_vulnerability(imp_ids, discrete_hazard_intensity, ktools_static_dir, path_exe_ktools)
+        self.generate_gul_summary(exposures, ktools_input_dir, path_exe_ktools)
+        
+        #ktools files which are only necessary when computing the ktools
+        #leccalc executable
+        #period_year = self.generate_occurence(hazard, ktools_input_dir, path_exe_ktools)
+        #self.generate_return_period(ktools_input_dir, path_exe_ktools)
+        #self.generate_periods(period_year, hazard, ktools_input_dir, path_exe_ktools)
         
         #generate output files of ktools
         self.compute_impact_ktools(input_data_path, path_exe_ktools)
         #calculate output information
         self.exp_impact_ktools(exposures, hazard, input_data_path)
-            
-        
-    
+              
     def calc_risk_transfer(self, attachment, cover):
         """Compute traaditional risk transfer over impact. Returns new impact
         with risk transfer applied and the insurance layer resulting Impact metrics.
