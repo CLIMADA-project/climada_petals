@@ -233,7 +233,7 @@ DICT_GEOFABRIK = {
        'VEN' : ('south-america', 'venezuela'),           
     }
 
-OSM_INFRA_DICT = {
+OSM_CONSTRAINT_DICT = {
         'education' : {
             'amenity' : ["='school' or ",
                          "='kindergarten' or ",
@@ -254,14 +254,26 @@ OSM_INFRA_DICT = {
             'man_made' : ["='water_works' or ",
                           "='water_well' or ",
                           "='water_tower' or ",
-                          "='wastewater_plant'"]},
+                          "='wastewater_plant' or ",
+                          "='reservoir_covered'"],
+            'landuse' : ["='reservoir'"]},
         'telecom' : {
             'tower_type' : ["='communication'"],
-            'man_made' : ["='tower'"]},
+            'man_made' : ["='communication tower' or ",
+                          "='antenna'"]},
         'road' :  {
-            '' : None},
+            'highway' : ["='primary' or ",
+                         "='trunk' or ",
+                         "='motorway' or ",
+                         "='motorway_link' or ",
+                         "='trunk_link' or ",
+                         "='primary_link' or ",
+                         "='secondary' or ",
+                         "='secondary_link' or ",
+                         "='tertiary' or ",
+                         "='tertiary_link'"]},
         'rail' : {
-            '' : None},
+            'service' : [" IS NOT NULL"]},
          'air' : {
              'aeroway' : ["='aerodrome'"]},
          'fuel' : {
@@ -269,9 +281,11 @@ OSM_INFRA_DICT = {
          'food' : {
              'shop' : ["='supermarket' or ",
                        "='greengrocer' or ",
-                       "='bakery'"]}
+                       "='bakery'"]},
+         'power' : {},
          }
-        # original in osm query lang -> tower:type
+        # TODO: issue with colon
+        # original in osm query lang -> tower:type. Only works with topwer_type but no results.
         #     'man_made' : ["='tower'"]}
         # ['tower_type','man_made'],**{"tower_type":[" IS NOT NULL"]
         
@@ -295,7 +309,7 @@ def _create_download_url(iso3, file_format):
     else:
         LOGGER.error('invalid file format. Please choose one of [shp, pbf]')
 
-def get_data_geofab(iso3, file_format='pbf'):
+def get_data_geofab(iso3, file_format='pbf', save_path=DATA_DIR):
     """
     
     iso3 : str
@@ -304,7 +318,7 @@ def get_data_geofab(iso3, file_format='pbf'):
         shp or pbf. Default is 'pbf'
     """
     download_url = _create_download_url(iso3, file_format)
-    local_filepath = DATA_DIR + '/' + download_url.split('/')[-1]
+    local_filepath = save_path + '/' + download_url.split('/')[-1]
     if not Path(local_filepath).is_file():
         LOGGER.info(f'Downloading file as {local_filepath}')
         urllib.request.urlretrieve(download_url, local_filepath)
@@ -316,12 +330,12 @@ def get_data_geofab(iso3, file_format='pbf'):
 # Download entire Planet from OSM and extract customized areas
 # =============================================================================
 
-def get_osm_planet():
+def get_osm_planet(save_path=DATA_DIR):
     """
     This function will download the planet file from the OSM servers. 
     """
     download_url = 'https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf'
-    local_filepath = DATA_DIR + '/planet-latest.osm.pbf'
+    local_filepath = save_path + '/planet-latest.osm.pbf'
 
     if not Path(local_filepath).is_file():
         LOGGER.info(f'Downloading file as {local_filepath}')
@@ -336,7 +350,7 @@ def osmosis_extract(planet_fp, dest_fp, shape):
     dest_fp : str
         file path to extracted_place.osm.pbf
     shape : list or str
-        bounding box [N, E, S, W] or file path to a .poly file
+        bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
         
     Note
     ----
@@ -348,13 +362,17 @@ def osmosis_extract(planet_fp, dest_fp, shape):
         get_osm_planet()
 
     if not Path(dest_fp).is_file():
-        if isinstance(shape, list):
+        print('file doesnt exist yet')
+        if (isinstance(shape, list) or isinstance(shape, tuple)):
+            print('Cutting from bounding box')
             cmd = ['osmosis', '--read-pbf', 'file='+planet_fp, '--bounding-box',
-                   f'top={shape[0]}', f'left={shape[3]}', f'bottom={shape[2]}',
-                   f'right={shape[1]}', '--write-pbf', 'file='+dest_fp]
+                   f'top={shape[3]}', f'left={shape[0]}', f'bottom={shape[1]}',
+                   f'right={shape[2]}', '--write-pbf', 'file='+dest_fp]
         elif isinstance(shape, str):
+            print('Cutting from poly file')
             cmd = ['osmosis', '--read-pbf', 'file='+planet_fp, '--bounding-polygon',
                    'file='+shape, '--write-pbf', 'file='+dest_fp]
+        print('Generating extract from planet file.')
         LOGGER.info('Generating extract from planet file.')
         return subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
     else:
@@ -373,11 +391,11 @@ def query_b(geoType,keyCol,**valConstraint):
     This function builds an SQL query from the values passed to the retrieve()
     function.
     
-    Arguments
+    Parameters
     ---------
-         *geoType* : Type of geometry (osm layer) to search for.
-         *keyCol* : A list of keys/columns that should be selected from the layer.
-         ***valConstraint* : A dictionary of constraints for the values. e.g.
+    *geoType* : Type of geometry (osm layer) to search for.
+    *keyCol* : A list of keys/columns that should be selected from the layer.
+    ***valConstraint* : A dictionary of constraints for the values. e.g.
          WHERE 'value'>20 or 'value'='constraint'
     
     Returns
@@ -398,19 +416,21 @@ def query_b(geoType,keyCol,**valConstraint):
     return query
 
 
-def retrieve(osm_path,geoType,keyCol,**valConstraint):
+def _retrieve(osm_path,geoType,keyCol,**valConstraint):
     """
     from BenDickens/trails repo (https://github.com/BenDickens/trails.git, see
                                  extract.py)
     Function to extract specified geometry and keys/values from OpenStreetMap
-    Arguments:
+    Parameters
+    ----------
         *osm_path* : file path to the .osm.pbf file of the region
         for which we want to do the analysis.
         *geoType* : Type of Geometry to retrieve. e.g. lines, multipolygons, etc.
         *keyCol* : These keys will be returned as columns in the dataframe.
         ***valConstraint: A dictionary specifiying the value constraints.
         A key can have multiple values (as a list) for more than one constraint for key/value.
-    Returns:
+    Returns
+    -------
         *GeoDataFrame* : a geopandas GeoDataFrame with all columns, geometries, and constraints specified.
     """
     driver=ogr.GetDriverByName('OSM')
@@ -446,49 +466,46 @@ def retrieve(osm_path,geoType,keyCol,**valConstraint):
         print("WARNING: No features or No Memory. returning empty GeoDataFrame")
         return pd.DataFrame(columns=['osm_id','geometry'])
 
-def retrieve_cut(bbox, osm_path, geotype, feature):
+def retrieve_cis(osm_path, feature):
     """
-    bbox: tuple
-        (xmin, ymin, xmax, ymax)
-    """
-    # TODO: rename to more descriptive name.
-    if (feature in OSM_INFRA_DICT) & (geotype in ['points', 'multipolygons']):
-        out_iter = []
-        for key in OSM_INFRA_DICT[feature]:
-            print(key)
-            out_iter.append(
-                gpd.GeoDataFrame(retrieve(osm_path,geotype,[key],
-                                          **{key: OSM_INFRA_DICT[feature][key]})
-                                 ).cx[bbox[0]:bbox[2],bbox[1]:bbox[3]])
-        return out_iter
-
-    elif (feature == 'rails') &  (geotype == 'lines'):
-        # return gpd.GeoDataFrame(retrieve(osm_path, 'lines',['railway','service'],
-        #                                  **{"service":[" IS NOT NULL"]})
-        #                         ).cx[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-        return gpd.GeoDataFrame(retrieve(osm_path, 'lines',['railway'])
-                                ).cx[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-
-    elif (feature == 'roads') &  (geotype == 'lines'):
-        return gpd.GeoDataFrame(retrieve(osm_path,'lines',
-                                      ['highway','oneway','lanes','maxspeed'],
-                                      **{'highway':["='primary' or ",
-                                                    "='trunk' or ",
-                                                    "='motorway' or ",
-                                                    "='motorway_link' or ",
-                                                    "='trunk_link' or ",
-                                                    "='primary_link' or ",
-                                                    "='secondary' or ",
-                                                    "='secondary_link' or ",
-                                                    "='tertiary' or ",
-                                                    "='tertiary_link'"]})
-                             ).cx[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-
-    elif (feature == 'power') &  (geotype == 'lines'):
-        return gpd.GeoDataFrame(retrieve(osm_path,'lines',['power','voltage'],
-                                      **{'voltage':[" IS NULL"]})
-                             ).cx[bbox[0]:bbox[2],bbox[1]:bbox[3]]
     
+    Parameters
+    ----------
+    feature : str
+        healthcare or education or telecom or water or food or fuel or road or rail or power
+    """
+    # TODO: implement sth smarter than pd.concat (sjoin from gpd) for duplicate points / multipolys
+    # TODO: move column list to a dict according to constraints
+
+    if ((feature == 'healthcare') or (feature == 'education') or 
+        (feature == 'telecom') or (feature == 'fuel') or (feature == 'food') or
+        (feature == 'water')):
+        # allow for several keys, and point or polygon
+        gdf = gpd.GeoDataFrame()
+        for key in OSM_CONSTRAINT_DICT[feature].keys():
+            gdf = pd.concat([gdf, _retrieve(osm_path, 'points',[key],
+                                              **{key : OSM_CONSTRAINT_DICT[feature][key]})]) 
+            gdf = pd.concat([gdf, _retrieve(osm_path, 'multipolygons',[key],
+                                              **{key : OSM_CONSTRAINT_DICT[feature][key]})]) #[key]
+    elif feature == 'air':
+        gdf = _retrieve(osm_path, 'multipolygons',['aeroway'],
+                        **OSM_CONSTRAINT_DICT[feature]) 
+
+    elif feature == 'rail':
+        gdf = gpd.GeoDataFrame(_retrieve(osm_path, 'lines',['railway', 'service'],
+                                          **OSM_CONSTRAINT_DICT[feature]))
+
+    elif feature == 'road':
+        gdf = gpd.GeoDataFrame(_retrieve(osm_path,'lines',
+                                      ['highway','oneway','lanes','maxspeed'],
+                                      **OSM_CONSTRAINT_DICT[feature]))
+
+    elif feature == 'power':
+        gdf = gpd.GeoDataFrame(_retrieve(osm_path,'lines',['power','voltage'],))
+        gdf = pd.concat([gdf, _retrieve(osm_path,'points',['power','voltage'])
+                         ]) #**{'voltage':[" IS NULL"]} # no further constraints
+    
+    return gdf
 # =============================================================================
 # Download customized data from API (overpass-api)
 # =============================================================================
