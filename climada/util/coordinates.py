@@ -92,8 +92,10 @@ not considered."""
 
 @jit(nopython=True, parallel=True)
 def _dist_sqr_approx(lats1, lons1, cos_lats1, lats2, lons2):
-    """Compute squared equirectangular approximation distance. Values need
-    to be sqrt and multiplicated by ONE_LAT_KM to obtain distance in km."""
+    """
+    Compute squared equirectangular approximation distance. Values need
+    to be sqrt and multiplicated by ONE_LAT_KM to obtain distance in km.
+    """
     d_lon = lons1 - lons2
     d_lat = lats1 - lats2
     return d_lon * d_lon * cos_lats1 * cos_lats1 + d_lat * d_lat
@@ -103,19 +105,26 @@ def interpol_index(centroids, coordinates, method=METHOD[0],
     """Returns for each coordinate the centroids indexes used for
     interpolation.
 
-    Parameters:
-        centroids (2d array): First column contains latitude, second
-            column contains longitude. Each row is a geographic point
-        coordinates (2d array): First column contains latitude, second
-            column contains longitude. Each row is a geographic point
-        method (str, optional): interpolation method to use. NN default.
-        distance (str, optional): distance to use. Haversine default
-        threshold (float): distance threshold in km over which no neighbor will
-            be found. Those are assigned with a -1 index
+    Parameters
+    ----------
+    centroids : 2d array
+        First column contains latitude, second column contains longitude. Each 
+        row is a geographic point
+    coordinates : 2d array 
+        First column contains latitude, second column contains longitude. Each
+        row is a geographic point
+    method : str, optional
+        interpolation method to use. NN default.
+    distance : str, optional
+        distance to use. Haversine default
+    threshold : float 
+        distance threshold in km over which no neighbor will be found. Those 
+        are assigned with a -1 index
 
-    Returns:
-        numpy array with so many rows as coordinates containing the
-            centroids indexes
+    Returns
+    -------
+    interp : numpy array 
+        with so many rows as coordinates containing the centroids indexes
     """
     if (method == METHOD[0]) & (distance == DIST_DEF[0]):
         # Compute for each coordinate the closest centroid
@@ -131,21 +140,27 @@ def interpol_index(centroids, coordinates, method=METHOD[0],
     return interp
 
 def index_nn_aprox(centroids, coordinates, threshold=THRESHOLD):
-    """Compute the nearest centroid for each coordinate using the
+    """
+    Compute the nearest centroid for each coordinate using the
     euclidian distance d = ((dlon)cos(lat))^2+(dlat)^2. For distant points
     (e.g. more than 100km apart) use the haversine distance.
 
-    Parameters:
-        centroids (2d array): First column contains latitude, second
-            column contains longitude. Each row is a geographic point
-        coordinates (2d array): First column contains latitude, second
-            column contains longitude. Each row is a geographic point
-        threshold (float): distance threshold in km over which no neighbor will
-            be found. Those are assigned with a -1 index
+    Parameters
+    ----------
+    centroids : 2d array
+        First column contains latitude, second column contains longitude. Each 
+        row is a geographic point
+    coordinates : 2d array 
+        First column contains latitude, second column contains longitude. Each
+        row is a geographic point
+    threshold : float 
+        distance threshold in km over which no neighbor will be found. Those 
+        are assigned with a -1 index
 
-    Returns:
-        array with so many rows as coordinates containing the centroids
-            indexes
+    Returns
+    -------
+    assigend: array 
+        with so many rows as coordinates containing the centroids indexes
     """
 
     # Compute only for the unique coordinates. Copy the results for the
@@ -180,17 +195,22 @@ def index_nn_haversine(centroids, coordinates, threshold=THRESHOLD):
     """Compute the neareast centroid for each coordinate using a Ball
     tree with haversine distance.
 
-    Parameters:
-        centroids (2d array): First column contains latitude, second
-            column contains longitude. Each row is a geographic point
-        coordinates (2d array): First column contains latitude, second
-            column contains longitude. Each row is a geographic point
-        threshold (float): distance threshold in km over which no neighbor will
-            be found. Those are assigned with a -1 index
+    Parameters
+    ----------
+    centroids : 2d array 
+        First column contains latitude, second column contains longitude. 
+        Each row is a geographic point
+    coordinates : 2d array
+        First column contains latitude, second column contains longitude. Each
+        row is a geographic point
+    threshold : float
+        distance threshold in km over which no neighbor will be found. Those 
+        are assigned with a -1 index
 
-    Returns:
-        array with so many rows as coordinates containing the centroids
-            indexes
+    Returns
+    -------
+    np.array 
+        with so many rows as coordinates containing the centroids indexes
     """
     # Construct tree from centroids
     tree = BallTree(np.radians(centroids), metric='haversine')
@@ -218,23 +238,28 @@ def interpolate_lines(gdf_lines, point_dist=5):
     """ Convert a GeoDataframe with LineString geometries to 
     Point geometries, where Points are placed at a specified distance along the
     original LineString 
+    Important remark: LineString.interpolate() used here performs interpolation 
+    in a Cartesian coordinate system. The result will be inaccurate for 
+    LineStrings whose defining points are spaced very far from each other 
+    (like end points in Zürich and NYC)
     
     Parameters
     ----------
-    gdf_lines (gpd.GeoDataframe or str) : Geodataframe or filepath from which
-        to read the GeoDataframe
-    point_dist (float) : Distance in metres apart from which the generated  
-        Points should be placed.
+    gdf_lines : gpd.GeoDataframe or str
+        Geodataframe or filepath from which to read the GeoDataframe
+    point_dist : float
+    Distance in metres apart from which the generated  Points should be placed.
     
     Returns
     -------
-    gdf_points with individual Point per row, retaining all other column infos
+    gdf_points : gpd.GeoDataFrame
+        with individual Point per row, retaining all other column infos
         belonging to its corresponding line (incl. line length of original geom.
         and multi-index referring to original indexing)
         
     See also
     --------
-    * util.coordinates.dist_great_circle_allgeoms()
+    * util.coordinates.compute_geodesic_lengths()
     * util.lines_polys_handler.point_exposure_from_lines()
     """
 
@@ -243,7 +268,7 @@ def interpolate_lines(gdf_lines, point_dist=5):
         
     gdf_points = gdf_lines.copy()
     gdf_points['length'] = np.ones(len(gdf_points))*point_dist
-    gdf_points['length_full'] = dist_great_circle_allgeoms(gdf_points)
+    gdf_points['length_full'] = compute_geodesic_lengths(gdf_points)
 
     # split line lengths into relative fractions acc to point_dist (e.g. 0, 0.5, 1)
     gdf_points['distance_vector'] = gdf_points.apply(
@@ -265,8 +290,10 @@ def interpolate_polygons(gdf_poly, area_point):
     
     Parameters
     ----------
-    gdf_poly : (gpd.GeoDataFrame) with polygons to be interpolated
-    area_point : area in m2 which one point should represent
+    gdf_poly : gpd.GeoDataFrame
+        with polygons to be interpolated
+    area_point : float
+        area in m2 which one point should represent
     
     Returns
     -------
@@ -275,56 +302,46 @@ def interpolate_polygons(gdf_poly, area_point):
     
     See also
     --------
-    * util.coordinates.dist_great_circle_allgeoms()
+    * util.coordinates.compute_geodesic_lengths()
     * util.lines_polys_handler.point_exposure_from_polygons()
     """
     
     metre_dist = math.sqrt(area_point)
+    gdf_points = gdf_poly.copy()
     
-    gdf_poly['degree_dist'] = gdf_poly.apply(lambda row: metres_to_degrees(
+    gdf_points['degree_dist'] = gdf_poly.apply(lambda row: metres_to_degrees(
         row.geometry.representative_point().x, 
         row.geometry.representative_point().y,
         metre_dist), axis=1)
     
     # get params to make an even grid with desired resolution 
     # over bounding boxes of polygons:
-    trans = gdf_poly.apply(lambda row: pts_to_raster_meta(
-        row.geometry.bounds, (row.degree_dist, -row.degree_dist)), axis=1)
-    gdf_poly['trans'] = pd.DataFrame(trans.tolist(), index=trans.index).iloc[:,2]
-   
-    gdf_poly['width'] = np.floor(abs(gdf_poly.geometry.bounds.minx-
-                                     gdf_poly.geometry.bounds.maxx)/
-                                 gdf_poly['degree_dist'])
-    gdf_poly['height'] = np.floor(abs(gdf_poly.geometry.bounds.miny-
-                                      gdf_poly.geometry.bounds.maxy)/
-                                  gdf_poly['degree_dist'])
+    gdf_points[['height','width','trans']] = gdf_points.apply(
+        lambda row: pts_to_raster_meta(row.geometry.bounds, 
+                                       (row.degree_dist, -row.degree_dist)), 
+        axis=1).tolist()
     
-    # make grid for each polygon-bbox
-    points = gdf_poly.apply(lambda row: raster_to_meshgrid(
-        row.trans, row.width, row.height), axis=1)
-    points = pd.DataFrame(points.tolist(), columns=['lon', 'lat'])
+    # make grid --> lon / lat for each polygon-bbox
+    gdf_points[['lon','lat']] = pd.DataFrame(gdf_points.apply(lambda row: 
+        raster_to_meshgrid(row.trans, row.width, row.height), axis=1).tolist())
+    
     for axis in ['lon', 'lat']:
-        points[axis] = points.apply(lambda row: row[axis].flatten(), axis=1)
-    
+        gdf_points[axis] = gdf_points.apply(lambda row: row[axis].flatten(), 
+                                            axis=1)
     # filter only centroids in actual polygons
-    for i, polygon in enumerate(gdf_poly.geometry):
-        in_geom = coord_on_land(lat=points['lat'].iloc[i], 
-                                lon=points['lon'].iloc[i],
+    for i, polygon in enumerate(gdf_points.geometry):
+        in_geom = coord_on_land(lat=gdf_points['lat'].iloc[i], 
+                                lon=gdf_points['lon'].iloc[i],
                                 land_geom=polygon)
         for axis in ['lon', 'lat']:
-            points[axis].iloc[i] = points[axis].iloc[i][in_geom]
+            gdf_points[axis].iloc[i] = gdf_points[axis].iloc[i][in_geom]
     
-    points['geometry'] = points.apply(lambda row: 
-                                      MultiPoint([(x, y) for x, y 
-                                                  in zip(row.lon, row.lat)]),
-                                      axis=1)
-        
-    points = pd.merge(points.drop(['lat', 'lon'], axis=1), 
-                      gdf_poly.drop(['geometry', 'trans', 'width', 'height', 
-                                     'degree_dist'], axis=1),
-                      left_index=True, right_index=True)
+    gdf_points['geometry'] = gdf_points.apply(
+        lambda row: MultiPoint([(x, y) for x, y in zip(row.lon, row.lat)]),
+        axis=1)
 
-    return gpd.GeoDataFrame(points).explode()
+    return gpd.GeoDataFrame(gdf_points.drop(['lon', 'lat', 'trans', 'width', 
+                                             'height', 'degree_dist'])).explode()
 
 #######################
 
@@ -570,7 +587,7 @@ def dist_approx(lat1, lon1, lat2, lon2, log=False, normalize=True,
         raise KeyError("Unknown distance approximation method: %s" % method)
     return (dist, vtan) if log else dist
 
-def dist_great_circle_allgeoms(gdf):
+def compute_geodesic_lengths(gdf):
     """Calculate the great circle (geodesic / spherical) lengths along any 
     (complicated) geometry object, based on the pyproj.Geod implementation.
     
