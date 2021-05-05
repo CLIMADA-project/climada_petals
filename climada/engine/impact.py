@@ -623,6 +623,8 @@ class Impact():
                  
     def calc_ktools(self, exposures, impact_funcs, hazard, nDamageBins = 1000, path_exe_ktools='/usr/local/bin/', save_mat=False):
         """Compute impact of an hazard to exposures with ktools.
+        Further information can be found in the Term paper of Robert Blass:
+        https://doi.org/10.3929/ethz-b-000480061
 
         Parameters:
             exposures (Exposures): exposures
