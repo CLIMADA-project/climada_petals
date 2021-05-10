@@ -23,7 +23,7 @@ import logging
 from osgeo import ogr, gdal
 import pandas as pd
 from pathlib import Path
-from pygeos import from_wkb
+import shapely
 import subprocess
 from tqdm import tqdm
 import urllib.request
@@ -439,6 +439,7 @@ def _retrieve(osm_path,geoType,keyCol,**valConstraint):
     sql_lyr = data.ExecuteSQL(query)
     features =[]
     # cl = columns
+    # TODO: move column list to a dict according to constraints
     cl = ['osm_id']
     for a in keyCol: cl.append(a)
     if data is not None:
@@ -447,7 +448,8 @@ def _retrieve(osm_path,geoType,keyCol,**valConstraint):
             try:
                 if feature.GetField(keyCol[0]) is not None:
                     # TODO: think about removing pygeos dependency here
-                    geom = from_wkb(feature.geometry().ExportToWkb())
+                    #geom = from_wkb(feature.geometry().ExportToWkb())
+                    geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
                     if geom is None:
                         continue
                     # field will become a row in the dataframe.
@@ -461,10 +463,10 @@ def _retrieve(osm_path,geoType,keyCol,**valConstraint):
         print("ERROR: Nonetype error when requesting SQL. Check required.")
     cl.append('geometry')
     if len(features) > 0:
-        return pd.DataFrame(features,columns=cl)
+        return gpd.GeoDataFrame(features,columns=cl)
     else:
         print("WARNING: No features or No Memory. returning empty GeoDataFrame")
-        return pd.DataFrame(columns=['osm_id','geometry'])
+        return gpd.GeoDataFrame(columns=['osm_id','geometry'])
 
 def retrieve_cis(osm_path, feature):
     """
@@ -475,8 +477,6 @@ def retrieve_cis(osm_path, feature):
         healthcare or education or telecom or water or food or fuel or road or rail or power
     """
     # TODO: implement sth smarter than pd.concat (sjoin from gpd) for duplicate points / multipolys
-    # TODO: move column list to a dict according to constraints
-
     if ((feature == 'healthcare') or (feature == 'education') or 
         (feature == 'telecom') or (feature == 'fuel') or (feature == 'food') or
         (feature == 'water')):
@@ -505,7 +505,7 @@ def retrieve_cis(osm_path, feature):
         gdf = pd.concat([gdf, _retrieve(osm_path,'points',['power','voltage'])
                          ]) #**{'voltage':[" IS NULL"]} # no further constraints
     
-    return gdf
+    return gpd.GeoDataFrame(gdf)
 # =============================================================================
 # Download customized data from API (overpass-api)
 # =============================================================================
