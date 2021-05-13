@@ -15,13 +15,50 @@ You should have received a copy of the GNU Lesser General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 """
+import shapely
+import pygeos
+import pandas as pd
+import geopandas as gpd
 
 # =============================================================================
-# DF operations to convert gdf to nodes & edges
+# Util funcs
+# =============================================================================
+
+def _pygeos_to_shapely(geom):
+    """geometry conversion"""
+    return shapely.wkt.loads(pygeos.io.to_wkt(geom))
+
+def _shapely_to_pygeos(geom):
+    """geometry conversion"""
+    return pygeos.io.from_wkt(geom.wkt)
+
+    
+def pygeos_to_shapely(df, colname='geometry'):
+    """dataframe conversion"""
+    gdf = gpd.GeoDataFrame(df)
+    gdf[colname] = gdf.apply(lambda row: _pygeos_to_shapely(row[colname]), axis=1)
+    return gdf
+
+def shapely_to_pygeos(gdf, colname='geometry'):
+    """dataframe conversion"""
+    df = pd.DataFrame(gdf)
+    df[colname] = df.apply(lambda row: _shapely_to_pygeos(row[colname]), axis=1)
+    return df
+
+# =============================================================================
+# DF operations to add nodes & edges info, other relevant attr info to gdf
 # =============================================================================
 
 # instantiate nw class?
 
+def consolidate_ci_attrs(gdf, ci_type=None, to_drop=None, to_keep=None):
+    if ci_type:
+        gdf['ci_type'] = ci_type
+    if to_drop:
+        gdf = gdf.drop(to_drop, axis=1)
+    if to_keep:
+        gdf = gdf[to_keep]
+    return gdf
 
 # =============================================================================
 # DF operations to clean and simplify 
