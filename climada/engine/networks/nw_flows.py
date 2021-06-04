@@ -81,13 +81,12 @@ def make_df_pathsummary(graph,from_ci, to_ci, pathlist,output='epath'):
                             columns=graph.vs.select(ci_type=to_ci)['orig_id'])
     
 def select_single_shortest_path(df_pathdists, df_epaths):
-    dest_ix = df_pathdists.columns.values
     shortest_path = pd.DataFrame(index=df_pathdists.index, columns = ['path','distance'])
     for ix, row in df_pathdists.iterrows():
         min_dist = min(row)
         selected_dest = [(dist == min_dist) for dist in row]
-        shortest_path.iloc[ix]['distance'] = min_dist
-        shortest_path.iloc[ix]['path'] =  df_epaths.iloc[ix][selected_dest]       
+        shortest_path.loc[ix]['distance'] = min_dist
+        shortest_path.loc[ix]['path'] =  df_epaths.loc[ix][selected_dest]       
     return shortest_path
 
          
@@ -100,7 +99,7 @@ def plot_shortest_paths(graph, from_ci, to_ci, via_ci, single_shortest_path):
         
     for ix in single_shortest_path.index:
         gpd.GeoDataFrame(
-            geometry=ig.EdgeSeq(graph, single_shortest_path.iloc[ix]['path'].values[0])['geometry']
+            geometry=ig.EdgeSeq(graph, single_shortest_path.loc[ix]['path'].values[0])['geometry']
             ,crs=4326).to_crs(epsg=3857).plot(ax=ax, color='green') #label=f'Shortest path from {from_ci} {ix} to {to_ci}'
     # origin
     gpd.GeoDataFrame(geometry=graph.vs.select(ci_type=from_ci)['geometry']
@@ -113,9 +112,9 @@ def plot_shortest_paths(graph, from_ci, to_ci, via_ci, single_shortest_path):
     ctx.add_basemap(ax)
     plt.show()
     
-graph = make_ci_weights(graph, ci_types=None)
-pathlist = shortest_paths(graph,'health', 'power_plants', via_ci='power_lines')
-df_health_to_pp_epath = make_df_pathsummary(graph,'health','power_plants',pathlist)
-df_health_to_pp_dist = make_df_pathsummary(graph,'health','power_plants',pathlist,output='distance')
-single_shortest_path = select_single_shortest_path(df_health_to_pp_dist,df_health_to_pp_epath)
-plot_shortest_paths(graph, 'health', 'power_plants', 'power_lines', single_shortest_path)
+# graph = make_ci_weights(graph, ci_types=None)
+# pathlist = shortest_paths(graph,'health', 'power_plants', via_ci='power_lines')
+# df_health_to_pp_epath = make_df_pathsummary(graph,'health','power_plants',pathlist)
+# df_health_to_pp_dist = make_df_pathsummary(graph,'health','power_plants',pathlist,output='distance')
+# single_shortest_path = select_single_shortest_path(df_health_to_pp_dist,df_health_to_pp_epath)
+# plot_shortest_paths(graph, 'health', 'power_plants', 'power_lines', single_shortest_path)

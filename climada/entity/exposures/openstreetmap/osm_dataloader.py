@@ -152,8 +152,11 @@ DICT_GEOFABRIK = {
        'GTM' : ('central-america', 'guatemala'),                                                        
        'HTI' : ('central-america', 'haiti-and-domrep'),  # TOGETHER WITH DOMINICAN REPUBLIC   
        'DOM' : ('central-america', 'haiti-and-domrep'),  # TOGETHER WITH HAITI                    
-       'JAM' : ('central-america', 'jamaica'),                                                        
-       'NIC' : ('central-america', 'nicaragua'),                                                        
+       'JAM' : ('central-america', 'jamaica'),
+       'HND' : ('central-america', 'honduras'),
+       'NIC' : ('central-america', 'nicaragua'), 
+       'SLV' : ('central-america', 'el-salvador'), 
+       'CRI' : ('central-america', 'costa-rica'),                                                      
        'AUT' : ('europe', 'austria'),                                                        
        'BLR' : ('europe', 'belarus'),                                                        
        'BEL' : ('europe', 'belgium'),                                                        
@@ -505,7 +508,7 @@ def retrieve_cis(osm_path, feature):
         gdf = pd.concat([gdf, _retrieve(osm_path,'points',['power','voltage'])
                          ]) #**{'voltage':[" IS NULL"]} # no further constraints
     
-    return gpd.GeoDataFrame(gdf)
+    return gpd.GeoDataFrame(gdf).reset_index(drop=True)
 # =============================================================================
 # Download customized data from API (overpass-api)
 # =============================================================================
