@@ -22,6 +22,7 @@ import geopandas as gpd
 import logging
 from osgeo import ogr, gdal
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import shapely
 import subprocess
@@ -29,6 +30,7 @@ from tqdm import tqdm
 import urllib.request
 
 from climada import CONFIG
+from climada.util import coordinates as u_coords
 
 gdal.SetConfigOption("OSM_CONFIG_FILE", str(Path(__file__).resolve().parent.joinpath('osmconf.ini')))
 
@@ -53,7 +55,7 @@ DICT_GEOFABRIK = {
        'BFA' : ('africa', 'burkina-faso'),       
        'BDI' : ('africa', 'burundi'),
        'CMR' : ('africa', 'cameroon'),
-       'BEN' : ('africa', 'canary-islands'),
+       'IC' : ('africa', 'canary-islands'),
        'CPV' : ('africa', 'cape-verde'),
        'CAF' : ('africa', 'central-african-republic'),
        'TCD' : ('africa', 'chad'),
@@ -135,7 +137,7 @@ DICT_GEOFABRIK = {
        'PRK' : ('asia', 'north-korea'),       
        'PAK' : ('asia', 'pakistan'),
        'PHL' : ('asia', 'philippines'),                
-       'RUS' : ('asia', 'russia'),
+       'RUS-A' : ('asia', 'russia'),
        'KOR' : ('asia', 'south-korea'),
        'LKA' : ('asia', 'sri-lanka'),
        'SYR' : ('asia', 'syria'),  
@@ -193,7 +195,7 @@ DICT_GEOFABRIK = {
        'POL' : ('europe', 'poland'),           
        'PRT' : ('europe', 'portugal'),           
        'ROU' : ('europe', 'romania'),           
-       'RUS' : ('europe', 'russia'),           
+       'RUS-E' : ('europe', 'russia'),           
        'SRB' : ('europe', 'serbia'),           
        'SVK' : ('europe', 'slovakia'),           
        'SVN' : ('europe', 'slovenia'),           
@@ -261,8 +263,9 @@ OSM_CONSTRAINT_DICT = {
                           "='reservoir_covered'"],
             'landuse' : ["='reservoir'"]},
         'telecom' : {
-            'tower_type' : ["='communication'"],
+            'tower:type' : ["='communication'"],         
             'man_made' : ["='communication tower' or ",
+                          "='tower' or ",
                           "='antenna'"]},
         'road' :  {
             'highway' : ["='primary' or ",
@@ -296,6 +299,7 @@ OSM_CONSTRAINT_DICT = {
 # Download entire regional map data from extracts (geofabrik only)
 # =============================================================================
 
+# TODO: make class osm_rawdata()
 
 def _create_download_url(iso3, file_format):
     """create string with download-api from geofabrik
@@ -317,8 +321,10 @@ def get_data_geofab(iso3, file_format='pbf', save_path=DATA_DIR):
     
     iso3 : str
         ISO3 code of country to download
+        Exceptions: Russia is divided into European and Asian part ('RUS-E', 'RUS-A'),
+        Canary Islands are 'IC'
     file_format : str
-        shp or pbf. Default is 'pbf'
+        'shp' or 'pbf'. Default is 'pbf'.
     """
     download_url = _create_download_url(iso3, file_format)
     local_filepath = save_path + '/' + download_url.split('/')[-1]
@@ -333,6 +339,7 @@ def get_data_geofab(iso3, file_format='pbf', save_path=DATA_DIR):
 # Download entire Planet from OSM and extract customized areas
 # =============================================================================
 
+# 
 def get_osm_planet(save_path=DATA_DIR):
     """
     This function will download the planet file from the OSM servers. 
@@ -357,8 +364,7 @@ def osmosis_extract(planet_fp, dest_fp, shape):
         
     Note
     ----
-    See for example https://github.com/ElcoK/osm_clipper for obtaining poly 
-    files of any country / region / sub-region according to GADM36 classifications
+    The function make_poly_file creates .poly files for a desired country / region.
     """
     if not Path(planet_fp).is_file():
         LOGGER.info("planet.osm file wasn't found. Downloading it.")
@@ -382,10 +388,104 @@ def osmosis_extract(planet_fp, dest_fp, shape):
         LOGGER.info("Extracted file already exists!")
         return None
 
-# =============================================================================
-# Query specific data within osm.pbf extracts
+def make_poly_file(data_path, global_shape, regionalized=False):
+    """
+    Taken from https://github.com/ElcoK/osm_clipper:
+    
+    Create .poly files for all countries from a world shapefile. These
+    .poly files are used to extract data from the openstreetmap osm.pbf files.
+    This function is adapted from the OSMPoly function in QGIS.
+    
+    Parameters
+    ----------
+    data_path : 
+        folder for poly files
+        
+    global_shape*: 
+        exact path to the global shapefile used to create the poly files.
+        Can be downloaded in .gpkg format from https://biogeo.ucdavis.edu/data/gadm3.6/gadm36_levels_gpkg.zip
+        Contains also admin-x (sub-country) shapes.
+        
+    regionalized  : Default is **False**. Set to **True** will perform the analysis 
+        on a regional level.
+    
+    Returns
+    -------
+    .poly file
+        for each country in a new dir in the working directory.
+    """     
+
+    # Load country shapes and country list and only keep the required countries
+    wb_poly = gpd.read_file(global_shape, crs={'init' :'epsg:4326'})
+    
+    # filter polygon file
+    if regionalized == True:
+        wb_poly = wb_poly.loc[wb_poly['GID_0'] != '-']
+    else:
+        wb_poly = wb_poly.loc[wb_poly['GID_0'] != '-']
+
+    num = 0
+    # iterate over the counties (rows) in the world shapefile
+    for f in wb_poly.iterrows():
+        f = f[1]
+        num = num + 1
+        geom=f.geometry
+
+        # this will create a list of the different subpolygons
+        if geom.geom_type == 'MultiPolygon':
+            polygons = geom
+        
+        # the list will be lenght 1 if it is just one polygon
+        elif geom.geom_type == 'Polygon':
+            polygons = [geom]
+
+        # define the name of the output file, based on the ISO3 code
+        ctry = f['GID_0']
+        if regionalized == True:
+            attr=f['GID_1']
+        else:
+            attr=f['GID_0']
+        
+        # start writing the .poly file
+        f = open(data_path + "/" + attr +'.poly', 'w')
+        f.write(attr + "\n")
+
+        i = 0
+        
+        # loop over the different polygons, get their exterior and write the 
+        # coordinates of the ring to the .poly file
+        for polygon in polygons:
+
+            if ctry == 'CAN':
+                dist =  u_coords.dist_approx(*reversed(polygon.centroid.coords[:1][0]), 83.24,-79.80)
+                if dist < 2000:
+                    continue
+            if ctry == 'RUS':
+                dist =  u_coords.dist_approx(*reversed(polygon.centroid.coords[:1][0]), 82.26,58.89)
+                if dist < 500:
+                    continue
+                
+            polygon = np.array(polygon.exterior)
+
+            j = 0
+            f.write(str(i) + "\n")
+
+            for ring in polygon:
+                j = j + 1
+                f.write("    " + str(ring[0]) + "     " + str(ring[1]) +"\n")
+
+            i = i + 1
+            # close the ring of one subpolygon if done
+            f.write("END" +"\n")
+
+        # close the file when done
+        f.write("END" +"\n")
+        f.close()
 # =============================================================================
 
+# =============================================================================
+# Querying and conversion to gdf
+# =============================================================================
 
 def query_b(geoType,keyCol,**valConstraint):
     """
@@ -434,7 +534,7 @@ def _retrieve(osm_path,geoType,keyCol,**valConstraint):
         A key can have multiple values (as a list) for more than one constraint for key/value.
     Returns
     -------
-        *GeoDataFrame* : a geopandas GeoDataFrame with all columns, geometries, and constraints specified.
+        *GeoDataFrame* : a gpd GeoDataFrame with all columns, geometries, and constraints specified.
     """
     driver=ogr.GetDriverByName('OSM')
     data = driver.Open(osm_path)
@@ -442,7 +542,6 @@ def _retrieve(osm_path,geoType,keyCol,**valConstraint):
     sql_lyr = data.ExecuteSQL(query)
     features =[]
     # cl = columns
-    # TODO: move column list to a dict according to constraints
     cl = ['osm_id']
     for a in keyCol: cl.append(a)
     if data is not None:
@@ -450,8 +549,6 @@ def _retrieve(osm_path,geoType,keyCol,**valConstraint):
         for feature in tqdm(sql_lyr,desc='extract'):
             try:
                 if feature.GetField(keyCol[0]) is not None:
-                    # TODO: think about removing pygeos dependency here
-                    #geom = from_wkb(feature.geometry().ExportToWkb())
                     geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
                     if geom is None:
                         continue
