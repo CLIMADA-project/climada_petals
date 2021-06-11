@@ -33,6 +33,7 @@ from climada import CONFIG
 from climada.util import coordinates as u_coords
 
 gdal.SetConfigOption("OSM_CONFIG_FILE", str(Path(__file__).resolve().parent.joinpath('osmconf.ini')))
+gdal.SetConfigOption("OSM_CONFIG_FILE", '/Users/evelynm/climada_python/climada/entity/exposures/openstreetmap/osmconf.ini')
 
 # =============================================================================
 # Define constants
@@ -263,10 +264,7 @@ OSM_CONSTRAINT_DICT = {
                           "='reservoir_covered'"],
             'landuse' : ["='reservoir'"]},
         'telecom' : {
-            'tower:type' : ["='communication'"],         
-            'man_made' : ["='communication tower' or ",
-                          "='tower' or ",
-                          "='antenna'"]},
+            'tower_type' : ["='communication'"]},
         'road' :  {
             'highway' : ["='primary' or ",
                          "='trunk' or ",
@@ -291,9 +289,11 @@ OSM_CONSTRAINT_DICT = {
          'power' : {},
          }
         # TODO: issue with colon
-        # original in osm query lang -> tower:type. Only works with topwer_type but no results.
+        # original in osm query lang -> tower:type. Only works with tower_type but no results.
         #     'man_made' : ["='tower'"]}
         # ['tower_type','man_made'],**{"tower_type":[" IS NOT NULL"]
+        # also tried:
+        # 'tower\\:type'
         
 # =============================================================================
 # Download entire regional map data from extracts (geofabrik only)
