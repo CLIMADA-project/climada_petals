@@ -21,8 +21,6 @@ Define functions to download openstreetmap data
 import geopandas as gpd
 import logging
 from osgeo import ogr, gdal
-import pandas as pd
-import numpy as np
 from pathlib import Path
 import shapely
 import subprocess
@@ -30,20 +28,15 @@ from tqdm import tqdm
 import urllib.request
 
 from climada import CONFIG
-from climada.util import coordinates as u_coords
 
 LOGGER = logging.getLogger(__name__)
-gdal.SetConfigOption("OSM_CONFIG_FILE", str(Path(__file__).resolve().parent.joinpath('osmconf.ini')))
-#gdal.SetConfigOption("OSM_CONFIG_FILE", '/Users/evelynm/climada_python/climada/entity/exposures/openstreetmap/osmconf.ini')
+gdal.SetConfigOption("OSM_CONFIG_FILE",
+                     str(Path(__file__).resolve().parent.joinpath('osmconf.ini'))) #"/Users/evelynm/climada_python/climada/entity/exposures/openstreetmap/osmconf.ini"
 
 # =============================================================================
 # Define constants
 # =============================================================================
 DATA_DIR = CONFIG.exposures.openstreetmap.local_data.dir()
-
-LOGGER = logging.getLogger(__name__)
-
-URL_GEOFABRIK = 'https://download.geofabrik.de/'
 
 # from osm_clipper (GitHub: https://github.com/ElcoK/osm_clipper)
 DICT_GEOFABRIK = {
@@ -320,7 +313,7 @@ OSM_CONSTRAINT_DICT = {
                                power='plant' or
                                power='generator' or power='substation' or 
                                power='transformer' or 
-                               power='pole' or power='portal' or 
+                               power='pole' or power='portal' or power='tower' or
                                power='terminal' or power='switch' or 
                                power='catenary_mast' or
                                utility='power'"""},  
@@ -340,309 +333,247 @@ OSM_CONSTRAINT_DICT = {
                               shop='grocery' or shop='general' or shop='bakery'"""},
          }
         
-        
-# =============================================================================
-# Download entire regional map data from extracts (geofabrik only)
-# =============================================================================
 
-# TODO: make class osm_rawdata()
-
-def _create_download_url(iso3, file_format):
-    """create string with download-api from geofabrik
-    iso3 : str
-        ISO3 code of country to download
-    file_format : str
-        shp or pbf. Default is 'pbf'
-    """
+class OSMRaw:
+    """functions to obtain entire raw datasets from OSM, from differnt sources"""
     
-    if file_format == 'shp':
-        return f'{URL_GEOFABRIK}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest-free.shp.zip'
-    elif file_format == 'pbf':
-        return f'{URL_GEOFABRIK}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest.osm.pbf'
-    else:
-        LOGGER.error('invalid file format. Please choose one of [shp, pbf]')
-
-def get_data_geofab(iso3, file_format='pbf', save_path=DATA_DIR):
-    """
-    iso3 : str
-        ISO3 code of country to download
-        Exceptions: Russia is divided into European and Asian part ('RUS-E', 'RUS-A'),
-        Canary Islands are 'IC'
-    file_format : str
-        'shp' or 'pbf'. Default is 'pbf'.
-    """
-    download_url = _create_download_url(iso3, file_format)
-    local_filepath = save_path + '/' + download_url.split('/')[-1]
-    if not Path(local_filepath).is_file():
-        LOGGER.info(f'Downloading file as {local_filepath}')
-        urllib.request.urlretrieve(download_url, local_filepath)
-    else:
-        LOGGER.info(f'file already exists as {local_filepath}')
-
-
-# =============================================================================
-# Download entire Planet from OSM and extract customized areas
-# =============================================================================
-
-
-def get_osm_planet(save_path=DATA_DIR):
-    """
-    This function will download the planet file from the OSM servers. 
-    """
-    download_url = 'https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf'
-    local_filepath = save_path + '/planet-latest.osm.pbf'
-
-    if not Path(local_filepath).is_file():
-        LOGGER.info(f'Downloading file as {local_filepath}')
-        urllib.request.urlretrieve(download_url, local_filepath)
-    else:
-        LOGGER.info(f'file already exists as {local_filepath}')
-
-def osmosis_extract(planet_fp, dest_fp, shape):
-    """
-    planet_fp : str
-        file path to planet.osm.pbf
-    dest_fp : str
-        file path to extracted_place.osm.pbf
-    shape : list or str
-        bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
+    def __init__(self):
+        self.geofabrik_url = 'https://download.geofabrik.de/'
+        self.planet_url = 'https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf'
         
-    Note
-    ----
-    The function make_poly_file creates .poly files for a desired country / region.
-    """
-    if not Path(planet_fp).is_file():
-        LOGGER.info("planet.osm file wasn't found. Downloading it.")
-        get_osm_planet()
-
-    if not Path(dest_fp).is_file():
-        print('file doesnt exist yet')
-        if (isinstance(shape, list) or isinstance(shape, tuple)):
-            print('Cutting from bounding box')
-            cmd = ['osmosis', '--read-pbf', 'file='+planet_fp, '--bounding-box',
-                   f'top={shape[3]}', f'left={shape[0]}', f'bottom={shape[1]}',
-                   f'right={shape[2]}', '--write-pbf', 'file='+dest_fp]
-        elif isinstance(shape, str):
-            print('Cutting from poly file')
-            cmd = ['osmosis', '--read-pbf', 'file='+planet_fp, '--bounding-polygon',
-                   'file='+shape, '--write-pbf', 'file='+dest_fp]
-        print('Generating extract from planet file.')
-        LOGGER.info('Generating extract from planet file.')
-        return subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
-    else:
-        LOGGER.info("Extracted file already exists!")
-        return None
-
-def make_poly_file(data_path, global_shape, regionalized=False):
-    """
-    Taken from https://github.com/ElcoK/osm_clipper:
-    
-    Create .poly files for all countries from a world shapefile. These
-    .poly files are used to extract data from the openstreetmap osm.pbf files.
-    This function is adapted from the OSMPoly function in QGIS.
-    
-    Parameters
-    ----------
-    data_path : 
-        folder for poly files
+    def _create_gf_download_url(self, iso3, file_format):
+        """create string with download-api from geofabrik
+        iso3 : str
+            ISO3 code of country to download
+        file_format : str
+            shp or pbf. Default is 'pbf'
+        """
         
-    global_shape*: 
-        exact path to the global shapefile used to create the poly files.
-        Can be downloaded in .gpkg format from https://biogeo.ucdavis.edu/data/gadm3.6/gadm36_levels_gpkg.zip
-        Contains also admin-x (sub-country) shapes.
-        
-    regionalized  : Default is **False**. Set to **True** will perform the analysis 
-        on a regional level.
-    
-    Returns
-    -------
-    .poly file
-        for each country in a new dir in the working directory.
-    """     
-
-    # Load country shapes and country list and only keep the required countries
-    wb_poly = gpd.read_file(global_shape, crs={'init' :'epsg:4326'})
-    
-    # filter polygon file
-    if regionalized == True:
-        wb_poly = wb_poly.loc[wb_poly['GID_0'] != '-']
-    else:
-        wb_poly = wb_poly.loc[wb_poly['GID_0'] != '-']
-
-    num = 0
-    # iterate over the counties (rows) in the world shapefile
-    for f in wb_poly.iterrows():
-        f = f[1]
-        num = num + 1
-        geom=f.geometry
-
-        # this will create a list of the different subpolygons
-        if geom.geom_type == 'MultiPolygon':
-            polygons = geom
-        
-        # the list will be lenght 1 if it is just one polygon
-        elif geom.geom_type == 'Polygon':
-            polygons = [geom]
-
-        # define the name of the output file, based on the ISO3 code
-        ctry = f['GID_0']
-        if regionalized == True:
-            attr=f['GID_1']
+        if file_format == 'shp':
+            return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest-free.shp.zip'
+        elif file_format == 'pbf':
+            return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest.osm.pbf'
         else:
-            attr=f['GID_0']
-        
-        # start writing the .poly file
-        f = open(data_path + "/" + attr +'.poly', 'w')
-        f.write(attr + "\n")
-
-        i = 0
-        
-        # loop over the different polygons, get their exterior and write the 
-        # coordinates of the ring to the .poly file
-        for polygon in polygons:
-
-            if ctry == 'CAN':
-                dist =  u_coords.dist_approx(*reversed(polygon.centroid.coords[:1][0]), 83.24,-79.80)
-                if dist < 2000:
-                    continue
-            if ctry == 'RUS':
-                dist =  u_coords.dist_approx(*reversed(polygon.centroid.coords[:1][0]), 82.26,58.89)
-                if dist < 500:
-                    continue
-                
-            polygon = np.array(polygon.exterior)
-
-            j = 0
-            f.write(str(i) + "\n")
-
-            for ring in polygon:
-                j = j + 1
-                f.write("    " + str(ring[0]) + "     " + str(ring[1]) +"\n")
-
-            i = i + 1
-            # close the ring of one subpolygon if done
-            f.write("END" +"\n")
-
-        # close the file when done
-        f.write("END" +"\n")
-        f.close()
-
-# =============================================================================
-# Querying and conversion to gdf
-# =============================================================================
-
-
-def query_builder(geo_type, constraint_dict):
-    """
-    from BenDickens/trails repo (https://github.com/BenDickens/trails.git, see
-                                 extract.py)
-    This function builds an SQL query from the values passed to the retrieve()
-    function.
+            LOGGER.error('invalid file format. Please choose one of [shp, pbf]')
     
-    Parameters
-    ---------
-    geo_type : str
-        Type of geometry to retrieve. One of [points, lines, multipolygons]
-    constraint_dict :  dict
+    def get_data_geofabrik(self, iso3, file_format='pbf', save_path=DATA_DIR):
+        """
+        iso3 : str
+            ISO3 code of country to download
+            Exceptions: Russia is divided into European and Asian part ('RUS-E', 'RUS-A'),
+            Canary Islands are 'IC'
+        file_format : str
+            'shp' or 'pbf'. Default is 'pbf'.
+        """
+        download_url = self._create_gf_download_url(iso3, file_format)
+        local_filepath = save_path + '/' + download_url.split('/')[-1]
+        if not Path(local_filepath).is_file():
+            LOGGER.info(f'Downloading file as {local_filepath}')
+            urllib.request.urlretrieve(download_url, local_filepath)
+        else:
+            LOGGER.info(f'file already exists as {local_filepath}')
     
-    Returns
-    -------
-    query : str
-        an SQL query string.
-    """
-    # columns which to report in output
-    query =  "SELECT osm_id" 
-    for key in constraint_dict['osm_keys']: 
-        query+= ","+ key 
-    # filter condition(s)
-    query+= " FROM " + geo_type + " WHERE " + constraint_dict['osm_query']
-
-    return query
-
-def _retrieve(osm_path, geo_type, constraint_dict):
-    """
-    adapted from BenDickens/trails repo 
-    (https://github.com/BenDickens/trails.git, see extract.py)
-    Function to extract specified geometry and keys/values from an 
-    OpenStreetMap osm.pbf file.
+    def _get_osm_planet(self, save_path=DATA_DIR):
+        """
+        This function will download the planet file from the OSM servers. 
+        """
+        local_filepath = save_path + '/planet-latest.osm.pbf'
     
-    Parameters
-    ----------
-    osm_path : str
-        file path to the .osm.pbf file to extract info from.
-    geo_type : str
-        Type of geometry to retrieve. One of [points, lines, multipolygons]
-    constraint_dict :  dict 
+        if not Path(local_filepath).is_file():
+            LOGGER.info(f'Downloading file as {local_filepath}')
+            urllib.request.urlretrieve(self.planet_url, local_filepath)
+        else:
+            LOGGER.info(f'file already exists as {local_filepath}')
+    
+    def _osmosis_extract(self, shape, planet_fp, dest_fp=DATA_DIR):
+        """
+        planet_fp : str
+            file path to planet.osm.pbf
+        dest_fp : str
+            file path to extracted_place.osm.pbf
+        shape : list or str
+            bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
+        """
         
-    Returns
-    -------
-    GeoDataFrame : a gpd GeoDataFrame 
-        with all columns, geometries, and constraints specified.
-    """
-    driver = ogr.GetDriverByName('OSM')
-    data = driver.Open(osm_path)
-    query = query_builder(geo_type, constraint_dict)
-    sql_lyr = data.ExecuteSQL(query)
-    features = []
-    if data is not None:
-        LOGGER.info('query is finished, lets start the loop')
-        for feature in tqdm(sql_lyr, desc=f'extract {geo_type}'):
-            try:
-                fields = []
-                for key in ['osm_id', *constraint_dict['osm_keys']]: 
-                    fields.append(feature.GetField(key))
-                geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
-                if geom is None:
-                    continue
-                fields.append(geom)
-                features.append(fields)
-            except:
-                LOGGER.warning("skipped OSM feature")
-    else:
-        LOGGER.error("Nonetype error when requesting SQL. Check required.")
-        
-    return gpd.GeoDataFrame(
-        features, columns=['osm_id', *constraint_dict['osm_keys'], 'geometry'])
-
-def retrieve_cis(osm_path, feature):
-    """
+        if not Path(dest_fp).is_file():
+            print('file doesnt exist yet')
+            if (isinstance(shape, list) or isinstance(shape, tuple)):
+                print('Cutting from bounding box')
+                cmd = ['osmosis', '--read-pbf', 'file='+planet_fp, '--bounding-box',
+                       f'top={shape[3]}', f'left={shape[0]}', f'bottom={shape[1]}',
+                       f'right={shape[2]}', '--write-pbf', 'file='+dest_fp]
+            elif isinstance(shape, str):
+                print('Cutting from poly file')
+                cmd = ['osmosis', '--read-pbf', 'file='+planet_fp, '--bounding-polygon',
+                       'file='+shape, '--write-pbf', 'file='+dest_fp]
+            print('Generating extract from planet file.')
+            LOGGER.info('Generating extract from planet file.')
+            return subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
+        else:
+            LOGGER.info("Extracted file already exists!")
+            return None
     
-    Parameters
-    ----------
-    feature : str
-        healthcare or education or telecom or water or food or oil or road or
-        rail or power or wastewater or gas
-    """
-    # features consisting in points and multipolygon results:
-    if feature in ['healthcare','education','food']:
-        gdf = _retrieve(osm_path, 'points', OSM_CONSTRAINT_DICT[feature])
-        gdf = gdf.append(
-            _retrieve(osm_path, 'multipolygons', OSM_CONSTRAINT_DICT[feature]))
-    # features consisting in multipolygon results:
-    if feature in ['air']:
-        gdf = _retrieve(osm_path, 'multipolygons', OSM_CONSTRAINT_DICT[feature])
+    def get_data_planetextract(self, shape, 
+                               path_planet=DATA_DIR, path_extract=DATA_DIR):
+        """
+        get OSM raw data from a custom shape / bounding-box, which is extracted
+        from the entire OSM planet file. Accepts bbox lists or .poly files for
+        non-rectangular shapes.
         
-    # features consisting in points, multipolygons and lines:
-    elif feature in ['gas','oil','telecom','water,','wastewater','power',
-                     'rail','road']:
-        gdf = _retrieve(osm_path, 'points', OSM_CONSTRAINT_DICT[feature])
-        gdf = gdf.append(
-            _retrieve(osm_path, 'multipolygons', OSM_CONSTRAINT_DICT[feature]))
-        gdf = gdf.append(
-            _retrieve(osm_path, 'lines', OSM_CONSTRAINT_DICT[feature]))
-    else:
-        LOGGER.warning('feature not in OSM_CONSTRAINT_DICT')
+        Note
+        ----
+        For more info on what .poly files are (incl. several tools for 
+        creating them), see https://wiki.openstreetmap.org/wiki/Osmosis/Polygon_Filter_File_Format
+        
+        For creating .poly files on admin0 to admin3 levels of any place on the
+        globe, see the GitHub repo https://github.com/ElcoK/osm_clipper 
+        (especially the function make_poly_file())
+        """
+
+        if not Path(path_planet+'/planet-latest.osm.pbf').is_file():
+            LOGGER.info("planet-latest.osm.pbf wasn't found. Downloading it.")
+            self._get_osm_planet(path_planet)
+            
+        self._osmosis_extract(shape, path_planet, path_extract)
+        
+
+class OSMFileQuery:
+    """
+    Query features from raw OSM files.
+    """
+    def __init__(self, osm_path):
+        """
+        Parameters
+        ----------
+        osm_path : str
+            file path to the .osm.pbf file to extract info from.
+        """
+        self.osm_path = osm_path
     
-    return gdf
+    def _query_builder(self, geo_type, constraint_dict):
+        """
+        from BenDickens/trails repo (https://github.com/BenDickens/trails.git, see
+                                     extract.py)
+        This function builds an SQL query from the values passed to the retrieve()
+        function.
+        
+        Parameters
+        ---------
+        geo_type : str
+            Type of geometry to retrieve. One of [points, lines, multipolygons]
+        constraint_dict :  dict
+        
+        Returns
+        -------
+        query : str
+            an SQL query string.
+        """
+        # columns which to report in output
+        query =  "SELECT osm_id" 
+        for key in constraint_dict['osm_keys']: 
+            query+= ","+ key 
+        # filter condition(s)
+        query+= " FROM " + geo_type + " WHERE " + constraint_dict['osm_query']
+    
+        return query
+    
+    def retrieve(self, geo_type, constraint_dict):
+        """
+        adapted from BenDickens/trails repo 
+        (https://github.com/BenDickens/trails.git, see extract.py)
+        Function to extract specified geometry and keys/values from an 
+        OpenStreetMap osm.pbf file.
+        
+        Parameters
+        ----------
+        geo_type : str
+            Type of geometry to retrieve. One of [points, lines, multipolygons]
+        constraint_dict :  dict 
+            A dict with the keys "osm_keys" and "osm_query". osm_keys contains
+            a list with all the osm keys that should be reported in the output
+            gdf. osm_query contains an osm query string of the syntax 
+            "key(='value') (and/or further queries)". 
+            See examples in OSM_CONSTRAINT_DICT in case of doubt.
+            
+        Returns
+        -------
+        GeoDataFrame : a gpd GeoDataFrame 
+            with all reqiested osm_keys as columns, incl. geometries of the
+            queried features.
+            
+        See also
+        --------
+        https://taginfo.openstreetmap.org/ to check what keys and key/value
+        pairs are valid.
+        https://overpass-turbo.eu/ for a direct visual output of the query,
+        and to quickly check the validity. The wizard can help you find the 
+        correct keys / values you are looking for.
+        """
+        driver = ogr.GetDriverByName('OSM')
+        data = driver.Open(self.osm_path)
+        query = self._query_builder(geo_type, constraint_dict)
+        sql_lyr = data.ExecuteSQL(query)
+        features = []
+        if data is not None:
+            LOGGER.info('query is finished, lets start the loop')
+            for feature in tqdm(sql_lyr, desc=f'extract {geo_type}'):
+                try:
+                    fields = []
+                    for key in ['osm_id', *constraint_dict['osm_keys']]: 
+                        fields.append(feature.GetField(key))
+                    geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
+                    if geom is None:
+                        continue
+                    fields.append(geom)
+                    features.append(fields)
+                except:
+                    LOGGER.warning("skipped OSM feature")
+        else:
+            LOGGER.error("Nonetype error when requesting SQL. Check required.")
+            
+        return gpd.GeoDataFrame(
+            features, columns=['osm_id', *constraint_dict['osm_keys'], 'geometry'])
+    
+    def retrieve_cis(self, ci_type):
+        """
+        
+        Parameters
+        ----------
+        ci_type : str
+            healthcare or education or telecom or water or food or oil or road or
+            rail or power or wastewater or gas
+        """
+        # features consisting in points and multipolygon results:
+        if ci_type in ['healthcare','education','food']:
+            gdf = self.retrieve('points', OSM_CONSTRAINT_DICT[ci_type])
+            gdf = gdf.append(
+                self.retrieve('multipolygons', OSM_CONSTRAINT_DICT[ci_type]))
+        # features consisting in multipolygon results:
+        elif ci_type in ['air']:
+            gdf = self.retrieve('multipolygons', OSM_CONSTRAINT_DICT[ci_type])
+            
+        # features consisting in points, multipolygons and lines:
+        elif ci_type in ['gas','oil','telecom','water','wastewater','power',
+                         'rail','road']:
+            gdf = self.retrieve('points', OSM_CONSTRAINT_DICT[ci_type])
+            gdf = gdf.append(
+                self.retrieve('multipolygons', OSM_CONSTRAINT_DICT[ci_type]))
+            gdf = gdf.append(
+                self.retrieve('lines', OSM_CONSTRAINT_DICT[ci_type]))
+        else:
+            LOGGER.warning('feature not in OSM_CONSTRAINT_DICT. Returning empty gdf')
+            gdf = gpd.GeoDataFrame()
+        return gdf
 
-# =============================================================================
-# Download customized data from API (overpass-api)
-# =============================================================================
+class OSMApiQuery:
+    """
+    Query features directly via the overpass turbo API.
+    """
 
-def _query_overpass():
-    # TODO: Implement
-    pass
-
-def get_data_overpass():
-    # TODO: Implement
-    pass
+    def _query_overpass(self):
+        # TODO: Implement
+        pass
+    
+    def get_data_overpass(self):
+        # TODO: Implement
+        pass
