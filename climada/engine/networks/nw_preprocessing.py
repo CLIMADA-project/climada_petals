@@ -164,6 +164,8 @@ class NetworkPreprocess():
 
 
 class NetworkPreprocessTrails():
+    """ Those are relying on functionalities within the trails repo
+    (https://github.com/BenDickens/trails) """
     def __init__(self, gdf_edges=None, gdf_nodes=None):
         if gdf_edges is not None:
             edges = gdf_edges.copy()

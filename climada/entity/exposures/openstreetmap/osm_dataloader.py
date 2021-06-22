@@ -32,8 +32,9 @@ import urllib.request
 from climada import CONFIG
 from climada.util import coordinates as u_coords
 
+LOGGER = logging.getLogger(__name__)
 gdal.SetConfigOption("OSM_CONFIG_FILE", str(Path(__file__).resolve().parent.joinpath('osmconf.ini')))
-gdal.SetConfigOption("OSM_CONFIG_FILE", '/Users/evelynm/climada_python/climada/entity/exposures/openstreetmap/osmconf.ini')
+#gdal.SetConfigOption("OSM_CONFIG_FILE", '/Users/evelynm/climada_python/climada/entity/exposures/openstreetmap/osmconf.ini')
 
 # =============================================================================
 # Define constants
@@ -46,254 +47,299 @@ URL_GEOFABRIK = 'https://download.geofabrik.de/'
 
 # from osm_clipper (GitHub: https://github.com/ElcoK/osm_clipper)
 DICT_GEOFABRIK = {
-       'AFG' : ('asia','afghanistan'),
-       'ALB' : ('europe','albania'),
-       'DZA' : ('africa','algeria'),
-       'AND' : ('europe','andorra'),
-       'AGO' : ('africa','angola'),
-       'BEN' : ('africa', 'benin'),
-       'BWA' : ('africa', 'botswana'),
-       'BFA' : ('africa', 'burkina-faso'),       
-       'BDI' : ('africa', 'burundi'),
-       'CMR' : ('africa', 'cameroon'),
-       'IC' : ('africa', 'canary-islands'),
-       'CPV' : ('africa', 'cape-verde'),
-       'CAF' : ('africa', 'central-african-republic'),
-       'TCD' : ('africa', 'chad'),
-       'COM' : ('africa', 'comores'),
-       'COG' : ('africa', 'congo-brazzaville'),
-       'COD' : ('africa', 'congo-democratic-republic'),
-       'DJI' : ('africa', 'djibouti'),      
-       'EGY' : ('africa', 'egypt'),
-       'GNQ' : ('africa', 'equatorial-guinea'),
-       'ERI' : ('africa', 'eritrea'),
-       'ETH' : ('africa', 'ethiopia'),
-       'GAB' : ('africa', 'gabon'),
-       'GMB' : ('africa', 'senegal-and-gambia'), #TOGETHER WITH SENEGAL
-       'GHA' : ('africa', 'ghana'),
-       'GIN' : ('africa', 'guinea'),
-       'GNB' : ('africa', 'guinea-bissau'),
-       'CIV' : ('africa', 'ivory-coast'),               
-       'KEN' : ('africa', 'kenya'),      
-       'LSO' : ('africa', 'lesotho'),
-       'LBR' : ('africa', 'liberia'),
-       'LBY' : ('africa', 'libya'),
-       'MDG' : ('africa', 'madagascar'),
-       'MWI' : ('africa', 'malawi'),
-       'MLI' : ('africa', 'mali'),
-       'MRT' : ('africa', 'mauritania'),
-       'MAR' : ('africa', 'morocco'),
-       'MOZ' : ('africa', 'mozambique'),     
-       'NAM' : ('africa', 'namibia'),               
-       'NER' : ('africa', 'niger'),      
-       'NGA' : ('africa', 'nigeria'),
-       'RWA' : ('africa', 'rwanda'),
-       'SHN' : ('africa', 'saint-helena-ascension-and-tristan-da-cunha'),
-       'STP' : ('africa', 'sao-tome-and-principe'),
-       'SEN' : ('africa', 'senegal-and-gambia'), #TOGETHER WITH THE GAMBIA
-       'SYC' : ('africa', 'seychelles'),
-       'SLE' : ('africa', 'sierra-leone'),
-       'SOM' : ('africa', 'somalia'),
-       'ZAF' : ('africa', 'south-africa'),         
-       'SDN' : ('africa', 'sudan'),    
-       'SSD' : ('africa', 'south-sudan'),     
-       'SWZ' : ('africa', 'swaziland'),               
-       'TZA' : ('africa', 'tanzania'),      
-       'TGO' : ('africa', 'togo'),
-       'TUN' : ('africa', 'tunisia'),
-       'UGA' : ('africa', 'uganda'),
-       'ZMB' : ('africa', 'zambia'),
-       'ZWE' : ('africa', 'zimbabwe'),
-       'ARM' : ('asia', 'armenia'),
-       'AZE' : ('asia', 'azerbaijan'),
-       'BGD' : ('asia', 'bangladesh'),
-       'BTN' : ('asia', 'bhutan'),                
-       'KHM' : ('asia', 'cambodia'),
-       'CHN' : ('asia', 'china'),
-       'SAU' : ('asia', 'gcc-states'), #Together with Kuwait, the United Arab Emirates, Qatar, Bahrain, and Oman
-       'KWT' : ('asia', 'gcc-states'), #Together with Saudi Arabia, the United Arab Emirates, Qatar, Bahrain, and Oman
-       'ARE' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, Qatar, Bahrain, and Oman
-       'QAT' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Bahrain, and Oman
-       'OMN' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Oman
-       'BHR' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Bahrain
-       'IND' : ('asia', 'india'),     
-       'IDN' : ('asia', 'indonesia'),
-       'IRN' : ('asia', 'iran'),
-       'IRQ' : ('asia', 'iraq'),
-       'ISR' : ('asia', 'israel-and-palestine'),       # TOGETHER WITH PALESTINE
-       'PSE' : ('asia', 'israel-and-palestine'),       # TOGETHER WITH ISRAEL
-       'JPN' : ('asia', 'japan'),
-       'JOR' : ('asia', 'jordan'),
-       'KAZ' : ('asia', 'kazakhstan'),
-       'KGZ' : ('asia', 'kyrgyzstan'),             
-       'LAO' : ('asia', 'laos'),
-       'LBN' : ('asia', 'lebanon'),
-       'MYS' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH SINGAPORE AND BRUNEI
-       'SGP' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH MALAYSIA AND BRUNEI
-       'BRN' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH MALAYSIA AND SINGAPORE
-       'MDV' : ('asia', 'maldives'),                
-       'MNG' : ('asia', 'mongolia'),
-       'MMR' : ('asia', 'myanmar'),
-       'NPL' : ('asia', 'nepal'),
-       'PRK' : ('asia', 'north-korea'),       
-       'PAK' : ('asia', 'pakistan'),
-       'PHL' : ('asia', 'philippines'),                
-       'RUS-A' : ('asia', 'russia'),
-       'KOR' : ('asia', 'south-korea'),
-       'LKA' : ('asia', 'sri-lanka'),
-       'SYR' : ('asia', 'syria'),  
-       'TWN' : ('asia', 'taiwan'),
-       'TJK' : ('asia', 'tajikistan'),       
-       'THA' : ('asia', 'thailand'),
-       'TKM' : ('asia', 'turkmenistan'),                
-       'UZB' : ('asia', 'uzbekistan'),
-       'VNM' : ('asia', 'vietnam'),
-       'YEM' : ('asia', 'yemen'),
-       'BHS' : ('central-america', 'bahamas'),   
-       'BLZ' : ('central-america', 'belize'),                                                        
-       'CUB' : ('central-america', 'cuba'),                                                        
-       'GTM' : ('central-america', 'guatemala'),                                                        
-       'HTI' : ('central-america', 'haiti-and-domrep'),  # TOGETHER WITH DOMINICAN REPUBLIC   
-       'DOM' : ('central-america', 'haiti-and-domrep'),  # TOGETHER WITH HAITI                    
-       'JAM' : ('central-america', 'jamaica'),
-       'HND' : ('central-america', 'honduras'),
-       'NIC' : ('central-america', 'nicaragua'), 
-       'SLV' : ('central-america', 'el-salvador'), 
-       'CRI' : ('central-america', 'costa-rica'),                                                      
-       'AUT' : ('europe', 'austria'),                                                        
-       'BLR' : ('europe', 'belarus'),                                                        
-       'BEL' : ('europe', 'belgium'),                                                        
-       'BIH' : ('europe', 'bosnia-herzegovina'),                                                        
-       'BGR' : ('europe', 'bulgaria'),                                                        
-       'HRV' : ('europe', 'croatia'),                                                        
-       'CYP' : ('europe', 'cyprus'),                                                        
-       'CZE' : ('europe', 'czech-republic'),                                                        
-       'DNK' : ('europe', 'denmark'),                                                        
-       'EST' : ('europe', 'estonia'),                                                        
-       'FRO' : ('europe', 'faroe-islands'),                                                        
-       'FIN' : ('europe', 'finland'),                                                        
-       'FRA' : ('europe', 'france'),                                                        
-       'GEO' : ('europe', 'georgia'),                                                        
-       'DEU' : ('europe', 'germany'),                                                        
-       'GBR' : ('europe', 'great-britain'),        # DOES NOT INCLUDE NORTHERN ISLAND                                                
-       'GRC' : ('europe', 'greece'),                                                        
-       'HUN' : ('europe', 'hungary'),                                                        
-       'ISL' : ('europe', 'iceland'),                                                        
-       'IRL' : ('europe', 'ireland-and-northern-ireland'),                                                        
-       'IMN' : ('europe', 'isle-of-man'),                                                        
-       'ITA' : ('europe', 'italy'),                                                        
-       'LVA' : ('europe', 'latvia'),                                                        
-       'LIE' : ('europe', 'liechtenstein'),    
-       'LTU' : ('europe', 'lithuania'),                                                        
-       'LUX' : ('europe', 'luxembourg'),                                                        
-       'MKD' : ('europe', 'macedonia'),    
-       'MLT' : ('europe', 'malta'),                                                        
-       'MDA' : ('europe', 'moldova'),                                                        
-       'MCO' : ('europe', 'monaco'),           
-       'MNE' : ('europe', 'montenegro'),           
-       'NLD' : ('europe', 'netherlands'),           
-       'NOR' : ('europe', 'norway'),           
-       'POL' : ('europe', 'poland'),           
-       'PRT' : ('europe', 'portugal'),           
-       'ROU' : ('europe', 'romania'),           
-       'RUS-E' : ('europe', 'russia'),           
-       'SRB' : ('europe', 'serbia'),           
-       'SVK' : ('europe', 'slovakia'),           
-       'SVN' : ('europe', 'slovenia'),           
-       'ESP' : ('europe', 'spain'),           
-       'SWE' : ('europe', 'sweden'),           
-       'CHE' : ('europe', 'switzerland'),           
-       'TUR' : ('europe', 'turkey'),           
-       'UKR' : ('europe', 'ukraine'),           
-       'CAN' : ('north-america', 'canada'),           
-       'GRL' : ('north-america', 'greenland'),           
-       'MEX' : ('north-america', 'mexico'),           
-       'USA' : ('north-america', 'us'),           
-       'AUS' : ('australia-oceania', 'australia'),           
-       'COK' : ('australia-oceania', 'cook-islands'),           
-       'FJI' : ('australia-oceania', 'fiji'),           
-       'KIR' : ('australia-oceania', 'kiribati'),           
-       'MHL' : ('australia-oceania', 'marshall-islands'),           
-       'FSM' : ('australia-oceania', 'micronesia'),           
-       'NRU' : ('australia-oceania', 'nauru'),           
-       'NCL' : ('australia-oceania', 'new-caledonia'),           
-       'NZL' : ('australia-oceania', 'new-zealand'),           
-       'NIU' : ('australia-oceania', 'niue'),           
-       'PLW' : ('australia-oceania', 'palau'),           
-       'PNG' : ('australia-oceania', 'papua-new-guinea'),           
-       'WSM' : ('australia-oceania', 'samoa'),           
-       'SLB' : ('australia-oceania', 'solomon-islands'),           
-       'TON' : ('australia-oceania', 'tonga'),           
-       'TUV' : ('australia-oceania', 'tuvalu'),           
-       'VUT' : ('australia-oceania', 'vanuatu'),           
-       'ARG' : ('south-america', 'argentina'),           
-       'BOL' : ('south-america', 'bolivia'),           
-       'BRA' : ('south-america', 'brazil'),           
-       'CHL' : ('south-america', 'chile'),           
-       'COL' : ('south-america', 'colombia'),           
-       'ECU' : ('south-america', 'ecuador'),           
-       'PRY' : ('south-america', 'paraguay'),           
-       'PER' : ('south-america', 'peru'),
-       'SUR' : ('south-america', 'suriname'),           
-       'URY' : ('south-america', 'uruguay'),           
-       'VEN' : ('south-america', 'venezuela'),           
-    }
+   'AFG' : ('asia','afghanistan'),
+   'ALB' : ('europe','albania'),
+   'DZA' : ('africa','algeria'),
+   'AND' : ('europe','andorra'),
+   'AGO' : ('africa','angola'),
+   'BEN' : ('africa', 'benin'),
+   'BWA' : ('africa', 'botswana'),
+   'BFA' : ('africa', 'burkina-faso'),       
+   'BDI' : ('africa', 'burundi'),
+   'CMR' : ('africa', 'cameroon'),
+   'IC' : ('africa', 'canary-islands'),
+   'CPV' : ('africa', 'cape-verde'),
+   'CAF' : ('africa', 'central-african-republic'),
+   'TCD' : ('africa', 'chad'),
+   'COM' : ('africa', 'comores'),
+   'COG' : ('africa', 'congo-brazzaville'),
+   'COD' : ('africa', 'congo-democratic-republic'),
+   'DJI' : ('africa', 'djibouti'),      
+   'EGY' : ('africa', 'egypt'),
+   'GNQ' : ('africa', 'equatorial-guinea'),
+   'ERI' : ('africa', 'eritrea'),
+   'ETH' : ('africa', 'ethiopia'),
+   'GAB' : ('africa', 'gabon'),
+   'GMB' : ('africa', 'senegal-and-gambia'), #TOGETHER WITH SENEGAL
+   'GHA' : ('africa', 'ghana'),
+   'GIN' : ('africa', 'guinea'),
+   'GNB' : ('africa', 'guinea-bissau'),
+   'CIV' : ('africa', 'ivory-coast'),               
+   'KEN' : ('africa', 'kenya'),      
+   'LSO' : ('africa', 'lesotho'),
+   'LBR' : ('africa', 'liberia'),
+   'LBY' : ('africa', 'libya'),
+   'MDG' : ('africa', 'madagascar'),
+   'MWI' : ('africa', 'malawi'),
+   'MLI' : ('africa', 'mali'),
+   'MRT' : ('africa', 'mauritania'),
+   'MAR' : ('africa', 'morocco'),
+   'MOZ' : ('africa', 'mozambique'),     
+   'NAM' : ('africa', 'namibia'),               
+   'NER' : ('africa', 'niger'),      
+   'NGA' : ('africa', 'nigeria'),
+   'RWA' : ('africa', 'rwanda'),
+   'SHN' : ('africa', 'saint-helena-ascension-and-tristan-da-cunha'),
+   'STP' : ('africa', 'sao-tome-and-principe'),
+   'SEN' : ('africa', 'senegal-and-gambia'), #TOGETHER WITH THE GAMBIA
+   'SYC' : ('africa', 'seychelles'),
+   'SLE' : ('africa', 'sierra-leone'),
+   'SOM' : ('africa', 'somalia'),
+   'ZAF' : ('africa', 'south-africa'),         
+   'SDN' : ('africa', 'sudan'),    
+   'SSD' : ('africa', 'south-sudan'),     
+   'SWZ' : ('africa', 'swaziland'),               
+   'TZA' : ('africa', 'tanzania'),      
+   'TGO' : ('africa', 'togo'),
+   'TUN' : ('africa', 'tunisia'),
+   'UGA' : ('africa', 'uganda'),
+   'ZMB' : ('africa', 'zambia'),
+   'ZWE' : ('africa', 'zimbabwe'),
+   'ARM' : ('asia', 'armenia'),
+   'AZE' : ('asia', 'azerbaijan'),
+   'BGD' : ('asia', 'bangladesh'),
+   'BTN' : ('asia', 'bhutan'),                
+   'KHM' : ('asia', 'cambodia'),
+   'CHN' : ('asia', 'china'),
+   'SAU' : ('asia', 'gcc-states'), #Together with Kuwait, the United Arab Emirates, Qatar, Bahrain, and Oman
+   'KWT' : ('asia', 'gcc-states'), #Together with Saudi Arabia, the United Arab Emirates, Qatar, Bahrain, and Oman
+   'ARE' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, Qatar, Bahrain, and Oman
+   'QAT' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Bahrain, and Oman
+   'OMN' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Oman
+   'BHR' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Bahrain
+   'IND' : ('asia', 'india'),     
+   'IDN' : ('asia', 'indonesia'),
+   'IRN' : ('asia', 'iran'),
+   'IRQ' : ('asia', 'iraq'),
+   'ISR' : ('asia', 'israel-and-palestine'),       # TOGETHER WITH PALESTINE
+   'PSE' : ('asia', 'israel-and-palestine'),       # TOGETHER WITH ISRAEL
+   'JPN' : ('asia', 'japan'),
+   'JOR' : ('asia', 'jordan'),
+   'KAZ' : ('asia', 'kazakhstan'),
+   'KGZ' : ('asia', 'kyrgyzstan'),             
+   'LAO' : ('asia', 'laos'),
+   'LBN' : ('asia', 'lebanon'),
+   'MYS' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH SINGAPORE AND BRUNEI
+   'SGP' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH MALAYSIA AND BRUNEI
+   'BRN' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH MALAYSIA AND SINGAPORE
+   'MDV' : ('asia', 'maldives'),                
+   'MNG' : ('asia', 'mongolia'),
+   'MMR' : ('asia', 'myanmar'),
+   'NPL' : ('asia', 'nepal'),
+   'PRK' : ('asia', 'north-korea'),       
+   'PAK' : ('asia', 'pakistan'),
+   'PHL' : ('asia', 'philippines'),                
+   'RUS-A' : ('asia', 'russia'), # Asian part of Russia
+   'KOR' : ('asia', 'south-korea'),
+   'LKA' : ('asia', 'sri-lanka'),
+   'SYR' : ('asia', 'syria'),  
+   'TWN' : ('asia', 'taiwan'),
+   'TJK' : ('asia', 'tajikistan'),       
+   'THA' : ('asia', 'thailand'),
+   'TKM' : ('asia', 'turkmenistan'),                
+   'UZB' : ('asia', 'uzbekistan'),
+   'VNM' : ('asia', 'vietnam'),
+   'YEM' : ('asia', 'yemen'),
+   'BHS' : ('central-america', 'bahamas'),   
+   'BLZ' : ('central-america', 'belize'),                                                        
+   'CUB' : ('central-america', 'cuba'),                                                        
+   'GTM' : ('central-america', 'guatemala'),                                                        
+   'HTI' : ('central-america', 'haiti-and-domrep'),  # TOGETHER WITH DOMINICAN REPUBLIC   
+   'DOM' : ('central-america', 'haiti-and-domrep'),  # TOGETHER WITH HAITI                    
+   'JAM' : ('central-america', 'jamaica'),
+   'HND' : ('central-america', 'honduras'),
+   'NIC' : ('central-america', 'nicaragua'), 
+   'SLV' : ('central-america', 'el-salvador'), 
+   'CRI' : ('central-america', 'costa-rica'),                                                      
+   'AUT' : ('europe', 'austria'),                                                        
+   'BLR' : ('europe', 'belarus'),                                                        
+   'BEL' : ('europe', 'belgium'),                                                        
+   'BIH' : ('europe', 'bosnia-herzegovina'),                                                        
+   'BGR' : ('europe', 'bulgaria'),                                                        
+   'HRV' : ('europe', 'croatia'),                                                        
+   'CYP' : ('europe', 'cyprus'),                                                        
+   'CZE' : ('europe', 'czech-republic'),                                                        
+   'DNK' : ('europe', 'denmark'),                                                        
+   'EST' : ('europe', 'estonia'),                                                        
+   'FRO' : ('europe', 'faroe-islands'),                                                        
+   'FIN' : ('europe', 'finland'),                                                        
+   'FRA' : ('europe', 'france'),                                                        
+   'GEO' : ('europe', 'georgia'),                                                        
+   'DEU' : ('europe', 'germany'),                                                        
+   'GBR' : ('europe', 'great-britain'),        # DOES NOT INCLUDE NORTHERN ISLAND                                                
+   'GRC' : ('europe', 'greece'),                                                        
+   'HUN' : ('europe', 'hungary'),                                                        
+   'ISL' : ('europe', 'iceland'),                                                        
+   'IRL' : ('europe', 'ireland-and-northern-ireland'),                                                        
+   'IMN' : ('europe', 'isle-of-man'),                                                        
+   'ITA' : ('europe', 'italy'),                                                        
+   'LVA' : ('europe', 'latvia'),                                                        
+   'LIE' : ('europe', 'liechtenstein'),    
+   'LTU' : ('europe', 'lithuania'),                                                        
+   'LUX' : ('europe', 'luxembourg'),                                                        
+   'MKD' : ('europe', 'macedonia'),    
+   'MLT' : ('europe', 'malta'),                                                        
+   'MDA' : ('europe', 'moldova'),                                                        
+   'MCO' : ('europe', 'monaco'),           
+   'MNE' : ('europe', 'montenegro'),           
+   'NLD' : ('europe', 'netherlands'),           
+   'NOR' : ('europe', 'norway'),           
+   'POL' : ('europe', 'poland'),           
+   'PRT' : ('europe', 'portugal'),           
+   'ROU' : ('europe', 'romania'),           
+   'RUS-E' : ('europe', 'russia'), # European part of Russia
+   'SRB' : ('europe', 'serbia'),           
+   'SVK' : ('europe', 'slovakia'),           
+   'SVN' : ('europe', 'slovenia'),           
+   'ESP' : ('europe', 'spain'),           
+   'SWE' : ('europe', 'sweden'),           
+   'CHE' : ('europe', 'switzerland'),           
+   'TUR' : ('europe', 'turkey'),           
+   'UKR' : ('europe', 'ukraine'),           
+   'CAN' : ('north-america', 'canada'),           
+   'GRL' : ('north-america', 'greenland'),           
+   'MEX' : ('north-america', 'mexico'),           
+   'USA' : ('north-america', 'us'),           
+   'AUS' : ('australia-oceania', 'australia'),           
+   'COK' : ('australia-oceania', 'cook-islands'),           
+   'FJI' : ('australia-oceania', 'fiji'),           
+   'KIR' : ('australia-oceania', 'kiribati'),           
+   'MHL' : ('australia-oceania', 'marshall-islands'),           
+   'FSM' : ('australia-oceania', 'micronesia'),           
+   'NRU' : ('australia-oceania', 'nauru'),           
+   'NCL' : ('australia-oceania', 'new-caledonia'),           
+   'NZL' : ('australia-oceania', 'new-zealand'),           
+   'NIU' : ('australia-oceania', 'niue'),           
+   'PLW' : ('australia-oceania', 'palau'),           
+   'PNG' : ('australia-oceania', 'papua-new-guinea'),           
+   'WSM' : ('australia-oceania', 'samoa'),           
+   'SLB' : ('australia-oceania', 'solomon-islands'),           
+   'TON' : ('australia-oceania', 'tonga'),           
+   'TUV' : ('australia-oceania', 'tuvalu'),           
+   'VUT' : ('australia-oceania', 'vanuatu'),           
+   'ARG' : ('south-america', 'argentina'),           
+   'BOL' : ('south-america', 'bolivia'),           
+   'BRA' : ('south-america', 'brazil'),           
+   'CHL' : ('south-america', 'chile'),           
+   'COL' : ('south-america', 'colombia'),           
+   'ECU' : ('south-america', 'ecuador'),           
+   'PRY' : ('south-america', 'paraguay'),           
+   'PER' : ('south-america', 'peru'),
+   'SUR' : ('south-america', 'suriname'),           
+   'URY' : ('south-america', 'uruguay'),           
+   'VEN' : ('south-america', 'venezuela'),           
+}
 
 OSM_CONSTRAINT_DICT = {
         'education' : {
-            'amenity' : ["='school' or ",
-                         "='kindergarten' or ",
-                         "='college' or ",
-                         "='university' or ",
-                         "='childcare'"],
-            'building' : ["='school' or ",
-                          "='kindergarten' or ",
-                          "='college' or ",
-                          "='university' or ",
-                          "='childcare'"]},
+            'osm_keys' : ['amenity','building','name'],
+            'osm_query' : """building='school' or amenity='school' or 
+                             building='kindergarten' or amenity='kindergarten' or
+                             building='college' or amenity='college' or
+                             building='university' or amenity='university' or
+                             building='college' or amenity='college' or
+                             building='childcare' or amenity='childcare'"""},
         'healthcare' : {
-            'amenity' : ["='hospital' or ",
-                         "='doctors'"],
-            'building' : ["='hospital' or ",
-                          "='doctors'"]},
+            'osm_keys' : ['amenity','building','healthcare','name'],
+            'osm_query' : """amenity='hospital' or healthcare='hospital' or building='hospital' or
+                             amenity='clinic' or healthcare='clinic' or building='clinic' or
+                             amenity='doctors' or healthcare='doctors' or
+                             amenity='dentist' or healthcare='dentist' or
+                             amenity='pharmacy' or 
+                             amenity='nursing_home' or
+                             healthcare='*'"""},
         'water' : {
-            'man_made' : ["='water_works' or ",
-                          "='water_well' or ",
-                          "='water_tower' or ",
-                          "='wastewater_plant' or ",
-                          "='reservoir_covered'"],
-            'landuse' : ["='reservoir'"]},
+            'osm_keys' : ['man_made','pump','pipeline','emergency','name'],
+            'osm_query' : """man_made='water_well' or man_made='water_works' or
+                             man_made='water_tower' or 
+                             man_made='reservoir_covered' or landuse='reservoir' or
+                             (man_made='pipeline' and substance='water') or
+                             (pipeline='substation' and substance='water') or
+                             pump='powered' or pump='manual' or pump='yes' or
+                             emergency='fire_hydrant' or 
+                             (man_made='storage_tank' and content='water')"""},
         'telecom' : {
-            'tower_type' : ["='communication'"]},
+            'osm_keys' : ['man_made','tower_type','telecom','communication_mobile_phone','name'],
+            'osm_query' : """tower_type='communication' or man_made='mast' or 
+                             communication_mobile_phone='*' or telecom='antenna' or
+                             telecom='poles' or communication='pole' or
+                             telecom='central_office' or telecom='street_cabinet' or 
+                             telecom='exchange' or telecom='data_center' or
+                             telecom='distribution_point' or telecom='connection_point' or
+                             telecom='line' or communication='line' or
+                             utility='telecom'"""},# original in osm query lang.: tower:type -> Only works with tower_type
         'road' :  {
-            'highway' : ["='primary' or ",
-                         "='trunk' or ",
-                         "='motorway' or ",
-                         "='motorway_link' or ",
-                         "='trunk_link' or ",
-                         "='primary_link' or ",
-                         "='secondary' or ",
-                         "='secondary_link' or ",
-                         "='tertiary' or ",
-                         "='tertiary_link'"]},
+            'osm_keys' : ['highway','man_made','public_transport','bus','name'],
+            'osm_query' : """highway='motorway' or highway='motorway_link' or 
+                             highway='trunk' or highway='trunk_link' or 
+                             highway='primary' or highway='primary_link' or
+                             highway='secondary' or highway='secondary_link' or
+                             highway='tertiary' or highway='tertiary_link' or
+                             highway='residential' or highway='road' or
+                             highway='service' or highway='unclassified' or
+                             highway='traffic_signals' or
+                             (public_transport='*' and bus='yes') or
+                             man_made='bridge' or man_made='tunnel'"""},
         'rail' : {
-            'service' : [" IS NOT NULL"]},
+            'osm_keys' : ['railway','name'],
+            'osm_query' : """railway='rail' or railway='tram' or 
+                             railway='subway' or railway='narrow_gauge' or
+                             railway='light_rail' or
+                             railway='station' or railway='platform' or
+                             railway='stop' or railway='tram_stop' or
+                             railway='signal' or railway='switch'"""},
          'air' : {
-             'aeroway' : ["='aerodrome'"]},
-         'fuel' : {
-             'amenity' : ["='fuel'"]},
+             'osm_keys' : ['aeroway','name'],
+             'osm_query' : """aeroway='aerodrome'"""},       
+         'gas' : {
+             'osm_keys' : ['man_made','pipeline', 'utility','name'],
+             'osm_query' : """(man_made='pipeline' and substance='gas') or
+                              (pipeline='substation' and substance='gas') or
+                              (man_made='storage_tank' and content='gas') or
+                              utility='gas'"""},
+        'oil' : {
+             'osm_keys' : ['pipeline','man_made','amenity','name'],
+             'osm_query' : """(pipeline='substation' and substance='oil') or
+                              (man_made='pipeline' and substance='oil') or
+                              man_made='petroleum_well' or man_made='oil_refinery' or
+                              amenity='fuel'"""},
+
+        'power' : {
+              'osm_keys' : ['power','voltage','utility','name'],
+              'osm_query' : """power='line' or power='cable' or power='minor_line' or
+                               power='plant' or
+                               power='generator' or power='substation' or 
+                               power='transformer' or 
+                               power='pole' or power='portal' or 
+                               power='terminal' or power='switch' or 
+                               power='catenary_mast' or
+                               utility='power'"""},  
+        'wastewater' : {
+              'osm_keys' : ['reservoir_type','man_made','utility','natural','name'],
+              'osm_query' : """reservoir_type='sewage' or
+                               (man_made='storage_tank' and content='sewage') or
+                               (man_made='pipeline' and substance='sewage') or
+                               substance='waterwaste' or substance='wastewater' or
+                               (natural='water' and water='wastewater') or
+                               man_made='wastewater_plant' or
+                               man_made='wastewater_tank' or
+                               utility='sewerage'"""}, 
          'food' : {
-             'shop' : ["='supermarket' or ",
-                       "='greengrocer' or ",
-                       "='bakery'"]},
-         'power' : {},
+             'osm_keys' : ['shop','name'],
+             'osm_query' : """shop='supermarket' or shop='greengrocer' or 
+                              shop='grocery' or shop='general' or shop='bakery'"""},
          }
-        # TODO: issue with colon
-        # original in osm query lang -> tower:type. Only works with tower_type but no results.
-        #     'man_made' : ["='tower'"]}
-        # ['tower_type','man_made'],**{"tower_type":[" IS NOT NULL"]
-        # also tried:
-        # 'tower\\:type'
+        
         
 # =============================================================================
 # Download entire regional map data from extracts (geofabrik only)
@@ -318,7 +364,6 @@ def _create_download_url(iso3, file_format):
 
 def get_data_geofab(iso3, file_format='pbf', save_path=DATA_DIR):
     """
-    
     iso3 : str
         ISO3 code of country to download
         Exceptions: Russia is divided into European and Asian part ('RUS-E', 'RUS-A'),
@@ -339,7 +384,7 @@ def get_data_geofab(iso3, file_format='pbf', save_path=DATA_DIR):
 # Download entire Planet from OSM and extract customized areas
 # =============================================================================
 
-# 
+
 def get_osm_planet(save_path=DATA_DIR):
     """
     This function will download the planet file from the OSM servers. 
@@ -481,13 +526,13 @@ def make_poly_file(data_path, global_shape, regionalized=False):
         # close the file when done
         f.write("END" +"\n")
         f.close()
-# =============================================================================
 
 # =============================================================================
 # Querying and conversion to gdf
 # =============================================================================
 
-def query_b(geoType,keyCol,**valConstraint):
+
+def query_builder(geo_type, constraint_dict):
     """
     from BenDickens/trails repo (https://github.com/BenDickens/trails.git, see
                                  extract.py)
@@ -496,77 +541,68 @@ def query_b(geoType,keyCol,**valConstraint):
     
     Parameters
     ---------
-    *geoType* : Type of geometry (osm layer) to search for.
-    *keyCol* : A list of keys/columns that should be selected from the layer.
-    ***valConstraint* : A dictionary of constraints for the values. e.g.
-         WHERE 'value'>20 or 'value'='constraint'
+    geo_type : str
+        Type of geometry to retrieve. One of [points, lines, multipolygons]
+    constraint_dict :  dict
     
     Returns
     -------
-        *string: : a SQL query string.
+    query : str
+        an SQL query string.
     """
-    query = "SELECT " + "osm_id"
-    for a in keyCol: query+= ","+ a
-    query += " FROM " + geoType + " WHERE "
-    # If there are values in the dictionary, add constraint clauses
-    if valConstraint:
-        for a in [*valConstraint]:
-            # For each value of the key, add the constraint
-            for b in valConstraint[a]: query += a + b
-        query+= " AND "
-    # Always ensures the first key/col provided is not Null.
-    query+= ""+str(keyCol[0]) +" IS NOT NULL"
+    # columns which to report in output
+    query =  "SELECT osm_id" 
+    for key in constraint_dict['osm_keys']: 
+        query+= ","+ key 
+    # filter condition(s)
+    query+= " FROM " + geo_type + " WHERE " + constraint_dict['osm_query']
+
     return query
 
-
-def _retrieve(osm_path,geoType,keyCol,**valConstraint):
+def _retrieve(osm_path, geo_type, constraint_dict):
     """
-    from BenDickens/trails repo (https://github.com/BenDickens/trails.git, see
-                                 extract.py)
-    Function to extract specified geometry and keys/values from OpenStreetMap
+    adapted from BenDickens/trails repo 
+    (https://github.com/BenDickens/trails.git, see extract.py)
+    Function to extract specified geometry and keys/values from an 
+    OpenStreetMap osm.pbf file.
+    
     Parameters
     ----------
-        *osm_path* : file path to the .osm.pbf file of the region
-        for which we want to do the analysis.
-        *geoType* : Type of Geometry to retrieve. e.g. lines, multipolygons, etc.
-        *keyCol* : These keys will be returned as columns in the dataframe.
-        ***valConstraint: A dictionary specifiying the value constraints.
-        A key can have multiple values (as a list) for more than one constraint for key/value.
+    osm_path : str
+        file path to the .osm.pbf file to extract info from.
+    geo_type : str
+        Type of geometry to retrieve. One of [points, lines, multipolygons]
+    constraint_dict :  dict 
+        
     Returns
     -------
-        *GeoDataFrame* : a gpd GeoDataFrame with all columns, geometries, and constraints specified.
+    GeoDataFrame : a gpd GeoDataFrame 
+        with all columns, geometries, and constraints specified.
     """
-    driver=ogr.GetDriverByName('OSM')
+    driver = ogr.GetDriverByName('OSM')
     data = driver.Open(osm_path)
-    query = query_b(geoType,keyCol,**valConstraint)
+    query = query_builder(geo_type, constraint_dict)
     sql_lyr = data.ExecuteSQL(query)
-    features =[]
-    # cl = columns
-    cl = ['osm_id']
-    for a in keyCol: cl.append(a)
+    features = []
     if data is not None:
-        print('query is finished, lets start the loop')
-        for feature in tqdm(sql_lyr,desc='extract'):
+        LOGGER.info('query is finished, lets start the loop')
+        for feature in tqdm(sql_lyr, desc=f'extract {geo_type}'):
             try:
-                if feature.GetField(keyCol[0]) is not None:
-                    geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
-                    if geom is None:
-                        continue
-                    # field will become a row in the dataframe.
-                    field = []
-                    for i in cl: field.append(feature.GetField(i))
-                    field.append(geom)
-                    features.append(field)
+                fields = []
+                for key in ['osm_id', *constraint_dict['osm_keys']]: 
+                    fields.append(feature.GetField(key))
+                geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
+                if geom is None:
+                    continue
+                fields.append(geom)
+                features.append(fields)
             except:
-                print("WARNING: skipped OSM feature")
+                LOGGER.warning("skipped OSM feature")
     else:
-        print("ERROR: Nonetype error when requesting SQL. Check required.")
-    cl.append('geometry')
-    if len(features) > 0:
-        return gpd.GeoDataFrame(features,columns=cl)
-    else:
-        print("WARNING: No features or No Memory. returning empty GeoDataFrame")
-        return gpd.GeoDataFrame(columns=['osm_id','geometry'])
+        LOGGER.error("Nonetype error when requesting SQL. Check required.")
+        
+    return gpd.GeoDataFrame(
+        features, columns=['osm_id', *constraint_dict['osm_keys'], 'geometry'])
 
 def retrieve_cis(osm_path, feature):
     """
@@ -574,38 +610,31 @@ def retrieve_cis(osm_path, feature):
     Parameters
     ----------
     feature : str
-        healthcare or education or telecom or water or food or fuel or road or rail or power
+        healthcare or education or telecom or water or food or oil or road or
+        rail or power or wastewater or gas
     """
-    # TODO: implement sth smarter than pd.concat (sjoin from gpd) for duplicate points / multipolys
-    if ((feature == 'healthcare') or (feature == 'education') or 
-        (feature == 'telecom') or (feature == 'fuel') or (feature == 'food') or
-        (feature == 'water')):
-        # allow for several keys, and point or polygon
-        gdf = gpd.GeoDataFrame()
-        for key in OSM_CONSTRAINT_DICT[feature].keys():
-            gdf = pd.concat([gdf, _retrieve(osm_path, 'points',[key],
-                                              **{key : OSM_CONSTRAINT_DICT[feature][key]})]) 
-            gdf = pd.concat([gdf, _retrieve(osm_path, 'multipolygons',[key],
-                                              **{key : OSM_CONSTRAINT_DICT[feature][key]})]) #[key]
-    elif feature == 'air':
-        gdf = _retrieve(osm_path, 'multipolygons',['aeroway'],
-                        **OSM_CONSTRAINT_DICT[feature]) 
-
-    elif feature == 'rail':
-        gdf = gpd.GeoDataFrame(_retrieve(osm_path, 'lines',['railway', 'service'],
-                                          **OSM_CONSTRAINT_DICT[feature]))
-
-    elif feature == 'road':
-        gdf = gpd.GeoDataFrame(_retrieve(osm_path,'lines',
-                                      ['highway','oneway','lanes','maxspeed'],
-                                      **OSM_CONSTRAINT_DICT[feature]))
-
-    elif feature == 'power':
-        gdf = gpd.GeoDataFrame(_retrieve(osm_path,'lines',['power','voltage'],))
-        gdf = pd.concat([gdf, _retrieve(osm_path,'points',['power','voltage'])
-                         ]) #**{'voltage':[" IS NULL"]} # no further constraints
+    # features consisting in points and multipolygon results:
+    if feature in ['healthcare','education','food']:
+        gdf = _retrieve(osm_path, 'points', OSM_CONSTRAINT_DICT[feature])
+        gdf = gdf.append(
+            _retrieve(osm_path, 'multipolygons', OSM_CONSTRAINT_DICT[feature]))
+    # features consisting in multipolygon results:
+    if feature in ['air']:
+        gdf = _retrieve(osm_path, 'multipolygons', OSM_CONSTRAINT_DICT[feature])
+        
+    # features consisting in points, multipolygons and lines:
+    elif feature in ['gas','oil','telecom','water,','wastewater','power',
+                     'rail','road']:
+        gdf = _retrieve(osm_path, 'points', OSM_CONSTRAINT_DICT[feature])
+        gdf = gdf.append(
+            _retrieve(osm_path, 'multipolygons', OSM_CONSTRAINT_DICT[feature]))
+        gdf = gdf.append(
+            _retrieve(osm_path, 'lines', OSM_CONSTRAINT_DICT[feature]))
+    else:
+        LOGGER.warning('feature not in OSM_CONSTRAINT_DICT')
     
-    return gpd.GeoDataFrame(gdf).reset_index(drop=True)
+    return gdf
+
 # =============================================================================
 # Download customized data from API (overpass-api)
 # =============================================================================
