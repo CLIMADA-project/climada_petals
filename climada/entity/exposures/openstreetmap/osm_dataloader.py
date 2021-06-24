@@ -26,6 +26,10 @@ import shapely
 import subprocess
 from tqdm import tqdm
 import urllib.request
+import numpy as np
+import itertools
+import time
+import overpy
 
 from climada import CONFIG
 
@@ -570,10 +574,181 @@ class OSMApiQuery:
     Query features directly via the overpass turbo API.
     """
 
-    def _query_overpass(self):
-        # TODO: Implement
-        pass
+    def __init__(self, area, condition):
+        self.area = area
+        self.condition = condition
     
-    def get_data_overpass(self):
-        # TODO: Implement
-        pass
+    def _insistent_osm_api_query(self, query_clause, read_chunk_size=100000, end_of_patience=127):
+        """Runs a single Overpass API query through overpy.Overpass.query.
+        In case of failure it tries again after an ever increasing waiting period.
+        If the waiting period surpasses a given limit an exception is raised.
+    
+        Parameters:
+            query_clause (str): the query
+            read_chunk_size (int): paramter passed over to overpy.Overpass.query
+            end_of_patience (int): upper limit for the next waiting period to proceed.
+    
+        Returns:
+            result as returned by overpy.Overpass.query
+        """
+        api = overpy.Overpass(read_chunk_size=read_chunk_size)
+        waiting_period = 1
+        while True:
+            try:
+                return api.query(query_clause)
+            except overpy.exception.OverpassTooManyRequests:
+                if waiting_period < end_of_patience:
+                    print(' WARNING: too many Overpass API requests - try again in {} seconds'.format(
+                        waiting_period))
+                else:
+                    raise Exception("Overpass API is consistently unavailable")
+            except Exception as exc:
+                if waiting_period < end_of_patience:
+                    print(' WARNING: !!!!\n {}\n try again in {} seconds'.format(exc, waiting_period))
+                else:
+                    raise Exception("The Overpass API is consistently unavailable")
+            time.sleep(waiting_period)
+            waiting_period *= 2
+
+    def _overpass_query_string(self):
+        return f'[out:json][timeout:180];(nwr{self.condition}{self.area};(._;>;););out;'
+    
+    def _assemble_from_relations(self, result):
+
+        nodes_taken = []
+        ways_taken = []
+        data_geom = []
+        data_id = []
+        data_tags = []
+        
+        for relation in result.relations:
+            data_tags.append(relation.tags)
+            data_id.append(relation.id)
+            roles = []
+            relationways = []
+            
+            for way in relation.members:
+                relationways.append(way.ref)
+                roles.append(way.role)
+            
+            ways_taken.append(relationways)
+
+            nodes_taken_mp, gdf_polys = self._assemble_from_ways(
+                result, relationways, closed_lines_are_polys=True)
+            
+            nodes_taken.append(nodes_taken_mp)
+
+            gdf_polys['role'] = roles
+            
+            # separate relation into polygons and linestrings, then combine into 1 multipolygon         
+            inner_polys = gdf_polys.geometry[
+                (gdf_polys.geometry.type=='Polygon') & 
+                (gdf_polys.role=='inner')].values
+            outer_polys = gdf_polys.geometry[
+                (gdf_polys.geometry.type=='Polygon') & 
+                (gdf_polys.role=='outer')].values
+            lines = gdf_polys.geometry[
+                (gdf_polys.geometry.type=='LineString')].values
+            # mp from (outer polygons --> outer mo) - (inner polygons --> mp inner)
+            mp1 = shapely.geometry.MultiPolygon(outer_polys) - \
+                  shapely.geometry.MultiPolygon(inner_polys)
+            # mp from linestrings (lines --> multilines --> line --> polygon)               
+            p2 = shapely.geometry.Polygon(
+                shapely.ops.linemerge(shapely.geometry.MultiLineString(lines)))
+            
+            data_geom.append(shapely.ops.unary_union([mp1, p2]))
+        
+        gdf_rels = gpd.GeoDataFrame(
+            data=np.array([data_id,data_geom,data_tags]).T, 
+            columns=['osm_id','geometry','tags'])
+        
+        # list of lists into list:
+        nodes_taken = list(itertools.chain.from_iterable(nodes_taken))
+        ways_taken = list(itertools.chain.from_iterable(ways_taken))
+
+        return nodes_taken, ways_taken, gdf_rels
+
+    def _assemble_from_ways(self, result, ways_avail, closed_lines_are_polys):
+        
+        """assemble gdfs from ways, """
+        
+        nodes_taken = []
+        data_geom = []
+        data_id = []
+        data_tags = []
+        
+        for way in result.ways:
+            if way.id in ways_avail:
+                node_lat_lons = []
+                for node in way.nodes:
+                    nodes_taken.append(node.id)
+                    node_lat_lons.append((float(node.lat), float(node.lon)))
+                data_geom.append(shapely.geometry.LineString(node_lat_lons))
+                data_id.append(way.id) 
+                data_tags.append(way.tags)
+            
+            if closed_lines_are_polys:
+                data_geom = [shapely.geometry.Polygon(way) if way.is_closed 
+                             else way for way in data_geom]
+                
+        gdf_ways = gpd.GeoDataFrame(
+            data=np.array([data_id,data_geom,data_tags]).T, 
+            columns=['osm_id','geometry','tags'])
+        
+        return nodes_taken, gdf_ways
+    
+    def _assemble_from_nodes(self, result, nodes_avail):
+        
+        data_geom = []
+        data_id = []
+        data_tags = []
+        
+        for node in result.nodes:
+            if node.id in nodes_avail:
+                data_geom.append(shapely.geometry.Point(node.lat, node.lon))
+                data_id.append(node.id)
+                data_tags.append(node.tags)
+        
+        gdf_nodes = gpd.GeoDataFrame(
+            data=np.array([data_id,data_geom,data_tags]).T, 
+            columns=['osm_id','geometry','tags'])
+        
+        return gdf_nodes
+     
+    def _update_availability(self, full_set, to_remove):
+        return [item for item in full_set if item not in to_remove]
+        
+    def _assemble_results(self, result, closed_lines_are_polys=True):
+        
+        gdf_results = gdf_ways = gdf_nodes = gpd.GeoDataFrame(
+            columns=['osm_id','geometry','tags'])
+        nodes_avail = result.node_ids
+        ways_avail = result.way_ids
+        
+        if len(result.relations) > 0:
+            nodes_taken, ways_taken, gdf_rels = self._assemble_from_relations(result)
+            gdf_results = gdf_results.append(gdf_rels)
+            nodes_avail = self._update_availability(nodes_avail, nodes_taken)
+            ways_avail = self._update_availability(ways_avail, ways_taken)
+
+        if len(ways_avail) > 0:
+            nodes_taken, gdf_ways = self._assemble_from_ways(
+                result,  ways_avail, closed_lines_are_polys)
+            gdf_results = gdf_results.append(gdf_ways)
+            nodes_avail = self._update_availability(nodes_avail, nodes_taken)
+            
+        if len(nodes_avail) > 0:
+            gdf_nodes = self._assemble_from_nodes(result, nodes_avail)
+            gdf_results =  gdf_results.append(gdf_nodes)
+            
+        if len(result.nodes) == 0:
+            LOGGER.warning('empty result gdf returned.')
+                    
+        return gdf_results.reset_index(drop=True)
+
+    
+    def get_data_overpass(self, closed_lines_are_polys=True):
+       """wrapper for all helper funcs to get & assemble data"""
+       query_clause = self._overpass_query_string()
+       result = self._insistent_osm_api_query(query_clause)
+       return self._assemble_results(result, closed_lines_are_polys)
