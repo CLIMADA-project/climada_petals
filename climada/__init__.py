@@ -43,9 +43,9 @@ REPO_DATA = {
         SYSTEM_DIR.joinpath('GDP_TWN_IMF_WEO_data.csv'),
         SYSTEM_DIR.joinpath('FAOSTAT_data_country_codes.csv'),
         SYSTEM_DIR.joinpath('rcp_db.xls'),
-        SYSTEM_DIR.joinpath('tc_if_cal_v01_TDR1.0.csv'),
-        SYSTEM_DIR.joinpath('tc_if_cal_v01_EDR.csv'),
-        SYSTEM_DIR.joinpath('tc_if_cal_v01_RMSF.csv'),
+        SYSTEM_DIR.joinpath('tc_impf_cal_v01_TDR1.0.csv'),
+        SYSTEM_DIR.joinpath('tc_impf_cal_v01_EDR.csv'),
+        SYSTEM_DIR.joinpath('tc_impf_cal_v01_RMSF.csv'),
     ],
     'data/system/GSDP': [
         GSDP_DIR.joinpath(f'{cc}_GSDP.xls')
@@ -66,6 +66,8 @@ REPO_DATA = {
         DEMO_DIR.joinpath('demo_emdat_impact_data_2020.csv'),
         DEMO_DIR.joinpath('histsoc_landuse-15crops_annual_FR_DE_DEMO_2001_2005.nc'),
         DEMO_DIR.joinpath('hist_mean_mai-firr_1976-2005_DE_FR.hdf5'),
+        DEMO_DIR.joinpath('crop_production_demo_data_yields_CHE.nc4'),
+        DEMO_DIR.joinpath('crop_production_demo_data_cultivated_area_CHE.nc4'),
         DEMO_DIR.joinpath('FAOSTAT_data_producer_prices.csv'),
         DEMO_DIR.joinpath('FAOSTAT_data_production_quantity.csv'),
         DEMO_DIR.joinpath('lpjml_ipsl-cm5a-lr_ewembi_historical_2005soc_co2_yield-whe-noirr_annual_FR_DE_DEMO_1861_2005.nc'),
@@ -80,14 +82,14 @@ REPO_DATA = {
 }
 
 
-def setup_climada_data():
+def setup_climada_data(reload=False):
 
     for dirpath in [DEMO_DIR, SYSTEM_DIR, GSDP_DIR]:
         dirpath.mkdir(parents=True, exist_ok=True)
 
     for src_dir, path_list in REPO_DATA.items():
         for path in path_list:
-            if not path.exists():
+            if not path.exists() or reload:
                 src = Path(__file__).parent.parent.joinpath(src_dir, path.name)
                 copyfile(src, path)
 
