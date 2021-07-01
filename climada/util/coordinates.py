@@ -1209,11 +1209,19 @@ def assign_coordinates(coords, coords_to_assign, method="NN", distance="haversin
         Index into `coords_to_assign`. Note that the value `-1` is used to indicate that no
         matching coordinate has been found, even though `-1` is a valid index in NumPy!
     """
+
+    if not coords.any():
+        return np.array([])
+    elif not coords_to_assign.any():
+        return -np.ones(coords.shape[0]).astype(int)
     coords = coords.astype('float64')
     coords_to_assign = coords_to_assign.astype('float64')
     if np.array_equal(coords, coords_to_assign):
         assigned_idx = np.arange(coords.shape[0])
     else:
+        LOGGER.info("No exact centroid match found. Reprojecting coordinates "
+                    "to nearest neighbor closer than the threshold = %s",
+                    threshold)
         # pairs of floats can be sorted (lexicographically) in NumPy
         coords_view = coords.view(dtype='float64,float64').reshape(-1)
         coords_to_assign_view = coords_to_assign.view(dtype='float64,float64').reshape(-1)
@@ -1632,6 +1640,8 @@ def equal_crs(crs_one, crs_two):
     equal : bool
         Whether the two specified CRS are equal according tho rasterio.crs.CRS.from_user_input
     """
+    if crs_one is None:
+        return crs_two is None
     return rasterio.crs.CRS.from_user_input(crs_one) == rasterio.crs.CRS.from_user_input(crs_two)
 
 def _read_raster_reproject(src, src_crs, dst_meta, band=None, geometry=None, dst_crs=None,
@@ -2262,6 +2272,48 @@ def align_raster_data(source, src_crs, src_transform, dst_crs=None, dst_resoluti
     elif conserve is not None:
         raise ValueError(f"Invalid value for conserve: {conserve}")
     return destination, dst_transform
+
+def mask_raster_with_geometry(raster, transform, shapes, nodata=None, **kwargs):
+    """
+    Change values in `raster` that are outside of given `shapes` to `nodata`.
+    
+    This function is a wrapper for rasterio.mask.mask to allow for
+    in-memory processing. This is done by first writing data to memfile and then
+    reading from it before the function call to rasterio.mask.mask().
+    The MemoryFile will be discarded after exiting the with statement.
+
+    Parameters
+    ----------
+    raster : numpy.ndarray
+        raster to be masked with dim: [H, W].
+    transform : affine.Affine
+         the transform of the raster.
+    shapes : GeoJSON-like dict or an object that implements the Python geo
+        interface protocol (such as a Shapely Polygon)
+        Passed to rasterio.mask.mask
+    nodata : int or float, optional
+        Passed to rasterio.mask.mask:
+        Data points outside `shapes` are set to `nodata`.
+    **kwargs : Passed to rasterio.mask.mask, optional
+
+    Returns
+    -------
+    masked: numpy.ndarray or numpy.ma.MaskedArray
+        raster with dim: [H, W] and points outside shapes set to `nodata`
+    """
+    with rasterio.io.MemoryFile() as memfile:
+        with memfile.open(
+            driver='GTiff',
+            height=raster.shape[0],
+            width=raster.shape[1],
+            count=1,
+            dtype=raster.dtype,
+            transform=transform,
+        ) as dataset:
+            dataset.write(raster, 1)
+        with memfile.open() as dataset:
+            output, _ = rasterio.mask.mask(dataset, shapes, nodata=nodata, **kwargs)
+    return output.squeeze(0)
 
 def set_df_geometry_points(df_val, scheduler=None, crs=None):
     """Set given geometry to given dataframe using dask if scheduler.
