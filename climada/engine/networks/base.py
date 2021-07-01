@@ -68,7 +68,51 @@ class Network():
 
     def plot_geodata(self, *kwargs):
         pass
+    
+    def make_edge_geometry(self, vs_geom_from, vs_geom_to):
+        return shapely.geometry.LineString([vs_geom_from, vs_geom_to])
 
+    def _ckdnearest(self, vs_assign, gdf_base):
+        """
+        see https://gis.stackexchange.com/a/301935
+
+        Parameters
+        ----------
+        gdf_base : gpd.GeoDataFrame
+
+        gdf_assign : gpd.GeoDataFrame
+
+        Returns
+        ----------
+        gpd.GeoDataFrame
+        """
+        # TODO: this should be a util function
+        n_assign = np.array([(vs_assign.geometry.x, vs_assign.geometry.y)])
+        n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
+        btree = cKDTree(n_base)
+        __, idx = btree.query(n_assign, k=1)
+        return gdf_base.iloc[idx].index
+
+    def link_clusters(self):
+        """
+        select random vs from a cluster and match with closest vs from largest cluster
+        
+        """        
+        subgraph_list = self.graph.clusters().subgraphs()
+        gdf_vs_base = subgraph_list[0].get_vertex_dataframe()
+
+        for subgraph in subgraph_list[1:]:
+            vs_assign = subgraph.get_vertex_dataframe().iloc[0]
+
+            ix_match = self._ckdnearest(vs_assign, gdf_vs_base)
+
+            edge_geom = self.make_edge_geometry(vs_assign.geometry,
+                                                gdf_vs_base.loc[ix_match].geometry.values[0])
+
+            self.graph.add_edge(vs_assign.orig_id, gdf_vs_base.loc[ix_match].orig_id.values[0], 
+                                geometry = edge_geom, ci_type = vs_assign.ci_type,
+                                distance = 1)
+                            
 class MultiNetwork():
     def __init__(self, *networks):
         #self.__dict__.update(*networks)
@@ -105,11 +149,12 @@ class MultiNetwork():
         __, idx = btree.query(n_assign, k=1)
         return gdf_base.iloc[idx].index
 
-
+        
     def link_closest_vertices(self, ci_type_assign, ci_type_base):
         """
         match all vertices of graph_assign to closest vertices in graph_base.
         Updated in vertex attributes (vID of graph_base, geometry & distance)
+        
         """
         gdf_vs = self.graph.get_vertex_dataframe()
         gdf_vs_assign = gdf_vs[gdf_vs.ci_type == ci_type_assign]
