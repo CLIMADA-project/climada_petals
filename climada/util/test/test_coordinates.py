@@ -553,6 +553,20 @@ class TestFunc(unittest.TestCase):
                     coords, coords_to_assign, threshold=thresh)
                 np.testing.assert_array_equal(assigned_idx, result)
 
+        #test empty coords_to_assign
+        coords_to_assign = np.array([])
+        result = [-1, -1, -1, -1, -1, -1, -1]
+        assigned_idx = u_coord.assign_coordinates(
+                    coords, coords_to_assign, threshold=thresh)
+        np.testing.assert_array_equal(assigned_idx, result)
+
+        #test empty coords
+        coords = np.array([])
+        result = np.array([])
+        assigned_idx = u_coord.assign_coordinates(
+                    coords, coords_to_assign, threshold=thresh)
+        np.testing.assert_array_equal(assigned_idx, result)
+
     def test_country_to_iso(self):
         name_list = [
             '', 'United States', 'Argentina', 'Japan', 'Australia', 'Norway', 'Madagascar']
@@ -1272,6 +1286,21 @@ class TestRasterIO(unittest.TestCase):
         reference_array = np.array([[0.425, 1.7631578],
                                     [3.425, 4.763158 ]], dtype='float32')
         np.testing.assert_array_equal(reference_array, data_out)
+
+    def test_mask_raster_with_geometry(self):
+        """test function mask_raster_with_geometry"""
+        raster = np.ones((4, 3), dtype=np.float32)
+        transform = rasterio.transform.Affine(1, 0, 5, 0, -1, -10)
+        shapes = [shapely.geometry.box(6.1, -12.9, 6.9, -11.1)]
+        expected = np.array([
+                            [0, 0, 0],
+                            [0, 1, 0],
+                            [0, 1, 0],
+                            [0, 0, 0],
+                            ], dtype=np.float32)
+        np.testing.assert_array_equal(
+            u_coord.mask_raster_with_geometry(raster, transform, shapes), expected)
+
 
 # Execute Tests
 if __name__ == "__main__":
