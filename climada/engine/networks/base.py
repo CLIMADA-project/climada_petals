@@ -27,19 +27,28 @@ from scipy.spatial import cKDTree
 
 LOGGER = logging.getLogger(__name__)
 
-
 class Network():
     def __init__(self, gdf_edges=None, gdf_nodes=None):
         """
         gdf_nodes : id identifier needs to be first column of nodes
         gdf_edges : from_id and to_id need to be first two columns of edges
         """
+        self.edges = gdf_edges
+        self.nodes = gdf_nodes
 
-        self.graph = ig.Graph()
-        if gdf_edges is not None:
-            self.graph = self.graph_from_es(gdf_edges=gdf_edges, gdf_nodes=gdf_nodes)
-        elif gdf_nodes is not None:
-            self.graph = self.graph_from_vs(gdf_nodes)
+ 
+class GraphCalcs(Network):
+    def __init__(self, network):
+        """
+        gdf_nodes : id identifier needs to be first column of nodes
+        gdf_edges : from_id and to_id need to be first two columns of edges
+        """
+        
+        if network.edges is not None:
+            self.graph = self.graph_from_es(gdf_edges=network.edges, 
+                                            gdf_nodes=network.nodes)
+        else:
+            self.graph = self.graph_from_vs(gdf_nodes=network.nodes)
 
     @staticmethod
     def graph_from_es(gdf_edges, gdf_nodes=None, directed=False):
@@ -112,6 +121,8 @@ class Network():
             self.graph.add_edge(vs_assign.orig_id, gdf_vs_base.loc[ix_match].orig_id.values[0], 
                                 geometry = edge_geom, ci_type = vs_assign.ci_type,
                                 distance = 1)
+        return Network(gdf_edges=self.graph.get_edge_dataframe(), 
+                       gdf_nodes=self.graph.get_vertex_dataframe())
                             
 class MultiNetwork():
     def __init__(self, *networks):
