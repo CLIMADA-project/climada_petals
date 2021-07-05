@@ -89,8 +89,9 @@ class NetworkPreprocess():
         
         return edges, nodes
 
-    def simplify_network(self, edges=None, nodes=None):
-        # trails.simplify runs in pygeos, not shapely
+    def _simplify_network(self, edges=None, nodes=None):
+        
+        # trails.simplify runs in pygeos, not shapely. convert.
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
         if not nodes.empty:
@@ -108,16 +109,28 @@ class NetworkPreprocess():
             network = simplify.reset_ids(network)
             network = simplify.add_distances(network)
             network = simplify.merge_multilinestrings(network)
-
-        edges = network.edges.rename({'id': 'orig_id'}, axis=1)
-        nodes = network.nodes.rename({'id': 'orig_id'}, axis=1)
         
-        return edges, nodes
+        # convert back to shapely
+        return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
         
     def preprocess(self, gdf_edges=None, gdf_nodes=None):
         """
-        standard wrapper end-to-end
+        standard wrapper end-to-end. Takes edge and node dataframes,
+        simplifies them, adds topology (ids), adds CI attributes
+        and puts cols in correct
+        order for igraph to read them in as graph.
+        
+        Parameters
+        ----------
+        gdf_edges : gpd.GeoDataFrame
+        gdf_nodes : gpd.GeoDataFrame
+        
+        Returns
+        -------
+        edges : gpd.GeoDataFrame
+        nodes : gpd.GeoDataFrame
         """
+        
         edges = gpd.GeoDataFrame(columns=['osm_id', 'geometry'])
         nodes = gpd.GeoDataFrame(columns=['osm_id', 'geometry'])
         
@@ -126,21 +139,23 @@ class NetworkPreprocess():
         if isinstance(gdf_nodes, gpd.GeoDataFrame):
             nodes = gdf_nodes.copy()
             
-        edges, nodes = self.simplify_network(edges, nodes)
+        edges, nodes = self._simplify_network(edges, nodes)
+        edges = edges.rename({'id': 'orig_id'}, axis=1)
+        nodes = nodes.rename({'id': 'orig_id'}, axis=1)
         nodes['name_id'] = nodes.orig_id
         edges, nodes = self._add_ci_type(edges, nodes)
         edges = self._ecols_to_graphorder(edges)
         nodes = self._vcols_to_graphorder(nodes)
 
-        return self.pygeos_to_shapely(self, edges), self.pygeos_to_shapely(self, nodes)
+        return edges, nodes
 
 class RoadPreprocess(NetworkPreprocess):
     
     def __init__(self):
         self.ci_type = 'road'
     
-    def simplify_network(self, edges=None, nodes=None):
-        """ overrides standard simplify_network from parent class """
+    def _simplify_network(self, edges=None, nodes=None):
+        """ overrides _simplify_network() method from parent class """
 
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
@@ -161,19 +176,15 @@ class RoadPreprocess(NetworkPreprocess):
         network = simplify.add_distances(network)
         network = simplify.merge_multilinestrings(network)
 
-        edges = network.edges.rename({'id': 'orig_id'}, axis=1)
-        nodes = network.nodes.rename({'id': 'orig_id'}, axis=1)
-
-        return edges, nodes
-
+        return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
 
 class PowerlinePreprocess(NetworkPreprocess):
    
     def __init__(self):
         self.ci_type = 'power line'
     
-    def simplify_network(self, edges=None, nodes=None):
-        """ overrides standard simplify_network from parent class """
+    def _simplify_network(self, edges=None, nodes=None):
+        """ overrides _simplify_network() method from parent class """
 
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
@@ -192,10 +203,8 @@ class PowerlinePreprocess(NetworkPreprocess):
         network = simplify.reset_ids(network)
         network = simplify.add_distances(network)
 
-        edges = network.edges.rename({'id': 'orig_id'}, axis=1)
-        nodes = network.nodes.rename({'id': 'orig_id'}, axis=1)
+        return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
 
-        return edges, nodes
 
 # class NetworkPreprocess():
 #     """

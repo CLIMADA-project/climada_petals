@@ -649,10 +649,10 @@ class OSMApiQuery:
                 (gdf_polys.role=='outer')].values
             lines = gdf_polys.geometry[
                 (gdf_polys.geometry.type=='LineString')].values
-            # mp from (outer polygons --> outer mo) - (inner polygons --> mp inner)
+            # mp from (outer polygons --> outer mp) - (inner polygons --> mp inner)
             mp1 = shapely.geometry.MultiPolygon(outer_polys) - \
                   shapely.geometry.MultiPolygon(inner_polys)
-            # mp from linestrings (lines --> multilines --> line --> polygon)
+            # poly from linestrings (lines --> multilines --> line --> polygon)
             p2 = shapely.geometry.Polygon(
                 shapely.ops.linemerge(shapely.geometry.MultiLineString(lines)))
 
