@@ -15,7 +15,6 @@ You should have received a copy of the GNU Lesser General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 """
-import simplify
 import geopandas as gpd
 import pygeos
 import pandas as pd
@@ -26,6 +25,7 @@ import logging
 import sys
 
 sys.path.insert(1, '/Users/evelynm/trails/src/trails')
+import simplify
 
 LOGGER = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ class NetworkPreprocess():
             nodes = gdf_nodes.copy()
             
         edges, nodes = self._simplify_network(edges, nodes)
-        edges = edges.rename({'id': 'orig_id'}, axis=1)
+        edges = edges.rename({'id': 'orig_id', 'source':'data_source'}, axis=1)
         nodes = nodes.rename({'id': 'orig_id'}, axis=1)
         nodes['name_id'] = nodes.orig_id
         edges, nodes = self._add_ci_type(edges, nodes)
