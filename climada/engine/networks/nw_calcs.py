@@ -18,6 +18,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 import igraph as ig
 import logging
 import numpy as np
+import geopandas as gpd
 import pandas as pd
 import shapely
 from scipy.spatial import cKDTree
@@ -31,10 +32,18 @@ class GraphMaker:
     """
     create an igraph Graph from network components
     and define some shared methods for both child classes
+        
+    initializes a graph on-the-fly and performs reuqired ops
     """
     
-    def __init__(self):
-        self.graph = ig.Graph()
+    def __init__(self, network):
+        """
+        network : instance of networks.base.Network or .MultiNetwork"""
+        if network.edges is not None:
+            self.graph = self.graph_from_es(gdf_edges=network.edges, 
+                                            gdf_nodes=network.nodes)
+        else:
+            self.graph = self.graph_from_vs(gdf_nodes=network.nodes)
     
     @staticmethod
     def graph_from_es(gdf_edges, gdf_nodes=None, directed=False):
@@ -70,17 +79,18 @@ class GraphMaker:
 
         Parameters
         ----------
-        gdf_base : gpd.GeoDataFrame
+        vs_assign : gpd.GeoDataFrame or Point
 
-        gdf_assign : gpd.GeoDataFrame
+        gdf_base : gpd.GeoDataFrame
 
         Returns
         ----------
-        gpd.GeoDataFrame
+
         """
         # TODO: this should be a util function
         # TODO: this mixed input options (1 vertex vs gdf) is not nicely solved
-        if isinstance(vs_assign, pd.DataFrame):
+        if (isinstance(vs_assign, gpd.GeoDataFrame) 
+            or isinstance(vs_assign, pd.DataFrame)):
             n_assign = np.array(list(vs_assign.geometry.apply(lambda x: (x.x, x.y))))
         else:
             n_assign = np.array([(vs_assign.geometry.x, vs_assign.geometry.y)])
@@ -88,28 +98,7 @@ class GraphMaker:
         btree = cKDTree(n_base)
         __, idx = btree.query(n_assign, k=1)
         return gdf_base.iloc[idx].index
-    
-    # def _ckdnearest(self, gdf_assign, gdf_base):
-    #     """
-    #     see https://gis.stackexchange.com/a/301935
 
-    #     Parameters
-    #     ----------
-    #     gdf_base : gpd.GeoDataFrame
-
-    #     gdf_assign : gpd.GeoDataFrame
-
-    #     Returns
-    #     ----------
-    #     gpd.GeoDataFrame
-    #     """
-    #     # TODO: this should be a util function
-    #     n_assign = np.array(list(gdf_assign.geometry.apply(lambda x: (x.x, x.y))))
-    #     n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
-    #     btree = cKDTree(n_base)
-    #     #TODO: this is distance in whatever units geometry is!
-    #     __, idx = btree.query(n_assign, k=1)
-    #     return gdf_base.iloc[idx].index
 
     def make_edge_geometries(self, vs_geoms_from, vs_geoms_to):
         """
@@ -123,17 +112,6 @@ class GraphMaker:
 
 class GraphCalcs(GraphMaker):
     
-    def __init__(self, network):
-        """
-        network : instance of networks.base.Network
-        
-        initializes a graph on-the-fly and performs reuqired ops
-        """
-        if network.edges is not None:
-            self.graph = self.graph_from_es(gdf_edges=network.edges, 
-                                            gdf_nodes=network.nodes)
-        else:
-            self.graph = self.graph_from_vs(gdf_nodes=network.nodes)
 
     def _return_network(self):
         edges = self.graph.get_edge_dataframe().rename({'source':'from_id',
@@ -141,7 +119,7 @@ class GraphCalcs(GraphMaker):
                                                        axis=1).reset_index(drop=True)
         nodes = self.graph.get_vertex_dataframe().rename({'name':'name_id'},
                                                        axis=1).reset_index(drop=True)
-        return Network(gdf_edges=edges, gdf_nodes=nodes)
+        return Network(edges=edges, nodes=nodes)
     
     def link_clusters(self):
         """
@@ -169,24 +147,6 @@ class GraphCalcs(GraphMaker):
     
 class MultiGraphCalcs(GraphMaker):
     
-    def __init__(self, multinetwork):
-        """
-        multinetwork : instance of networks.base.MultiNetwork
-        
-        initializes a graph on-the-fly and performs reuqired ops
-        """
-
-        self.graph = ig.Graph()
-        
-        for ci_type in multinetwork.ci_type:
-            edges = multinetwork.edges[multinetwork.edges.ci_type==ci_type]
-            nodes = multinetwork.nodes[multinetwork.nodes.ci_type==ci_type]  
-            
-            if edges.empty:
-                self.graph += self.graph_from_vs(gdf_nodes=nodes)   
-            else:
-                self.graph += self.graph_from_es(gdf_edges=edges,
-                                                 gdf_nodes=nodes)      
     
     def link_closest_vertices(self, ci_type_assign, ci_type_base):
         """
@@ -205,12 +165,38 @@ class MultiGraphCalcs(GraphMaker):
 
         self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
                               {'geometry' : edge_geoms,
-                              'ci_type' : ['dependency_'+ ci_type_assign + '_' + ci_type_base],
-                              'distance' : 1})
+                               'ci_type' : ['dependency_'+ ci_type_assign + '_' + ci_type_base],
+                               'distance' : 1})
 
     def return_multinetwork(self):
-        pass
-                            
+        
+        gdf_edges = gpd.GeoDataFrame(
+            self.graph.get_edge_dataframe().rename({'source':'from_id',
+                                                    'target':'to_id'}, axis=1))
+        gdf_nodes = gpd.GeoDataFrame(
+            self.graph.get_vertex_dataframe().reset_index(
+                ).rename({'vertex ID':'name_id'} ,axis=1))
+        #.drop('name_id',axis=1)
+        return MultiNetwork(edges=gdf_edges, nodes=gdf_nodes)
+ 
+
+    def plot_multigraph(self,layer_dict,layout):    
+        visual_style = {}
+        visual_style["vertex_size"] = [layer_dict['vsize'][attr] for attr in self.graph.vs["ci_type"]]
+        visual_style["edge_arrow_size"] = 1
+        visual_style["edge_color"] = [layer_dict['edge_col'][attr] for attr in self.graph.vs["ci_type"]]
+        visual_style["vertex_color"] = [layer_dict['vertex_col'][attr] for attr in self.graph.vs["ci_type"]]
+        if layout == "fruchterman_reingold":
+            visual_style["layout"] = self.graph.layout("fruchterman_reingold")
+        elif layout == 'sugiyama':
+            visual_style["layout"] = self.graph.layout_sugiyama(layers=[layer_dict['layers'][attr] for attr in self.graph.vs["ci_type"]])#
+        visual_style["edge_curved"] = 0.2
+        visual_style["edge_width"] = 1
+        
+        return ig.plot(self.graph, **visual_style) 
+
+
+
 # class MultiNetwork():
 #     def __init__(self, *networks):
 #         #self.__dict__.update(*networks)
