@@ -26,36 +26,67 @@ LOGGER = logging.getLogger(__name__)
 
 class Network:
     
-    def __init__(self, gdf_edges=None, gdf_nodes=None):
+    def __init__(self, edges=None, nodes=None):
         """
         gdf_nodes : id identifier needs to be first column of nodes
         gdf_edges : from_id and to_id need to be first two columns of edges
         """
-        self.edges = gpd.GeoDataFrame()
-        self.nodes = gpd.GeoDataFrame()
+        self.edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
+        self.nodes = gpd.GeoDataFrame(columns=['name_id', 'ci_type'])
         
-        if gdf_edges is not None:
-            self.edges = gdf_edges
-            self.ci_type = np.unique(gdf_edges.ci_type).tolist()
-        else:
-            self.ci_type = np.unique(gdf_nodes.ci_type).tolist()
-            
-        if gdf_nodes is not None:
-            self.nodes = gdf_nodes
+        if edges is not None:
+            self.edges = edges
+        if nodes is not None:
+            self.nodes = nodes
         
+        self.ci_type = self._update_ci_types()
+
+    def _update_ci_types(self):
+        return np.unique(np.unique(self.edges.ci_type).tolist().append(
+                         np.unique(self.nodes.ci_type).tolist()))
+
+
 class MultiNetwork:
     
-    def __init__(self, *networks):
+    def __init__(self, edges=None, nodes=None, networks=None):
         """
-        gdf_nodes : id identifier needs to be first column of nodes
-        gdf_edges : from_id and to_id need to be first two columns of edges
+        either edges, nodes or networks=[]
+        
+        nodes : id identifier needs to be first column of nodes
+        edges : from_id and to_id need to be first two columns of edges
+        networks : 
         """
-        self.edges = gpd.GeoDataFrame()
-        self.nodes = gpd.GeoDataFrame()
-        self.ci_type = []
-              
-        for network in networks:
-            self.edges = self.edges.append(network.edges.reset_index(drop=True))
-            self.nodes = self.nodes.append(network.nodes.reset_index(drop=True))
-            self.ci_type.append(*network.ci_type)
+        # be more specific than **kwargs with self.__dict__.update(kwargs) 
+            
+        if networks is not None:
+            edges, nodes = self._assemble_from_nws(networks)
+    
+        self.edges = edges
+        self.nodes = nodes
+        self.ci_type =  self._update_ci_types()
 
+                        
+    def _update_ci_types(self):
+        return np.unique(np.unique(self.edges.ci_type).tolist().append(
+                         np.unique(self.nodes.ci_type).tolist()))
+    
+    def _assemble_from_nws(self, networks):
+        
+        edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
+        nodes = gpd.GeoDataFrame(columns=['name_id', 'ci_type'])
+        id_counter_nodes = 0
+        
+        for network in networks:
+            edge_gdf = network.edges.reset_index(drop=True)
+            node_gdf = network.nodes.reset_index(drop=True)
+            edge_gdf['from_id'] = edge_gdf['from_id']  + id_counter_nodes
+            edge_gdf['to_id'] = edge_gdf['to_id']  + id_counter_nodes
+            node_gdf['name_id'] = range(id_counter_nodes, 
+                                        id_counter_nodes+len(node_gdf))
+            id_counter_nodes+=len(node_gdf)
+            edges = edges.append(edge_gdf)
+            nodes = nodes.append(node_gdf)
+    
+        return edges, nodes
+    
+    
