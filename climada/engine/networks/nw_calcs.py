@@ -195,64 +195,23 @@ class MultiGraphCalcs(GraphMaker):
         
         return ig.plot(self.graph, **visual_style) 
 
-
-
+    def cluster_nodesums(self, sum_variable):
+        df_vs = self.graph.get_vertex_dataframe()
+        df_vs['vs_membership'] = self.graph.clusters().membership
+        return df_vs.groupby(['vs_membership'])[sum_variable].sum()
+    
+    def cluster_edgesums(self, sum_variable):
+        df_es = self.graph.get_edge_dataframe()
+        df_es['es_membership'] = self.get_cluster_affiliation_es()
+        return df_es.groupby(['es_membership'])[sum_variable].sum()
+    
+    def get_cluster_affiliation_es(self):
+        vs_membership = self.graph.clusters().membership
+        vs_cluster_dict = dict(zip(range(self.graph.vcount()),vs_membership))
+        return [vs_cluster_dict[x] for x in 
+                self.graph.get_edge_dataframe()['source']]
+        
 # class MultiNetwork():
-#     def __init__(self, *networks):
-#         #self.__dict__.update(*networks)
-
-#         self.graph = ig.Graph()
-#         for network in networks:
-#             self.graph += network.graph
-
-
-#     def make_edge_geometries(self, vs_geoms_from, vs_geoms_to):
-#         return [shapely.geometry.LineString([geom_from, geom_to]) for
-#                                             geom_from, geom_to in
-#                                             zip(vs_geoms_from, vs_geoms_to)]
-
-#     def _ckdnearest(self, gdf_assign, gdf_base):
-#         """
-#         see https://gis.stackexchange.com/a/301935
-
-#         Parameters
-#         ----------
-#         gdf_base : gpd.GeoDataFrame
-
-#         gdf_assign : gpd.GeoDataFrame
-
-#         Returns
-#         ----------
-#         gpd.GeoDataFrame
-#         """
-#         # TODO: this should be a util function
-#         n_assign = np.array(list(gdf_assign.geometry.apply(lambda x: (x.x, x.y))))
-#         n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
-#         btree = cKDTree(n_base)
-#         #TODO: this is distance in whatever units geometry is!
-#         __, idx = btree.query(n_assign, k=1)
-#         return gdf_base.iloc[idx].index
-
-        
-#     def link_closest_vertices(self, ci_type_assign, ci_type_base):
-#         """
-#         match all vertices of graph_assign to closest vertices in graph_base.
-#         Updated in vertex attributes (vID of graph_base, geometry & distance)
-        
-#         """
-#         gdf_vs = self.graph.get_vertex_dataframe()
-#         gdf_vs_assign = gdf_vs[gdf_vs.ci_type == ci_type_assign]
-#         gdf_vs_base = gdf_vs[gdf_vs.ci_type == ci_type_base]
-
-#         ix_match = self._ckdnearest(gdf_vs_assign, gdf_vs_base)
-
-#         edge_geoms = self.make_edge_geometries(gdf_vs_assign.geometry,
-#                                          gdf_vs_base.loc[ix_match].geometry)
-
-#         self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
-#                              {'geometry' : edge_geoms,
-#                               'ci_type' : ['dependency_'+ ci_type_assign + '_' + ci_type_base],
-#                               'distance' : 1})
 
 
 #     def _construct_subgraph_from_vs(self, from_ci, to_ci, via_ci=None):
