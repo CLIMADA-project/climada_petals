@@ -43,3 +43,13 @@ __all__ = ['SYSTEM_DIR',
            'WS_DEMO_NC']
 
 from climada.util.constants import *
+
+
+HAZ_DEMO_FLDDPH = DEMO_DIR.joinpath('flddph_2000_DEMO.nc')
+"""NetCDF4 Flood depth from isimip simulations"""
+
+HAZ_DEMO_FLDFRC = DEMO_DIR.joinpath('fldfrc_2000_DEMO.nc')
+"""NetCDF4 Flood fraction from isimip simulations"""
+
+DEMO_GDP2ASSET = DEMO_DIR.joinpath('gdp2asset_CHE_exposure.nc')
+"""Exposure demo file for GDP2Asset"""
