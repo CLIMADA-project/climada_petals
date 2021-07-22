@@ -21,5 +21,4 @@ init entity
 from .exposures import *
 from .impact_funcs import *
 from .tag import *
-from .measures import *
 from .entity_def import *
