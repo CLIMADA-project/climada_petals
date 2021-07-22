@@ -20,5 +20,3 @@ init entity
 """
 from .exposures import *
 from .impact_funcs import *
-from .tag import *
-from .entity_def import *
