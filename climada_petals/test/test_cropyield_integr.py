@@ -22,9 +22,9 @@ Tests on Drought Hazard exposure and Impact function.
 import unittest
 import numpy as np
 from climada.util.constants import DEMO_DIR as INPUT_DIR
-from climada.hazard.relative_cropyield import (RelativeCropyield, init_hazard_sets_isimip,
+from climada_petals.hazard.relative_cropyield import (RelativeCropyield, init_hazard_sets_isimip,
                                                calc_his_haz_isimip)
-from climada.entity.exposures.crop_production import CropProduction
+from climada_petals.entity.exposures.crop_production import CropProduction
 from climada.entity import ImpactFuncSet, ImpfRelativeCropyield
 from climada.engine import Impact
 

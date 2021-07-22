@@ -20,7 +20,7 @@ Test crop potential module.
 """
 import unittest
 import numpy as np
-from climada.hazard.relative_cropyield import RelativeCropyield
+from climada_petals.hazard.relative_cropyield import RelativeCropyield
 from climada.util.constants import DEMO_DIR as INPUT_DIR
 
 FN_STR_DEMO = 'annual_FR_DE_DEMO'

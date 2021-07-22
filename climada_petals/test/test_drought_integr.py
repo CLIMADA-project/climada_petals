@@ -21,11 +21,11 @@ Tests on Drought Hazard exposure and Impact function.
 
 import unittest
 
-from climada.hazard.drought import Drought
+from climada_petals.hazard.drought import Drought
 from climada.engine import Impact
-from climada.entity.exposures.spam_agrar import SpamAgrar
+from climada_petals.entity.exposures.spam_agrar import SpamAgrar
 from climada.entity.impact_funcs import ImpactFuncSet
-from climada.entity.impact_funcs.drought import ImpfDrought
+from climada_petals.entity.impact_funcs.drought import ImpfDrought
 
 
 class TestIntegr(unittest.TestCase):

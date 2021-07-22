@@ -22,7 +22,7 @@ Tests on SPAM agriculture exposures.
 import unittest
 # import numpy as np
 
-from climada.entity.exposures.spam_agrar import SpamAgrar
+from climada_petals.entity.exposures.spam_agrar import SpamAgrar
 
 
 class TestDefault(unittest.TestCase):

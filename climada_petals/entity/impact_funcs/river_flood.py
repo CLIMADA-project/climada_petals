@@ -27,8 +27,7 @@ import numpy as np
 import pandas as pd
 
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV
-from .base import ImpactFunc
-from .impact_func_set import ImpactFuncSet
+from climada.entity import ImpactFunc, ImpactFuncSet
 
 LOGGER = logging.getLogger(__name__)
 
