@@ -8,15 +8,10 @@ from climada.util.config import SOURCE_DIR
 def find_unit_tests():
     """select unit tests."""
     suite = unittest.TestLoader().discover('climada_petals.entity.exposures.test')
-    suite.addTest(unittest.TestLoader().discover('climada_petals.entity.disc_rates.test'))
     suite.addTest(unittest.TestLoader().discover('climada_petals.entity.impact_funcs.test'))
-    suite.addTest(unittest.TestLoader().discover('climada_petals.entity.measures.test'))
-    suite.addTest(unittest.TestLoader().discover('climada_petals.entity.test'))
     suite.addTest(unittest.TestLoader().discover('climada_petals.hazard.test'))
-    suite.addTest(unittest.TestLoader().discover('climada.hazard.centroids.test'))
     suite.addTest(unittest.TestLoader().discover('climada_petals.hazard.emulator.test'))
     suite.addTest(unittest.TestLoader().discover('climada_petals.engine.test'))
-    suite.addTest(unittest.TestLoader().discover('climada_petals.engine.uncertainty.test'))
     suite.addTest(unittest.TestLoader().discover('climada_petals.util.test'))
     return suite
 
