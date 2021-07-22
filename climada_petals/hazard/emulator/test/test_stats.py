@@ -26,7 +26,7 @@ import pandas as pd
 import scipy.sparse as sp
 
 from climada.hazard import Hazard, Centroids
-from climada.hazard.emulator import stats
+from climada_petals.hazard.emulator import stats
 
 
 class TestStats(unittest.TestCase):

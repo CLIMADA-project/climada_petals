@@ -23,7 +23,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from climada.hazard import WildFire
+from climada_petals.hazard import WildFire
 
 DATA_DIR = (Path(__file__).parent).joinpath('../test/data')
 TEST_FIRMS = pd.read_csv(Path.joinpath(DATA_DIR, "WF_FIRMS.csv"))

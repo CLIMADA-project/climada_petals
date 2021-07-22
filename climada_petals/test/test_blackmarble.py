@@ -23,7 +23,7 @@ import unittest
 import numpy as np
 from cartopy.io import shapereader
 
-from climada.entity.exposures.black_marble import BlackMarble
+from climada_petals.entity.exposures.black_marble import BlackMarble
 from climada.entity.exposures.litpop.nightlight import load_nightlight_nasa, \
     load_nightlight_noaa, NOAA_BORDER
 from climada.entity.exposures.litpop import nightlight as nl_utils

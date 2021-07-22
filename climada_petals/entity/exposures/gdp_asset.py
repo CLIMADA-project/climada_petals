@@ -29,7 +29,7 @@ import scipy as sp
 from climada.entity.tag import Tag
 import climada.util.coordinates as u_coord
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV, SYSTEM_DIR
-from .base import Exposures, INDICATOR_IMPF
+from climada.entity import Exposures, INDICATOR_IMPF
 
 LOGGER = logging.getLogger(__name__)
 

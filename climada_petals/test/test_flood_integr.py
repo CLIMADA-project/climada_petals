@@ -20,10 +20,10 @@ Test flood module.
 """
 
 import unittest
-from climada.hazard.river_flood import RiverFlood
+from climada_petals.hazard.river_flood import RiverFlood
 from climada.util.constants import DEMO_GDP2ASSET, HAZ_DEMO_FLDDPH, HAZ_DEMO_FLDFRC
-from climada.entity.exposures.gdp_asset import GDP2Asset
-from climada.entity.impact_funcs.river_flood import flood_imp_func_set
+from climada_petals.entity.exposures.gdp_asset import GDP2Asset
+from climada_petals.entity.impact_funcs.river_flood import flood_imp_func_set
 from climada.engine import Impact
 
 
