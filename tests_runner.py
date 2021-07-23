@@ -17,7 +17,7 @@ def find_unit_tests():
 
 def find_integ_tests():
     """select integration tests."""
-    suite = unittest.TestLoader().discover('climada.test')
+    suite = unittest.TestLoader().discover('climada_petals.test')
     return suite
 
 def main():

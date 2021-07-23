@@ -31,7 +31,7 @@ class TestDefault(unittest.TestCase):
     def test_global_pass(self):
         """Test global entity for default parameters and ent.select:"""
         ent = SpamAgrar()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             ent.init_spam_agrar()
         ent_select = ent.gdf[ent.gdf.region_id == 208]  # select Denmark only
         self.assertIn('Lat. range: -55.375 to +71.125.', cm.output[0])
@@ -48,7 +48,7 @@ class TestDefault(unittest.TestCase):
         """Test country Suriname for default parameters:"""
         country_name = 'Suriname'
         ent = SpamAgrar()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             ent.init_spam_agrar(country=country_name)
         self.assertIn('Lat. range: +1.875 to +5.958.', cm.output[0])
         self.assertIn('Lon. range: -58.042 to -54.042.', cm.output[1])
@@ -61,7 +61,7 @@ class TestDefault(unittest.TestCase):
         country_name = 'CHE'
         adm1 = 'Zurich'
         ent = SpamAgrar()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             ent.init_spam_agrar(country=country_name, name_adm1=adm1)
         self.assertIn('Lat. range: +47.208 to +47.625.', cm.output[0])
         self.assertIn('Lon. range: +8.375 to +8.875.', cm.output[1])
@@ -77,7 +77,7 @@ class TestOtherVar(unittest.TestCase):
         tech = 'TI'  # irrigated
         var = 'H'  # harvest area
         ent = SpamAgrar()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             ent.init_spam_agrar(country=country_name, spam_variable=var,
                                 spam_technology=tech)
         self.assertIn('Lat. range: +45.875 to +47.792.', cm.output[0])
@@ -92,7 +92,7 @@ class TestOtherVar(unittest.TestCase):
         tech = 'TA'  # all
         var = 'Y'  # yield
         ent = SpamAgrar()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             ent.init_spam_agrar(name_adm2=adm2, spam_variable=var,
                                 spam_technology=tech)
         self.assertIn('Lat. range: -8.625 to -6.042.', cm.output[0])
@@ -105,7 +105,7 @@ class TestInvalidInput(unittest.TestCase):
         """Invalid country or admin input returns global entity:"""
         country_name = 'Utopia'
         ent = SpamAgrar()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             ent.init_spam_agrar(country=country_name)
         self.assertIn('Country name not found in data: Utopia', cm.output[0])
         self.assertIn('Lat. range: -55.375 to +71.125.', cm.output[1])
