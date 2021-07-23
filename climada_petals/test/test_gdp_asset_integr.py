@@ -20,7 +20,7 @@ Tests on GDP2Asset.
 """
 import unittest
 from climada_petals.entity.exposures import gdp_asset as ga
-from climada.util.constants import DEMO_GDP2ASSET
+from climada_petals.util.constants import DEMO_GDP2ASSET
 
 class TestGDP2AssetClassCountries(unittest.TestCase):
     """Unit tests for the GDP2Asset exposure class"""

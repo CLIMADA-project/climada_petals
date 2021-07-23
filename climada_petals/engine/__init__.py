@@ -18,6 +18,4 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 init engine
 """
-from .impact import *
-from .cost_benefit import *
 from .supplychain import *

@@ -32,7 +32,7 @@ from pandas_datareader import wb
 from climada import CONFIG
 from climada.entity.exposures.litpop.nightlight import BM_FILENAMES, download_nl_files
 from climada.hazard.tc_tracks import IBTRACS_URL, IBTRACS_FILE
-from climada.hazard.tc_tracks_forecast import TCForecast
+from climada_petals.hazard.tc_tracks_forecast import TCForecast
 from climada.util.finance import WORLD_BANK_WEALTH_ACC, WORLD_BANK_INC_GRP
 from climada.util.dwd_icon_loader import (download_icon_grib,
                                           delete_icon_grib,
