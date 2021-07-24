@@ -24,7 +24,7 @@ import unittest
 import numpy as np
 from shapely.geometry import Point
 
-from climada.hazard.emulator import geo
+from climada_petals.hazard.emulator import geo
 
 
 class TestGeo(unittest.TestCase):

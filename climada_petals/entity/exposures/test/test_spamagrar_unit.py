@@ -21,7 +21,7 @@ Test SpamAgrar base class: Unity tests
 import unittest
 import pandas as pd
 
-from climada.entity.exposures.spam_agrar import SpamAgrar
+from climada_petals.entity.exposures.spam_agrar import SpamAgrar
 
 class TestSetCountry(unittest.TestCase):
     """Test country_iso function."""
@@ -53,7 +53,7 @@ class TestSetCountry(unittest.TestCase):
         """invalid country name produces unchanged dataframe:"""
         ent = SpamAgrar()
         testdata = self.init_testdata()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             testdata1 = ent._spam_set_country(testdata, country='XXX')[0]
         self.assertIn('Country name not found in data: XXX', cm.output[0])
         self.assert_pd_frame_equal(testdata1, testdata)
@@ -62,7 +62,7 @@ class TestSetCountry(unittest.TestCase):
         """invalid admin 2 name produces unchanged dataframe:"""
         ent = SpamAgrar()
         testdata = self.init_testdata()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             testdata1, teststr1 = ent._spam_set_country(testdata, name_adm2='XXX')
         self.assertIn('Admin2 not found in data: XXX', cm.output[0])
         self.assert_pd_frame_equal(testdata1, testdata)
@@ -72,7 +72,7 @@ class TestSetCountry(unittest.TestCase):
         """invalid admin 1 name produces unchanged dataframe:"""
         ent = SpamAgrar()
         testdata = self.init_testdata()
-        with self.assertLogs('climada.entity.exposures.spam_agrar', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.spam_agrar', level='INFO') as cm:
             testdata1, teststr1 = ent._spam_set_country(testdata, name_adm1='stateC',
                                                         name_adm2='XXX')
         testdata2 = ent._spam_set_country(testdata, name_adm1='stateC')[0]

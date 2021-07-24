@@ -26,7 +26,7 @@ from scipy import sparse
 
 from climada import CONFIG
 from climada.hazard.tc_tracks import TCTracks
-from climada.hazard.tc_rainfield import TCRain, rainfield_from_track
+from climada_petals.hazard.tc_rainfield import TCRain, rainfield_from_track
 from climada.hazard.centroids.centr import Centroids
 
 DATA_DIR = CONFIG.hazard.test_data.dir()
