@@ -25,7 +25,7 @@ import shapely
 from scipy import sparse
 
 from climada import CONFIG
-from climada.hazard.landslide import Landslide, sample_events_from_probs
+from climada_petals.hazard.landslide import Landslide, sample_events_from_probs
 import climada.util.coordinates as u_coord
 
 DATA_DIR = CONFIG.hazard.test_data.dir()

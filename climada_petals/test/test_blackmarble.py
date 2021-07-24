@@ -23,7 +23,7 @@ import unittest
 import numpy as np
 from cartopy.io import shapereader
 
-from climada.entity.exposures.black_marble import BlackMarble
+from climada_petals.entity.exposures.black_marble import BlackMarble
 from climada.entity.exposures.litpop.nightlight import load_nightlight_nasa, \
     load_nightlight_noaa, NOAA_BORDER
 from climada.entity.exposures.litpop import nightlight as nl_utils
@@ -40,7 +40,7 @@ class Test2013(unittest.TestCase):
         self.assertIn('GDP ESP 2013: 1.355e+12.', cm.output[0])
         self.assertIn('Income group ESP 2013: 4.', cm.output[1])
 
-        with self.assertLogs('climada.entity.exposures.black_marble', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
             ent.set_countries(country_name, 2013, res_km=1)
         self.assertIn("Nightlights from NOAA's earth observation group for year 2013.",
                       cm.output[0])
@@ -67,7 +67,7 @@ class Test2013(unittest.TestCase):
         self.assertIn('Income group SXM 2013: 4.', cm.output[1])
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
 
-        with self.assertLogs('climada.entity.exposures.black_marble', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
             ent.set_countries(country_name, 2013, res_km=0.2)
         self.assertIn("Nightlights from NOAA's earth observation group for year 2013.",
                       cm.output[0])
@@ -95,7 +95,7 @@ class Test1968(unittest.TestCase):
         self.assertIn('GDP CHE 1968: 1.894e+10.', cm.output[0])
         self.assertIn('Income group CHE 1987: 4.', cm.output[1])
 
-        with self.assertLogs('climada.entity.exposures.black_marble', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
             ent.set_countries(country_name, 1968, res_km=0.5)
         self.assertIn("Nightlights from NOAA's earth observation group for year 1992.",
                       cm.output[0])
@@ -112,7 +112,7 @@ class Test2012(unittest.TestCase):
         country_name = ['Turkey']
 
         ent = BlackMarble()
-        with self.assertLogs('climada.entity.exposures.black_marble', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
             ent.set_countries(country_name, 2012, res_km=5.0)
         self.assertTrue('NOAA' in cm.output[-3])
         size1 = ent.gdf.value.size
@@ -120,7 +120,7 @@ class Test2012(unittest.TestCase):
 
         try:
             ent = BlackMarble()
-            with self.assertLogs('climada.entity.exposures.black_marble', level='INFO') as cm:
+            with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
                 ent.set_countries(country_name, 2012, res_km=5.0, from_hr=True)
                 self.assertTrue('NASA' in cm.output[-3])
                 size2 = ent.gdf.value.size
@@ -131,7 +131,7 @@ class Test2012(unittest.TestCase):
             pass
 
         ent = BlackMarble()
-        with self.assertLogs('climada.entity.exposures.black_marble', level='INFO') as cm:
+        with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
             ent.set_countries(country_name, 2012, res_km=5.0, from_hr=False)
         self.assertTrue('NOAA' in cm.output[-3])
         self.assertTrue(np.isclose(ent.gdf.value.sum(), 8.740e+11 * (3 + 1), 4))

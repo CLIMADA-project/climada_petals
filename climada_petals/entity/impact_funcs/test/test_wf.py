@@ -22,7 +22,7 @@ Test ImpfWildfire class.
 import unittest
 import numpy as np
 
-from climada.entity.impact_funcs.wildfire import ImpfWildfire
+from climada_petals.entity.impact_funcs.wildfire import ImpfWildfire
 
 thresh_step = 331
 i_half_check = 523.8
