@@ -22,7 +22,7 @@ Test IFFlood class.
 import unittest
 import numpy as np
 
-from climada.entity.impact_funcs import river_flood as fl
+from climada_petals.entity.impact_funcs import river_flood as fl
 
 
 class TestIFRiverFlood(unittest.TestCase):

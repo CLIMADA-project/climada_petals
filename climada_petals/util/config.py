@@ -27,12 +27,13 @@ __all__ = [
 from pathlib import Path
 
 import climada
-from climada.util.config import Config, CONFIG_NAME, _fetch_conf
+import climada.util.config
+from climada.util.config import Config, _fetch_conf, CONFIG_NAME, CONFIG
 
 CORE_DIR = Path(climada.__file__).parent
 SOURCE_DIR = Path(__file__).absolute().parent.parent
 
-climada.CONFIG = Config.from_dict(_fetch_conf([
+climada.util.config.CONFIG = Config.from_dict(_fetch_conf([
     CORE_DIR / 'conf',  # default config from the climada repository
     SOURCE_DIR / 'conf',  # default config from the climada_petals repository
     Path.home() / 'climada' / 'conf',  # ~/climada/conf directory
@@ -40,4 +41,4 @@ climada.CONFIG = Config.from_dict(_fetch_conf([
     Path.cwd(),  # current working directory
 ], CONFIG_NAME))
 
-CONFIG = climada.CONFIG
+climada.CONFIG = climada.util.config.CONFIG

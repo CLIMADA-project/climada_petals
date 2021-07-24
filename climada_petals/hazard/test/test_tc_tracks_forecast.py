@@ -23,7 +23,7 @@ import unittest
 import numpy as np
 
 from climada import CONFIG
-from climada.hazard.tc_tracks_forecast import TCForecast
+from climada_petals.hazard.tc_tracks_forecast import TCForecast
 
 DATA_DIR = CONFIG.hazard.test_data.dir()
 TEST_BUFR_FILES_PATH = [

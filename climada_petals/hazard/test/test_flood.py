@@ -21,9 +21,9 @@ Test flood module.
 import unittest
 import datetime as dt
 import numpy as np
-from climada_petals.hazard.river_flood import RiverFlood
-from climada.util.constants import HAZ_DEMO_FLDDPH, HAZ_DEMO_FLDFRC
 from climada.hazard.centroids import Centroids
+from climada_petals.hazard.river_flood import RiverFlood
+from climada_petals.util.constants import HAZ_DEMO_FLDDPH, HAZ_DEMO_FLDFRC
 
 
 class TestRiverFlood(unittest.TestCase):
