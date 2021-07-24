@@ -28,7 +28,7 @@ from shapely.geometry import Polygon
 
 from climada.hazard import Centroids
 import climada.util.coordinates as u_coord
-import climada.hazard.emulator.const as const
+import climada_petals.hazard.emulator.const as const
 
 LOGGER = logging.getLogger(__name__)
 

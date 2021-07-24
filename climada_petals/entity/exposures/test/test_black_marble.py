@@ -24,7 +24,7 @@ import scipy.sparse as sparse
 import shapely
 from cartopy.io import shapereader
 
-from climada.entity.exposures.black_marble import country_iso_geom, \
+from climada_petals.entity.exposures.black_marble import country_iso_geom, \
 _cut_country, fill_econ_indicators, _set_econ_indicators, _fill_admin1_geom, \
 _cut_admin1, _resample_land
 from climada.entity.exposures.litpop.nightlight import NOAA_BORDER, NOAA_RESOLUTION_DEG

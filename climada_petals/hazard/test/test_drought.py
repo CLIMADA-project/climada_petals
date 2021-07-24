@@ -21,7 +21,7 @@ Tests on Drought Hazard"""
 
 import unittest
 
-from climada.hazard.drought import Drought
+from climada_petals.hazard.drought import Drought
 
 
 class TestReader(unittest.TestCase):
