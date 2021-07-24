@@ -21,7 +21,7 @@ Unit Tests on GDP2Asset exposures.
 import numpy as np
 import unittest
 import pandas as pd
-from climada.entity.exposures import gdp_asset as ga
+from climada_petals.entity.exposures import gdp_asset as ga
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV, DEMO_GDP2ASSET
 
 

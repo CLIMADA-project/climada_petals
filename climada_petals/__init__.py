@@ -21,7 +21,8 @@ climada init
 from shutil import copyfile
 from pathlib import Path
 
-from .util.config import CONFIG, setup_logging
+from climada.util.config import setup_logging
+from .util.config import CONFIG
 from .util.constants import *
 
 

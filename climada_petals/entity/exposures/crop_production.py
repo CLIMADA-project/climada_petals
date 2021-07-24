@@ -33,7 +33,7 @@ from matplotlib import pyplot as plt
 from climada.entity.tag import Tag
 import climada.util.coordinates as u_coord
 from climada import CONFIG
-from .base import Exposures, INDICATOR_IMPF
+from climada.entity import Exposures, INDICATOR_IMPF
 
 logging.root.setLevel(logging.DEBUG)
 LOGGER = logging.getLogger(__name__)

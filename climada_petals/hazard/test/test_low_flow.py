@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 
-from climada.hazard.low_flow import LowFlow, unique_clusters, \
+from climada_petals.hazard.low_flow import LowFlow, unique_clusters, \
     _compute_threshold_grid, _read_and_combine_nc, _split_bbox
 from climada.util.constants import DEMO_DIR as INPUT_DIR
 from climada.hazard.centroids import Centroids

@@ -26,7 +26,7 @@ from climada import CONFIG
 from climada.entity.exposures.base import Exposures
 from climada.entity import ImpactFuncSet, ImpfTropCyclone
 from climada.hazard.base import Hazard
-from climada.engine.supplychain import SupplyChain
+from climada_petals.engine.supplychain import SupplyChain
 from climada.util.constants import EXP_DEMO_H5
 
 HAZ_TEST_MAT = CONFIG.hazard.test_data.dir().joinpath('atl_prob_no_name.mat')

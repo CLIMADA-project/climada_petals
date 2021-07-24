@@ -24,7 +24,7 @@ import numpy as np
 
 from shapely.geometry import Polygon
 
-from climada.entity.exposures.litpop import nightlight as nl_utils
+from climada_petals.entity.exposures.litpop import nightlight as nl_utils
 
 from climada.util.constants import SYSTEM_DIR
 
