@@ -25,9 +25,9 @@ import sys
 import numpy as np
 import pandas as pd
 
-import climada.hazard.emulator.const as const
-import climada.hazard.emulator.stats as stats
-import climada.hazard.emulator.random as random
+import climada_petals.hazard.emulator.const as const
+import climada_petals.hazard.emulator.stats as stats
+import climada_petals.hazard.emulator.random as random
 
 LOGGER = logging.getLogger(__name__)
 

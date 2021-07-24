@@ -24,7 +24,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from climada.hazard.emulator import random
+from climada_petals.hazard.emulator import random
 
 
 class TestRandom(unittest.TestCase):

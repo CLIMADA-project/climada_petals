@@ -24,8 +24,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from climada.hazard.emulator import emulator
-from climada.hazard.emulator import geo
+from climada_petals.hazard.emulator import emulator
+from climada_petals.hazard.emulator import geo
 
 
 class TestEmulator(unittest.TestCase):

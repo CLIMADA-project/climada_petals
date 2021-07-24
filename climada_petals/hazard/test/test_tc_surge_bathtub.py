@@ -28,7 +28,7 @@ import rasterio
 import xarray as xr
 
 from climada.hazard import Centroids, TCTracks, TropCyclone
-from climada.hazard.tc_surge_bathtub import _fraction_on_land, TCSurgeBathtub
+from climada_petals.hazard.tc_surge_bathtub import _fraction_on_land, TCSurgeBathtub
 
 
 class tmp_artifical_topo(object):

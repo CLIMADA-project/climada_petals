@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from climada.hazard.wildfire import WildFire
+from climada_petals.hazard.wildfire import WildFire
 from climada.hazard.centroids.centr import Centroids
 from climada.util.constants import ONE_LAT_KM
 

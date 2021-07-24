@@ -26,7 +26,7 @@ import geopandas
 
 from climada import CONFIG
 from climada.entity import Exposures
-from climada.entity.exposures import open_street_map as OSM
+from climada_petals.entity.exposures import open_street_map as OSM
 
 DATA_DIR = CONFIG.test_data.dir()
 
