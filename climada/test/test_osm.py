@@ -57,11 +57,13 @@ class TestOpenStreetMapModule(unittest.TestCase):
             exposure_high_47_8 = OSM.get_osmstencil_litpop(
                 [47.2, 8.0, 47.3, 8.07], 'CHE', mode,
                 DATA_DIR.joinpath('High_Value_Area_47_8.shp'),
-                DATA_DIR, check_plot=0)
+                DATA_DIR, check_plot=0, reference_year=2016)
             self.assertIsInstance(exposure_high_47_8, Exposures)
             self.assertEqual(len(exposure_high_47_8.gdf.columns), 8)
             self.assertGreater(
-                exposure_high_47_8.gdf.iloc[random.randint(0, len(exposure_high_47_8.gdf))].value,
+                exposure_high_47_8.gdf.iloc[
+                    random.randint(0, len(exposure_high_47_8.gdf) - 1)
+                ].value,
                 0)
 
     def test_make_osmexposure(self):
@@ -87,7 +89,8 @@ class TestOpenStreetMapModule(unittest.TestCase):
         # With LitPop values
         buildings_47_8_LitPop = OSM.make_osmexposure(DATA_DIR.joinpath('buildings_47_8.shp'),
                                                      country='CHE', mode="LitPop",
-                                                     save_path=DATA_DIR, check_plot=0)
+                                                     save_path=DATA_DIR, check_plot=0,
+                                                     reference_year=2016)
         self.assertIsInstance(buildings_47_8_LitPop, Exposures)
         self.assertEqual(len(buildings_47_8_LitPop.gdf.columns), 12)
         self.assertEqual(

@@ -2,12 +2,12 @@
 This file is part of CLIMADA.
 Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
 CLIMADA is free software: you can redistribute it and/or modify it under the
-terms of the GNU Lesser General Public License as published by the Free
+terms of the GNU General Public License as published by the Free
 Software Foundation, version 3.
 CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
-You should have received a copy of the GNU Lesser General Public License along
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 ---
 Define functions to handle impact_yearsets
@@ -199,10 +199,15 @@ def sample_events(events_per_year, freqs_orig):
 
     #sample events for each sampled year
     for amount_events in events_per_year:
+        #if there are not enough input events, choice with no replace will fail
+        if amount_events > len(freqs_orig):
+            raise ValueError(f"cannot sample {amount_events} distinct events for a single year"
+                             f" when there are only {len(freqs_orig)} input events")
 
         #add the original indices and frequencies to the pool if there are less events
         #in the pool than needed to fill the year one is sampling for
-        if len(np.unique(indices)) < amount_events:
+        #or if the pool is empty (not covered in case amount_events is 0)
+        if len(np.unique(indices)) < amount_events or len(indices) == 0:
             indices = np.append(indices, indices_orig)
             freqs = np.append(freqs, freqs_orig)
 
