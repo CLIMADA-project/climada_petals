@@ -1,7 +1,6 @@
 #!/bin/bash -e
 
 source activate
-
 mamba env remove -n petals_env
 mamba env create -n petals_env -f requirements/env_climada.yml
 
