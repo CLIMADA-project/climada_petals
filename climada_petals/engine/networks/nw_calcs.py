@@ -148,7 +148,8 @@ class GraphCalcs(GraphMaker):
 class MultiGraphCalcs(GraphMaker):
     
     
-    def link_closest_vertices(self, ci_type_assign, ci_type_base):
+    def link_closest_vertices(self, ci_type_assign, ci_type_base, 
+                              link_type='dependency'):
         """
         match all vertices of graph_assign to closest vertices in graph_base.
         Updated in vertex attributes (vID of graph_base, geometry & distance)
@@ -165,7 +166,7 @@ class MultiGraphCalcs(GraphMaker):
 
         self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
                               {'geometry' : edge_geoms,
-                               'ci_type' : ['dependency_'+ ci_type_assign + '_' + ci_type_base],
+                               'ci_type' : [link_type],
                                'distance' : 1})
 
     def return_multinetwork(self):
