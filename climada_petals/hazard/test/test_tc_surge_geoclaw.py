@@ -28,23 +28,24 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from climada import CONFIG
 from climada.hazard import Centroids, TCTracks
-from climada.hazard.tc_surge_geoclaw import (boxcover_points_along_axis,
-                                             bounds_to_str,
-                                             clawpack_info,
-                                             dt64_to_pydt,
-                                             load_topography,
-                                             mean_max_sea_level,
-                                             setup_clawpack,
-                                             TCSurgeEvents,
-                                             TCSurgeGeoClaw)
+from climada_petals.hazard.tc_surge_geoclaw import (boxcover_points_along_axis,
+                                                    bounds_to_str,
+                                                    clawpack_info,
+                                                    dt64_to_pydt,
+                                                    load_topography,
+                                                    mean_max_sea_level,
+                                                    setup_clawpack,
+                                                    TCSurgeEvents,
+                                                    TCSurgeGeoClaw)
 
 
 LOGGER = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-ZOS_PATH = os.path.join(DATA_DIR, "zos_monthly.nc")
-TOPO_PATH = os.path.join(DATA_DIR, "surge_topo.tif")
+DATA_DIR = CONFIG.hazard.test_data.dir()
+ZOS_PATH = DATA_DIR.joinpath("zos_monthly.nc")
+TOPO_PATH = DATA_DIR.joinpath("surge_topo.tif")
 
 
 class TestFuncs(unittest.TestCase):

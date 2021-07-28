@@ -19,18 +19,18 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test non-trivial runs of TCSurgeGeoClaw class
 """
 
-import os
 import unittest
 
 import numpy as np
 import xarray as xr
 
-from climada.hazard.tc_surge_geoclaw import setup_clawpack, geoclaw_surge_from_track
+from climada import CONFIG
+from climada_petals.hazard.tc_surge_geoclaw import setup_clawpack, geoclaw_surge_from_track
 
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), os.pardir, 'hazard/test/data')
-ZOS_PATH = os.path.join(DATA_DIR, "zos_monthly.nc")
-TOPO_PATH = os.path.join(DATA_DIR, "surge_topo.tif")
+DATA_DIR = CONFIG.hazard.test_data.dir()
+ZOS_PATH = DATA_DIR.joinpath("zos_monthly.nc")
+TOPO_PATH = DATA_DIR.joinpath("surge_topo.tif")
 
 
 class TestGeoclawRun(unittest.TestCase):
