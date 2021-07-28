@@ -453,7 +453,8 @@ class GeoclawRunner():
         self.zos_path = zos_path
         self.topo_path = topo_path
         self.gauge_data = [{'location': g, 'base_sea_level': 0, 'topo_height': -32768.0,
-                            'time': [], 'height_above_geoid': []} for g in gauges]
+                            'time': [], 'height_above_geoid': [], 'in_domain': True}
+                           for g in gauges]
         self.surge_h = np.zeros(centroids.shape[0])
 
         # compute time horizon
@@ -563,6 +564,8 @@ include $(CLAW)/clawutil/src/Makefile.common
         from clawpack.pyclaw.gauges import GaugeSolution
         outdir = self.work_dir.joinpath("_output")
         for i_gauge, gauge in enumerate(self.gauge_data):
+            if not gauge['in_domain']:
+                continue
             gauge['base_sea_level'] = self.rundata.geo_data.sea_level
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=UserWarning)
@@ -734,6 +737,11 @@ include $(CLAW)/clawutil/src/Makefile.common
         """Set gauge-related rundata attributes."""
         for i_gauge, gauge in enumerate(self.gauge_data):
             lat, lon = gauge['location']
+            if (self.rundata.clawdata.lower[0] > lon or self.rundata.clawdata.lower[1] > lat
+                or self.rundata.clawdata.upper[0] < lon or self.rundata.clawdata.upper[1] < lat):
+                # skip gauges outside of model domain
+                gauge['in_domain'] = False
+                continue
             self.rundata.gaugedata.gauges.append([i_gauge + 1, lon, lat,
                                                   self.rundata.clawdata.t0,
                                                   self.rundata.clawdata.tfinal])
