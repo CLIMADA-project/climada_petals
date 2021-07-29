@@ -254,6 +254,7 @@ class TestHazardInit(unittest.TestCase):
             'max_sustained_wind': ('time', np.full((8,), 30.)),
             'central_pressure': ('time', np.full((8,), 990.)),
             'time_step': ('time', np.full((8,), 3, dtype=np.float64)),
+            'basin': ('time', np.full((8,), "SPW"))
         }, coords={
             'time': np.arange('2010-02-05', '2010-02-06',
                               np.timedelta64(3, 'h'), dtype='datetime64[h]'),
@@ -264,7 +265,6 @@ class TestHazardInit(unittest.TestCase):
             'name': 'Dummy',
             'orig_event_flag': True,
             'category': 0,
-            'basin': "SPW",
         })
         tracks = TCTracks()
         tracks.data = [track, track]

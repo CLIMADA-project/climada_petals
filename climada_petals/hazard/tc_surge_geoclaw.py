@@ -211,9 +211,9 @@ class TCSurgeGeoClaw(Hazard):
         new_haz.fraction = new_haz.intensity.copy()
         new_haz.fraction.data.fill(1)
         new_haz.date = np.array([
-            dt.datetime(track.time.dt.year[0],
-                        track.time.dt.month[0],
-                        track.time.dt.day[0]).toordinal()
+            dt.datetime(track.time.dt.year.values[0],
+                        track.time.dt.month.values[0],
+                        track.time.dt.day.values[0]).toordinal()
         ])
         new_haz.orig = np.array([track.orig_event_flag])
         new_haz.category = np.array([track.category])
