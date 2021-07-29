@@ -159,8 +159,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         centroids.set_lat_lon(lat, lon)
         centroids.set_dist_coast(signed=True, precomputed=True)
 
-        wind_haz = TropCyclone()
-        wind_haz.set_from_tracks(tc_track, centroids=centroids)
+        wind_haz = TropCyclone.from_tracks(tc_track, centroids=centroids)
 
         dem_bounds = (bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
         dem_res = 3 / (60 * 60)
