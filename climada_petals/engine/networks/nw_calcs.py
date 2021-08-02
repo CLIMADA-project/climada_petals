@@ -23,7 +23,7 @@ import pandas as pd
 import shapely
 from scipy.spatial import cKDTree
 
-from climada.engine.networks.base import Network, MultiNetwork
+from climada_petals.engine.networks.base import Network, MultiNetwork
 
 LOGGER = logging.getLogger(__name__)
 

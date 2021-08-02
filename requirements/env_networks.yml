@@ -1,0 +1,11 @@
+name: climada_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - seaborn
+  - pygeos
+  - pip:
+    - rasterstats
+    - python-igraph
+    - pandapower

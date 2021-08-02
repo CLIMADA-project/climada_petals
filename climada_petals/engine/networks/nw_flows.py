@@ -23,7 +23,7 @@ import pandas as pd
 import pandapower as pp
 import shapely
 
-from climada.engine.networks.base import MultiNetwork
+from climada_petals.engine.networks.base import MultiNetwork
 
 LOGGER = logging.getLogger(__name__)
 
