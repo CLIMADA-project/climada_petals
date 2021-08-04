@@ -9,3 +9,4 @@ dependencies:
     - rasterstats
     - python-igraph
     - pandapower
+    - cairocffi
