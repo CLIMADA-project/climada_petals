@@ -69,6 +69,26 @@ class GraphMaker:
 
     def plot_graph(self, *kwargs):
         return ig.plot(self.graph, **self.graph_style(*kwargs))
+      
+    def plot_multigraph(self,layer_dict,layout):    
+        visual_style = {}
+        visual_style["vertex_size"] = [layer_dict['vsize'][attr] for attr in
+                                       self.graph.vs["ci_type"]]
+        visual_style["edge_arrow_size"] = 1
+        visual_style["edge_color"] = [layer_dict['edge_col'][attr] for attr in
+                                      self.graph.vs["ci_type"]]
+        visual_style["vertex_color"] = [layer_dict['vertex_col'][attr] for attr
+                                        in self.graph.vs["ci_type"]]
+        if layout == "fruchterman_reingold":
+            visual_style["layout"] = self.graph.layout("fruchterman_reingold")
+        elif layout == 'sugiyama':
+            visual_style["layout"] = self.graph.layout_sugiyama(
+                layers=[layer_dict['layers'][attr] for attr in 
+                        self.graph.vs["ci_type"]])
+        visual_style["edge_curved"] = 0.2
+        visual_style["edge_width"] = 1
+        
+        return ig.plot(self.graph, **visual_style) 
     
     def plot_geodata(self, *kwargs):
         pass
@@ -109,11 +129,20 @@ class GraphMaker:
                                              geom_from, geom_to in
                                             zip(vs_geoms_from, vs_geoms_to)]
 
-
 class GraphCalcs(GraphMaker):
     
-
-    def _return_network(self):
+    def __init__(self, nw_or_graph):
+        """
+        nw_or_graph : instance of networks.base.Network or .MultiNetwork or
+            igraph.Graph
+        """
+        if isinstance(nw_or_graph, ig.Graph):
+            self.graph = nw_or_graph
+        else:
+            return GraphMaker.__init__(self, nw_or_graph)
+        
+                      
+    def return_network(self):
         edges = self.graph.get_edge_dataframe().rename({'source':'from_id',
                                                         'target':'to_id'},
                                                        axis=1).reset_index(drop=True)
@@ -142,11 +171,21 @@ class GraphCalcs(GraphMaker):
                                 gdf_vs_base.loc[ix_match].orig_id.values[0], 
                                 geometry=edge_geom, ci_type=vs_assign.ci_type,
                                 distance = 1)
-        return self._return_network()
+        return self.return_network()
         
     
 class MultiGraphCalcs(GraphMaker):
     
+    def __init__(self, nw_or_graph):
+        """
+        nw_or_graph : instance of networks.base.Network or .MultiNetwork or
+            igraph.Graph
+        """
+        if isinstance(nw_or_graph, ig.Graph):
+            self.graph = nw_or_graph
+        else:
+            return GraphMaker.__init__(self, nw_or_graph)
+
     
     def link_closest_vertices(self, ci_type_assign, ci_type_base, 
                               link_type='dependency'):
@@ -163,38 +202,16 @@ class MultiGraphCalcs(GraphMaker):
 
         edge_geoms = self.make_edge_geometries(gdf_vs_assign.geometry,
                                           gdf_vs_base.loc[ix_match].geometry)
-
+        # TODO: update orig_ids for new edges!!
+        # edge_orig_ids = 
+        
         self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
                               {'geometry' : edge_geoms,
                                'ci_type' : [link_type],
                                'distance' : 1})
 
     def return_multinetwork(self):
-        
-        gdf_edges = gpd.GeoDataFrame(
-            self.graph.get_edge_dataframe().rename({'source':'from_id',
-                                                    'target':'to_id'}, axis=1))
-        gdf_nodes = gpd.GeoDataFrame(
-            self.graph.get_vertex_dataframe().reset_index(
-                ).rename({'vertex ID':'name_id'} ,axis=1))
-        #.drop('name_id',axis=1)
-        return MultiNetwork(edges=gdf_edges, nodes=gdf_nodes)
- 
-
-    def plot_multigraph(self,layer_dict,layout):    
-        visual_style = {}
-        visual_style["vertex_size"] = [layer_dict['vsize'][attr] for attr in self.graph.vs["ci_type"]]
-        visual_style["edge_arrow_size"] = 1
-        visual_style["edge_color"] = [layer_dict['edge_col'][attr] for attr in self.graph.vs["ci_type"]]
-        visual_style["vertex_color"] = [layer_dict['vertex_col'][attr] for attr in self.graph.vs["ci_type"]]
-        if layout == "fruchterman_reingold":
-            visual_style["layout"] = self.graph.layout("fruchterman_reingold")
-        elif layout == 'sugiyama':
-            visual_style["layout"] = self.graph.layout_sugiyama(layers=[layer_dict['layers'][attr] for attr in self.graph.vs["ci_type"]])#
-        visual_style["edge_curved"] = 0.2
-        visual_style["edge_width"] = 1
-        
-        return ig.plot(self.graph, **visual_style) 
+        return MultiNetwork(graphs=[self.graph])
 
     def cluster_nodesums(self, sum_variable):
         df_vs = self.graph.get_vertex_dataframe()
