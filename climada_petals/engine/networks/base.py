@@ -21,12 +21,13 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 import logging
 import numpy as np
 import geopandas as gpd
+import igraph as ig
 
 LOGGER = logging.getLogger(__name__)
 
 class Network:
     
-    def __init__(self, edges=None, nodes=None):
+    def __init__(self, edges=None, nodes=None, graph=None):
         """
         gdf_nodes : id identifier needs to be first column of nodes
         gdf_edges : from_id and to_id need to be first two columns of edges
@@ -34,6 +35,9 @@ class Network:
         self.edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
         self.nodes = gpd.GeoDataFrame(columns=['name_id', 'ci_type'])
         
+        if graph is not None:
+            edges, nodes = self._assemble_from_graph(graph)
+            
         if edges is not None:
             self.edges = edges
         if nodes is not None:
@@ -45,27 +49,46 @@ class Network:
         return np.unique(np.unique(self.edges.ci_type).tolist().append(
                          np.unique(self.nodes.ci_type).tolist()))
 
+    def _assemble_from_graph(self, graph):
+        
+        edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
+            {'source':'from_id', 'target':'to_id'}, axis=1))
+        nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
+                ).rename({'vertex ID':'name_id'}, axis=1))
+        
+        return edges, nodes
 
 class MultiNetwork:
     
-    def __init__(self, edges=None, nodes=None, networks=None):
+    def __init__(self, edges=None, nodes=None, networks=None, graphs=None):
         """
         either edges, nodes or networks=[]
         
         nodes : id identifier needs to be first column of nodes
         edges : from_id and to_id need to be first two columns of edges
-        networks : 
+        networks : networks.base.Network instances
+        graphs : igraph.Graph instances
         """
-        # be more specific than **kwargs with self.__dict__.update(kwargs) 
             
         if networks is not None:
             edges, nodes = self._assemble_from_nws(networks)
+        
+        if graphs is not None:
+            edges, nodes = self._assemble_from_graphs(graphs)
     
+        if not hasattr(edges, 'orig_id'):
+            edges = self._add_orig_id(edges)
+        if not hasattr(nodes, 'orig_id'):
+            nodes = self._add_orig_id(nodes)
+            
         self.edges = edges
         self.nodes = nodes
         self.ci_type =  self._update_ci_types()
 
-                        
+    
+    def _add_orig_id(self, gdf):
+        gdf['orig_id'] = range(len(gdf))
+              
     def _update_ci_types(self):
         return np.unique(np.unique(self.edges.ci_type).tolist().append(
                          np.unique(self.nodes.ci_type).tolist()))
@@ -89,4 +112,17 @@ class MultiNetwork:
     
         return edges, nodes
     
+    def _assemble_from_graphs(self, graphs):
+        
+        graph = ig.Graph()
+        
+        for g in graphs:
+            graph += g
+        
+        edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
+            {'source':'from_id', 'target':'to_id'}, axis=1))
+        nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
+                ).rename({'vertex ID':'name_id'}, axis=1))
+        
+        return edges, nodes
     
