@@ -16,12 +16,9 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 """
 
-import geopandas as gpd
 import logging
 import numpy as np
-import pandas as pd
 import pandapower as pp
-import shapely
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
 
@@ -31,115 +28,6 @@ LOGGER = logging.getLogger(__name__)
 KTOE_TO_MWH = 11630 # conversion factor MWh/ktoe (kilo ton of oil equivalents)
 HRS_PER_YEAR = 8760
 
-class PowerFunctionalData():
-    
-    def __init__(self):
-        self.tot_cons_mwh = None
-        self.tot_gen_mwh = None
-        
-    def assign_electricity_demand_supply(self, multinet, path_el_cons_iea, 
-                                         path_el_impexp_iea):
-        """Wrapper to assign d & s to nodes in one go. """
-        
-        multinet = self.assign_edemand(multinet, path_el_cons_iea)
-        multinet = self.assign_esupply(multinet, path_el_impexp_iea)
-        
-        return multinet
-         
-    
-    def assign_edemand(self, multinet, path_el_cons_iea):
-        """Assigns loads (mw) to each people node in the network"""
-        
-        # Country meta-data
-        bool_pop = multinet.nodes.ci_type=='people'
-        pop_tot = multinet.nodes[bool_pop].counts.sum()
-        
-        # Latest annual consumption data from the IEA (2018)
-        df_el_cons = pd.read_csv(path_el_cons_iea, skiprows=4) # given in ktoe
-        
-        per_cap_resid_cons_mwh = df_el_cons.iloc[-1]['Residential'] * \
-            KTOE_TO_MWH/pop_tot
-        per_cap_indust_cons_mwh = df_el_cons.iloc[-1]['Industry'] * \
-            KTOE_TO_MWH/pop_tot
-        per_cap_pubser_cons_mwh = df_el_cons.iloc[-1]['Commercial and public services'] * \
-            KTOE_TO_MWH/pop_tot
-        per_cap_cons_mwh = per_cap_resid_cons_mwh + \
-            per_cap_indust_cons_mwh + per_cap_pubser_cons_mwh
-        
-        # needed for supply calcs
-        self.tot_cons_mwh = per_cap_cons_mwh*pop_tot
-    
-        # add to multinet as loads (MW -> annual demand / hr)
-        multinet.nodes['el_load_mw'] = \
-            multinet.nodes.counts*per_cap_cons_mwh/HRS_PER_YEAR
-        multinet.nodes['el_load_resid_mw'] =  \
-            multinet.nodes.counts*per_cap_resid_cons_mwh/HRS_PER_YEAR
-        multinet.nodes['el_load_indust_mw'] =  \
-            multinet.nodes.counts*per_cap_indust_cons_mwh/HRS_PER_YEAR
-        multinet.nodes['el_load_pubser_mw'] =  \
-            multinet.nodes.counts*per_cap_pubser_cons_mwh/HRS_PER_YEAR
-        
-        return multinet
-        
-    def assign_esupply(self, multinet, path_el_impexp_iea):
-
-        """Assigns generation (mw) to each power plant node in the network"""
-        # TODO: rename to esupply_iea, 
-        # TODO: check for last year in csv (not hardcoded 2017)
-        
-        # Latest annual Import/Export data from the IEA (2018)
-        # imports positive, exports negative sign
-        df_imp_exp = pd.read_csv(path_el_impexp_iea, skiprows=4)
-        
-        tot_el_imp_mwh = df_imp_exp.iloc[-1]['Imports']*KTOE_TO_MWH
-        tot_el_exp_mwh = df_imp_exp.iloc[-1]['Exports']*KTOE_TO_MWH
-        tot_imp_exp_balance_mwh = tot_el_imp_mwh + tot_el_exp_mwh
-        
-        # Annual generation (2018): assumed as el. consumption + imp/exp balance
-        if not self.tot_cons_mwh:
-            LOGGER.error('''no total electricity consumption set. 
-                         Run assign_edemand() first.''')
-                         
-        self.tot_el_gen_mwh = self.tot_cons_mwh - tot_imp_exp_balance_mwh
-        
-        # generation from WRI power plants database (usually incomplete)
-        bool_pplants = multinet.nodes.ci_type == 'power plant'
-        multinet.nodes['estimated_generation_gwh_2017'] = pd.to_numeric(
-           multinet.nodes.estimated_generation_gwh_2017, errors='coerce')
-        gen_pplants_mwh = multinet.nodes.estimated_generation_gwh_2017*1000
-        tot_gen_pplants_mwh = gen_pplants_mwh.sum()
-        
-        # fill plants with no estimated generation by remainder of country production (2017!)
-        gen_unassigned = self.tot_el_gen_mwh - tot_gen_pplants_mwh
-        bool_unassigned_plants = np.isnan(gen_pplants_mwh) & bool_pplants
-        gen_pplants_mwh[bool_unassigned_plants] = gen_unassigned/bool_unassigned_plants.sum()
-        
-        # sanity check
-        if gen_pplants_mwh.sum() == self.tot_el_gen_mwh: 
-            LOGGER.info('''estimated annual el. production (IEA) now matches
-                        assigned annual el. generation (WRI)''')
-        else:
-            LOGGER.warning('''estimated el. production from IEA doesn`t match
-                           power plant el. generation''')
-        
-        # add el. generation to network, 
-        # add another imp/exp balance node outside of cntry shape
-        multinet.nodes['el_gen_mw'] = gen_pplants_mwh/HRS_PER_YEAR
-        imp_exp_balance = gpd.GeoDataFrame(
-            {'geometry':[shapely.geometry.Point(max(multinet.nodes[bool_pplants].geometry.x)+1,
-                                                max(multinet.nodes[bool_pplants].geometry.y)+1)],
-             'name': ['imp_exp_balance'],
-             'el_gen_mw': [tot_imp_exp_balance_mwh/HRS_PER_YEAR],
-             'ci_type' : 'power plant',
-             'name_id' : max(multinet.nodes.name_id)+1,
-             'orig_id' : max(multinet.nodes.name_id)+1})
-        multinet.nodes = multinet.nodes.append(imp_exp_balance, ignore_index=True)
-        
-        return multinet
-
-    def assign_linecapa():
-        pass
-    
 
 class PowerFlow():
     """
