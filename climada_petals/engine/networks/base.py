@@ -22,6 +22,8 @@ import logging
 import numpy as np
 import geopandas as gpd
 import igraph as ig
+import matplotlib.pyplot as plt
+import contextily as ctx
 
 LOGGER = logging.getLogger(__name__)
 
@@ -125,4 +127,40 @@ class MultiNetwork:
                 ).rename({'vertex ID':'name_id'}, axis=1))
         
         return edges, nodes
+    
+    def plot_cis(self, ci_types=[], **kwargs):
+        
+        if not ci_types:
+            ci_types = self.ci_type
+        
+        colors = kwargs.get('colors')
+        if not colors:
+            colors = ['brown', 'red', 'black', 'green', 'blue', 'orange', 
+                      'pink', 'white'][:len(ci_types)]
+        labels = kwargs.get('labels')
+        if not labels:
+            labels=ci_types
+            
+        ax = self.edges[self.edges.ci_type==ci_types[0]].append(
+            self.nodes[self.nodes.ci_type==ci_types[0]]
+            ).set_crs(epsg=4326).to_crs(epsg=3857).plot(
+                figsize=(15, 15), alpha=1, markersize=20, color='yellow', 
+                        edgecolor='yellow', label=labels[0])
+
+        for ci_type, color, label in zip(ci_types[1:], colors, labels[1:]):
+            self.edges[self.edges.ci_type==ci_type].append(
+            self.nodes[self.nodes.ci_type==ci_type]
+            ).set_crs(epsg=4326).to_crs(epsg=3857).plot(
+                ax=ax, figsize=(15, 15), alpha=1, markersize=20, color=color, 
+                edgecolor=color, label=label)
+        
+        handles, labels = ax.get_legend_handles_labels()
+        # manually define patch for airport s
+        # patch = mpatches.Patch(color='pink', label='airport')
+        # handles.append(patch) 
+        ax.legend(handles=handles, loc='upper left')
+        ax.set_title(kwargs.get('title'), fontsize=25)
+        ctx.add_basemap(ax)
+        
+        return plt.show()
     

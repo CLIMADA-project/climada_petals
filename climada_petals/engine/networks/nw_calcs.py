@@ -89,9 +89,6 @@ class GraphMaker:
         visual_style["edge_width"] = 1
         
         return ig.plot(self.graph, **visual_style) 
-    
-    def plot_geodata(self, *kwargs):
-        pass
 
     def _ckdnearest(self, vs_assign, gdf_base):
         """

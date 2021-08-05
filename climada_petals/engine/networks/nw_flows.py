@@ -188,7 +188,7 @@ class PowerFlow():
     def pflow_stats(self, multinet):
         multinet.nodes[~np.isnan(multinet.nodes.el_load_mw)].el_load_mw > (multinet.nodes.actual_supply_mw+10e-5)
         
-    def plot_opf_results(self, multinet, var='pflow', outline=None):
+    def plot_opf_results(self, multinet, var='pflow', outline=None, **kwargs):
         
         fig, ax1 = plt.subplots(1, 1, sharex=(True), sharey=True,figsize=(15, 15),)
         divider = make_axes_locatable(ax1)
@@ -198,13 +198,15 @@ class PowerFlow():
             multinet.edges.plot(
                 'powerflow_mw', alpha=1, label='Power FLow (MW)', 
                 legend=True, cax=cax, ax=ax1, 
-                linewidth=np.log([abs(x)+1 for x in multinet.edges['powerflow_mw']]))
+                linewidth=np.log([abs(x)+1 for x in multinet.edges['powerflow_mw']]), 
+                vmin=kwargs.get("vmin"), vmax=kwargs.get("vmax"))
             
         elif var=='line_load':
             multinet.edges.plot(
                 'line_loading', alpha=1, label='Line Loadings (%)', 
                 legend=True, cax=cax, ax=ax1, 
-                linewidth=np.log([abs(x)+1 for x in multinet.edges['line_loading']]))
+                linewidth=np.log([abs(x)+1 for x in multinet.edges['line_loading']]),
+                vmin=kwargs.get("vmin"), vmax=kwargs.get("vmax"))
             
         if outline is not None:
             outline.boundary.plot(linewidth=0.5, ax=ax1, 
