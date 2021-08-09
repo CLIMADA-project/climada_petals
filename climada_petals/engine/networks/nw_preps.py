@@ -24,9 +24,13 @@ import shapely
 import logging
 import sys
 import numpy as np
+import rasterio
+from rasterio.enums import Resampling
 
 sys.path.insert(1, '/Users/evelynm/trails/src/trails')
 import simplify
+
+from climada.util import coordinates as u_coords
 
 LOGGER = logging.getLogger(__name__)
 
@@ -96,12 +100,15 @@ class NetworkPreprocess():
         
         return edges, nodes
 
+        
     def _simplify_network(self, edges=None, nodes=None):
         
         # trails.simplify runs in pygeos, not shapely. convert.
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
         if not nodes.empty:
+            # TODO: Check why doesnt work in here
+            # nodes['geometry'] = nodes.geometry.apply(lambda geom: geom.centroid)
             nodes = self.shapely_to_pygeos(self, nodes)
 
         network = simplify.Network(edges=edges, nodes=nodes)
@@ -215,6 +222,48 @@ class PowerlinePreprocess(NetworkPreprocess):
 # =============================================================================
 # Functional Data
 # =============================================================================
+
+class UtilFunctionalData():
+    
+    def _resample_res(self, filepath, upscale_factor, nodata):
+        
+        with rasterio.open(filepath) as dataset:
+            # resample data to target shape
+            arr = dataset.read(
+                out_shape=(dataset.count, int(dataset.height * upscale_factor),
+                           int(dataset.width * upscale_factor)), 
+                resampling=Resampling.average)
+            # scale image transform
+            transform = dataset.transform * dataset.transform.scale(
+                (dataset.width / arr.shape[-1]),
+                (dataset.height / arr.shape[-2]))
+
+        arr = np.where(arr==nodata, 0, arr)
+        arr = arr*(1/upscale_factor)**2
+        
+        return arr, transform
+        
+        
+    def load_resampled_raster(self, filepath, upscale_factor, nodata=-99999.):
+
+        arr, transform = self._resample_res(filepath, upscale_factor, nodata)
+        
+        grid = u_coords.raster_to_meshgrid(transform, arr.shape[-1], 
+                                           arr.shape[-2])                                               
+        gdf = gpd.GeoDataFrame({'counts': arr.squeeze().flatten(), 
+                                'geometry': gpd.points_from_xy(
+                                    grid[0].flatten(), grid[1].flatten())})
+        gdf = gdf[gdf.counts!=0].reset_index(drop=True)
+        
+        # manual correction for over-estimate after aggregation:
+        arr_orig, __ = self._resample_res(filepath, 1, nodata)
+        corr_factor = arr_orig.squeeze().flatten().sum() / \
+            arr.squeeze().flatten().sum()
+        gdf['counts'] = gdf.counts * corr_factor
+        
+        return gdf
+
+
 
 class PowerFunctionalData():
     

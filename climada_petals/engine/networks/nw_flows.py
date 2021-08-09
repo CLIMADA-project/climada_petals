@@ -185,8 +185,8 @@ class PowerFlow():
         
         return multinet
     
-    def pflow_stats(self, multinet):
-        multinet.nodes[~np.isnan(multinet.nodes.el_load_mw)].el_load_mw > (multinet.nodes.actual_supply_mw+10e-5)
+    # def pflow_stats(self, multinet):
+    #     multinet.nodes[~np.isnan(multinet.nodes.el_load_mw)].el_load_mw > (multinet.nodes.actual_supply_mw+10e-5)
         
     def plot_opf_results(self, multinet, var='pflow', outline=None, **kwargs):
         
