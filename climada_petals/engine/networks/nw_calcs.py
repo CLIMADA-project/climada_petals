@@ -205,7 +205,68 @@ class MultiGraphCalcs(GraphMaker):
         self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
                               {'geometry' : edge_geoms,
                                'ci_type' : [link_type],
-                               'distance' : 1})
+                               'distance' : 1,
+                               'func_level' : 1})
+    
+    def link_closest_vertices_subgraph(self, ci_type_assign, ci_type_base, 
+                                       link_type='dependency', source_of=None, target_of=None):
+        """
+        match all vertices of ci_type_assign to closest vertices in ci_type_base
+        that are also source or target of an edge with ci_type 'source_of' or 
+        'target_of', resp.
+
+        Example
+        -------
+        E.g. assign hospitals only to power nodes that have a people-dependency
+        link:
+        link_closest_vertices_subgraph(health, power line, 
+                                       link_type='dependency_hc_power', 
+                                       source_of='dependency_hc_power')
+        
+        Parameters
+        ----------
+        
+        Returns
+        -------
+        Updated in vertex attributes (vID of graph_base, geometry & distance)
+
+        """
+        gdf_vs = self.graph.get_vertex_dataframe()        
+        gdf_vs_assign = gdf_vs[gdf_vs.ci_type == ci_type_assign]
+        
+        allowed_base = []
+        
+        if (source_of is not None) and (not target_of):
+            es = self.graph.es.select(ci_type=source_of)
+            for edge in es:
+                allowed_base.append(edge.source)
+        elif (target_of is not None) and (not source_of):
+            es = self.graph.es.select(ci_type=source_of)
+            for edge in es:
+                allowed_base.append(edge.target)
+        else:
+            es1 = self.graph.es.select(ci_type=source_of)
+            sources = np.unique([edge.source for edge in es1])
+            es2 = self.graph.es.select(ci_type=target_of)
+            targets = np.unique([edge.target for edge in es2])
+            
+            for source in sources:
+                if source in targets:
+                    allowed_base.append(source)
+
+        allowed_base = np.unique(allowed_base)
+        gdf_vs_base = gdf_vs[(gdf_vs.ci_type == ci_type_base)].loc[allowed_base]
+
+        ix_match = self._ckdnearest(gdf_vs_assign, gdf_vs_base)
+        edge_geoms = self.make_edge_geometries(gdf_vs_assign.geometry,
+                                          gdf_vs_base.loc[ix_match].geometry)
+        # TODO: update orig_ids for new edges!!
+        # edge_orig_ids = 
+        self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
+                              {'geometry' : edge_geoms,
+                               'ci_type' : [link_type],
+                               'distance' : 1,
+                               'func_level' : 1})
 
     def return_multinetwork(self):
         return MultiNetwork(graphs=[self.graph])
@@ -225,7 +286,51 @@ class MultiGraphCalcs(GraphMaker):
         vs_cluster_dict = dict(zip(range(self.graph.vcount()),vs_membership))
         return [vs_cluster_dict[x] for x in 
                 self.graph.get_edge_dataframe()['source']]
+    
+    def select_edges(self, edgename):
+        return self.graph.es.select(ci_type=edgename)
+    
+    def select_nodes(self, nodename):
+        return self.graph.vs.select(ci_type=nodename)
+    
+    def _get_var_from_parent(self, edge_type, varname):
         
+        edges = self.select_edges(edge_type)
+        var_parent = []
+        for edge in edges:
+            var_parent.append(self.graph.vs[edge.source][varname])
+        return var_parent
+
+    def _assign_to_child(self, edge_type, varname, varlist=None):
+        
+        edges = self.select_edges(edge_type)
+        # "clean" var to be assigned
+        for edge in edges:
+            self.graph.vs[edge.target][varname] = 0
+            
+        if not varlist:
+            for edge in edges:
+                self.graph.vs[edge.target][varname] += \
+                    self.graph.vs[edge.source][varname]
+        else:
+            for edge, var in zip(edges, varlist):
+                self.graph.vs[edge.target][varname] = var
+                    
+    def _assign_to_parent(self, edge_type, varname, varlist=None):
+        
+        edges = self.select_edges(edge_type)
+        # "clean" var to be assigned
+        for edge in edges:
+            self.graph.vs[edge.source][varname] = 0
+            
+        if not varlist:
+            for edge in edges:
+                self.graph.vs[edge.source][varname] += \
+                    self.graph.vs[edge.target][varname]
+        else:
+            for edge, var in zip(edges, varlist):
+                self.graph.vs[edge.source][varname] = var
+                        
 # class MultiNetwork():
 
 

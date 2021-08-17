@@ -21,7 +21,9 @@ import numpy as np
 import pandapower as pp
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
+import igraph as ig
 
+from climada_petals.engine.networks.nw_calcs import MultiGraphCalcs, GraphMaker
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,15 +44,7 @@ class PowerFlow():
 
         if pp_net is not None:
             self.pp_net = pp_net
-    
-    def _select_power_es_vs(self, multinet):
-        """select all edges and nodes directly linked to power line entries"""
-        
-        power_cond_es = multinet.edges.ci_type == "power line"
-        power_cond_vs = multinet.nodes.name_id.isin(
-            np.unique([multinet.edges[power_cond_es].from_id, 
-                       multinet.edges[power_cond_es].to_id]))
-        return power_cond_es, power_cond_vs
+
     
     def fill_pp_powernet(self, multinet, voltage=110, load_cntrl=False, 
                          gen_cntrl=True, max_load=120, parallel_lines=False):
@@ -61,7 +55,9 @@ class PowerFlow():
         in MW).
         """
         
-        power_cond_es, power_cond_vs = self._select_power_es_vs(multinet)
+        power_cond_es = multinet.edges.ci_type == "power line"
+        power_cond_vs = (multinet.nodes.ci_type == 'power line') | (multinet.nodes.ci_type == 'power plant')
+        
         poweredges = multinet.edges[power_cond_es]
         powernodes = multinet.nodes[power_cond_vs]
         
@@ -84,12 +80,14 @@ class PowerFlow():
                                length_km=row.distance/1000, 
                                std_type='184-AL1/30-ST1A 110.0', 
                                name=f'{row.orig_id}', 
-                               parallel=row.parallel_lines)
+                               parallel=row.parallel_lines,
+                               in_service=(row.func_level==1))
             else:
                 pp.create_line(self.pp_net, from_bus, to_bus, 
                                length_km=row.distance/1000, 
                                std_type='184-AL1/30-ST1A 110.0', 
-                               name=f'{row.orig_id}')
+                               name=f'{row.orig_id}',
+                               in_service=(row.func_level==1))
         if max_load:
             self.pp_net.line['max_loading_percent'] = max_load
 
@@ -107,7 +105,7 @@ class PowerFlow():
         
         LOGGER.info('adding loads...')
         # loads (= electricity demands)
-        for _, row in powernodes[~np.isnan(powernodes.el_load_mw)].iterrows():
+        for _, row in powernodes[powernodes.el_load_mw >0].iterrows():
             bus_idx = pp.get_element_index(self.pp_net, "bus", 
                                            name=f'Bus {row.name_id}')
             pp.create_load(self.pp_net, bus_idx, p_mw=row.el_load_mw, 
@@ -164,29 +162,40 @@ class PowerFlow():
         assign acutal received supply (MW) to demand nodes (people, etc.) 
         """
         
-        power_cond_es, power_cond_vs = self._select_power_es_vs(multinet)
-        
-        # line results
-        multinet.edges['parallel_lines'] = 0
-        multinet.edges['line_loading'] = 0
-        multinet.edges['powerflow_mw'] = 0     
-        multinet.edges.parallel_lines.loc[power_cond_es] = self.pp_net.line.parallel.values
-        multinet.edges.line_loading.loc[power_cond_es] = self.pp_net.res_line.loading_percent.values
-        multinet.edges.powerflow_mw.loc[power_cond_es] = self.pp_net.res_line.p_from_mw.values
-        
-        # generation results
-        cond_pplant = power_cond_vs & (multinet.nodes.ci_type == 'power plant')
+        cond_pline = multinet.edges.ci_type == "power line"
+        cond_pplant = multinet.nodes.ci_type == 'power plant'
+        cond_load = (multinet.nodes.el_load_mw > 0) & (multinet.nodes.ci_type=='power line')
+
+        # add empty vars:
+        multinet.edges[['parallel_lines','line_loading','powerflow_mw']] = 0
         multinet.nodes['actual_supply_mw'] = 0
+        
+        # line results 
+        multinet.edges.parallel_lines.loc[cond_pline] = self.pp_net.line.parallel.values
+        multinet.edges.powerflow_mw.loc[cond_pline] = self.pp_net.res_line.p_from_mw.values
+        # replace NaNs by 0 (happens only where pflow = 0)
+        multinet.edges.line_loading.loc[cond_pline] = self.pp_net.res_line.loading_percent.fillna(0)
+        # generation results (less the slack variable)
         multinet.nodes.actual_supply_mw.loc[cond_pplant] = self.pp_net.res_gen.p_mw[:-1].values
         
-        # load results (all nodes connected to a power line w/ a el_load_mw entry)
-        cond_load = power_cond_vs & ~np.isnan(multinet.nodes.el_load_mw)
+        # load results; also update functionality level (at loads only)
         multinet.nodes.actual_supply_mw.loc[cond_load] = self.pp_net.res_load.p_mw.values
-        
+        multinet.nodes.func_level.loc[cond_load] = multinet.nodes.actual_supply_mw.loc[cond_load] / multinet.nodes.el_load_mw.loc[cond_load]
+
         return multinet
     
-    # def pflow_stats(self, multinet):
-    #     multinet.nodes[~np.isnan(multinet.nodes.el_load_mw)].el_load_mw > (multinet.nodes.actual_supply_mw+10e-5)
+    def pflow_stats(self):
+        supply_load = self.pp_net.res_load.p_mw.sum()
+        demand_load = self.pp_net.load.p_mw.sum()
+        supply_gen = self.pp_net.res_gen.p_mw.sum()
+        max_loading = max(self.pp_net.res_line.loading_percent)
+        
+        print(f'''The difference between supplied ({int(supply_load)} MW) and 
+              demanded power({int(demand_load)} MW) at loads is {int(supply_load-demand_load)} MW, 
+              corresponding to {(supply_load-demand_load)/demand_load*100} % of total demand.''')
+        print(f'Supplied power at generators is {int(supply_gen)} MW')
+        print(f'Max. line loading is {int(max_loading)} %')
+        
         
     def plot_opf_results(self, multinet, var='pflow', outline=None, **kwargs):
         
@@ -215,3 +224,64 @@ class PowerFlow():
         ax1.legend(handles=handles, loc='upper left')
         ax1.set_title('DC-OPF result', fontsize=20)
         fig.tight_layout()
+
+
+class PowerCascades(MultiGraphCalcs):
+    
+    def __init__(self, nw_or_graph):
+        """
+        nw_or_graph : instance of networks.base.Network or .MultiNetwork or
+            igraph.Graph
+        """
+        self.ci_dependency_dict = {'people' : 'dependency_ppl_power',
+                                   'health' : 'dependency_hc_power',
+                                   'education' : 'dependency_educ_power'}
+        
+        if isinstance(nw_or_graph, ig.Graph):
+            self.graph = nw_or_graph
+        else:
+            return GraphMaker.__init__(self, nw_or_graph)
+
+        
+    def assign_edemand_pline(self):
+        """
+        assign per-capita derived electricity consumption from 
+        people nodes to the upstream power node.
+        """
+        self._assign_to_parent(edge_type = 'dependency_ppl_power', 
+            varname = 'el_load_mw')
+
+    
+    def get_power_access_level(self, ci_type):
+        """
+        for ci_type dependent on power, get the power access level 
+        (corresponding to the functionality level of its upstream power node)
+        """
+        access_level = self._get_var_from_parent(
+            edge_type = self.ci_dependency_dict[ci_type], 
+            varname = 'func_level')
+        self._assign_to_child(edge_type = self.ci_dependency_dict[ci_type], 
+            varname = 'power_access_level', varlist=access_level)
+        
+    
+    def get_actual_power_supplied(self, ci_type):
+                
+        func_level_parent = self._get_var_from_parent(
+            edge_type = self.ci_dependency_dict[ci_type], 
+            varname = 'func_level')
+        
+        load_parent = self._get_var_from_parent(
+            edge_type = self.ci_dependency_dict[ci_type], 
+            varname = 'el_load_mw')
+        
+        self._assign_to_child(edge_type = self.ci_dependency_dict[ci_type], 
+            varname = 'actual_supply_mw', 
+            varlist=[a*b for a,b in zip(func_level_parent,load_parent)])
+ 
+    
+class HealthCascades(MultiGraphCalcs):
+    
+    def get_health_access_level(self):
+        pass
+
+        

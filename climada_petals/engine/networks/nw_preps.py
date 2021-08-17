@@ -31,6 +31,7 @@ sys.path.insert(1, '/Users/evelynm/trails/src/trails')
 import simplify
 
 from climada.util import coordinates as u_coords
+from climada_petals.engine.networks.nw_calcs import MultiGraphCalcs
 
 LOGGER = logging.getLogger(__name__)
 
@@ -267,70 +268,66 @@ class UtilFunctionalData():
 
 class PowerFunctionalData():
     
-    def __init__(self, path_elcons_iea=None, path_elimpexp_iea=None):
-        
-        self.df_el_cons = pd.DataFrame()
-        self.df_el_impexp = pd.DataFrame()
-        self.tot_cons_mwh = np.nan
-        
-        if path_elcons_iea is not None:
-            self.df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4) # given in ktoe
-        if path_elimpexp_iea is not None:
-             self.df_el_impexp = pd.read_csv(path_elimpexp_iea, skiprows=4)
-
-    
-    def assign_edemand_iea(self, gdf_pop):
+    def assign_edemand_iea(self, multinet, path_elcons_iea):
         """Assigns loads (mw) to each people cluster"""
         
-        # Country meta-data
-        pop_tot = gdf_pop.counts.sum()
+        df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
+        bool_ppl = multinet.nodes.ci_type=='people'
+        multinet.nodes[['el_load_mw', 'el_load_resid_mw','el_load_indust_mw',
+                        'el_load_pubser_mw']] = 0
         
-        per_cap_resid_cons_mwh = self.df_el_cons.iloc[-1]['Residential'] * \
+        # Country meta-data
+        pop_tot = multinet.nodes[bool_ppl].counts.sum()
+        
+        per_cap_resid_cons_mwh = df_el_cons.iloc[-1]['Residential'] * \
             KTOE_TO_MWH/pop_tot
-        per_cap_indust_cons_mwh = self.df_el_cons.iloc[-1]['Industry'] * \
+        per_cap_indust_cons_mwh = df_el_cons.iloc[-1]['Industry'] * \
             KTOE_TO_MWH/pop_tot
-        per_cap_pubser_cons_mwh = self.df_el_cons.iloc[-1]['Commercial and public services'] * \
+        per_cap_pubser_cons_mwh = df_el_cons.iloc[-1]['Commercial and public services'] * \
             KTOE_TO_MWH/pop_tot
         per_cap_cons_mwh = per_cap_resid_cons_mwh + \
             per_cap_indust_cons_mwh + per_cap_pubser_cons_mwh
-        
-        # needed for supply calcs
-        self.tot_cons_mwh = per_cap_cons_mwh*pop_tot
-    
+            
         # add to multinet as loads (MW -> annual demand / hr)
-        gdf_pop['el_load_mw'] = \
-            gdf_pop.counts*per_cap_cons_mwh/HRS_PER_YEAR
-        gdf_pop['el_load_resid_mw'] =  \
-            gdf_pop.counts*per_cap_resid_cons_mwh/HRS_PER_YEAR
-        gdf_pop['el_load_indust_mw'] =  \
-           gdf_pop.counts*per_cap_indust_cons_mwh/HRS_PER_YEAR
-        gdf_pop['el_load_pubser_mw'] =  \
-            gdf_pop.counts*per_cap_pubser_cons_mwh/HRS_PER_YEAR
+        multinet.nodes.el_load_mw.loc[bool_ppl] = \
+            multinet.nodes[bool_ppl].counts*per_cap_cons_mwh/HRS_PER_YEAR
+        multinet.nodes.el_load_resid_mw.loc[bool_ppl] =  \
+            multinet.nodes[bool_ppl].counts*per_cap_resid_cons_mwh/HRS_PER_YEAR
+        multinet.nodes.el_load_indust_mw.loc[bool_ppl] =  \
+           multinet.nodes[bool_ppl].counts*per_cap_indust_cons_mwh/HRS_PER_YEAR
+        multinet.nodes.el_load_pubser_mw.loc[bool_ppl] =  \
+            multinet.nodes[bool_ppl].counts*per_cap_pubser_cons_mwh/HRS_PER_YEAR
         
-        return gdf_pop
+        return multinet
         
-    def assign_esupply_iea(self, gdf_pplants):
-
+    def assign_esupply_iea(self, multinet, path_elimpexp_iea, path_elcons_iea):
         """Assigns generation (mw) to each power plant"""
-        # TODO: check for last year in csv (not hardcoded 2017)
+        
+        df_el_impexp = pd.read_csv(path_elimpexp_iea, skiprows=4)
+        df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
+        
+        bool_pplants = multinet.nodes.ci_type=='power plant'
         
         # Latest annual Import/Export data from the IEA (2018)
         # imports positive, exports negative sign        
-        tot_el_imp_mwh = self.df_el_impexp.iloc[-1]['Imports']*KTOE_TO_MWH
-        tot_el_exp_mwh = self.df_el_impexp.iloc[-1]['Exports']*KTOE_TO_MWH
+        tot_el_imp_mwh = df_el_impexp.iloc[-1]['Imports']*KTOE_TO_MWH
+        tot_el_exp_mwh = df_el_impexp.iloc[-1]['Exports']*KTOE_TO_MWH
         tot_imp_exp_balance_mwh = tot_el_imp_mwh + tot_el_exp_mwh
         
+        # Latest annual consumption data from the IEA (2018)
+        tot_cons_mwh = df_el_cons.iloc[-1][
+            ['Residential', 'Industry','Commercial and public services']
+            ].sum()*KTOE_TO_MWH
+        
         # Annual generation (2018): assumed as el. consumption + imp/exp balance
-        if np.isnan(self.tot_cons_mwh):
-            LOGGER.error('''no total electricity consumption set. 
-                         Run assign_edemand_iea() first or provide tot_cons_mwh''')
-                         
-        tot_el_gen_mwh = self.tot_cons_mwh - tot_imp_exp_balance_mwh
+        tot_el_gen_mwh = tot_cons_mwh - tot_imp_exp_balance_mwh
         
         # generation from WRI power plants database (usually incomplete)
-        gdf_pplants['estimated_generation_gwh_2017'] = pd.to_numeric(
-           gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
-        gen_pplants_mwh = gdf_pplants.estimated_generation_gwh_2017*1000
+        # TODO: check for last year in csv (not hardcoded 2017)
+        multinet.nodes.estimated_generation_gwh_2017 = \
+            pd.to_numeric(multinet.nodes.estimated_generation_gwh_2017, 
+                          errors='coerce')
+        gen_pplants_mwh = multinet.nodes[bool_pplants].estimated_generation_gwh_2017*1000
         tot_gen_pplants_mwh = gen_pplants_mwh.sum()
         
         # fill plants with no estimated generation by remainder of country production (2017!)
@@ -347,14 +344,22 @@ class PowerFunctionalData():
         
         # add el. generation to network, 
         # add another imp/exp balance node outside of cntry shape
-        gdf_pplants['el_gen_mw'] = gen_pplants_mwh/HRS_PER_YEAR
+        # TODO: split into sub-function
+        multinet.nodes['el_gen_mw'] = 0
+        multinet.nodes.el_gen_mw.loc[bool_pplants] = gen_pplants_mwh/HRS_PER_YEAR
         imp_exp_balance = gpd.GeoDataFrame(
-            {'geometry':[shapely.geometry.Point(max(gdf_pplants.geometry.x)+1,
-                                                max(gdf_pplants.geometry.y)+1)],
+            {'geometry':[shapely.geometry.Point(max(multinet.nodes[bool_pplants].geometry.x)+1,
+                                                max(multinet.nodes[bool_pplants].geometry.y)+1)],
              'name': ['imp_exp_balance'],
-             'el_gen_mw': [tot_imp_exp_balance_mwh/HRS_PER_YEAR]})
+             'el_gen_mw': [tot_imp_exp_balance_mwh/HRS_PER_YEAR],
+             'name_id' : max(multinet.nodes.name_id)+1,
+             'orig_id' : max(multinet.nodes.name_id)+1,
+             'ci_type' : 'power plant',
+             'func_level' : 1})
         
-        return gdf_pplants.append(imp_exp_balance, ignore_index=True)
+        multinet.nodes = multinet.nodes.append(imp_exp_balance, ignore_index=True)
+        
+        return  multinet
 
     def assign_linecapa():
         pass

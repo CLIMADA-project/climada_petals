@@ -41,15 +41,26 @@ class Network:
             edges, nodes = self._assemble_from_graph(graph)
             
         if edges is not None:
-            self.edges = edges
+            self.edges = gpd.GeoDataFrame(edges)
         if nodes is not None:
-            self.nodes = nodes
+            self.nodes = gpd.GeoDataFrame(nodes)
         
-        self.ci_type = self._update_ci_types()
-
+        self._update_func_level()
+        self.ci_type = self._update_ci_types()        
+    
     def _update_ci_types(self):
         return np.unique(np.unique(self.edges.ci_type).tolist().append(
                          np.unique(self.nodes.ci_type).tolist()))
+    
+    def _update_func_level(self):
+        if not hasattr(self.edges, 'func_level'):
+            self.edges['func_level'] = 1
+        if not hasattr(self.nodes, 'func_level'):
+            self.nodes['func_level'] = 1
+        
+        self.edges.func_level[np.isnan(self.edges.func_level)] = 1
+        self.nodes.func_level[np.isnan(self.nodes.func_level)] = 1
+        
 
     def _assemble_from_graph(self, graph):
         
@@ -86,6 +97,7 @@ class MultiNetwork:
         self.edges = edges
         self.nodes = nodes
         self.ci_type =  self._update_ci_types()
+        self._update_func_level()
 
     
     def _add_orig_id(self, gdf):
@@ -94,7 +106,15 @@ class MultiNetwork:
     def _update_ci_types(self):
         return np.unique(np.unique(self.edges.ci_type).tolist().append(
                          np.unique(self.nodes.ci_type).tolist()))
-    
+    def _update_func_level(self):
+        if not hasattr(self.edges, 'func_level'):
+            self.edges['func_level'] = 1
+        if not hasattr(self.nodes, 'func_level'):
+            self.nodes['func_level'] = 1
+        
+        self.edges.func_level[np.isnan(self.edges.func_level)] = 1
+        self.nodes.func_level[np.isnan(self.nodes.func_level)] = 1
+        
     def _assemble_from_nws(self, networks):
         
         edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
@@ -112,7 +132,7 @@ class MultiNetwork:
             edges = edges.append(edge_gdf)
             nodes = nodes.append(node_gdf)
     
-        return edges, nodes
+        return edges.reset_index(drop=True), nodes.reset_index(drop=True)
     
     def _assemble_from_graphs(self, graphs):
         
