@@ -284,11 +284,8 @@ DICT_CIS_OSM = {
             'osm_query' : """amenity='hospital' or healthcare='hospital' or 
                              building='hospital' or building='clinic' or
                              amenity='clinic' or healthcare='clinic' or 
-                             amenity='doctors' or healthcare='doctors' or
-                             amenity='dentist' or healthcare='dentist' or
-                             amenity='pharmacy' or
-                             amenity='nursing_home' or
-                             healthcare='*'"""},
+                             amenity='doctors' or healthcare='doctors'
+                             """}, # amenity='dentist' or healthcare='dentist' or amenity='pharmacy' or amenity='nursing_home' or healthcare='*'
         'water' : {
             'osm_keys' : ['man_made','pump','pipeline','emergency','name'],
             'osm_query' : """man_made='water_well' or man_made='water_works' or
