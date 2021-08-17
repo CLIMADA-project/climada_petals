@@ -24,6 +24,7 @@ import shapely
 from scipy.spatial import cKDTree
 
 from climada_petals.engine.networks.base import Network, MultiNetwork
+from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ class MultiGraphCalcs(GraphMaker):
 
     
     def link_closest_vertices(self, ci_type_assign, ci_type_base, 
-                              link_type='dependency'):
+                              link_type=None):
         """
         match all vertices of graph_assign to closest vertices in graph_base.
         Updated in vertex attributes (vID of graph_base, geometry & distance)
@@ -201,7 +202,8 @@ class MultiGraphCalcs(GraphMaker):
                                           gdf_vs_base.loc[ix_match].geometry)
         # TODO: update orig_ids for new edges!!
         # edge_orig_ids = 
-        
+        if not link_type:
+            link_type = f'dependency_{ci_type_assign}_{ci_type_base}'
         self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
                               {'geometry' : edge_geoms,
                                'ci_type' : [link_type],
@@ -209,7 +211,8 @@ class MultiGraphCalcs(GraphMaker):
                                'func_level' : 1})
     
     def link_closest_vertices_subgraph(self, ci_type_assign, ci_type_base, 
-                                       link_type='dependency', source_of=None, target_of=None):
+                                       link_type=None, source_of=None, 
+                                       target_of=None):
         """
         match all vertices of ci_type_assign to closest vertices in ci_type_base
         that are also source or target of an edge with ci_type 'source_of' or 
@@ -220,8 +223,8 @@ class MultiGraphCalcs(GraphMaker):
         E.g. assign hospitals only to power nodes that have a people-dependency
         link:
         link_closest_vertices_subgraph(health, power line, 
-                                       link_type='dependency_hc_power', 
-                                       source_of='dependency_hc_power')
+                                       link_type='dependency_health_power', 
+                                       source_of='dependency_health_power')
         
         Parameters
         ----------
@@ -262,6 +265,8 @@ class MultiGraphCalcs(GraphMaker):
                                           gdf_vs_base.loc[ix_match].geometry)
         # TODO: update orig_ids for new edges!!
         # edge_orig_ids = 
+        if not link_type:
+            link_type = f'dependency_{ci_type_assign}_{ci_type_base}'
         self.graph.add_edges(zip(gdf_vs_assign.index, ix_match), attributes =
                               {'geometry' : edge_geoms,
                                'ci_type' : [link_type],
@@ -330,61 +335,65 @@ class MultiGraphCalcs(GraphMaker):
         else:
             for edge, var in zip(edges, varlist):
                 self.graph.vs[edge.source][varname] = var
-                        
-# class MultiNetwork():
+ 
 
-
-#     def _construct_subgraph_from_vs(self, from_ci, to_ci, via_ci=None):
-#         """
-#         re-construct to speed up computation
-#         Note: (re-indexes all vs and es!)
-#         """
-#         # vertex selection
-#         vertex_df = self.graph.get_vertex_dataframe()
-#         vid_from_ci = vertex_df[vertex_df.ci_type == from_ci].index
-#         vid_to_ci = vertex_df[vertex_df.ci_type == to_ci].index
-#         vid_via_ci = vertex_df[vertex_df.ci_type == via_ci].index
-
-#         subgraph = self.graph.induced_subgraph(
-#             vid_from_ci.append(vid_to_ci).append(vid_via_ci),
-#             implementation='copy_and_delete')
-
-#         return subgraph
-
-#     def _idmapper_subgraph_to_graph(self, subgraph):
-#         """given a sub-graph, provide a mapping from the vertex IDs and edge
-#         IDs of that one to those of the original graph.
-#         """        
-#         vs_cis_sub = np.unique(subgraph.vs.get_attribute_values('ci_type'))
-#         es_cis_sub = np.unique(subgraph.es.get_attribute_values('ci_type'))
+    def get_shortest_paths(self, from_vs, to_vs, edgeweights, mode='out', 
+                           output='epath'):
         
-#         vidx_dict = dict()
-#         eidx_dict = dict()
+        return self.graph.get_shortest_paths(from_vs, to_vs, edgeweights, 
+                                             mode, output)
         
-#         # TODO: try to get indices w/o looping through it. Evtl. Dataframes --> df[ci_Type].index
-#         # try with timeit.
+    def _make_edgeweights(self, criterion, from_ci, to_ci, via_ci):
         
-#         for ci in vs_cis_sub:
-#             vidx_dict.update(dict(zip([vs.index for vs in subgraph.vs(ci_type=ci)], 
-#                                       [vs.index for vs in self.graph.vs(ci_type=ci)])))
-#         for ci in es_cis_sub:
-#             eidx_dict.update(dict(zip([es.index for es in subgraph.es(ci_type=ci)], 
-#                                       [es.index for es in self.graph.es(ci_type=ci)])))
+        allowed_edges= [f'dependency_{from_ci}_{via_ci}', 
+                        f'dependency_{to_ci}_{via_ci}',
+                        f'{via_ci}']
+        
+        return np.array([1*edge[criterion] if edge['ci_type'] in allowed_edges
+                        else 999999 for edge in self.graph.es])
+        
+    def _preselect_destinations(self, vs_assign, vs_base, threshold):
+        points_base = np.array([(x.x, x.y) for x in vs_base['geometry']])
+        point_tree = cKDTree(points_base)
+        
+        points_assign = np.array([(x.x, x.y) for x in vs_assign['geometry']])
+        ix_matches = []
+        for assign_loc in points_assign:
+            ix_matches.append(point_tree.query_ball_point(assign_loc, threshold))
+        return ix_matches
+    
+    def get_path_distance(self, epath):
+        return sum(self.graph.es[epath]['distance'])
+        
+    def link_shortest_path_vertices(self, from_ci, to_ci, via_ci, 
+                                    threshold=100000, criterion='distance'):
+        
+        vs_from = self.select_nodes(from_ci)
+        vs_to = self.select_nodes(to_ci)
+        
+        # TODO: don't hardcode metres to degree conversion assumption
+        ix_matches = self._preselect_destinations(vs_from, vs_to, 
+                                                  threshold/(ONE_LAT_KM*1000))
+
+        for vx, indices in zip(vs_from, ix_matches):
+            weight = self._make_edgeweights(criterion, from_ci, to_ci, 
+                                            via_ci)
+            paths = self.get_shortest_paths(vx, vs_to[indices], weight, 
+                                            mode='out', output='epath')
             
-#         return {'edges' : eidx_dict, 'vertices' : vidx_dict}
+            for index, path in zip(indices, paths):
+                if path:
+                    dist = self.get_path_distance(path)
+                    if dist < threshold:
+                        edge_geom = self.make_edge_geometries(
+                            [vx['geometry']], [vs_to[index]['geometry']])[0]
+                        self.graph.add_edge(
+                            vx, vs_to[index],
+                            geometry = edge_geom,
+                            ci_type = f'dependency_{from_ci}_{to_ci}',
+                            distance = dist)
 
-#     def _edge_weights_sub(self, subgraph, weights):
-#         """allow for combination of weights into one weight metric """
-
-#         if type(weights) != str:
-#             weight = np.ones(len(subgraph.es))
-#             for weight_attr in weights:
-#                 weight*= subgraph.es.get_attribute_values(weight_attr)
-#         else:
-#             weight = subgraph.es.get_attribute_values(weights)
-
-#         return pd.Series(weight)
-
+#      def update_shortest_path_dist(self, from_ci, to_ci, via_ci, )                 
 
 #     def _shortest_paths_sub(self, subgraph, from_ci, to_ci, weight,
 #                             mode='out', output='epath'):
@@ -459,17 +468,4 @@ class MultiGraphCalcs(GraphMaker):
 #                                      columns=shortest_path_sub.columns)
 #         return shortest_path
     
-#     def plot_multigraph(self,layer_dict,layout):    
-#         visual_style = {}
-#         visual_style["vertex_size"] = [layer_dict['vsize'][attr] for attr in self.graph.vs["ci_type"]]
-#         visual_style["edge_arrow_size"] = 1
-#         visual_style["edge_color"] = [layer_dict['edge_col'][attr] for attr in self.graph.vs["ci_type"]]
-#         visual_style["vertex_color"] = [layer_dict['vertex_col'][attr] for attr in self.graph.vs["ci_type"]]
-#         if layout == "fruchterman_reingold":
-#             visual_style["layout"] = self.graph.layout("fruchterman_reingold")
-#         elif layout == 'sugiyama':
-#             visual_style["layout"] = self.graph.layout_sugiyama(layers=[layer_dict['layers'][attr] for attr in self.graph.vs["ci_type"]])#
-#         visual_style["edge_curved"] = 0.2
-#         visual_style["edge_width"] = 1
-        
-#         return ig.plot(self.graph, **visual_style) 
+

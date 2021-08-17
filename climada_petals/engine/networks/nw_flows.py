@@ -233,9 +233,6 @@ class PowerCascades(MultiGraphCalcs):
         nw_or_graph : instance of networks.base.Network or .MultiNetwork or
             igraph.Graph
         """
-        self.ci_dependency_dict = {'people' : 'dependency_ppl_power',
-                                   'health' : 'dependency_hc_power',
-                                   'education' : 'dependency_educ_power'}
         
         if isinstance(nw_or_graph, ig.Graph):
             self.graph = nw_or_graph
@@ -248,7 +245,7 @@ class PowerCascades(MultiGraphCalcs):
         assign per-capita derived electricity consumption from 
         people nodes to the upstream power node.
         """
-        self._assign_to_parent(edge_type = 'dependency_ppl_power', 
+        self._assign_to_parent(edge_type = 'dependency_people_power', 
             varname = 'el_load_mw')
 
     
@@ -258,30 +255,54 @@ class PowerCascades(MultiGraphCalcs):
         (corresponding to the functionality level of its upstream power node)
         """
         access_level = self._get_var_from_parent(
-            edge_type = self.ci_dependency_dict[ci_type], 
+            edge_type = f'dependency_{ci_type}_power', 
             varname = 'func_level')
-        self._assign_to_child(edge_type = self.ci_dependency_dict[ci_type], 
+        self._assign_to_child(edge_type =f'dependency_{ci_type}_power', 
             varname = 'power_access_level', varlist=access_level)
         
     
     def get_actual_power_supplied(self, ci_type):
                 
         func_level_parent = self._get_var_from_parent(
-            edge_type = self.ci_dependency_dict[ci_type], 
+            edge_type = f'dependency_{ci_type}_power', 
             varname = 'func_level')
         
         load_parent = self._get_var_from_parent(
-            edge_type = self.ci_dependency_dict[ci_type], 
+            edge_type = f'dependency_{ci_type}_power', 
             varname = 'el_load_mw')
         
-        self._assign_to_child(edge_type = self.ci_dependency_dict[ci_type], 
+        self._assign_to_child(edge_type = f'dependency_{ci_type}_power', 
             varname = 'actual_supply_mw', 
             varlist=[a*b for a,b in zip(func_level_parent,load_parent)])
  
     
 class HealthCascades(MultiGraphCalcs):
     
+    def update_health_paths(self):
+        es = self.select_edges('dependency_people_health')
+        edgeweights = self._make_edgeweights('distance','people', 'health',
+                                                'road')
+        for edge in es:
+            path = self.get_shortest_paths(self.graph.vs[edge.source],
+                                           self.graph.vs[edge.target], 
+                                           edgeweights, mode='out', 
+                                           output='epath')
+            edge['distance'] = self.get_path_distance(*path)
+    
     def get_health_access_level(self):
-        pass
+        # TODO: Don't hard-code threshold
+        vs_ppl = self.select_nodes('people')
+        for vx in vs_ppl:
+            edge_list = vx.incident()
+            bool_access_health = []
+            for edge in edge_list:
+                bool_access_health.append(
+                    (edge['ci_type'] == 'dependency_people_health') & 
+                    (edge['distance'] < 100000) & 
+                    (self.graph.vs[edge.target]['func_level'] == 1))
+            if sum(bool_access_health)>0:
+                vx['health_access'] = 1
+            else:
+                vx['health_access'] = 0
 
         
