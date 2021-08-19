@@ -94,8 +94,8 @@ class TCForecast(TCTracks):
     def fetch_ecmwf(self, path=None, files=None):
         """
         Fetch and read latest ECMWF TC track predictions from the FTP
-        dissemination server into instance. Use path argument to use local
-        files instead.
+        dissemination server into instance. Use path or files argument
+        to use local files instead.
 
         Parameters:
             path (str, list(str)): A location in the filesystem. Either a
@@ -111,7 +111,7 @@ class TCForecast(TCTracks):
             files = get_file_names(path)
 
         for i, file in tqdm.tqdm(enumerate(files, 1), desc='Processing',
-                                 unit='files', total=len(files)):
+                                 unit=' files', total=len(files)):
             try:
                 file.seek(0)  # reset cursor if opened file instance
             except AttributeError:
@@ -146,13 +146,18 @@ class TCForecast(TCTracks):
 
         try:
             if remote_dir is None:
+                # Read list of directories on the FTP server
                 remote = pd.Series(con.nlst())
+                # Identify directories with forecasts initialised as 00 or 12 UTC
                 remote = remote[remote.str.contains('120000|000000$')]
+                # Select the most recent directory to process (names are formatted yyyymmddhhmmss)
                 remote = remote.sort_values(ascending=False)
                 remote_dir = remote.iloc[0]
 
+            # Connect to the directory
             con.cwd(remote_dir)
 
+            # Filter to files with 'tropical_cyclone' in the name: each file is a forecast ensemble for one event
             remotefiles = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
             if len(remotefiles) == 0:
                 msg = 'No tracks found at ftp://{}/{}'
@@ -162,6 +167,7 @@ class TCForecast(TCTracks):
             localfiles = []
 
             LOGGER.info('Fetching BUFR tracks:')
+
             for rfile in tqdm.tqdm(remotefiles, desc='Download', unit=' files'):
                 if target_dir:
                     lfile = Path(target_dir, rfile).open('w+b')
