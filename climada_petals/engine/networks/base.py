@@ -164,14 +164,14 @@ class MultiNetwork:
         ax = self.edges[self.edges.ci_type==ci_types[0]].append(
             self.nodes[self.nodes.ci_type==ci_types[0]]
             ).set_crs(epsg=4326).to_crs(epsg=3857).plot(
-                figsize=(15, 15), alpha=1, markersize=20, color='yellow', 
+                figsize=(15, 15), alpha=1, markersize=40, color='yellow', 
                         edgecolor='yellow', label=labels[0])
 
         for ci_type, color, label in zip(ci_types[1:], colors, labels[1:]):
             self.edges[self.edges.ci_type==ci_type].append(
             self.nodes[self.nodes.ci_type==ci_type]
             ).set_crs(epsg=4326).to_crs(epsg=3857).plot(
-                ax=ax, figsize=(15, 15), alpha=1, markersize=20, color=color, 
+                ax=ax, figsize=(15, 15), alpha=1, markersize=40, color=color, 
                 edgecolor=color, label=label)
         
         handles, labels = ax.get_legend_handles_labels()

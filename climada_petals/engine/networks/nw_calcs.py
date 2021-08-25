@@ -349,7 +349,8 @@ class MultiGraphCalcs(GraphMaker):
                         f'dependency_{to_ci}_{via_ci}',
                         f'{via_ci}']
         
-        return np.array([1*edge[criterion] if edge['ci_type'] in allowed_edges
+        return np.array([1*edge[criterion] if (
+            (edge['ci_type'] in allowed_edges) & (edge['func_level']==1))
                         else 999999 for edge in self.graph.es])
         
     def _preselect_destinations(self, vs_assign, vs_base, threshold):

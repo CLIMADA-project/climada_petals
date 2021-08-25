@@ -289,8 +289,10 @@ class HealthCascades(MultiGraphCalcs):
                                            output='epath')
             edge['distance'] = self.get_path_distance(*path)
     
-    def get_health_access_level(self):
-        # TODO: Don't hard-code threshold
+    def get_health_access_level(self, pow_thresh=0.8, dist_thresh=100000, func_thresh=0.7):
+        """
+        
+        """
         vs_ppl = self.select_nodes('people')
         for vx in vs_ppl:
             edge_list = vx.incident()
@@ -298,11 +300,12 @@ class HealthCascades(MultiGraphCalcs):
             for edge in edge_list:
                 bool_access_health.append(
                     (edge['ci_type'] == 'dependency_people_health') & 
-                    (edge['distance'] < 100000) & 
-                    (self.graph.vs[edge.target]['func_level'] == 1))
+                    (edge['distance'] < dist_thresh) & 
+                    (self.graph.vs[edge.target]['func_level'] > func_thresh) & 
+                    (self.graph.vs[edge.target]['power_access_level'] > pow_thresh))
             if sum(bool_access_health)>0:
-                vx['health_access'] = 1
+                vx['health_access_level'] = 1
             else:
-                vx['health_access'] = 0
+                vx['health_access_level'] = 0
 
         
