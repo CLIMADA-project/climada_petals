@@ -22,12 +22,8 @@ from shutil import copyfile
 from pathlib import Path
 
 import climada
-from climada.util.config import setup_logging
-from .util.config import CONFIG
+import climada_petals.util.config
 from .util.constants import *
-
-
-__all__ = ['init']
 
 REPO_DATA = {
     'data/system': [
@@ -40,22 +36,11 @@ REPO_DATA = {
 }
 
 
-def setup_climada_data(reload=False):
-
-    for dirpath in [DEMO_DIR, SYSTEM_DIR]:
-        dirpath.mkdir(parents=True, exist_ok=True)
-
+def copy_repo_data(reload=False):
     for src_dir, path_list in REPO_DATA.items():
         for path in path_list:
             if not path.exists() or reload:
                 src = Path(__file__).parent.parent.joinpath(src_dir, path.name)
                 copyfile(src, path)
 
-
-def init():
-    climada.init()
-    setup_climada_data()
-    setup_logging(CONFIG.log_level.str())
-
-
-init()
+copy_repo_data()
