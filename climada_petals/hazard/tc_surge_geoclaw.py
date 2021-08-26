@@ -622,7 +622,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata = self.rundata.clawdata
         amrdata = self.rundata.amrdata
         refinedata = self.rundata.refinement_data
-        amrdata.refinement_ratios_x = [2, 2, 2, 2, 3]
+        amrdata.refinement_ratios_x = [2, 2, 2, 2, 4]
         amrdata.refinement_ratios_y = amrdata.refinement_ratios_x
         amrdata.refinement_ratios_t = amrdata.refinement_ratios_x
         amrdata.amr_levels_max = len(amrdata.refinement_ratios_x) + 1
@@ -1055,8 +1055,12 @@ class TCSurgeEvents():
     """
     keys = ['period', 'time_mask', 'time_mask_buffered', 'wind_area',
             'landfall_area', 'surge_areas', 'centroid_mask']
-    maxlen = 36
-    maxbreak = 12
+    maxlen_h = 36
+    maxbreak_h = 12
+    period_buffer_d = 0.3
+    lf_roci_factor = 0.6
+    lf_rmw_factor = 2.0
+    minwind_kt = 34
 
     def __init__(self, track, centroids):
         """Determine temporal periods and geographical regions where the storm
@@ -1080,7 +1084,7 @@ class TCSurgeEvents():
 
         self._set_periods()
         self.time_mask = [self._period_to_mask(p) for p in self.period]
-        self.time_mask_buffered = [self._period_to_mask(p, buffer=(0.3, 0.3))
+        self.time_mask_buffered = [self._period_to_mask(p, buffer=self.period_buffer_d)
                                    for p in self.period]
         self._set_areas()
         self._remove_harmless_events()
@@ -1105,11 +1109,11 @@ class TCSurgeEvents():
 
     def _set_periods(self):
         """Determine beginning and end of landfall events."""
-        radii = np.fmax(0.4 * self.track.radius_oci.values,
-                        1.6 * self.track.radius_max_wind.values) * NM_TO_KM
+        radii = np.fmax(self.lf_roci_factor * self.track.radius_oci.values,
+                        self.lf_rmw_factor * self.track.radius_max_wind.values) * NM_TO_KM
         centr_counts = np.count_nonzero(self.d_centroids < radii[:, None], axis=1)
-        # below 35 knots, winds are not strong enough for significant surge
-        mask = (centr_counts > 1) & (self.track.max_sustained_wind > 35)
+        # below a certain wind speed, winds are not strong enough for significant surge
+        mask = (centr_counts > 1) & (self.track.max_sustained_wind > self.minwind_kt)
 
         # convert landfall mask to (clustered) start/end pairs
         period = []
@@ -1118,8 +1122,8 @@ class TCSurgeEvents():
             if start is not None:
                 # periods cover at most 36 hours and a split will be forced
                 # at breaks of more than 12 hours.
-                exceed_maxbreak = (date - end) / np.timedelta64(1, 'h') > self.maxbreak
-                exceed_maxlen = (date - start) / np.timedelta64(1, 'h') > self.maxlen
+                exceed_maxbreak = (date - end) / np.timedelta64(1, 'h') > self.maxbreak_h
+                exceed_maxlen = (date - start) / np.timedelta64(1, 'h') > self.maxlen_h
                 if exceed_maxlen or exceed_maxbreak:
                     period.append((start, end))
                     start = end = None
@@ -1133,20 +1137,22 @@ class TCSurgeEvents():
         self.nevents = len(self.period)
 
 
-    def _period_to_mask(self, period, buffer=(0.0, 0.0)):
+    def _period_to_mask(self, period, buffer=0.0):
         """Compute buffered 1d-mask over track time series from period
 
         Parameters
         ----------
         period : pair of datetimes
             start/end of period
-        buffer : pair of floats
-            buffer to add in days
+        buffer : float or pair of floats
+            buffer to add (in days)
 
         Returns
         -------
         mask : np.array
         """
+        if not isinstance(buffer, tuple):
+            buffer = (buffer, buffer)
         diff_start = np.array([(t - period[0]) / np.timedelta64(1, 'D')
                                for t in self.track.time])
         diff_end = np.array([(t - period[1]) / np.timedelta64(1, 'D')
@@ -1163,10 +1169,11 @@ class TCSurgeEvents():
         for i_event, mask_buf in enumerate(self.time_mask_buffered):
             track = self.track.sel(time=mask_buf)
             mask = self.time_mask[i_event][mask_buf]
-            lf_radii = np.fmax(0.4 * track.radius_oci.values, 1.6 * track.radius_max_wind.values)
+            lf_radii = np.fmax(self.lf_roci_factor * track.radius_oci.values,
+                               self.lf_rmw_factor * track.radius_max_wind.values)
 
             # wind area (maximum bounds to consider)
-            pad = 0.9 * track.radius_oci / 60
+            pad = track.radius_oci / 60
             self.wind_area.append((
                 float((track.lon - pad).min()),
                 float((track.lat - pad).min()),
