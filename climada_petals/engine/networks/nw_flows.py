@@ -154,7 +154,18 @@ class PowerFlow():
             LOGGER.error('''DC-OPF did not converge. 
                          Consider increasing max_load or manually adjusting 
                          no. of parallel lines''')
-        
+    
+    
+    def create_costfunc_loadmax(self):
+        """create a cost function that maximizes the power supply at loads """
+        pp.create_poly_cost(self.pp_net, 0, 'load', cp1_eur_per_mw=-1)
+        for ix in self.pp_net.load.index:
+            pp.create_pwl_cost(
+                self.pp_net, ix, "load", 
+                [[self.pp_net.load.min_p_mw.at[ix], 
+                  self.pp_net.load.max_p_mw.at[ix], -1]])
+    
+    
     def assign_pflow_results(self, multinet):
         """
         assign # of parallel lines, line loading &, powerflow (MW) to power lines
