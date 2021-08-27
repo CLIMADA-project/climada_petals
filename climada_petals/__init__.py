@@ -27,6 +27,7 @@ from .util.constants import *
 
 REPO_DATA = {
     'data/system': [
+        SYSTEM_DIR.joinpath('GDP2Asset_converter_2.5arcmin.nc'),
     ],
     'data/demo': [
         HAZ_DEMO_FLDDPH,
