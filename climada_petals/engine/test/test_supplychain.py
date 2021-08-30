@@ -26,13 +26,24 @@ from climada import CONFIG
 from climada.entity.exposures.base import Exposures
 from climada.entity import ImpactFuncSet, ImpfTropCyclone
 from climada.hazard.base import Hazard
-from climada_petals.engine.supplychain import SupplyChain
+from climada_petals.engine.supplychain import SupplyChain, WIOD_DIRECTORY
 from climada.util.constants import EXP_DEMO_H5
+from climada.util.api_client import Client
+from climada.util.files_handler import download_file
+
 
 HAZ_TEST_MAT = CONFIG.hazard.test_data.dir().joinpath('atl_prob_no_name.mat')
 DIR_TEST_DATA = CONFIG.engine.test_data.dir()
 
+
 class TestSupplyChain(unittest.TestCase):
+    def setUp(self) -> None:
+        tf = 'WIOTtest_Nov16_ROW'
+        if not WIOD_DIRECTORY.joinpath(tf).is_file():
+            client = Client()
+            dsf = client.get_dataset(name=tf).files[0]
+            download_file(dsf.url, WIOD_DIRECTORY)
+
     """Testing the SupplyChain class."""
     def test_read_wiot(self):
         """Test reading of wiod table."""
