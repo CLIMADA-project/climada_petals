@@ -599,6 +599,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata = self.rundata.clawdata
         clawdata.verbosity = 1
         clawdata.num_output_times = 0
+        clawdata.output_t0 = False
         clawdata.lower = self.areas['wind_area'][:2]
         clawdata.upper = self.areas['wind_area'][2:]
         clawdata.num_cells = [int(np.ceil((clawdata.upper[0] - clawdata.lower[0]) * 4)),
