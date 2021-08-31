@@ -574,7 +574,7 @@ include $(CLAW)/clawutil/src/Makefile.common
             if g.t is None:
                 continue
             gauge['time'] = self.time_offset + g.t * np.timedelta64(1, 's')
-            gauge['topo_height'] = np.mean(g.q[1,:] - g.q[0,:])
+            gauge['topo_height'] = g.q[1, -1] - g.q[0, -1]
             gauge['height_above_geoid'] = g.q[1,:]
 
 
