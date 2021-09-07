@@ -364,9 +364,13 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, gauges=None,
     track['radius_oci'][:] = np.fmax(track.radius_max_wind.values, track.radius_oci.values)
 
     # create work directory
-    work_dir = dt.datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + f"-{track.sid}"
-    work_dir = GEOCLAW_WORK_DIR.joinpath(work_dir)
-    work_dir.mkdir(parents=True, exist_ok=True)
+    GEOCLAW_WORK_DIR.mkdir(parents=True, exist_ok=True)
+    work_dir = GEOCLAW_WORK_DIR
+    while work_dir.exists():
+        work_dir = (dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+                    + f"{np.random.randint(0, 100):02d}-{track.sid}")
+        work_dir = GEOCLAW_WORK_DIR.joinpath(work_dir)
+    work_dir.mkdir(parents=True)
 
     # get landfall events
     LOGGER.info("Determine georegions and temporal periods of landfall events...")
