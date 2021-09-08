@@ -19,6 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test Supplychain class.
 """
 
+from pathlib import Path
 import unittest
 import numpy as np
 
@@ -30,9 +31,9 @@ from climada_petals.engine.supplychain import SupplyChain, WIOD_DIRECTORY
 from climada.util.constants import EXP_DEMO_H5
 from climada.util.api_client import Client
 from climada.util.files_handler import download_file
+import climada.hazard.test as hazard_test
 
-
-HAZ_TEST_MAT = CONFIG.hazard.test_data.dir().joinpath('atl_prob_no_name.mat')
+HAZ_TEST_MAT = Path(hazard_test.__file__).parent.joinpath('data', 'atl_prob_no_name.mat')
 DIR_TEST_DATA = CONFIG.engine.test_data.dir()
 
 
