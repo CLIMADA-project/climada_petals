@@ -33,8 +33,8 @@ from climada.util.api_client import Client
 from climada.util.files_handler import download_file
 import climada.hazard.test as hazard_test
 
+
 HAZ_TEST_MAT = Path(hazard_test.__file__).parent.joinpath('data', 'atl_prob_no_name.mat')
-DIR_TEST_DATA = CONFIG.engine.test_data.dir()
 
 
 class TestSupplyChain(unittest.TestCase):
