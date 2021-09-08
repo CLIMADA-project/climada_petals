@@ -34,7 +34,7 @@ import climada.hazard.test as hazard_test
 
 DATA_DIR = CONFIG.hazard.test_data.dir()
 HAZ_TEST_MAT = DATA_DIR.joinpath('TCrain_brb_test.mat')
-TEST_TRACK = DATA_DIR.joinpath("trac_brb_test.csv")
+TEST_TRACK = Path(hazard_test.__file__).parent.joinpath('data', 'trac_brb_test.csv')
 TEST_TRACK_SHORT = DATA_DIR.joinpath("trac_short_test.csv")
 
 CENTR_TEST_BRB = Centroids()
