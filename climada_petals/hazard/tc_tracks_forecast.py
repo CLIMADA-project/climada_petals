@@ -79,11 +79,13 @@ class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
     obtained from numerical weather prediction runs.
 
-    Attributes:
-        data (list(xarray.Dataset)): Same as in parent class, adding the
-            following attributes
-                - ensemble_member (int)
-                - is_ensemble (bool)
+    Attributes
+    ----------
+    data : list(xarray.Dataset)
+        Same as in parent class, adding the
+        following attributes
+        - ensemble_member (int)
+        - is_ensemble (bool)
     """
 
     def fetch_ecmwf(self, path=None, files=None):
@@ -92,13 +94,16 @@ class TCForecast(TCTracks):
         dissemination server into instance. Use path argument to use local
         files instead.
 
-        Parameters:
-            path (str, list(str)): A location in the filesystem. Either a
-                path to a single BUFR TC track file, or a folder containing
-                only such files, or a globbing pattern. Passed to
-                climada.util.files_handler.get_file_names
-            files (file-like): An explicit list of file objects, bypassing
-                get_file_names
+        Parameters
+        ----------
+        path : str, list(str)
+            A location in the filesystem. Either a
+            path to a single BUFR TC track file, or a folder containing
+            only such files, or a globbing pattern. Passed to
+            climada.util.files_handler.get_file_names
+        files : file-like
+            An explicit list of file objects, bypassing
+            get_file_names
         """
         if path is None and files is None:
             files = self.fetch_bufr_ftp()
@@ -127,15 +132,19 @@ class TCForecast(TCTracks):
         persistently to the given location. A list of opened file-like objects
         gets returned.
 
-        Parameters:
-            target_dir (str): An existing directory to write the files to. If
-                None, the files get returned as tempfiles.
-            remote_dir (str, optional): If set, search this ftp folder for
-                forecast files; defaults to the latest. Format:
-                yyyymmddhhmmss, e.g. 20200730120000
+        Parameters
+        ----------
+        target_dir : str
+            An existing directory to write the files to. If
+            None, the files get returned as tempfiles.
+        remote_dir : str, optional
+            If set, search this ftp folder for
+            forecast files; defaults to the latest. Format:
+            yyyymmddhhmmss, e.g. 20200730120000
 
-        Returns:
-            [str] or [filelike]
+        Returns
+        -------
+        [str] or [filelike]
         """
         con = ftplib.FTP(host=ECMWF_FTP, user=ECMWF_USER, passwd=ECMWF_PASS)
 
@@ -182,11 +191,15 @@ class TCForecast(TCTracks):
     def read_one_bufr_tc(self, file, id_no=None, fcast_rep=None):
         """ Read a single BUFR TC track file.
 
-        Parameters:
-            file (str, filelike): Path object, string, or file-like object
-            id_no (int): Numerical ID; optional. Else use date + random int.
-            fcast_rep (int): Of the form 1xx000, indicating the delayed
-                replicator containing the forecast values; optional.
+        Parameters
+        ----------
+        file : str, filelike
+            Path object, string, or file-like object
+        id_no : int
+            Numerical ID; optional. Else use date + random int.
+        fcast_rep : int
+            Of the form 1xx000, indicating the delayed
+            replicator containing the forecast values; optional.
         """
 
         decoder = pybufrkit.decoder.Decoder()
@@ -343,8 +356,10 @@ class TCForecast(TCTracks):
         """The current bufr tc tracks only use one delayed replicator,
         enclosing all forecast values. This finds it.
 
-        Parameters:
-            bufr_message: An in-memory pybufrkit BUFR message
+        Parameters
+        ----------
+        bufr_message :
+            An in-memory pybufrkit BUFR message
         """
         delayed_replicators = [
             d for d in descriptors

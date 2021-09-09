@@ -58,14 +58,18 @@ class TCRain(Hazard):
                         description=''):
         """Computes rainfield from tracks based on the RCLIPER model.
         Parallel process.
-        Parameters:
-            tracks (TCTracks): tracks of events
-            centroids (Centroids, optional): Centroids where to model TC.
-                Default: global centroids.
-            disr_degree (int): distance (in degrees) from node within which
-                               the rainfield is processed (default 3 deg,~300km)
-            description (str, optional): description of the events
-
+        Parameters
+        ----------
+        tracks : TCTracks
+            tracks of events
+        centroids : Centroids, optional
+            Centroids where to model TC.
+            Default: global centroids.
+        disr_degree : int
+            distance (in degrees) from node within which
+            the rainfield is processed (default 3 deg,~300km)
+        description : str, optional
+            description of the events
         """
         num_tracks = tracks.size
         if centroids is None:
@@ -97,15 +101,22 @@ class TCRain(Hazard):
     @numba.jit(forceobj=True)
     def _set_from_track(track, centroids, dist_degree=3, intensity=0.1):
         """Set hazard from track and centroids.
-        Parameters:
-            track (xr.Dataset): tropical cyclone track.
-            centroids (Centroids): Centroids instance.
-            disr_degree (int): distance (in degrees) from node within which
-                               the rainfield is processed (default 3 deg,~300km)
-            intensity (int): min intensity threshold below which values are not
-                             considered
-        Returns:
-            TCRain
+        Parameters
+        ----------
+        track : xr.Dataset
+            tropical cyclone track.
+        centroids : Centroids
+            Centroids instance.
+        disr_degree : int
+            distance (in degrees) from node within which
+            the rainfield is processed (default 3 deg,~300km)
+        intensity : int
+            min intensity threshold below which values are not
+            considered
+
+        Returns
+        -------
+        TCRain
         """
         new_haz = TCRain()
         new_haz.tag = TagHazard(HAZ_TYPE, 'IBTrACS: ' + track.name)
@@ -130,13 +141,18 @@ class TCRain(Hazard):
 
 def rainfield_from_track(track, centroids, dist_degree=3, intensity=0.1):
     """Compute rainfield for track at centroids.
-    Parameters:
-        track (xr.Dataset): tropical cyclone track.
-        centroids (Centroids): Centroids instance.
-        disr_degree (int): distance (in degrees) from node within which
-                           the rainfield is processed (default 3 deg,~300km)
-        intensity (int): min intensity threshold below which values are not
-                         considered
+    Parameters
+    ----------
+    track : xr.Dataset
+        tropical cyclone track.
+    centroids : Centroids
+        Centroids instance.
+    disr_degree : int
+        distance (in degrees) from node within which
+        the rainfield is processed (default 3 deg,~300km)
+    intensity : int
+        min intensity threshold below which values are not
+        considered
     """
     dlon, dlat = dist_degree, dist_degree
 
@@ -185,11 +201,15 @@ def rainfield_from_track(track, centroids, dist_degree=3, intensity=0.1):
 def _RCLIPER(fmaxwind_kn, inreach, radius_km):
     """Calculate rainrate in mm/h based on RCLIPER given windspeed (kn) at
     a specific node
-    Parameters:
-        fmaxwind_kn (float): maximum sustained wind at specific node
-        inreach (np.array, boolean): 1 if centroid is within dist_degree,
-                                         0 otherwise
-        radius_km (np.array): distance to node for every centroid
+    Parameters
+    ----------
+    fmaxwind_kn : float
+        maximum sustained wind at specific node
+    inreach : np.array, boolean
+        1 if centroid is within dist_degree,
+        0 otherwise
+    radius_km : np.array
+        distance to node for every centroid
     """
 
     rainrate = np.zeros(len(inreach))

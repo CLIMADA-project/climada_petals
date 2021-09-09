@@ -47,13 +47,18 @@ def _insistent_osm_api_query(query_clause, read_chunk_size=100000, end_of_patien
     In case of failure it tries again after an ever increasing waiting period.
     If the waiting period surpasses a given limit an exception is raised.
 
-    Parameters:
-        query_clause (str): the query
-        read_chunk_size (int): paramter passed over to overpy.Overpass.query
-        end_of_patience (int): upper limit for the next waiting period to proceed.
+    Parameters
+    ----------
+    query_clause : str
+        the query
+    read_chunk_size : int
+        paramter passed over to overpy.Overpass.query
+    end_of_patience : int
+        upper limit for the next waiting period to proceed.
 
-    Returns:
-        result as returned by overpy.Overpass.query
+    Returns
+    -------
+    result as returned by overpy.Overpass.query
     """
     api = overpy.Overpass(read_chunk_size=read_chunk_size)
     waiting_period = 1
@@ -78,13 +83,17 @@ def _insistent_osm_api_query(query_clause, read_chunk_size=100000, end_of_patien
 def _osm_api_query(item, bbox):
     """format query such that it can be passed to OSM api via overpass api
 
-    Parameters:
-        item (str): query feature for OSM
-        bbox (array): Bounding box for query
+    Parameters
+    ----------
+    item : str
+        query feature for OSM
+    bbox : array
+        Bounding box for query
 
-    Returns:
-        result_NodesFromWays (overpy result object)
-        result_NodesWaysFromRels (overpy result object)
+    Returns
+    -------
+    result_NodesFromWays (overpy result object)
+    result_NodesWaysFromRels (overpy result object)
         """
     query_clause_NodesFromWays = "way[%s](%f6, %f6, %f6, %f6);(._;>;);out geom;" \
     % (item, bbox[0], bbox[1], bbox[2], bbox[3])
@@ -101,15 +110,19 @@ def _osm_api_query(item, bbox):
 
 def _format_shape_osm(bbox, result_NodesFromWays, result_NodesWaysFromRels, item, save_path):
     """format edges, nodes and relations from overpy result objects into shapes
-    Parameters:
-        bbox
-        result_NodesFromWays
-        result_NodesWaysFromRels
-        item
-        save_path
 
-    Returns:
-        gdf_all: Geodataframe with Linestrings, Polygons & Multipolygons
+    Parameters
+    ----------
+    bbox :
+    result_NodesFromWays :
+    result_NodesWaysFromRels :
+    item :
+    save_path :
+
+    Returns
+    -------
+    gdf_all :
+        Geodataframe with Linestrings, Polygons & Multipolygons
     """
     # polygon vs. linestrings in nodes from ways result:
 
@@ -251,10 +264,10 @@ def _format_shape_osm(bbox, result_NodesFromWays, result_NodesWaysFromRels, item
 
 def _combine_dfs_osm(types, save_path, bbox):
     """Combine all dataframes from individual features into one GeoDataFrame
-    Parameters:
-        ..
-    Returns:
-        (gdf)
+
+    Returns
+    -------
+    (gdf)
     """
     print('Combining all low-value GeoDataFrames into one GeoDataFrame...')
     OSM_features_gdf_combined = \
@@ -282,30 +295,39 @@ def get_features_OSM(bbox, types, save_path=None, check_plot=1):
     Get shapes from all types of objects that are available on Open Street Map via an API query
     and save them as geodataframe.
 
-    Parameters:
-         bbox (array): List of coordinates in format [South, West, North, East]
-         types (list): List of features items that should be downloaded from OSM, e.g.
-                {'natural','waterway','water', 'landuse=forest','landuse=farmland',
-                'landuse=grass','wetland'}
-         save_path (str or pathlib.Path): String with absolute path for saving output. Default is cwd
-         check_plot: default is 1 (yes), else 0.
+    Parameters
+    ----------
+    bbox : array
+        List of coordinates in format [South, West, North, East]
+    types : list
+        List of features items that should be downloaded from OSM, e.g.
+        {'natural','waterway','water', 'landuse=forest','landuse=farmland',
+        'landuse=grass','wetland'}
+    save_path : str or pathlib.Path
+        String with absolute path for saving output. Default is cwd
+    check_plot :
+        default is 1 (yes), else 0.
 
-    Returns:
-          OSM_features_gdf_combined(gdf): combined GeoDataframe with all features saved as
-          "OSM_features_lat_lon".
-          Shapefiles with correct geometry (LineStrings,Polygons, MultiPolygons)
-           for each of requested OSM feature saved as "item_gdf_all_lat_lon"
+    Returns
+    -------
+        OSM_features_gdf_combined(gdf): combined GeoDataframe with all features saved as
+        "OSM_features_lat_lon".
+        Shapefiles with correct geometry (LineStrings,Polygons, MultiPolygons)
+        for each of requested OSM feature saved as "item_gdf_all_lat_lon"
 
-    Example 1:
-        Houses_47_8 = get_features_OSM([47.16, 8.0, 47.3, 8.0712],\
-                                      {'building'}, \
-                                      save_path = save_path, check_plot=1)
-    Example 2:
-        Low_Value_gdf_47_8 = get_features_OSM([47.16, 8.0, 47.3, 8.0712],\
-                                      {'natural','water', 'waterway',
-                                      'landuse=forest', 'landuse=farmland',
-                                      'landuse=grass', 'wetland'}, \
-                                      save_path = save_path, check_plot=1)
+    Example 1
+    ---------
+    Houses_47_8 = get_features_OSM([47.16, 8.0, 47.3, 8.0712],\
+                                   {'building'}, \
+                                   save_path = save_path, check_plot=1)
+
+    Example 2
+    ---------
+    Low_Value_gdf_47_8 = get_features_OSM([47.16, 8.0, 47.3, 8.0712],\
+                                          {'natural','water', 'waterway',
+                                          'landuse=forest', 'landuse=farmland',
+                                          'landuse=grass', 'wetland'}, \
+                                          save_path = save_path, check_plot=1)
     """
     if save_path is None:
         save_path = Path.cwd()
@@ -361,20 +383,30 @@ def get_highValueArea(bbox, save_path=None, Low_Value_gdf=None, check_plot=1):
     In case low-value features were queried with get_features_OSM(),
     calculate the "counter-shape" representig high value area for a given bounding box.
 
-    Parameters:
-        bbox (array): List of coordinates in format [South, West, North, East]
-        save_path (str or pathlib.Path): path for results
-        Low_Value_gdf (str): absolute path of gdf of low value items which is to be inverted.
-          If left empty, searches for OSM_features_gdf_combined_lat_lon.shp in save_path.
+    Parameters
+    ----------
+    bbox : array
+        List of coordinates in format [South, West, North, East]
+    save_path : str or pathlib.Path
+        path for results
+    Low_Value_gdf : str
+        absolute path of gdf of low value items which is to be inverted.
+        If left empty, searches for OSM_features_gdf_combined_lat_lon.shp in save_path.
         checkplot
 
-    Returns:
-        High_Value_Area (gdf): GeoDataFrame of High Value Area as High_Value_Area_lat_lon
+    Returns
+    -------
+    High_Value_Area : gdf
+        GeoDataFrame of High Value Area as High_Value_Area_lat_lon
 
-    Example:
-        High_Value_gdf_47_8 = get_highValueArea([47.16, 8.0, 47.3, 8.0712], save_path = save_path,\
-                                    Low_Value_gdf = save_path+'/Low_Value_gdf_combined_47_8.shp')
-    important: Use same bbox and save_path as for get_features_OSM().
+    Example
+    -------
+    High_Value_gdf_47_8 = get_highValueArea([47.16, 8.0, 47.3, 8.0712], save_path = save_path,\
+        Low_Value_gdf = save_path+'/Low_Value_gdf_combined_47_8.shp')
+
+    Important
+    ---------
+    Use same bbox and save_path as for get_features_OSM().
     """
     if save_path is None:
         save_path = Path.cwd()
@@ -425,13 +457,18 @@ def get_highValueArea(bbox, save_path=None, Low_Value_gdf=None, check_plot=1):
 
 def _get_litpop_bbox(country, highValueArea, **kwargs):
     """get litpop exposure for the bbox area of the queried OSM features
-    Parameters:
-        country (str)
-        highValueArea (GeoDataFrame)
-        bbox (array)
-        kwargs (dict): arguments for LitPop set_country method
-    Returns:
-        exp_sub (LitPop)
+
+    Parameters
+    ----------
+    country : str
+    highValueArea : GeoDataFrame
+    bbox : array
+    kwargs : dict
+        arguments for LitPop set_country method
+
+    Returns
+    -------
+    exp_sub (LitPop)
     """
     # Load LitPop Exposure for whole country, and High Value Area
     exp = LitPop()
@@ -447,12 +484,16 @@ def _get_litpop_bbox(country, highValueArea, **kwargs):
 def _split_exposure_highlow(exp_sub, mode, High_Value_Area_gdf):
     """divide litpop exposure into high-value exposure and low-value exposure
     according to area queried in OSM, re-assign all low values to high-value centroids
-    Parameters:
-        exp_sub (Exposures)
-        mode (str)
-        High_Value_Area_gdf (GeoDataFrame)
-    Returns:
-        exp_sub_high (Exposures)
+
+    Parameters
+    ----------
+    exp_sub : Exposures
+    mode : str
+    High_Value_Area_gdf : GeoDataFrame
+
+    Returns
+    -------
+    exp_sub_high (Exposures)
     """
 
     exp_sub_high = pd.DataFrame(columns=exp_sub.gdf.columns)
@@ -511,24 +552,33 @@ def get_osmstencil_litpop(bbox, country, mode, highValueArea=None,
     corrected for centroids which lie inside a certain high-value multipolygon area
     from previous OSM query.
 
-    Parameters:
-        bbox (array): List of coordinates in format [South, West, North, East]
-        Country (str): ISO3 code or name of country in which bbox is located
-        highValueArea (str): path of gdf of high-value area from previous step.
-          If empty, searches for cwd/High_Value_Area_lat_lon.shp
-        mode (str): mode of re-assigning low-value points to high-value points.
-          "nearest", "even", or "proportional"
-        kwargs (dict): arguments for LitPop set_country method
+    Parameters
+    ----------
+    bbox : array
+        List of coordinates in format [South, West, North, East]
+    Country : str
+        ISO3 code or name of country in which bbox is located
+    highValueArea : str
+        path of gdf of high-value area from previous step.
+        If empty, searches for cwd/High_Value_Area_lat_lon.shp
+    mode : str
+        mode of re-assigning low-value points to high-value points.
+        "nearest", "even", or "proportional"
+    kwargs : dict
+        arguments for LitPop set_country method
 
-    Returns:
-        exp_sub_high_exp (Exposure): (CLIMADA-compatible) with re-allocated asset
-          values with name exposure_high_lat_lon
+    Returns
+    -------
+    exp_sub_high_exp : Exposure
+        (CLIMADA-compatible) with re-allocated asset
+        values with name exposure_high_lat_lon
 
-    Example:
-        exposure_high_47_8 = get_osmstencil_litpop([47.16, 8.0, 47.3, 8.0712],\
-                          'CHE',"proportional", highValueArea = \
-                          save_path + '/High_Value_Area_47_8.shp' ,\
-                          save_path = save_path)
+    Example
+    -------
+    exposure_high_47_8 = get_osmstencil_litpop([47.16, 8.0, 47.3, 8.0712],\
+                    'CHE',"proportional", highValueArea = \
+                    save_path + '/High_Value_Area_47_8.shp' ,\
+                    save_path = save_path)
     """
     if save_path is None:
         save_path = Path.cwd()
@@ -567,11 +617,13 @@ def _get_midpoints(highValueArea):
     """get midpoints from polygon and multipolygon shapes for current CLIMADA-
     exposure compatibility (centroids / points)
 
-    Parameters:
-        highValueArea (gdf)
+    Parameters
+    ----------
+    highValueArea : gdf
 
-    Returns:
-        High_Value_Area_gdf
+    Returns
+    -------
+    High_Value_Area_gdf
     """
     High_Value_Area_gdf = geopandas.read_file(highValueArea)
 
@@ -646,24 +698,32 @@ def make_osmexposure(highValueArea, mode="default", country=None,
     Generate climada-compatiple entity by assigning values to midpoints of
     individual house shapes from OSM query, according to surface area and country.
 
-    Parameters:
-        highValueArea (str): absolute path for gdf of building features queried
-          from get_features_OSM()
-        mode (str): "LitPop" or "default": Default assigns a value of 5400 Chf to
-          each m2 of building, LitPop assigns total LitPop value for the region
-          proportionally to houses (by base area of house)
-        Country (str): ISO3 code or name of country in which entity is located.
-          Only if mode = LitPop
-        kwargs (dict): arguments for LitPop set_country method
+    Parameters
+    ----------
+    highValueArea : str
+        absolute path for gdf of building features queried
+        from get_features_OSM()
+    mode : str
+        "LitPop" or "default": Default assigns a value of 5400 Chf to
+        each m2 of building, LitPop assigns total LitPop value for the region
+        proportionally to houses (by base area of house)
+    Country : str
+        ISO3 code or name of country in which entity is located.
+        Only if mode = LitPop
+    kwargs : dict
+        arguments for LitPop set_country method
 
-    Returns:
-        exp_building (Exposure): (CLIMADA-compatible) with allocated asset values.
-          Saved as exposure_buildings_mode_lat_lon.h5
+    Returns
+    -------
+    exp_building : Exposure
+        (CLIMADA-compatible) with allocated asset values.
+        Saved as exposure_buildings_mode_lat_lon.h5
 
-    Example:
-        buildings_47_8 = \
+    Example
+    -------
+    buildings_47_8 = \
         make_osmexposure(save_path + '/OSM_features_47_8.shp',
-                         mode="default", save_path = save_path, check_plot=1)
+            mode="default", save_path = save_path, check_plot=1)
     """
     if save_path is None:
         save_path = Path.cwd()
