@@ -35,7 +35,7 @@ class ImpfWildfire(ImpactFunc):
         ImpactFunc.__init__(self)
         self.haz_type = haz_type
         LOGGER.warning('haz_type is set to %s.', self.haz_type)
-        
+
 
     def set_default_FIRMS(self, i_half=295.01, impf_id=1):
 
@@ -58,14 +58,14 @@ class ImpfWildfire(ImpactFunc):
         Here, i_half is set to 295 K as a result of the calibration
         performed by Lüthi et al. (in prep). This value is suited for an
         exposure resolution of 1 km.
-        
+
         Calibration was further performed for:
             - 4 km: resulting i_half = 409.4 K
             - 10 km: resulting i_half = 484.4 K
 
         Calibration has been performed globally (using EMDAT data) and is
         based on 84 damage records since 2001.
-        
+
         Intensity range is set between 295 K and 500 K as this is the typical
         range of FIRMS intensities.
 

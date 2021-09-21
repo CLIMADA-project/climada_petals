@@ -152,7 +152,7 @@ class SupplyChain():
                                   selected_subsec="service"):
         """Calculate direct impacts.
 
-        Parameters:
+        Parameters
         ----------
         hazard : Hazard
             Hazard object for impact calculation.

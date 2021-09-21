@@ -35,14 +35,18 @@ class ImpfDrought(ImpactFunc):
     def __init__(self):
         """Empty initialization.
 
-        Parameters:
-            impf_id (int, optional): impact function id. Default: 1
-            intensity (np.array, optional): intensity array SPEI [-].
-                default: intensity defintion 1 (minimum)
-                default_sum: intensity definition 3 (sum over all drought months)
+        Parameters
+        ----------
+        impf_id : int, optional
+            impact function id. Default: 1
+        intensity : np.array, optional
+            intensity array SPEI [-].
+            default: intensity defintion 1 (minimum)
+            default_sum: intensity definition 3 (sum over all drought months)
 
-        Raises:
-            ValueError
+        Raises
+        ------
+        ValueError
         """
         ImpactFunc.__init__(self)
 

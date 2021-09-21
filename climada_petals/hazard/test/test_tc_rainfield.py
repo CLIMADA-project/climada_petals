@@ -21,6 +21,7 @@ Test TCRain class
 
 import unittest
 import datetime as dt
+from pathlib import Path
 import numpy as np
 from scipy import sparse
 
@@ -28,14 +29,17 @@ from climada import CONFIG
 from climada.hazard.tc_tracks import TCTracks
 from climada_petals.hazard.tc_rainfield import TCRain, rainfield_from_track
 from climada.hazard.centroids.centr import Centroids
+import climada.hazard.test as hazard_test
+
 
 DATA_DIR = CONFIG.hazard.test_data.dir()
 HAZ_TEST_MAT = DATA_DIR.joinpath('TCrain_brb_test.mat')
-TEST_TRACK = DATA_DIR.joinpath("trac_brb_test.csv")
-TEST_TRACK_SHORT = DATA_DIR.joinpath("trac_short_test.csv")
+TEST_TRACK = Path(hazard_test.__file__).parent.joinpath('data', 'trac_brb_test.csv')
+TEST_TRACK_SHORT = Path(hazard_test.__file__).parent.joinpath('data', 'trac_short_test.csv')
 
 CENTR_TEST_BRB = Centroids()
-CENTR_TEST_BRB.read_mat(DATA_DIR.joinpath('centr_brb_test.mat'))
+centr_test_mat = Path(hazard_test.__file__).parent.joinpath('data', 'centr_brb_test.mat')
+CENTR_TEST_BRB.read_mat(centr_test_mat)
 
 class TestReader(unittest.TestCase):
     """Test loading funcions from the TCRain class"""

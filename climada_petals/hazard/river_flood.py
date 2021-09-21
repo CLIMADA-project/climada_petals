@@ -50,17 +50,22 @@ class RiverFlood(Hazard):
     Flood intensities are calculated by means of the
     CaMa-Flood global hydrodynamic model
 
-    Attributes:
-
-        fla_event       (1d array(n_events)) total flooded area for every event
-        fla_annual      (1d array (n_years)) total flooded area for every year
-        fla_ann_av      (float) average flooded area per year
-        fla_ev_av       (float) average flooded area per event
-        fla_ann_centr   (2d array(n_years x n_centroids)) flooded area in
-                        every centroid for every event
-        fla_ev_centr    (2d array(n_events x n_centroids)) flooded area in
-                        every centroid for every event
-
+    Attributes
+    ----------
+    fla_event : 1d array(n_events)
+        total flooded area for every event
+    fla_annual : 1d array (n_years)
+        total flooded area for every year
+    fla_ann_av : float
+        average flooded area per year
+    fla_ev_av : float
+        average flooded area per event
+    fla_ann_centr : 2d array(n_years x n_centroids)
+        flooded area in
+        every centroid for every event
+    fla_ev_centr : 2d array(n_events x n_centroids)
+        flooded area in
+        every centroid for every event
     """
 
     def __init__(self):
@@ -72,21 +77,32 @@ class RiverFlood(Hazard):
                     centroids=None, countries=None, reg=None, shape=None, ISINatIDGrid=False,
                     years=None):
         """Wrapper to fill hazard from nc_flood file
-        Parameters:
-            dph_path (string): Flood file to read (depth)
-            frc_path (string): Flood file to read (fraction)
-            origin (bool): Historical or probabilistic event
-            centroids (Centroids): centroids to extract
-            countries (list of countries ISO3) selection of countries
-                (reg must be None!)
-            reg (list of regions): can be set with region code if whole areas
-                are considered (if not None, countries and centroids
-                are ignored)
-            ISINatIDGrid (Bool): Indicates whether ISIMIP_NatIDGrid is used
-            years (int list): years that are considered
 
-        raises:
-            NameError
+        Parameters
+        ----------
+        dph_path : string
+            Flood file to read (depth)
+        frc_path : string
+            Flood file to read (fraction)
+        origin : bool
+            Historical or probabilistic event
+        centroids : Centroids
+            centroids to extract
+        countries : list of countries ISO3
+            selection of countries
+            (reg must be None!)
+        reg : list of regions
+            can be set with region code if whole areas
+            are considered (if not None, countries and centroids
+            are ignored)
+        ISINatIDGrid : Bool
+            Indicates whether ISIMIP_NatIDGrid is used
+        years : int list
+            years that are considered
+
+        Raises
+        ------
+        NameError
         """
         if years is None:
             years = [2000]
@@ -211,13 +227,21 @@ class RiverFlood(Hazard):
         """
         Selects events only in specific years and returns corresponding event
         indices
-        Parameters:
-            time: event time stemps (array datetime64)
-            years: years to be selcted (int array)
-        Raises:
-            KeyError
-        Returns:
-            event indices (int array)
+
+        Parameters
+        ----------
+        time :
+            event time stemps (array datetime64)
+        years :
+            years to be selcted (int array)
+
+        Raises
+        ------
+        KeyError
+
+        Returns
+        -------
+        event indices (int array)
         """
         event_names = pd.to_datetime(time).year
         event_index = np.where(np.isin(event_names, years))[0]
@@ -231,8 +255,10 @@ class RiverFlood(Hazard):
         Function allows to exclude flood impacts that are caused in areas
         exposed discharge trends other than the selected one. (This function
         is only needed for very specific applications)
-        Raises:
-            NameError
+
+        Raises
+        ------
+        NameError
         """
         if not Path(fld_trend_path).exists():
             raise NameError('Invalid ReturnLevel-file path %s' % fld_trend_path)
@@ -264,8 +290,10 @@ class RiverFlood(Hazard):
         by manipulating flood fractions in a way that the array flooded more
         frequently than the treshold value is excluded. (This function
         is only needed for very specific applications)
-        Raises:
-            NameErroris function
+
+        Raises
+        ------
+        NameError
         """
 
         if not Path(frc_path).exists():
@@ -286,8 +314,10 @@ class RiverFlood(Hazard):
         """
         Calculates flooded area for hazard. sets yearly flooded area and
             flooded area per event
-        Raises:
-            MemoryError
+
+        Raises
+        ------
+        MemoryError
         """
         self.centroids.set_area_pixel()
         area_centr = self.centroids.area_pixel
@@ -313,8 +343,10 @@ class RiverFlood(Hazard):
 
     def _annual_event_mask(self, event_years, years):
         """Assignes events to each year
-        Returns:
-            bool array (columns contain events, rows contain years)
+
+        Returns
+        -------
+        bool array (columns contain events, rows contain years)
         """
         event_mask = np.full((len(years), len(event_years)), False, dtype=bool)
         for year_ind, year in enumerate(years):
@@ -325,8 +357,10 @@ class RiverFlood(Hazard):
     def set_flood_volume(self, save_centr=False):
         """Calculates flooded area for hazard. sets yearly flooded area and
             flooded area per event
-        Raises:
-            MemoryError
+
+        Raises
+        ------
+        MemoryError
         """
 
         fv_ann_centr = np.multiply(self.fla_ann_centr.todense(), self.intensity.todense())
@@ -340,13 +374,21 @@ class RiverFlood(Hazard):
         """Extract coordinates of selected countries or region
         from NatID grid. If countries are given countries are cut,
         if only reg is given, the whole region is cut.
-        Parameters:
-            countries: List of countries
-            reg: List of regions
-        Raises:
-            KeyError
-        Returns:
-            centroids
+
+        Parameters
+        ----------
+        countries :
+            List of countries
+        reg :
+            List of regions
+
+        Raises
+        ------
+        KeyError
+
+        Returns
+        -------
+        centroids
         """
         lat, lon = u_coord.get_region_gridpoints(
             countries=countries, regions=reg, basemap="isimip", resolution=150)
