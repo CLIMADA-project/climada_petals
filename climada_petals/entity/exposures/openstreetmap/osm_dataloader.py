@@ -35,7 +35,7 @@ from climada import CONFIG
 
 LOGGER = logging.getLogger(__name__)
 gdal.SetConfigOption("OSM_CONFIG_FILE",
-                     str(Path(__file__).resolve().parent.joinpath('osmconf.ini'))) #"/Users/evelynm/climada_python/climada/entity/exposures/openstreetmap/osmconf.ini"
+                     str(Path(__file__).resolve().parent.joinpath('osmconf.ini'))) 
 
 # =============================================================================
 # Define constants
@@ -446,7 +446,7 @@ class OSMRaw:
         """
         
         download_url = self._create_gf_download_url(iso3, file_format)
-        local_filepath = save_path + '/' + download_url.split('/')[-1]
+        local_filepath = Path(save_path , download_url.split('/')[-1])
         if not Path(local_filepath).is_file():
             LOGGER.info(f'Downloading file as {local_filepath}')
             urllib.request.urlretrieve(download_url, local_filepath)
@@ -478,9 +478,9 @@ class OSMRaw:
         -----------
         shape : list or str
             bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
-        path_planet : str
+        path_planet : str or pathlib.Path
             file path to planet.osm.pbf
-        path_extract : str
+        path_extract : str or pathlib.Path
             file path (incl. name & ending) under which extract will be stored
             
         Returns
@@ -493,14 +493,14 @@ class OSMRaw:
             
             LOGGER.info('File doesn`t yet exist. Assembling osmosis command.')
             if (isinstance(shape, list) or isinstance(shape, tuple)):
-                cmd = ['osmosis', '--read-pbf', 'file='+path_planet, 
+                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet), 
                        '--bounding-box', f'top={shape[3]}', f'left={shape[0]}',
                        f'bottom={shape[1]}', f'right={shape[2]}', 
-                       '--write-pbf', 'file='+path_extract]
+                       '--write-pbf', 'file='+str(path_extract)]
             elif isinstance(shape, str):
-                cmd = ['osmosis', '--read-pbf', 'file='+path_planet, 
+                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet), 
                        '--bounding-polygon', 'file='+shape, '--write-pbf',
-                       'file='+path_extract]
+                       'file='+str(path_extract)]
 
             LOGGER.info('''Extracting from the osm planet file... 
                         This will take a while''')
@@ -512,20 +512,24 @@ class OSMRaw:
             return None
 
     def get_data_planetextract(self, shape, path_extract,
-                               path_planet=Path(DATA_DIR,'/planet-latest.osm.pbf')):
+                               path_planet=Path(DATA_DIR, 'planet-latest.osm.pbf')):
         """
         get OSM raw data from a custom shape / bounding-box, which is extracted
         from the entire OSM planet file. Accepts bbox lists or .poly files for
         non-rectangular shapes.
 
+        Parameters
+        ----------
         shape : list or str
             bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
-        path_planet : str
+        path_extract : str or pathlib.Path
+            file path (incl. name & ending) under which extract will be stored
+        path_planet : str or pathlib.Path
             file path to planet-latest.osm.pbf. Will download & store it as 
             indicated, if doesn`t yet exist.
-        path_extract : str
-            file path (incl. name & ending) under which extract will be stored
-            
+            Default is DATA_DIR/planet-latest.osm.pbf
+
+
         Note
         ----
         For more info on what .poly files are (incl. several tools for
@@ -552,10 +556,10 @@ class OSMFileQuery:
         """
         Parameters
         ----------
-        osm_path : str
+        osm_path : str or pathlib.Path
             file path to the .osm.pbf file to extract info from.
         """
-        self.osm_path = osm_path
+        self.osm_path = str(osm_path)
 
     def _query_builder(self, geo_type, constraint_dict):
         """
@@ -705,9 +709,8 @@ class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
     
-    area: tuple or shapely.geometry.Polygon
-        careful in case of bbox tuple! Bounding box clauses are different to
-        XAPI syntax: must be (S,W,N,E)
+    area: tuple, list or shapely.geometry.Polygon
+        if bbox (xmin, ymin, xmax, ymax)
     query: str
         must be of format '["key"]' or '["key"="value"]', etc.
     """
@@ -717,10 +720,17 @@ class OSMApiQuery:
         self.condition = condition
     
     def _area_to_queryformat(self, area):
-        if isinstance(area,tuple):
-            return area
+        """
+        reformat lat/lon info as in OSM convention, meaning
+        bbox: (S,W,N,E) instead of (xmin, ymin, xmax, ymax)
+        Points: lat / lon instead of (x,y)
+        """
+        if (isinstance(area,tuple) or isinstance(area, list)):
+            xmin, ymin, xmax, ymax = area
+            return (ymin, xmin, ymax, xmax)
         elif isinstance(area,shapely.geometry.Polygon):
-            lat, lon = area.exterior.coords.xy
+            # TODO: THIS IS WRONG, xy yields lon, lat. Change!
+            lon, lat = area.exterior.coords.xy
             lat_lon_str = " ".join([str(y)+" "+str(x) for y, x in zip(lat, lon)])
             return f'(poly:"{lat_lon_str}")'
 
@@ -901,9 +911,35 @@ class OSMApiQuery:
 
         return gdf_results.reset_index(drop=True)
 
+    def _osm_geoms_to_gis(self, gdf):
+        """
+        convert lat / lon ordering of OSM convention back to conventional
+        GIS ordering (x,y) instead of (lat / lon)
+        
+        Parameters
+        ----------
+        gdf : gpd.GeoDataFrame
+        
+        Returns
+        -------
+        gpd.GeoSeries
+            Geometry series with swapped coordinates. 
+        """
 
+        return gdf.geometry.map(lambda geometry: 
+                                shapely.ops.transform(
+                                    lambda x, y: (y, x), geometry))
+        
     def get_data_overpass(self, closed_lines_are_polys=True):
-       """wrapper for all helper funcs to get & assemble data"""
+       """
+       wrapper for all helper funcs to get & assemble data
+       """
+       
        query_clause = self._overpass_query_string()
        result = self._insistent_osm_api_query(query_clause)
-       return self._assemble_results(result, closed_lines_are_polys)
+       gdf_result = self._assemble_results(result, closed_lines_are_polys)
+       gdf_result['geometry'] = self._osm_geoms_to_gis(gdf_result)
+       
+       return gdf_result
+   
+   
