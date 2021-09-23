@@ -479,9 +479,8 @@ class GeoclawRunner():
         self.surge_h = np.zeros(centroids.shape[0])
 
         # compute time horizon
-        self.time_horizon = tuple([int(t / np.timedelta64(1, 's'))
-                                   for t in (self.track.time[0] - self.time_offset,
-                                             self.track.time[-1] - self.time_offset)])
+        self.time_horizon = tuple([int((t - self.time_offset)  / np.timedelta64(1, 's'))
+                                   for t in self.track.time[[0, -1]]])
 
         # create work directory
         self.work_dir = base_dir.joinpath(self.time_offset_str)
@@ -525,6 +524,7 @@ include $(CLAW)/clawutil/src/Makefile.common
                 error_strings = [
                     "ABORTING CALCULATION",
                     "Stopping calculation",
+                    "  free list full with ",
                 ]
                 if any(err in line for err in error_strings):
                     stopped = True
@@ -988,17 +988,28 @@ def mean_max_sea_level(path, months, bounds):
             raise IndexError("The sea level data set doesn't contain the required months: %s"
                              % ", ".join(f"{m[0]:04d}-{m[1]:02d}" for m in months))
         zos_ds = zos_ds.sel(time=mask_time)
-        zos_lon = u_coord.lon_normalize(
-            zos_ds.lon.values, center=0.5 * (bounds[0] + bounds[2]))
-        mask_lat = (bounds[1] <= zos_ds.lat) & (zos_ds.lat <= bounds[3])
-        mask_lon = (bounds[0] <= zos_lon) & (zos_lon <= bounds[2]) & np.isfinite(zos_ds.lon)
-        mask_bounds = (mask_lat & mask_lon)
-        if not np.any(mask_bounds):
-            raise IndexError("The sea level data set doesn't intersect the required bounds: %s"
-                             % bounds)
-        zos_ds = zos_ds.where(mask_bounds, drop=True)
-        zos = zos_ds.zos.values[:]
-    return np.nanmean(np.nanmax(zos, axis=(1, 2)))
+
+        # enlarge bounds until the mean is valid
+        pad = 0.25
+        mean = np.nan
+        while np.isnan(mean):
+            mean = _temporal_mean_of_max_within_bounds(zos_ds, bounds)
+            bounds = (bounds[0] - pad, bounds[1] - pad, bounds[2] + pad, bounds[2] + pad)
+    return mean
+
+
+def _temporal_mean_of_max_within_bounds(ds, bounds):
+    lon = u_coord.lon_normalize(
+        ds.lon.values, center=0.5 * (bounds[0] + bounds[2]))
+    mask_lat = (bounds[1] <= ds.lat) & (ds.lat <= bounds[3])
+    mask_lon = (bounds[0] <= lon) & (lon <= bounds[2]) & np.isfinite(ds.lon)
+    mask_bounds = (mask_lat & mask_lon)
+    if not np.any(mask_bounds):
+        raise IndexError("The sea level data set doesn't intersect the required bounds: %s"
+                         % bounds)
+    ds = ds.where(mask_bounds, drop=True)
+    values = ds.zos.values[:]
+    return np.nanmean(np.nanmax(values, axis=(1, 2)))
 
 
 def load_topography(path, bounds, res_as):
@@ -1208,6 +1219,14 @@ class TCSurgeEvents():
 
     def _set_areas(self):
         """For each event, determine areas affected by wind and surge."""
+        # total area (maximum bounds to consider)
+        pad = 1 + self.track.radius_oci / 60
+        self.total_area = (
+            float((self.track.lon - pad).min()),
+            float((self.track.lat - pad).min()),
+            float((self.track.lon + pad).max()),
+            float((self.track.lat + pad).max()),
+        )
         self.wind_area = []
         self.landfall_area = []
         self.surge_areas = []
