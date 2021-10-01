@@ -491,6 +491,26 @@ class OSMApiQuery:
         return f'[out:json][timeout:180];(nwr{self.condition}{self.area};(._;>;););out;'
 
     def _assemble_from_relations(self, result):
+        """
+        pick out those nodes and ways from resul instance that belong to 
+        relations. Assemble relations into gdfs. Keep track of which nodes
+        and ways have been "used up" already
+        
+        Parameters
+        ---------
+        result : overpy.Overpass result object
+        
+        Returns
+        -------
+        nodes_taken : list
+            node-ids that have been used to construct relations. 
+            Not "available" anymore for further constructions
+        ways_taken : list
+            way-ids that have been used to construct relations. 
+            Not "available" anymore for further constructions
+        gdf_rels : gpd.GeoDataFrame
+            gdf with relations that were assembled from result object
+        """
 
         nodes_taken = []
         ways_taken = []
@@ -556,7 +576,31 @@ class OSMApiQuery:
 
     def _assemble_from_ways(self, result, ways_avail, closed_lines_are_polys):
 
-        """assemble gdfs from ways, """
+        """ 
+        pick out those nodes and ways from result instance that belong to 
+        ways. Assemble ways into gdfs. Keep track of which nodes
+        and ways have been "used up" already
+        
+        Parameters
+        ---------
+        result : overpy.Overpass result object
+        ways_avail : list
+            way-ids that have not yet been used for relation construction
+            and are hence available for way constructions
+        closed_lines_are_polys : bool
+            whether closed lines are polygons
+        
+        Returns
+        -------
+        nodes_taken : list
+            node-ids that have been used to construct relations. 
+            Not "available" anymore for further constructions
+        ways_taken : list
+            way-ids that have been used to construct relations. 
+            Not "available" anymore for further constructions
+        gdf_ways : gpd.GeoDataFrame
+            gdf with ways that were assembled from result object
+        """
 
         nodes_taken = []
         data_geom = []
@@ -584,7 +628,23 @@ class OSMApiQuery:
         return nodes_taken, gdf_ways
 
     def _assemble_from_nodes(self, result, nodes_avail):
-
+        """ 
+        pick out those nodes and ways from result instance that belong to 
+        ways. Assemble ways into gdfs. Keep track of which nodes
+        and ways have been "used up" already
+        
+        Parameters
+        ---------
+        result : overpy.Overpass result object
+        nodes_avail : list
+            node-ids that have not yet been used for relation and way 
+            construction and are hence available for node constructions
+        
+        Returns
+        -------
+        gdf_nodes : gpd.GeoDataFrame
+            gdf with nodes that were assembled from result object
+        """
         data_geom = []
         data_id = []
         data_tags = []
@@ -602,10 +662,28 @@ class OSMApiQuery:
         return gdf_nodes
 
     def _update_availability(self, full_set, to_remove):
+        """
+        update id availabilities from whole result set after using up some for
+        geometry construction
+        """
         return [item for item in full_set if item not in to_remove]
 
     def _assemble_results(self, result, closed_lines_are_polys=True):
-
+        """
+        assemble an overpass result object with results, ways, nodes etc. from the
+        format-specific structure into one geodataframe
+        
+        Parameters
+        ---------
+        result : overpy.Overpass result object
+        closed_lines_are_polys : bool
+                whether closed lines are polygons. Default is True
+    
+        Returns
+        ------
+        gdf_results : gpd.GeoDataFrame
+            Result-gdf from the overpass query.
+        """
         gdf_results = gdf_ways = gdf_nodes = gpd.GeoDataFrame(
             columns=['osm_id','geometry','tags'])
         nodes_avail = result.node_ids
