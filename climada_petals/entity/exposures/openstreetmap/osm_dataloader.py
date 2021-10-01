@@ -76,12 +76,12 @@ class OSMRaw:
         DICT_GEOFABRIK for exceptions / special regions.
         """
         if iso3=='RUS':
-            LOGGER.error('Russia comes in two files. Please specify either ',
-                         'RUS-A for the Asian or RUS-E for the European part.')
+            LOGGER.error("""Russia comes in two files. Please specify either
+                         'RUS-A for the Asian or RUS-E for the European part.""")
         elif iso3 not in DICT_GEOFABRIK.keys():
-	           LOGGER.error('The provided iso3 is not a recognised ',
-                         ' code. Please have a look on Geofabrik.de if it',
-                         ' exists, or check your iso3 code.')
+	           LOGGER.error("""The provided iso3 is not a recognised 
+                             code. Please have a look on Geofabrik.de if it
+                             exists, or check your iso3 code.""")
 
 
         if file_format == 'shp':
@@ -145,7 +145,8 @@ class OSMRaw:
         else:
             LOGGER.info(f'file already exists as {save_path}')
 
-    def _osmosis_extract(self, shape, path_planet, path_extract):
+    def _osmosis_extract(self, shape, path_planet, path_extract, 
+                         overwrite=False):
         """
         Runs the command line tool osmosis to cut out all map info within 
         shape, from the osm planet file, unless file already exists.
@@ -161,15 +162,18 @@ class OSMRaw:
             file path to planet.osm.pbf
         path_extract : str or pathlib.Path
             file path (incl. name & ending) under which extract will be stored
+        overwrite : bool
+            default is False. Whether to overwrite files if they already exist.
             
         Returns
         -------
         None or subprocess
         """
 
-        if not Path(path_extract).is_file():
+        if ((not Path(path_extract).is_file()) or
+            (Path(path_extract).is_file() and overwrite==True)):
             
-            LOGGER.info('File doesn`t yet exist. Assembling osmosis command.')
+            LOGGER.info('File doesn`t yet exist or overwriting old one. Assembling osmosis command.')
             if (isinstance(shape, list) or isinstance(shape, tuple)):
                 cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet), 
                        '--bounding-box', f'top={shape[3]}', f'left={shape[0]}',
@@ -185,7 +189,7 @@ class OSMRaw:
 
             return subprocess.run(cmd, stdout=subprocess.PIPE, 
                                   universal_newlines=True)
-        elif Path(path_extract).is_file():
+        elif (Path(path_extract).is_file() and overwrite==False):
             LOGGER.info("Extracted file already exists!")
             return None
         
