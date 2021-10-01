@@ -36,6 +36,7 @@ from climada_petals.util.constants import DICT_GEOFABRIK, DICT_CIS_OSM
 
 LOGGER = logging.getLogger(__name__)
 DATA_DIR = CONFIG.exposures.openstreetmap.local_data.dir()
+OSM_CONFIG_FILE = CONFIG.exposures.openstreetmap.osm_confdir.dir()
 
 gdal.SetConfigOption("OSM_CONFIG_FILE",
                      str(Path(__file__).resolve().parent.joinpath('osmconf.ini'))) 
