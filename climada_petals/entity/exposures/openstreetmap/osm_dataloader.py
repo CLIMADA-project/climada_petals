@@ -368,9 +368,8 @@ class OSMFileQuery:
             LOGGER.info('query is finished, lets start the loop')
             for feature in tqdm(sql_lyr, desc=f'extract {geo_type}'):
                 try:
-                    fields = []
-                    for key in ['osm_id', *constraint_dict['osm_keys']]:
-                        fields.append(feature.GetField(key))
+                    fields = [feature.GetField(key) for key in 
+                              ['osm_id', *constraint_dict['osm_keys']]]
                     geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
                     if geom is None:
                         continue
