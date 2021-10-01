@@ -19,17 +19,18 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Define functions to download openstreetmap data
 """
 import geopandas as gpd
+import itertools
 import logging
+import numpy as np
 from osgeo import ogr, gdal
+import overpy
 from pathlib import Path
 import shapely
 import subprocess
+import time
 from tqdm import tqdm
 import urllib.request
-import numpy as np
-import itertools
-import time
-import overpy
+
 
 from climada import CONFIG
 from climada_petals.util.constants import DICT_GEOFABRIK, DICT_CIS_OSM
@@ -39,7 +40,7 @@ DATA_DIR = CONFIG.exposures.openstreetmap.local_data.dir()
 OSM_CONFIG_FILE = CONFIG.exposures.openstreetmap.osm_confdir.dir(
     ).joinpath('osmconf.ini')
 
-gdal.SetConfigOption("OSM_CONFIG_FILE", str(OSM_CONFIG_FILE)) 
+gdal.SetConfigOption("OSM_CONFIG_FILE", str(OSM_CONFIG_FILE))
 
 # =============================================================================
 # Define constants
@@ -48,7 +49,7 @@ gdal.SetConfigOption("OSM_CONFIG_FILE", str(OSM_CONFIG_FILE))
 
 class OSMRaw:
     """
-    functions to obtain entire raw datasets from OSM, 
+    functions to obtain entire raw datasets from OSM,
     from different sources"""
 
     def __init__(self):
@@ -58,19 +59,19 @@ class OSMRaw:
     def _create_gf_download_url(self, iso3, file_format):
         """
         create string with download-api from geofabrik
-        
+
         Parameters
         ----------
         iso3 : str
             ISO3 code of country to download
         file_format : str
-            Format in which file should be downloaded; ESRI Shapefiles ('shp') 
+            Format in which file should be downloaded; ESRI Shapefiles ('shp')
             or osm-Protocolbuffer Binary Format ('pbf')
-        
+
         Returns
         -------
         str : Geofabrik ownload-api for the requested country.
-        
+
         See also
         --------
         DICT_GEOFABRIK for exceptions / special regions.
@@ -78,49 +79,47 @@ class OSMRaw:
         if iso3=='RUS':
             LOGGER.error("""Russia comes in two files. Please specify either
                          'RUS-A for the Asian or RUS-E for the European part.""")
-        elif iso3 not in DICT_GEOFABRIK.keys():
-	           LOGGER.error("""The provided iso3 is not a recognised 
+        if iso3 not in DICT_GEOFABRIK.keys():
+            LOGGER.error("""The provided iso3 is not a recognised
                              code. Please have a look on Geofabrik.de if it
                              exists, or check your iso3 code.""")
 
-
         if file_format == 'shp':
             return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest-free.shp.zip'
-        elif file_format == 'pbf':
+        if file_format == 'pbf':
             return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest.osm.pbf'
-        else:
-            LOGGER.error('invalid file format. Please choose one of [shp, pbf]')
+        return LOGGER.error('invalid file format. Please choose one of [shp, pbf]')
 
     def get_data_geofabrik(self, iso3, file_format='pbf', save_path=DATA_DIR):
         """
-        Download country files with all OSM map info from the provider 
+        Download country files with all OSM map info from the provider
         Geofabrik.de, if doesn't exist, yet.
-        
+
         Parameters
         ----------
         iso3 : str
             ISO3 code of country to download
-            Exceptions: Russia is divided into European and Asian part 
+            Exceptions: Russia is divided into European and Asian part
             ('RUS-E', 'RUS-A'), Canary Islands are 'IC'.
         file_format : str
-            Format in which file should be downloaded; options are 
+            Format in which file should be downloaded; options are
             ESRI Shapefiles (shp), which can easily be loaded into gdfs,
-            or osm-Protocolbuffer Binary Format (pbf), which is smaller in 
+            or osm-Protocolbuffer Binary Format (pbf), which is smaller in
             size, but has a more complicated query syntax to load (functions
             are provided in the OSMFileQuery class).
         save_path : str or pathlib.Path
             Folder in which to save the file
-            
+
         Returns
         -------
         None
             File is downloaded and stored under save_path + the Geofabrik filename
-        
+
         See also
         --------
         DICT_GEOFABRIK for exceptions / special regions.
         """
-        
+
         download_url = self._create_gf_download_url(iso3, file_format)
         local_filepath = Path(save_path , download_url.split('/')[-1])
         if not Path(local_filepath).is_file():
@@ -129,31 +128,31 @@ class OSMRaw:
         else:
             LOGGER.info(f'file already exists as {local_filepath}')
 
-    def get_data_planet(self, 
+    def get_data_planet(self,
                         save_path=Path(DATA_DIR,'planet-latest.osm.pbf')):
         """
         Download the entire planet file from the OSM server (ca. 60 GB).
-        
+
         Parameters
         ----------
         save_path : str or pathlib.Path
         """
-        
+
         if not Path(save_path).is_file():
             LOGGER.info(f'Downloading file as {save_path}')
             urllib.request.urlretrieve(self.planet_url, save_path)
         else:
             LOGGER.info(f'file already exists as {save_path}')
 
-    def _osmosis_extract(self, shape, path_planet, path_extract, 
+    def _osmosis_extract(self, shape, path_planet, path_extract,
                          overwrite=False):
         """
-        Runs the command line tool osmosis to cut out all map info within 
+        Runs the command line tool osmosis to cut out all map info within
         shape, from the osm planet file, unless file already exists.
-        
+
         If your device doesn't have osmosis yet, see installation instructions:
-         https://wiki.openstreetmap.org/wiki/Osmosis/Installation   
-        
+         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
+
         Parameters
         -----------
         shape : list or str
@@ -164,39 +163,39 @@ class OSMRaw:
             file path (incl. name & ending) under which extract will be stored
         overwrite : bool
             default is False. Whether to overwrite files if they already exist.
-            
+
         Returns
         -------
         None or subprocess
         """
 
         if ((not Path(path_extract).is_file()) or
-            (Path(path_extract).is_file() and overwrite==True)):
-            
-            LOGGER.info('File doesn`t yet exist or overwriting old one. Assembling osmosis command.')
-            if (isinstance(shape, list) or isinstance(shape, tuple)):
-                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet), 
+            (Path(path_extract).is_file() and overwrite)):
+
+            LOGGER.info("""File doesn`t yet exist or overwriting old one.
+                        Assembling osmosis command.""")
+            if isinstance(shape, (list, tuple)):
+                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet),
                        '--bounding-box', f'top={shape[3]}', f'left={shape[0]}',
-                       f'bottom={shape[1]}', f'right={shape[2]}', 
+                       f'bottom={shape[1]}', f'right={shape[2]}',
                        '--write-pbf', 'file='+str(path_extract)]
             elif isinstance(shape, str):
-                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet), 
+                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet),
                        '--bounding-polygon', 'file='+shape, '--write-pbf',
                        'file='+str(path_extract)]
 
-            LOGGER.info('''Extracting from the osm planet file... 
+            LOGGER.info('''Extracting from the osm planet file...
                         This will take a while''')
 
-            return subprocess.run(cmd, stdout=subprocess.PIPE, 
+            return subprocess.run(cmd, stdout=subprocess.PIPE,
                                   universal_newlines=True)
-        elif (Path(path_extract).is_file() and overwrite==False):
+
+        if (Path(path_extract).is_file() and (overwrite is False)):
             LOGGER.info("Extracted file already exists!")
-            return None
-        
         else:
-            LOGGER.info('Something went wrong with Path specifications. \n',
-                        'Please enter either a valid string or pathlib.Path')
-            return None
+            LOGGER.info("""Something went wrong with Path specifications.
+                        'Please enter either a valid string or pathlib.Path""")
+        return None
 
     def get_data_planetextract(self, shape, path_extract,
                                path_planet=Path(DATA_DIR, 'planet-latest.osm.pbf')):
@@ -212,7 +211,7 @@ class OSMRaw:
         path_extract : str or pathlib.Path
             file path (incl. name & ending) under which extract will be stored
         path_planet : str or pathlib.Path
-            file path to planet-latest.osm.pbf. Will download & store it as 
+            file path to planet-latest.osm.pbf. Will download & store it as
             indicated, if doesn`t yet exist.
             Default is DATA_DIR/planet-latest.osm.pbf
 
@@ -220,18 +219,18 @@ class OSMRaw:
         Note
         ----
         For more info on what .poly files are (incl. several tools for
-        creating them), see 
+        creating them), see
         https://wiki.openstreetmap.org/wiki/Osmosis/Polygon_Filter_File_Format
 
         For creating .poly files on admin0 to admin3 levels of any place on the
         globe, see the GitHub repo https://github.com/ElcoK/osm_clipper
         (especially the function make_poly_file())
-        
+
         Note
         ----
         This function uses the command line tool osmosis to cut out new
-        osm.pbf files from the original ones. 
-        Installation instructions (windows, linux, apple) - see 
+        osm.pbf files from the original ones.
+        Installation instructions (windows, linux, apple) - see
         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
         """
 
@@ -241,10 +240,10 @@ class OSMRaw:
 
         self._osmosis_extract(shape, path_planet, path_extract)
 
-def get_data_fileextract(self, shape, path_extract, path_parentfile):
+    def get_data_fileextract(self, shape, path_extract, path_parentfile):
         """
         Extract a geographic sub-set from a raw osm-pbf file.
-        
+
         Note
         ----
         The shape must be entirely contained within the file to extract from,
@@ -258,17 +257,17 @@ def get_data_fileextract(self, shape, path_extract, path_parentfile):
             file path (incl. name & ending) under which extract will be stored
         path_parentfile : str or pathlib.Path
             file path to parentfile.osm.pbf fro which the shape will be cut out
-        
+
         Note
         ----
         This function uses the command line tool osmosis to cut out new
-        osm.pbf files from the original ones. 
-        Installation instructions (windows, linux, apple) - see 
+        osm.pbf files from the original ones.
+        Installation instructions (windows, linux, apple) - see
         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
         """
 
         self._osmosis_extract(shape, path_parentfile, path_extract)
-        
+
 
 class OSMFileQuery:
     """
@@ -317,7 +316,7 @@ class OSMFileQuery:
         from an OpenStreetMap osm.pbf file.
         adapted from BenDickens/trails repo
         (https://github.com/BenDickens/trails.git, see extract.py)
-        
+
 
         Parameters
         ----------
@@ -326,7 +325,7 @@ class OSMFileQuery:
         constraint_dict :  dict
             A dict with the keys "osm_keys" and "osm_query". osm_keys contains
             a list with all the osm keys that should be reported as columns in
-            the output gdf. 
+            the output gdf.
             osm_query contains an osm query string of the syntax
             "key(='value') (and/or further queries)".
             See examples in DICT_CIS_OSM in case of doubt.
@@ -334,23 +333,23 @@ class OSMFileQuery:
         Returns
         -------
         gpd.GeoDataFrame
-            A gdf with all results from the osm.pbf file matching the 
+            A gdf with all results from the osm.pbf file matching the
             specified constraints.
 
         Note
         ----
         1) The keys that are searchable are specified in the osmconf.ini file.
-        Make sure that they exist in the attributes=... paragraph under the 
-        respective geometry section. 
-        For example, to retrieve multipolygons with building='yes', 
+        Make sure that they exist in the attributes=... paragraph under the
+        respective geometry section.
+        For example, to retrieve multipolygons with building='yes',
         building must be in the attributes under
-        the [multipolygons] section of the file. You can find it in the same 
+        the [multipolygons] section of the file. You can find it in the same
         folder as the osm_dataloader.py module is located.
-        2) OSM keys that have : in their name must be changed to _ in the 
+        2) OSM keys that have : in their name must be changed to _ in the
                 search dict, but not in the osmconf.ini
         E.g. tower:type is called tower_type, since it would interfere with the
         SQL syntax otherwise, but still tower:type in the osmconf.ini
-        
+
         See also
         --------
         https://taginfo.openstreetmap.org/ to check what keys and key/value
@@ -368,7 +367,7 @@ class OSMFileQuery:
             LOGGER.info('query is finished, lets start the loop')
             for feature in tqdm(sql_lyr, desc=f'extract {geo_type}'):
                 try:
-                    fields = [feature.GetField(key) for key in 
+                    fields = [feature.GetField(key) for key in
                               ['osm_id', *constraint_dict['osm_keys']]]
                     geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
                     if geom is None:
@@ -378,7 +377,7 @@ class OSMFileQuery:
                 except:
                     LOGGER.warning("skipped OSM feature")
         else:
-            LOGGER.error("""Nonetype error when requesting SQL. Check the 
+            LOGGER.error("""Nonetype error when requesting SQL. Check the
                          query and the OSM config file under the respective
                          geometry - perhaps key is unknown.""")
 
@@ -387,17 +386,17 @@ class OSMFileQuery:
 
     def retrieve_cis(self, ci_type):
         """
-        A wrapper around retrieve() to conveniently retrieve map info for a 
+        A wrapper around retrieve() to conveniently retrieve map info for a
         selection of  critical infrastructure types from the given osm.pbf file.
         No need to search for osm key/value tags and relevant geometry types.
-        
+
         Parameters
         ----------
         ci_type : str
-            one of DICT_CIS_OSM.keys(), i.e. 'education', 'healthcare', 
-            'water', 'telecom', 'road', 'rail', 'air', 'gas', 'oil', 'power', 
+            one of DICT_CIS_OSM.keys(), i.e. 'education', 'healthcare',
+            'water', 'telecom', 'road', 'rail', 'air', 'gas', 'oil', 'power',
             'wastewater', 'food'
-            
+
         See also
         -------
         DICT_CIS_OSM for the keys and key/value tags queried for the respective
@@ -429,7 +428,7 @@ class OSMFileQuery:
 class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
-    
+
     area: tuple, list or shapely.geometry.Polygon
         if bbox (xmin, ymin, xmax, ymax)
     query: str
@@ -439,18 +438,18 @@ class OSMApiQuery:
     def __init__(self, area, condition):
         self.area = self._area_to_queryformat(area)
         self.condition = condition
-    
+
     def _area_to_queryformat(self, area):
         """
         reformat lat/lon info as in OSM convention, meaning
         bbox: (S,W,N,E) instead of (xmin, ymin, xmax, ymax)
         Points: lat / lon instead of (x,y)
         """
-        if (isinstance(area,tuple) or isinstance(area, list)):
+        if isinstance(area,(tuple, list)):
             xmin, ymin, xmax, ymax = area
             return (ymin, xmin, ymax, xmax)
-        elif isinstance(area,shapely.geometry.Polygon):
-            # TODO: THIS IS WRONG, xy yields lon, lat. Change!
+
+        if isinstance(area,shapely.geometry.Polygon):
             lon, lat = area.exterior.coords.xy
             lat_lon_str = " ".join([str(y)+" "+str(x) for y, x in zip(lat, lon)])
             return f'(poly:"{lat_lon_str}")'
@@ -475,13 +474,14 @@ class OSMApiQuery:
                 return api.query(query_clause)
             except overpy.exception.OverpassTooManyRequests:
                 if waiting_period < end_of_patience:
-                    print(' WARNING: too many Overpass API requests - try again in {} seconds'.format(
-                        waiting_period))
+                    LOGGER.warning("""Too many Overpass API requests - 
+                                   trying again in {waiting_period} seconds """)
                 else:
                     raise Exception("Overpass API is consistently unavailable")
             except Exception as exc:
                 if waiting_period < end_of_patience:
-                    print(' WARNING: !!!!\n {}\n try again in {} seconds'.format(exc, waiting_period))
+                    LOGGER.warning(f"""{exc}
+                                   Trying again in {waiting_period} seconds""")
                 else:
                     raise Exception("The Overpass API is consistently unavailable")
             time.sleep(waiting_period)
@@ -492,21 +492,21 @@ class OSMApiQuery:
 
     def _assemble_from_relations(self, result):
         """
-        pick out those nodes and ways from resul instance that belong to 
+        pick out those nodes and ways from resul instance that belong to
         relations. Assemble relations into gdfs. Keep track of which nodes
         and ways have been "used up" already
-        
+
         Parameters
         ---------
         result : overpy.Overpass result object
-        
+
         Returns
         -------
         nodes_taken : list
-            node-ids that have been used to construct relations. 
+            node-ids that have been used to construct relations.
             Not "available" anymore for further constructions
         ways_taken : list
-            way-ids that have been used to construct relations. 
+            way-ids that have been used to construct relations.
             Not "available" anymore for further constructions
         gdf_rels : gpd.GeoDataFrame
             gdf with relations that were assembled from result object
@@ -537,33 +537,33 @@ class OSMApiQuery:
 
             gdf_polys['role'] = roles
 
-            # separate relationways into inner, outer polygons and linestrings, 
+            # separate relationways into inner, outer polygons and linestrings,
             # combine them.
 
             # step 1: polygons to multipolygons
             inner_mp = shapely.geometry.MultiPolygon(
-                gdf_polys.geometry[(gdf_polys.geometry.type=='Polygon') & 
+                gdf_polys.geometry[(gdf_polys.geometry.type=='Polygon') &
                                    (gdf_polys.role=='inner')].values)
             outer_mp = shapely.geometry.MultiPolygon(
-                gdf_polys.geometry[(gdf_polys.geometry.type=='Polygon') & 
-                                   (gdf_polys.role=='outer')].values)   
-            
+                gdf_polys.geometry[(gdf_polys.geometry.type=='Polygon') &
+                                   (gdf_polys.role=='outer')].values)
+
             # step 2: poly from lines --> multiline --> line --> polygon
             lines = gdf_polys.geometry[
-                (gdf_polys.geometry.type=='LineString')].values         
+                (gdf_polys.geometry.type=='LineString')].values
             if len(lines) > 0:
                 poly = shapely.geometry.Polygon(
                     shapely.ops.linemerge(shapely.geometry.MultiLineString(lines)))
             else:
                 poly = shapely.geometry.Polygon([])
-            
-            # step 3: combine to one multipoly        
+
+            # step 3: combine to one multipoly
             multipoly = shapely.ops.unary_union([outer_mp - inner_mp, poly])
             data_geom.append(multipoly)
-            
+
             if multipoly.area == 0:
                 LOGGER.info('Empty geometry encountered.')
-    
+
         gdf_rels = gpd.GeoDataFrame(
             data=np.array([data_id,data_geom,data_tags]).T,
             columns=['osm_id','geometry','tags'])
@@ -576,11 +576,11 @@ class OSMApiQuery:
 
     def _assemble_from_ways(self, result, ways_avail, closed_lines_are_polys):
 
-        """ 
-        pick out those nodes and ways from result instance that belong to 
+        """
+        pick out those nodes and ways from result instance that belong to
         ways. Assemble ways into gdfs. Keep track of which nodes
         and ways have been "used up" already
-        
+
         Parameters
         ---------
         result : overpy.Overpass result object
@@ -589,14 +589,14 @@ class OSMApiQuery:
             and are hence available for way constructions
         closed_lines_are_polys : bool
             whether closed lines are polygons
-        
+
         Returns
         -------
         nodes_taken : list
-            node-ids that have been used to construct relations. 
+            node-ids that have been used to construct relations.
             Not "available" anymore for further constructions
         ways_taken : list
-            way-ids that have been used to construct relations. 
+            way-ids that have been used to construct relations.
             Not "available" anymore for further constructions
         gdf_ways : gpd.GeoDataFrame
             gdf with ways that were assembled from result object
@@ -628,18 +628,18 @@ class OSMApiQuery:
         return nodes_taken, gdf_ways
 
     def _assemble_from_nodes(self, result, nodes_avail):
-        """ 
-        pick out those nodes and ways from result instance that belong to 
+        """
+        pick out those nodes and ways from result instance that belong to
         ways. Assemble ways into gdfs. Keep track of which nodes
         and ways have been "used up" already
-        
+
         Parameters
         ---------
         result : overpy.Overpass result object
         nodes_avail : list
-            node-ids that have not yet been used for relation and way 
+            node-ids that have not yet been used for relation and way
             construction and are hence available for node constructions
-        
+
         Returns
         -------
         gdf_nodes : gpd.GeoDataFrame
@@ -672,13 +672,13 @@ class OSMApiQuery:
         """
         assemble an overpass result object with results, ways, nodes etc. from the
         format-specific structure into one geodataframe
-        
+
         Parameters
         ---------
         result : overpy.Overpass result object
         closed_lines_are_polys : bool
                 whether closed lines are polygons. Default is True
-    
+
         Returns
         ------
         gdf_results : gpd.GeoDataFrame
@@ -714,31 +714,29 @@ class OSMApiQuery:
         """
         convert lat / lon ordering of OSM convention back to conventional
         GIS ordering (x,y) instead of (lat / lon)
-        
+
         Parameters
         ----------
         gdf : gpd.GeoDataFrame
-        
+
         Returns
         -------
         gpd.GeoSeries
-            Geometry series with swapped coordinates. 
+            Geometry series with swapped coordinates.
         """
 
-        return gdf.geometry.map(lambda geometry: 
+        return gdf.geometry.map(lambda geometry:
                                 shapely.ops.transform(
                                     lambda x, y: (y, x), geometry))
-        
+
     def get_data_overpass(self, closed_lines_are_polys=True):
-       """
-       wrapper for all helper funcs to get & assemble data
-       """
-       
-       query_clause = self._overpass_query_string()
-       result = self._insistent_osm_api_query(query_clause)
-       gdf_result = self._assemble_results(result, closed_lines_are_polys)
-       gdf_result['geometry'] = self._osm_geoms_to_gis(gdf_result)
-       
-       return gdf_result
-   
-   
+        """
+        wrapper for all helper funcs to get & assemble data
+        """
+
+        query_clause = self._overpass_query_string()
+        result = self._insistent_osm_api_query(query_clause)
+        gdf_result = self._assemble_results(result, closed_lines_are_polys)
+        gdf_result['geometry'] = self._osm_geoms_to_gis(gdf_result)
+
+        return gdf_result
