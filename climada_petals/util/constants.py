@@ -335,8 +335,9 @@ DICT_CIS_OSM =  {
                              highway='residential' or highway='road' or
                              highway='service' or highway='unclassified' or
                              highway='traffic_signals' or
-                             (public_transport='*' and bus='yes') or
-                             man_made='bridge' or man_made='tunnel'"""},
+                             (public_transport='*' and bus='yes') or 
+                             (bridge='*' and highway='*') or 
+                             (tunnel='*' and highway='*')"""},
         'rail' : {
             'osm_keys' : ['railway','name'],
             'osm_query' : """railway='rail' or railway='tram' or
