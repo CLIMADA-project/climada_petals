@@ -114,7 +114,7 @@ class OSMRaw:
         Returns
         -------
         None
-            File is downloaded and stored unter save_path + filename
+            File is downloaded and stored under save_path + the Geofabrik filename
         
         See also
         --------
