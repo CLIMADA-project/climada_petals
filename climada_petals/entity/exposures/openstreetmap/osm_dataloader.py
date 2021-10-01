@@ -140,6 +140,7 @@ class OSMRaw:
         """
         Runs the command line tool osmosis to cut out all map info within 
         shape, from the osm planet file, unless file already exists.
+        
         If your device doesn't have osmosis yet, see installation instructions:
          https://wiki.openstreetmap.org/wiki/Osmosis/Installation   
         
@@ -154,8 +155,7 @@ class OSMRaw:
             
         Returns
         -------
-        None
-            Extracts and stores a new file as indicated under path_extract
+        None or subprocess
         """
 
         if not Path(path_extract).is_file():
