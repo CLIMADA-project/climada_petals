@@ -234,6 +234,27 @@ class OSMRaw:
 
         self._osmosis_extract(shape, path_planet, path_extract)
 
+def get_data_fileextract(self, shape, path_extract, path_parentfile):
+        """
+        Extract a geographic sub-set from a raw osm-pbf file.
+        
+        Note
+        ----
+        The shape must be entirely contained within the file to extract from,
+        else it will yield weird results.
+
+        Parameters
+        ----------
+        shape : list or str
+            bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
+        path_extract : str or pathlib.Path
+            file path (incl. name & ending) under which extract will be stored
+        path_parentfile : str or pathlib.Path
+            file path to parentfile.osm.pbf fro which the shape will be cut out
+        """
+
+        self._osmosis_extract(shape, path_parentfile, path_extract)
+        
 
 class OSMFileQuery:
     """
