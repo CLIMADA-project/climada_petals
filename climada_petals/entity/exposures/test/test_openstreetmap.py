@@ -21,20 +21,37 @@ Test openstreetmap modules.
 
 
 import unittest
-import numpy as np
-import shapely
+
+from climada_petals.entity.exposures.openstreetmap import osm_dataloader as osm_dl
 
 class TestOSMRaw(unittest.TestCase):
     """Test OSMRaw class"""
 
-    def test_osmraw_f1(self):
+    def test_create_gf_download_url(self):
         """ test methods of osmraw"""
-        pass
+        OSMRawTest = osm_dl.OSMRaw()
+        url_shp = OSMRawTest._create_gf_download_url('DEU', 'shp')
+        url_pbf = OSMRawTest._create_gf_download_url('ESP', 'pbf')
+        
+        self.assertEqual('https://download.geofabrik.de/europe/germany-latest-free.shp.zip',
+        url_shp)
+        self.assertEqual('https://download.geofabrik.de/europe/spain-latest.osm.pbf',
+        url_pbf)
+        self.assertRaises(KeyError,OSMRawTest._create_gf_download_url('RUS', 'pbf'))
+        self.assertRaises(KeyError,OSMRawTest._create_gf_download_url('XYZ', 'pbf'))
 
-    def test_osmraw_f2(self):
+    def test_get_data_geofabrik(self):
         """test methods of osmraw" """
         pass
     
+    def test_get_data_planet(self):
+        """test methods of osmraw" """
+        pass
+
+    def test_get_data_fileextract(self):
+        """test methods of osmraw"""
+        pass
+        
 class TestOSMFileQuery(unittest.TestCase):
     """Test OSMFileQuery class"""
 

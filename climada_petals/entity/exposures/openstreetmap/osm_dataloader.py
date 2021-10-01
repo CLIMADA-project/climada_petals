@@ -76,18 +76,20 @@ class OSMRaw:
         --------
         DICT_GEOFABRIK for exceptions / special regions.
         """
-        if iso3=='RUS':
-            LOGGER.error("""Russia comes in two files. Please specify either
-                         'RUS-A for the Asian or RUS-E for the European part.""")
-        if iso3 not in DICT_GEOFABRIK.keys():
-            LOGGER.error("""The provided iso3 is not a recognised
+        try:
+            if file_format == 'shp':
+                return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest-free.shp.zip'
+            if file_format == 'pbf':
+                return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest.osm.pbf'
+        except KeyError:
+            if iso3=='RUS':
+                raise KeyError("""Russia comes in two files. Please specify either
+                             'RUS-A for the Asian or RUS-E for the European part.""")
+            else:
+                raise KeyError("""The provided iso3 is not a recognised
                              code. Please have a look on Geofabrik.de if it
                              exists, or check your iso3 code.""")
 
-        if file_format == 'shp':
-            return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest-free.shp.zip'
-        if file_format == 'pbf':
-            return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest.osm.pbf'
         return LOGGER.error('invalid file format. Please choose one of [shp, pbf]')
 
     def get_data_geofabrik(self, iso3, file_format='pbf', save_path=DATA_DIR):
