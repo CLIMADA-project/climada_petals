@@ -75,6 +75,14 @@ class OSMRaw:
         --------
         DICT_GEOFABRIK for exceptions / special regions.
         """
+        if iso3=='RUS':
+            LOGGER.error('Russia comes in two files. Please specify either ',
+                         'RUS-A for the Asian or RUS-E for the European part.')
+        elif iso3 not in DICT_GEOFABRIK.keys():
+	           LOGGER.error('The provided iso3 is not a recognised ',
+                         ' code. Please have a look on Geofabrik.de if it',
+                         ' exists, or check your iso3 code.')
+
 
         if file_format == 'shp':
             return f'{self.geofabrik_url}{DICT_GEOFABRIK[iso3][0]}/{DICT_GEOFABRIK[iso3][1]}-latest-free.shp.zip'
