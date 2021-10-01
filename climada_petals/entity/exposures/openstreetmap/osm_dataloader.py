@@ -226,6 +226,13 @@ class OSMRaw:
         For creating .poly files on admin0 to admin3 levels of any place on the
         globe, see the GitHub repo https://github.com/ElcoK/osm_clipper
         (especially the function make_poly_file())
+        
+        Note
+        ----
+        This function uses the command line tool osmosis to cut out new
+        osm.pbf files from the original ones. 
+        Installation instructions (windows, linux, apple) - see 
+        https://wiki.openstreetmap.org/wiki/Osmosis/Installation
         """
 
         if not Path(path_planet).is_file():
@@ -251,6 +258,13 @@ def get_data_fileextract(self, shape, path_extract, path_parentfile):
             file path (incl. name & ending) under which extract will be stored
         path_parentfile : str or pathlib.Path
             file path to parentfile.osm.pbf fro which the shape will be cut out
+        
+        Note
+        ----
+        This function uses the command line tool osmosis to cut out new
+        osm.pbf files from the original ones. 
+        Installation instructions (windows, linux, apple) - see 
+        https://wiki.openstreetmap.org/wiki/Osmosis/Installation
         """
 
         self._osmosis_extract(shape, path_parentfile, path_extract)
