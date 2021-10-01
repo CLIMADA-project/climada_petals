@@ -140,6 +140,8 @@ class OSMRaw:
         """
         Runs the command line tool osmosis to cut out all map info within 
         shape, from the osm planet file, unless file already exists.
+        If your device doesn't have osmosis yet, see installation instructions:
+         https://wiki.openstreetmap.org/wiki/Osmosis/Installation   
         
         Parameters
         -----------
@@ -174,8 +176,13 @@ class OSMRaw:
 
             return subprocess.run(cmd, stdout=subprocess.PIPE, 
                                   universal_newlines=True)
-        else:
+        elif Path(path_extract).is_file():
             LOGGER.info("Extracted file already exists!")
+            return None
+        
+        else:
+            LOGGER.info('Something went wrong with Path specifications. \n',
+                        'Please enter either a valid string or pathlib.Path')
             return None
 
     def get_data_planetextract(self, shape, path_extract,
