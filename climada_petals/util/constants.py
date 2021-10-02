@@ -243,6 +243,7 @@ DICT_GEOFABRIK = {
    'NIU' : ('australia-oceania', 'niue'),
    'PLW' : ('australia-oceania', 'palau'),
    'PNG' : ('australia-oceania', 'papua-new-guinea'),
+   'PCN' : ('australia-oceania', 'pitcairn-islands'),
    'WSM' : ('australia-oceania', 'samoa'),
    'SLB' : ('australia-oceania', 'solomon-islands'),
    'TON' : ('australia-oceania', 'tonga'),
@@ -260,7 +261,6 @@ DICT_GEOFABRIK = {
    'URY' : ('south-america', 'uruguay'),
    'VEN' : ('south-america', 'venezuela'),
 }
-
 
 """
 nested dictionary that contains collections of relevant columns (osm_keys) and 

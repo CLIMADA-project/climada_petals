@@ -200,7 +200,8 @@ class OSMRaw:
         return None
 
     def get_data_planetextract(self, shape, path_extract,
-                               path_planet=Path(DATA_DIR, 'planet-latest.osm.pbf')):
+                               path_planet=Path(DATA_DIR, 'planet-latest.osm.pbf'),
+                               overwrite=False):
         """
         get OSM raw data from a custom shape / bounding-box, which is extracted
         from the entire OSM planet file. Accepts bbox lists or .poly files for
@@ -240,9 +241,10 @@ class OSMRaw:
             LOGGER.info("planet-latest.osm.pbf wasn't found. Downloading it.")
             self.get_data_planet(path_planet)
 
-        self._osmosis_extract(shape, path_planet, path_extract)
+        self._osmosis_extract(shape, path_planet, path_extract, overwrite)
 
-    def get_data_fileextract(self, shape, path_extract, path_parentfile):
+    def get_data_fileextract(self, shape, path_extract, path_parentfile,
+                             overwrite=False):
         """
         Extract a geographic sub-set from a raw osm-pbf file.
 
@@ -258,7 +260,9 @@ class OSMRaw:
         path_extract : str or pathlib.Path
             file path (incl. name & ending) under which extract will be stored
         path_parentfile : str or pathlib.Path
-            file path to parentfile.osm.pbf fro which the shape will be cut out
+            file path to parentfile.osm.pbf from which the shape will be cut out
+         overwrite : bool
+            default is False. Whether to overwrite files if they already exist.
 
         Note
         ----
@@ -268,7 +272,7 @@ class OSMRaw:
         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
         """
 
-        self._osmosis_extract(shape, path_parentfile, path_extract)
+        self._osmosis_extract(shape, path_parentfile, path_extract, overwrite)
 
 
 class OSMFileQuery:
@@ -431,8 +435,8 @@ class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
 
-    area: tuple, list or shapely.geometry.Polygon
-        if bbox (xmin, ymin, xmax, ymax)
+    area: tuple (xmin, ymin, xmax, ymax), list [xmin, ymin, xmax, ymax] 
+        or shapely.geometry.Polygon
     query: str
         must be of format '["key"]' or '["key"="value"]', etc.
     """
