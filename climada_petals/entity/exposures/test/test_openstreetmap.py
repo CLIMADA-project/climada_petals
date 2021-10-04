@@ -43,8 +43,10 @@ class TestOSMRaw(unittest.TestCase):
         url_shp)
         self.assertEqual('https://download.geofabrik.de/europe/spain-latest.osm.pbf',
         url_pbf)
-        self.assertRaises(KeyError,OSMRawTest._create_gf_download_url('RUS', 'pbf'))
-        self.assertRaises(KeyError,OSMRawTest._create_gf_download_url('XYZ', 'pbf'))
+        self.assertRaises(KeyError,
+                             OSMRawTest._create_gf_download_url, 'RUS', 'pbf') 
+        self.assertRaises(KeyError,
+                             OSMRawTest._create_gf_download_url,'XYZ', 'pbf')
 
     def test_get_data_geofabrik(self):
         """test methods of osmraw" """
