@@ -1002,7 +1002,8 @@ def load_topography(path, bounds, res_as):
     with rasterio.Env(VRT_SHARED_SOURCE=0):
         # without this env-setting, reading might crash in a multi-threaded environment:
         # https://gdal.org/drivers/raster/vrt.html#multi-threading-issues
-        zvalues, transform = u_coord.read_raster_bounds(path, bounds, res=res, bands=[1])
+        zvalues, transform = u_coord.read_raster_bounds(
+            path, bounds, res=res, bands=[1], resampling="bilinear", global_origin=(-180, 90))
     zvalues = zvalues[0]
     xres, _, xmin, _, yres, ymin = transform[:6]
     xmax, ymax = xmin + zvalues.shape[1] * xres, ymin + zvalues.shape[0] * yres
