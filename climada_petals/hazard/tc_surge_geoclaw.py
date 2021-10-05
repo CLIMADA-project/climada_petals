@@ -1072,9 +1072,9 @@ class TCSurgeEvents():
     """
     keys = ['period', 'time_mask', 'time_mask_buffered', 'wind_area',
             'landfall_area', 'surge_areas', 'centroid_mask']
-    maxlen_h = 36
+    maxlen_h = 48
     maxbreak_h = 12
-    period_buffer_d = 0.3
+    period_buffer_d = 0.5
     lf_roci_factor = 0.6
     lf_rmw_factor = 2.0
     minwind_kt = 34
