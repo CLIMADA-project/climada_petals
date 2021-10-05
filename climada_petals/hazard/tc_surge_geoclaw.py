@@ -648,7 +648,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         for area in self.areas['surge_areas']:
             x_1, y_1, x_2, y_2 = area
             regions.append([maxlevel, maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
-        refinedata.speed_tolerance = list(np.arange(1.0, maxlevel))
+        refinedata.speed_tolerance = list(np.arange(1.0, maxlevel - 1))
         refinedata.variable_dt_refinement_ratios = True
         refinedata.wave_tolerance = 1.0
 
