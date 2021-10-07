@@ -267,7 +267,7 @@ class CropProduction(Exposures):
         lon, lat = np.meshgrid(data.lon.values, data.lat.values)
         self.gdf['latitude'] = lat.flatten()
         self.gdf['longitude'] = lon.flatten()
-        self.gdf['region_id'] = u_coord.get_country_code(self.gdf.latitude, self.gdf.longitude)
+        self.gdf['region_id'] = u_coord.get_country_code(self.gdf.latitude, self.gdf.longitude, gridded=True)
 
         # The indeces of the yearrange to be extracted are determined
         time_idx = (int(yearrange[0] - yearchunk['startyear']),
@@ -459,7 +459,7 @@ class CropProduction(Exposures):
         self.gdf['latitude'] = lat.flatten()
         self.gdf['longitude'] = lon.flatten()
         self.gdf['region_id'] = u_coord.get_country_code(self.gdf.latitude,
-                                                         self.gdf.longitude)
+                                                         self.gdf.longitude, gridded=True)
         self.gdf[INDICATOR_IMPF + DEF_HAZ_TYPE] = 1
         self.gdf[INDICATOR_IMPF] = 1
         # calc annual crop production, [t/y] = [ha] * [t/ha/y]:
@@ -717,38 +717,39 @@ class CropProduction(Exposures):
         fao_country = u_coord.country_faocode2iso(getattr(fao['file'], 'Area Code').values)
 
         # create a list of the countries contained in the exposure
-        iso3alpha = list()
+        iso3num = list()
         self.gdf.region_id[self.gdf.region_id == -99] = 0
-        iso3alpha = np.asarray(u_coord.country_to_iso(
-            self.gdf.region_id, representation="alpha3", fillvalue='Other country'), dtype=object)
-        iso3alpha[iso3alpha == ""] = 'No country'
-        list_countries = np.unique(iso3alpha)
+        iso3num = np.asarray(u_coord.country_to_iso(
+            self.gdf.region_id, representation="numeric", fillvalue=999), dtype=object)
+        list_countries = np.unique(iso3num)
 
         # iterate over all countries that are covered in the exposure, extract the according price
         # and calculate the crop production in USD/y
         area_price = np.zeros(self.gdf.value.size)
         for country in list_countries:
-            [idx_country] = (iso3alpha == country).nonzero()
-            if country == 'Other country':
+            [idx_country] = (iso3num == country).nonzero()
+            if country == 999:
                 price = 0
                 area_price[idx_country] = self.gdf.value[idx_country] * price
-            elif country != 'No country' and country != 'Other country':
+            # zero means no country, 999 other country
+            elif country != 0 and country != 999:
                 idx_price = np.where((np.asarray(fao_country) == country) &
                                      (np.asarray(fao['crops']) == \
                                      (CROP_NAME[self.crop])['fao']) &
                                      (fao['year'] >= yearrange[0]) &
                                      (fao['year'] <= yearrange[1]))
-                price = np.mean(fao['price'][idx_price])
                 # if no price can be determined for a specific yearrange and country, the world
                 # average for that crop (in the specified yearrange) is used
-                if math.isnan(price) or price == 0:
+                if idx_price[0].size != 0:
+                    price = np.mean(fao['price'][idx_price])
+
+                else:
                     idx_price = np.where((np.asarray(fao['crops']) == \
                                           (CROP_NAME[self.crop])['fao']) &
                                          (fao['year'] >= yearrange[0]) &
                                          (fao['year'] <= yearrange[1]))
                     price = np.mean(fao['price'][idx_price])
                 area_price[idx_country] = self.gdf.value[idx_country] * price
-
 
         self.gdf['value'] = area_price
         self.value_unit = 'USD/y'
