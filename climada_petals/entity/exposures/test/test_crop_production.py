@@ -80,7 +80,7 @@ class TestCropProduction(unittest.TestCase):
         self.assertEqual(exp.crop, 'mai')
         self.assertAlmostEqual(exp.gdf.tonnes_per_year[28], 1998.3634803238633)
         self.assertAlmostEqual(exp.gdf.value.max(), 51603897.28533253, places=5)
-        self.assertAlmostEqual(exp.gdf.value.mean(), 907401.9933073953, places=5)
+        self.assertAlmostEqual(exp.gdf.value.mean(), 899384.5340130781, places=5)
         self.assertEqual(exp.gdf.value.min(), 0.0)
 
     def test_set_value_to_kcal(self):
