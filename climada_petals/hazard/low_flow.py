@@ -98,20 +98,27 @@ class LowFlow(Hazard):
     grid cells with a minimum number of days below threshold per month are clustered
     in space (lat/lon) and time (monthly) to identify and set connected events.
 
-    Attributes:
-        clus_thresh_t (int): maximum time difference in months to be counted as$
-            connected points during clustering, default = 1
-        clus_thresh_xy (int): maximum spatial grid cell distance in number of cells
-            to be counted as connected points during clustering, default = 2
-        min_samples (1): Minimum amount of data points in one cluster to consider as event,
-            default = 1.
-        date_start (np.array(int)): for each event, the date of the first month
-            of the event (ordinal)
-            Note: Hazard attribute 'date' contains the date of maximum event intensity.
-        date_end (np.array(int)): for each event, the date of the last month of
-            the event (ordinal)
-        resolution (float): spatial resoultion of gridded discharge input data in degree lat/lon,
-            default = 0.5°
+    Attributes
+    ----------
+    clus_thresh_t : int
+        maximum time difference in months to be counted as$
+        connected points during clustering, default = 1
+    clus_thresh_xy : int
+        maximum spatial grid cell distance in number of cells
+        to be counted as connected points during clustering, default = 2
+    min_samples : 1
+        Minimum amount of data points in one cluster to consider as event,
+        default = 1.
+    date_start : np.array(int)
+        for each event, the date of the first month
+        of the event (ordinal)
+        Note: Hazard attribute 'date' contains the date of maximum event intensity.
+    date_end : np.array(int)
+        for each event, the date of the last month of
+        the event (ordinal)
+    resolution : float
+        spatial resoultion of gridded discharge input data in degree lat/lon,
+        default = 0.5°
     """
 
     clus_thresh_t = 1 # Default = 1: months with intensity<min_intensity interrupt event
@@ -140,66 +147,90 @@ class LowFlow(Hazard):
         e.g. as provided from from ISIMIP Water Sectior (Global):
             https://esg.pik-potsdam.de/search/isimip/
 
-        Parameters:
-            input_dir (string): path to input data directory. In this folder,
-                netCDF files with gridded hydrological model output are required,
-                containing the variable dis (discharge) on a daily temporal resolution
-                as f.i. provided by the ISIMIP project (https://www.isimip.org/)
-            centroids (Centroids): centroids
-                (area that is considered, reg and country must be None)
-            countries (list of countries ISO3) selection of countries
-                (reg must be None!) [not yet implemented]
-            reg (list of regions): can be set with region code if whole areas
-                are considered (if not None, countries and centroids
-                are ignored) [not yet implemented]
-            bbox (tuple of four floats): bounding box:
-                (lon min, lat min, lon max, lat max)
-            percentile (float): percentile used to compute threshold,
-                0.0 < percentile < 100.0
-            min_intensity (int): minimum intensity (nr of days) in an event event;
-                events with lower max. intensity are dropped
-            min_number_cells (int): minimum spatial extent (nr of grid cells)
-                in an event event;
-                events with lower geographical extent are dropped
-            min_days_per_month (int): minimum nr of days below threshold in a month;
-                months with lower nr of days below threshold are not considered
-                for the event creation (clustering)
-            yearrange (int tuple): year range for hazard set, f.i. (2001, 2005)
-            yearrange_ref (int tuple): year range for reference (threshold),
-                f.i. (1971, 2000)
-            gh_model (str): abbrev. hydrological model (only when input_dir is selected)
-                f.i. 'H08', 'CLM45', 'ORCHIDEE', 'LPJmL', 'WaterGAP2', 'JULES-W1', 'MATSIRO'
-            cl_model (str): abbrev. climate model (only when input_dir is selected)
-                f.i. 'gfdl-esm2m', 'hadgem2-es', 'ipsl-cm5a-lr', 'miroc5', 'gswp3',
-                'wfdei', 'princeton', 'watch'
-            scenario (str): climate change scenario (only when input_dir is selected)
-                f.i. 'historical', 'rcp26', 'rcp60', 'hist'
-            scenario_ref (str): climate change scenario for reference
-                (only when input_dir is selected)
-            soc (str): socio-economic trajectory (only when input_dir is selected)
-                f.i. 'histsoc',  # historical trajectory
-                     '2005soc',  # constant at 2005 level
-                     'rcp26soc', # RCP6.0 trajectory
-                     'rcp60soc', # RCP6.0 trajectory
-                     'pressoc' # constant at pre-industrial socio-economic level
-            soc_ref (str): csocio-economic trajectory for reference, like soc.
-                (only when input_dir is selected)
-            fn_str_var (str): FileName STRing depending on VARiable and
-                ISIMIP simuation round
-            keep_dis_data (boolean): keep monthly data (variable ndays = days below threshold)
-                as dataframe (attribute "data") and save additional field 'relative_dis'
-                (relative discharge compared to the long term)
-            yearchunks: list of year chunks corresponding to each nc flow file. If set to
-                'default', uses the chunking corresponding to the scenario.
-            mask_threshold: tuple with threshold value [1] for criterion [0] for mask:
-                Threshold below which the grid is masked out. e.g.:
-                ('mean', 1.) --> grid cells with a mean discharge below 1 are ignored
-                ('percentile', .3) --> grid cells with a value of the computed percentile discharge
-                values below 0.3 are ignored. default: ('mean', 1}). Set to None for
-                no threshold.
-                Provide a list of tuples for multiple thresholds.
-        raises:
-            NameError
+        Parameters
+        ----------
+        input_dir : string
+            path to input data directory. In this folder,
+            netCDF files with gridded hydrological model output are required,
+            containing the variable dis (discharge) on a daily temporal resolution
+            as f.i. provided by the ISIMIP project (https://www.isimip.org/)
+        centroids : Centroids
+            centroids
+            (area that is considered, reg and country must be None)
+        countries : list of countries ISO3
+            selection of countries
+            (reg must be None!) [not yet implemented]
+        reg : list of regions
+            can be set with region code if whole areas
+            are considered (if not None, countries and centroids
+            are ignored) [not yet implemented]
+        bbox : tuple of four floats
+            bounding box:
+            (lon min, lat min, lon max, lat max)
+        percentile : float
+            percentile used to compute threshold,
+            0.0 < percentile < 100.0
+        min_intensity : int
+            minimum intensity (nr of days) in an event event;
+            events with lower max. intensity are dropped
+        min_number_cells : int
+            minimum spatial extent (nr of grid cells)
+            in an event event;
+            events with lower geographical extent are dropped
+        min_days_per_month : int
+            minimum nr of days below threshold in a month;
+            months with lower nr of days below threshold are not considered
+            for the event creation (clustering)
+        yearrange : int tuple
+            year range for hazard set, f.i. (2001, 2005)
+        yearrange_ref : int tuple
+            year range for reference (threshold),
+            f.i. (1971, 2000)
+        gh_model : str
+            abbrev. hydrological model (only when input_dir is selected)
+            f.i. 'H08', 'CLM45', 'ORCHIDEE', 'LPJmL', 'WaterGAP2', 'JULES-W1', 'MATSIRO'
+        cl_model : str
+            abbrev. climate model (only when input_dir is selected)
+            f.i. 'gfdl-esm2m', 'hadgem2-es', 'ipsl-cm5a-lr', 'miroc5', 'gswp3',
+            'wfdei', 'princeton', 'watch'
+        scenario : str
+            climate change scenario (only when input_dir is selected)
+            f.i. 'historical', 'rcp26', 'rcp60', 'hist'
+        scenario_ref : str
+            climate change scenario for reference
+            (only when input_dir is selected)
+        soc : str
+            socio-economic trajectory (only when input_dir is selected)
+            f.i. 'histsoc',  # historical trajectory
+            '2005soc',  # constant at 2005 level
+            'rcp26soc', # RCP6.0 trajectory
+            'rcp60soc', # RCP6.0 trajectory
+            'pressoc' # constant at pre-industrial socio-economic level
+        soc_ref : str
+            csocio-economic trajectory for reference, like soc.
+            (only when input_dir is selected)
+        fn_str_var : str
+            FileName STRing depending on VARiable and
+            ISIMIP simuation round
+        keep_dis_data : boolean
+            keep monthly data (variable ndays = days below threshold)
+            as dataframe (attribute "data") and save additional field 'relative_dis'
+            (relative discharge compared to the long term)
+        yearchunks :
+            list of year chunks corresponding to each nc flow file. If set to
+            'default', uses the chunking corresponding to the scenario.
+        mask_threshold :
+            tuple with threshold value [1] for criterion [0] for mask:
+            Threshold below which the grid is masked out. e.g.:
+            ('mean', 1.) --> grid cells with a mean discharge below 1 are ignored
+            ('percentile', .3) --> grid cells with a value of the computed percentile discharge
+            values below 0.3 are ignored. default: ('mean', 1}). Set to None for
+            no threshold.
+            Provide a list of tuples for multiple thresholds.
+
+        Raises
+        ------
+        NameError
         """
         if input_dir:
             if not Path(input_dir).is_dir():
@@ -272,14 +303,21 @@ class LowFlow(Hazard):
         data have the same coordinates, take the sum of days below threshold
         of these points (duration as accumulated intensity).
 
-        Parameters:
-            uniq_ev (list of str): list of unique cluster IDs
-            coord (list): Coordinates as in Centroids.coord
-            res_centr (float): Geographical resolution of centroids
-            num_centroids (int): Number of centroids
+        Parameters
+        ----------
+        uniq_ev : list of str
+            list of unique cluster IDs
+        coord : list
+            Coordinates as in Centroids.coord
+        res_centr : float
+            Geographical resolution of centroids
+        num_centroids : int
+            Number of centroids
 
-        Returns:
-            intensity_mat (sparse.lilmatrix): intensity values as sparse matrix
+        Returns
+        -------
+        intensity_mat : sparse.lilmatrix
+            intensity values as sparse matrix
         """
         tree_centr = BallTree(coord, metric='chebyshev')
         # steps: list of steps to be written to intensity matrix at once:
@@ -307,8 +345,10 @@ class LowFlow(Hazard):
         """Set dates of maximum intensity (date) as well as start and end dates
         per event
 
-        Parameters:
-            uniq_ev (list): list of unique cluster IDs
+        Parameters
+        ----------
+        uniq_ev : list
+            list of unique cluster IDs
         """
         self.date = np.zeros(uniq_ev.size, int)
         self.date_start = np.zeros(uniq_ev.size, int)
@@ -323,8 +363,10 @@ class LowFlow(Hazard):
     def events_from_clusters(self, centroids):
         """Initiate hazard events from connected clusters found in self.lowflow_df
 
-        Parameters:
-            centroids (Centroids)"""
+        Parameters
+        ----------
+        centroids : Centroids
+        """
         # intensity = list()
 
         uniq_ev = np.unique(self.lowflow_df['cluster_id'].values)
@@ -355,15 +397,21 @@ class LowFlow(Hazard):
     def identify_clusters(self, clus_thresh_xy=None, clus_thresh_t=None, min_samples=None):
         """call clustering functions to identify the clusters inside the dataframe
 
-        Optional parameters:
-            clus_thresh_xy (int): new value of maximum grid cell distance
-                (number of grid cells) to be counted as connected points during clustering
-            clus_thresh_t (int): new value of maximum timse step difference (months)
-                to be counted as connected points during clustering
-            min_samples (int): new value or minimum amount of data points in one
-                cluster to retain the cluster as an event, smaller clusters will be ignored
+        Parameters
+        ----------
+        clus_thresh_xy : int
+            new value of maximum grid cell distance
+            (number of grid cells) to be counted as connected points during clustering
+        clus_thresh_t : int
+            new value of maximum timse step difference (months)
+            to be counted as connected points during clustering
+        min_samples : int
+            new value or minimum amount of data points in one
+            cluster to retain the cluster as an event, smaller clusters will be ignored
+
         Returns
-            pandas.DataFrame
+        -------
+        pandas.DataFrame
         """
         if min_samples:
             self.min_samples = min_samples
@@ -389,17 +437,25 @@ class LowFlow(Hazard):
         """Compute 2D clusters and sort lowflow_df with ascending clus_id
         for each combination of the 3 dimensions (lat, lon, dt_month).
 
-        Parameters:
-            lowflow_df (dataframe): dataset obtained from ISIMIP  data
-            cluster_vars (tuple pf str): pair of dimensions for 2D clustering,
-                e.g. ('lat', 'dt_month')
-            res_data (float): input data grid resolution in degrees
-            clus_thresh_xy (int): clustering distance threshold in space
-            clus_thresh_t (int): clustering distance threshold in time
-            min_samples (int): clustering min. number
+        Parameters
+        ----------
+        lowflow_df : dataframe
+            dataset obtained from ISIMIP  data
+        cluster_vars : tuple pf str
+            pair of dimensions for 2D clustering,
+            e.g. ('lat', 'dt_month')
+        res_data : float
+            input data grid resolution in degrees
+        clus_thresh_xy : int
+            clustering distance threshold in space
+        clus_thresh_t : int
+            clustering distance threshold in time
+        min_samples : int
+            clustering min. number
 
-        Returns:
-            pandas.DataFrame
+        Returns
+        -------
+        pandas.DataFrame
         """
         # set iter_var (dimension not used for clustering)
         if 'lat' not in cluster_vars:
@@ -438,12 +494,16 @@ class LowFlow(Hazard):
         """Remove events with max intensity below min_intensity or spatial extend
         below min_number_cells
 
-        Parameters:
-            min_intensity (int or float): Minimum criterion for intensity
-            min_number_cells (int or float): Minimum crietrion for number of grid cell
+        Parameters
+        ----------
+        min_intensity : int or float
+            Minimum criterion for intensity
+        min_number_cells : int or float
+            Minimum crietrion for number of grid cell
 
-        Returns:
-            Hazard
+        Returns
+        -------
+        Hazard
         """
         haz_tmp = copy.deepcopy(self)
         haz_tmp.orig_tmp = copy.deepcopy(self.orig)
@@ -463,11 +523,14 @@ class LowFlow(Hazard):
     def _centroids_resolution(centroids):
         """Return resolution of the centroids in their units
 
-        Parameters:
-            centroids (Centroids): centroids instance
+        Parameters
+        ----------
+        centroids : Centroids
+            centroids instance
 
-        Returns:
-            float
+        Returns
+        -------
+        float
         """
         if centroids.meta:
             res_centr = abs(centroids.meta['transform'][4]), \
@@ -483,14 +546,21 @@ class LowFlow(Hazard):
         """For a given cluster, fill in an intensity np.array with the summed intensity
         at each centroid.
 
-        Parameters:
-            cluster_id (int): id of the selected cluster
-            tree_centr (object) BallTree instance created from centroids' coordinates
-            res_centr (float): resolution of centroids in degree
-            num_centr (int): number of centroids
+        Parameters
+        ----------
+        cluster_id : int
+            id of the selected cluster
+        tree_centr : object
+            BallTree instance created from centroids' coordinates
+        res_centr : float
+            resolution of centroids in degree
+        num_centr : int
+            number of centroids
 
-        Returns:
-            intensity_cl (np.array): summed intensity of cluster at each centroids
+        Returns
+        -------
+        intensity_cl : np.array
+            summed intensity of cluster at each centroids
         """
         LOGGER.debug('Number of days below threshold corresponding to event %s.', str(cluster_id))
         temp_data = self.lowflow_df.reindex(
@@ -514,16 +584,22 @@ class LowFlow(Hazard):
         """For a given cluster, fill in an intensity np.array with the summed intensity
         at each centroid. Version for self.pool = True
 
-        Parameters:
-            lowflow_df (DataFrame)
-            tree_centr (object): BallTree instance created from centroids' coordinates
-            cluster_id (int): id of the selected cluster
-            res_centr (float): resolution of centroids in degree
-            num_centr (int): number of centroids
+        Parameters
+        ----------
+        lowflow_df : DataFrame
+        tree_centr : object
+            BallTree instance created from centroids' coordinates
+        cluster_id : int
+            id of the selected cluster
+        res_centr : float
+            resolution of centroids in degree
+        num_centr : int
+            number of centroids
 
-        Returns:
-            intensity_cl (np.array): summed intensity of cluster at each centroids
-
+        Returns
+        -------
+        intensity_cl : np.array
+            summed intensity of cluster at each centroids
         """
         LOGGER.debug('Number of days below threshold corresponding to event %s.', str(cluster_id))
         temp_data = lowflow_df.reindex(
@@ -543,15 +619,17 @@ class LowFlow(Hazard):
 def _init_centroids(dis_xarray, centr_res_factor=1):
     """Get centroids from the firms dataset and refactor them.
 
-    Parameters:
-        dis_xarray (xarray): dataset obtained from ISIMIP netcdf
+    Parameters
+    ----------
+    dis_xarray : xarray
+        dataset obtained from ISIMIP netcdf
+    centr_res_factor : float
+        the factor applied to voluntarly decrease/increase
+        the centroids resolution
 
-    Optional Parameters:
-        centr_res_factor (float): the factor applied to voluntarly decrease/increase
-            the centroids resolution
-
-    Returns:
-        centroids (Centroids)
+    Returns
+    -------
+    centroids (Centroids)
     """
     res_data = np.min(np.abs([np.diff(dis_xarray.lon.values).min(),
                               np.diff(dis_xarray.lat.values).min()]))
@@ -572,11 +650,15 @@ def unique_clusters(lowflow_df):
     """identify unqiue clustes based on clusters in 3 dimensions and set unique
     cluster_id
 
-    Parameters:
-        lowflow_df (pandas.DataFrame): contains monthly gridded data of days below threshold
+    Parameters
+    ----------
+    lowflow_df : pandas.DataFrame
+        contains monthly gridded data of days below threshold
 
-    Returns:
-        lowflow_df (pandas.DataFrame): As input with new values in column cluster_id
+    Returns
+    -------
+    lowflow_df : pandas.DataFrame
+        As input with new values in column cluster_id
     """
     lowflow_df.cluster_id = np.zeros(len(lowflow_df.c_lat_lon)) - 1
 
@@ -619,13 +701,17 @@ def data_preprocessing_percentile(percentile, yearrange, yearrange_ref,
     then extract intensity based on days below threshold
     returns geopandas dataframe
 
-    Parameters:
-        c.f. parameters in LowFlow.set_from_nc()
+    Parameters
+    ----------
+    c.f. parameters in LowFlow.set_from_nc()
 
-    Returns:
-        lowflow_df (pandas.DataFrame) preprocessed data with days below threshold
-            per grid cell and month
-        centroids (Centroids): regular grid centroid with same resolution as input data
+    Returns
+    -------
+    lowflow_df : pandas.DataFrame
+        preprocessed data with days below threshold
+        per grid cell and month
+    centroids : Centroids
+        regular grid centroid with same resolution as input data
     """
 
     threshold_grid, mean_ref = _compute_threshold_grid(percentile, yearrange_ref,
@@ -665,11 +751,13 @@ def _read_and_combine_nc(yearrange, input_dir, gh_model, cl_model, scenario,
                          soc, fn_str_var, bbox, yearchunks):
     """Import and combine data from nc files
 
-    Parameters:
-        c.f. parameters in LowFlow.set_from_nc()
+    Parameters
+    ----------
+    c.f. parameters in LowFlow.set_from_nc()
 
-    Returns:
-        dis_xarray (xarray)
+    Returns
+    -------
+    dis_xarray : xarray
     """
     first_file = True
     if yearchunks == 'default':
@@ -700,14 +788,19 @@ def _read_and_combine_nc(yearrange, input_dir, gh_model, cl_model, scenario,
 def _read_single_nc(filename, yearrange, bbox):
     """Import data from single nc file, return as xarray
 
-    Parameters:
-        filename (str or pathlib.Path): full path of input netcdf file
-        yearrange (tuple): year range to be extracted from file
-        bbox (tuple of float): geographical bounding box in the form:
-            (lon_min, lat_min, lon_max, lat_max)
+    Parameters
+    ----------
+    filename : str or pathlib.Path
+        full path of input netcdf file
+    yearrange : tuple
+        year range to be extracted from file
+    bbox : tuple of float
+        geographical bounding box in the form:
+        (lon_min, lat_min, lon_max, lat_max)
 
-    Returns:
-        dis_xarray (xarray)
+    Returns
+    -------
+    dis_xarray : xarray
     """
     dis_xarray = xr.open_dataset(filename)
     try:
@@ -736,16 +829,18 @@ def _read_single_nc(filename, yearrange, bbox):
 def _xarray_reduce(dis_xarray, fun=None, percentile=None):
     """wrapper function to reduce xarray along time axis
 
-    Parameters:
-        dis_xarray (xarray)
+    Parameters
+    ----------
+    dis_xarray : xarray
+    fun : str
+        function to be applied, either "mean" or "percentile"
+    percentile : num
+        percentile to be extracted, e.g. 5 for 5th percentile
+        (only if fun=='percentile')
 
-    Optional Parameters:
-        fun (str): function to be applied, either "mean" or "percentile"
-        percentile (num): percentile to be extracted, e.g. 5 for 5th percentile
-            (only if fun=='percentile')
-
-    Returns:
-        xarray
+    Returns
+    -------
+    xarray
     """
     if fun == 'mean':
         return dis_xarray.mean(dim='time')
@@ -757,16 +852,19 @@ def _split_bbox(bbox, width=BBOX_WIDTH):
     """split bounding box into squares, return new set of bounding boxes
     Note: Could this function be a candidate for climada.util in the future?
 
-    Parameters:
-        bbox (tuple of float): geographical bounding box in the form:
-            (lon_min, lat_min, lon_max, lat_max)
-
-    Optional Parameters:
-        width (float): width and height of geographical bounding boxes for loop in degree lat/lon.
+    Parameters
+    ----------
+    bbox : tuple of float
+        geographical bounding box in the form:
+        (lon_min, lat_min, lon_max, lat_max)
+    width : float
+        width and height of geographical bounding boxes for loop in degree lat/lon.
         i.e., the bounding box is split into square boxes with maximum size BBOX_WIDTH*BBOX_WIDTH
 
-    Returns:
-        bbox_list (list): list of bounding boxes of the same format as bbox
+    Returns
+    -------
+    bbox_list : list
+        list of bounding boxes of the same format as bbox
     """
     if not bbox:
         lon_min, lat_min, lon_max, lat_max = (-180, -85, 180, 85)
@@ -792,17 +890,20 @@ def _compute_threshold_grid(percentile, yearrange_ref, input_dir, gh_model, cl_m
     time horizon (based on daily data) [all-year round percentiles!],
     as well as the mean at each grid cell.
 
-    Parameters:
-        c.f. parameters in LowFlow.set_from_nc()
+    Parameters
+    ----------
+    c.f. parameters in LowFlow.set_from_nc()
+    mask_threshold : tuple or list
+        Threshold(s) of below which the
+        grid is masked out. e.g. ('mean', 1.)
 
-    Optional parameters:
-        mask_threshold (tuple or list), Threshold(s) of below which the
-            grid is masked out. e.g. ('mean', 1.)
-
-    Returns:
-        p_grid (xarray.Dataset): grid with dis of given percentile (1-timestep)
-        mean_grid (xarray.Dataset): grid with mean(dis)
-        """
+    Returns
+    -------
+    p_grid : xarray.Dataset
+        grid with dis of given percentile (1-timestep)
+    mean_grid : xarray.Dataset
+        grid with mean(dis)
+    """
     LOGGER.info('Computing threshold value per grid cell for Q%i, %i-%i',
                 percentile, yearrange_ref[0], yearrange_ref[1])
     if isinstance(mask_threshold, tuple):
@@ -853,11 +954,13 @@ def _days_below_threshold_per_month(dis_xarray, threshold_grid, mean_ref,
        'c_lat_dt_month', 'c_lon_dt_month']
     Note: cluster_id corresponds 1:1 with associated event_id.
 
-    Parameters:
-        c.f. parameters in LowFlow.set_from_nc()
+    Parameters
+    ----------
+    c.f. parameters in LowFlow.set_from_nc()
 
-    Returns:
-        xarray
+    Returns
+    -------
+    xarray
     """
     # data = data.groupby('time.month')-threshold_grid # outdated
     data_threshold = dis_xarray - threshold_grid
@@ -877,11 +980,15 @@ def _xarray_to_geopandas(dis_xarray):
     """create GeoDataFrame from xarray with NaN values dropped
     Note: Could this function be a candidate for climada.util in the future?
 
-    Parameters:
-        dis_xarray (xarray): data as xarray object
+    Parameters
+    ----------
+    dis_xarray : xarray
+        data as xarray object
 
-    Returns:
-        lowflow_df (GeoDataFrame)."""
+    Returns
+    -------
+    lowflow_df : GeoDataFrame
+    """
 
     dataf = dis_xarray.to_dataframe()
     dataf.reset_index(inplace=True)
@@ -897,14 +1004,20 @@ def _xarray_to_geopandas(dis_xarray):
 def _fill_intensity(num_centr, ind, index_uni, lat_lon_cpy, intensity_raw):
     """fill intensity list for a single cluster
 
-    Parameters:
-        num_centr (int): total number of centroids
-        ind (list): list of centroid indices  in cluster
-        lat_lon_cpy (array of int): index according to (lat, lon) in intensity_raw
-        intensity_raw (array of int): array of ndays values at each data point in cluster
+    Parameters
+    ----------
+    num_centr : int
+        total number of centroids
+    ind : list
+        list of centroid indices  in cluster
+    lat_lon_cpy : array of int
+        index according to (lat, lon) in intensity_raw
+    intensity_raw : array of int
+        array of ndays values at each data point in cluster
 
-    Returns:
-        list with summed ndays (=intensity) per geographical point (lat, lon)
+    Returns
+    -------
+    list with summed ndays (=intensity) per geographical point (lat, lon)
     """
 
     intensity_cl = np.zeros((1, num_centr), dtype=numba.float64)
