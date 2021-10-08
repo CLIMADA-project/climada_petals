@@ -30,11 +30,10 @@ from pathlib import Path
 import climada
 import climada.util.config
 from climada.util.config import (
-    Config, _fetch_conf, CONFIG_NAME, CONFIG, remove_handlers, CONSOLE)
+    Config, _fetch_conf, CONFIG_NAME, CONFIG, CONSOLE)
 
 LOGGER = logging.getLogger('climada_petals')
 LOGGER.propagate = False
-remove_handlers(LOGGER)
 LOGGER.addHandler(CONSOLE)
 
 CORE_DIR = Path(climada.__file__).parent
