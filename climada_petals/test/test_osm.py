@@ -16,7 +16,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Integration Test for open_street_map.py and 3 time consuming unit tests
+Integration Test for openstreetmap.py and 3 time consuming unit tests
 """
 
 import math
@@ -26,7 +26,7 @@ import geopandas
 
 from climada import CONFIG
 from climada.entity import Exposures
-from climada_petals.entity.exposures import open_street_map as OSM
+from climada_petals.entity.exposures import openstreetmap as OSM
 
 DATA_DIR = CONFIG.test_data.dir()
 
