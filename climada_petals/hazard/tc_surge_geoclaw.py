@@ -99,7 +99,7 @@ class TCSurgeGeoClaw(Hazard):
     @staticmethod
     def from_tc_tracks(tracks, zos_path, topo_path, centroids=None, description='', gauges=None,
                        topo_res_as=30, node_max_dist_deg=5.5, inland_max_dist_km=50,
-                       offshore_max_dist_km=10, max_latitude=61, pool=None):
+                       offshore_max_dist_km=10, max_latitude=61, mod_zos=0, pool=None):
         """Generate a TC surge hazard instance from a TCTracks object
 
         Parameters
@@ -132,6 +132,9 @@ class TCSurgeGeoClaw(Hazard):
             Maximum offshore distance of the centroids in kilometers. Default: 10
         max_latitude : float, optional
             Maximum latitude of potentially affected centroids. Default: 61
+        mod_zos : float, optiona (IGNORED ON THIS BRANCH!)
+            The scalar sea level rise is added to the base sea level that is extracted from the
+            specified zos_path. Default: 0
         pool : an object with `map` functionality, optional
             If given, landfall events for each track are processed in parallel. Note that the
             solver for a single landfall event is using OpenMP multiprocessing capabilities
