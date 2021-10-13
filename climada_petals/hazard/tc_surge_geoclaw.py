@@ -694,7 +694,8 @@ include $(CLAW)/clawutil/src/Makefile.common
             else:
                 months[-1, 1] += 1
         months = np.unique(months, axis=0)
-        geodata.sea_level = mean_max_sea_level(self.zos_path, months, self.areas['wind_area'])
+        geodata.sea_level = np.mean([mean_max_sea_level(self.zos_path, months, area)
+                                     for area in self.areas['surge_areas']])
         geodata.sea_level += self.mod_zos
 
         # load elevation data, resolution depending on area of refinement
@@ -963,12 +964,21 @@ def mean_max_sea_level(path, months, bounds):
                              % ", ".join(f"{m[0]:04d}-{m[1]:02d}" for m in months))
         zos_ds = zos_ds.sel(time=mask_time)
 
-        # enlarge bounds until the mean is valid
+        # enlarge bounds until the mean is valid or until max_pad_deg is reached
         pad = 0.25
+        i_pad = 0
+        max_pad_deg = 5
         mean = np.nan
+        bounds_padded = bounds
         while np.isnan(mean):
-            mean = _temporal_mean_of_max_within_bounds(zos_ds, bounds)
-            bounds = (bounds[0] - pad, bounds[1] - pad, bounds[2] + pad, bounds[2] + pad)
+            if i_pad * pad > max_pad_deg:
+                raise IndexError(
+                    f"The sea level data set doesn't intersect the specified bounds: {bounds}")
+            mean = _temporal_mean_of_max_within_bounds(zos_ds, bounds_padded)
+            bounds_padded = (
+                bounds_padded[0] - pad, bounds_padded[1] - pad,
+                bounds_padded[2] + pad, bounds_padded[3] + pad)
+            i_pad += 1
     return mean
 
 
@@ -979,10 +989,11 @@ def _temporal_mean_of_max_within_bounds(ds, bounds):
     mask_lon = (bounds[0] <= lon) & (lon <= bounds[2]) & np.isfinite(ds.lon)
     mask_bounds = (mask_lat & mask_lon)
     if not np.any(mask_bounds):
-        raise IndexError("The sea level data set doesn't intersect the required bounds: %s"
-                         % bounds)
+        return np.nan
     ds = ds.where(mask_bounds, drop=True)
     values = ds.zos.values[:]
+    if np.all(np.isnan(values)):
+        return np.nan
     return np.nanmean(np.nanmax(values, axis=(1, 2)))
 
 
