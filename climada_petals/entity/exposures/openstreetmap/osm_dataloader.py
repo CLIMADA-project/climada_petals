@@ -18,33 +18,28 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Define functions to download openstreetmap data
 """
-import geopandas as gpd
 import itertools
 import logging
+from pathlib import Path
+import subprocess
+import time
+import urllib.request
+
+import geopandas as gpd
 import numpy as np
 from osgeo import ogr, gdal
 import overpy
-from pathlib import Path
 import shapely
-import subprocess
-import time
 from tqdm import tqdm
-import urllib.request
-
 
 from climada import CONFIG
 from climada_petals.util.constants import DICT_GEOFABRIK, DICT_CIS_OSM
 
+
 LOGGER = logging.getLogger(__name__)
 DATA_DIR = CONFIG.exposures.openstreetmap.local_data.dir()
-OSM_CONFIG_FILE = CONFIG.exposures.openstreetmap.osm_confdir.dir(
-    ).joinpath('osmconf.ini')
-
+OSM_CONFIG_FILE = Path(__file__).parent.joinpath('osmconf.ini')
 gdal.SetConfigOption("OSM_CONFIG_FILE", str(OSM_CONFIG_FILE))
-
-# =============================================================================
-# Define constants
-# =============================================================================
 
 
 class OSMRaw:
@@ -285,7 +280,14 @@ class OSMFileQuery:
         ----------
         osm_path : str or pathlib.Path
             file path to the .osm.pbf file to extract info from.
+
+        Raises
+        ------
+        ValueError
+            if the given path is not a file
         """
+        if not Path(osm_path).is_file():
+            raise ValueError(f"the given path is not a file: {osm_path}")
         self.osm_path = str(osm_path)
 
     def _query_builder(self, geo_type, constraint_dict):
