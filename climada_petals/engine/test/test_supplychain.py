@@ -85,8 +85,7 @@ class TestSupplyChain(unittest.TestCase):
 
         # Read demo entity values
         # Set the entity default file to the demo one
-        exp = Exposures()
-        exp.read_hdf5(EXP_DEMO_H5)
+        exp = Exposures.from_hdf5(EXP_DEMO_H5)
         exp.check()
         exp.gdf.region_id = 840 #assign right id for USA
         exp.assign_centroids(hazard)
@@ -199,8 +198,7 @@ class TestSupplyChain(unittest.TestCase):
 
         # Read demo entity values
         # Set the entity default file to the demo one
-        exp = Exposures()
-        exp.read_hdf5(EXP_DEMO_H5)
+        exp = Exposures.from_hdf5(EXP_DEMO_H5)
         exp.check()
         exp.gdf.region_id = 840 #assign right id for USA
         exp.assign_centroids(hazard)
@@ -256,8 +254,7 @@ class TestSupplyChain(unittest.TestCase):
 
         # Read demo entity values
         # Set the entity default file to the demo one
-        exp = Exposures()
-        exp.read_hdf5(EXP_DEMO_H5)
+        exp = Exposures.from_hdf5(EXP_DEMO_H5)
         exp.check()
         exp.gdf.region_id = 840 #assign right id for USA
         exp.assign_centroids(hazard)
