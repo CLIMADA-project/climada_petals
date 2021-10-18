@@ -64,19 +64,26 @@ class BlackMarble(Exposures):
         group not available for that year, consider the value of the closest
         available year.
 
-        Parameters:
-            countries (list or dict): list of country names (admin0 or subunits)
-                or dict with key = admin0 name and value = [admin1 names]
-            ref_year (int, optional): reference year. Default: 2016
-            res_km (float, optional): approx resolution in km. Default:
-                nightlights resolution.
-            from_hr (bool, optional): force to use higher resolution image,
-                independently of its year of acquisition.
-            admin_file (str): file name, admin_0_countries or admin_0_map_subunits
-            kwargs (optional): 'gdp' and 'inc_grp' dictionaries with keys the
-                country ISO_alpha3 code. 'poly_val' list of polynomial coefficients
-                [1,x,x^2,...] to apply to nightlight (DEF_POLY_VAL used if not
-                provided). If provided, these are used.
+        Parameters
+        ----------
+        countries : list or dict
+            list of country names (admin0 or subunits)
+            or dict with key = admin0 name and value = [admin1 names]
+        ref_year : int, optional
+            reference year. Default: 2016
+        res_km : float, optional
+            approx resolution in km. Default:
+            nightlights resolution.
+        from_hr : bool, optional
+            force to use higher resolution image,
+            independently of its year of acquisition.
+        admin_file : str
+            file name, admin_0_countries or admin_0_map_subunits
+        kwargs : optional
+            'gdp' and 'inc_grp' dictionaries with keys the
+            country ISO_alpha3 code. 'poly_val' list of polynomial coefficients
+            [1,x,x^2,...] to apply to nightlight (DEF_POLY_VAL used if not
+            provided). If provided, these are used.
         """
         admin_key_dict = {'admin_0_countries': ['ADMIN', 'ADM0_A3'],
                           'admin_0_map_subunits': ['SUBUNIT', 'SU_A3']}
@@ -125,18 +132,26 @@ class BlackMarble(Exposures):
                          res_km, admin1_geom, **kwargs):
         """Model one country.
 
-        Parameters:
-            cntry_info (lsit): [cntry_id, cnytry_name, cntry_geometry,
-                ref_year, gdp, income_group]
-            nightlight (np.array): nightlight in 30arcsec ~ 1km resolution.
-                Row latitudes, col longitudes
-            coord_nl (np.array): nightlight coordinates: [[min_lat, lat_step],
-                [min_lon, lon_step]]
-            res_fact (float): resampling factor
-            res_km (float): wished resolution in km
-            admin1_geom (list): list of admin1 geometries to filter
-            poly_val (list): list of polynomial coefficients to apply to
-                nightlight
+        Parameters
+        ----------
+        cntry_info : lsit
+            [cntry_id, cnytry_name, cntry_geometry,
+            ref_year, gdp, income_group]
+        nightlight : np.array
+            nightlight in 30arcsec ~ 1km resolution.
+            Row latitudes, col longitudes
+        coord_nl : np.array
+            nightlight coordinates: [[min_lat, lat_step],
+            [min_lon, lon_step]]
+        res_fact : float
+            resampling factor
+        res_km : float
+            wished resolution in km
+        admin1_geom : list
+            list of admin1 geometries to filter
+        poly_val : list
+            list of polynomial coefficients to apply to
+            nightlight
         """
         LOGGER.info('Processing country %s.', cntry_info[1])
 
@@ -233,12 +248,16 @@ def fill_econ_indicators(ref_year, cntry_info, shp_file, **kwargs):
     Modifies country info with values [country id, country name,
     country geometry, ref_year, gdp, income_group].
 
-    Parameters:
-        ref_year (int): reference year
-        cntry_info (dict): key = ISO alpha_3 country, value = [country id,
-            country name, country geometry]
-        kwargs (optional): 'gdp' and 'inc_grp' dictionaries with keys the
-            country ISO_alpha3 code. If provided, these are used
+    Parameters
+    ----------
+    ref_year : int
+        reference year
+    cntry_info : dict
+        key = ISO alpha_3 country, value = [country id,
+        country name, country geometry]
+    kwargs : optional
+        'gdp' and 'inc_grp' dictionaries with keys the
+        country ISO_alpha3 code. If provided, these are used
     """
     for cntry_iso, cntry_val in cntry_info.items():
         cntry_val.append(ref_year)
@@ -258,15 +277,21 @@ def get_nightlight(ref_year, cntry_info, res_km=None, from_hr=None):
     """Obtain nightlight from different sources depending on reference year.
     Compute resolution factor used at resampling depending on source.
 
-    Parameters:
-        ref_year (int): reference year
-        cntry_info (dict): key = ISO alpha_3 country, value = [country id,
-            country name, country geometry]
-        res_km (float): approx resolution in km.
-        from_hr (bool, optional):
-    Returns:
-        nightlight (sparse.csr_matrix), coord_nl (np.array), fn_nl (str),
-        res_fact (float)
+    Parameters
+    ----------
+    ref_year : int
+        reference year
+    cntry_info : dict
+        key = ISO alpha_3 country, value = [country id,
+        country name, country geometry]
+    res_km : float
+        approx resolution in km.
+    from_hr : bool, optional
+
+    Returns
+    -------
+    nightlight (sparse.csr_matrix), coord_nl (np.array), fn_nl (str),
+    res_fact (float)
     """
     if from_hr is None and ref_year > 2013:
         from_hr = True
@@ -315,12 +340,18 @@ def get_nightlight(ref_year, cntry_info, res_km=None, from_hr=None):
 def _fill_admin1_geom(iso3, admin1_rec, prov_list):
     """Get admin1 polygons for each input province of country iso3.
 
-    Parameters:
-        iso3 (str): admin0 country name in alpha3
-        admin1_rec (list): list of admin1 records
-        prov_list (list): province names
-    Returns:
-        list(geometry)
+    Parameters
+    ----------
+    iso3 : str
+        admin0 country name in alpha3
+    admin1_rec : list
+        list of admin1 records
+    prov_list : list
+        province names
+
+    Returns
+    -------
+    list(geometry)
     """
     prov_geom = list()
 
@@ -343,23 +374,29 @@ def _fill_admin1_geom(iso3, admin1_rec, prov_list):
 def _cut_admin1(nightlight, lat, lon, admin1_geom, coord_nl, on_land):
     """Cut nightlight image on box containing all the admin1 territories.
 
-    Parameters:
-        nightlight (np.array): nightlight values
-        lat (np.array): latitude values in meshgrid
-        lon (np.array): longitude values in meshgrid
-        admin1_geom (list(shapely.geometry)): all admin1 geometries
-        coord_nl (np.array): nightlight coordinates: [[min_lat, lat_step],
-            [min_lon, lon_step]]
-        on_land (np.array): array with true values in land points. same size
-            as nightlight, lat, lon
+    Parameters
+    ----------
+    nightlight : np.array
+        nightlight values
+    lat : np.array
+        latitude values in meshgrid
+    lon : np.array
+        longitude values in meshgrid
+    admin1_geom : list(shapely.geometry)
+        all admin1 geometries
+    coord_nl : np.array
+        nightlight coordinates: [[min_lat, lat_step],
+        [min_lon, lon_step]]
+    on_land : np.array
+        array with true values in land points. same size
+        as nightlight, lat, lon
 
-    Returns:
-        nightlight_reg, lat_reg, lon_reg (2d arrays with nightlight values,
-        and coordinates in a square containing the admin1)
-        on_land_reg (2d array of same size as previous with True values on land
-        points)
-
-
+    Returns
+    -------
+    nightlight_reg, lat_reg, lon_reg (2d arrays with nightlight values,
+    and coordinates in a square containing the admin1)
+    on_land_reg (2d array of same size as previous with True values on land
+    points)
     """
     all_geom = shapely.ops.cascaded_union(admin1_geom)
 
@@ -385,17 +422,22 @@ def _cut_admin1(nightlight, lat, lon, admin1_geom, coord_nl, on_land):
 def _cut_country(geom, nightlight, coord_nl):
     """Cut nightlight image on box containing all the land.
 
-    Parameters:
-        geom (shapely.geometry): geometry of the region to consider
-        nightlight (sparse.csr_matrix): nightlight values
-        coord_nl (np.array): nightlight coordinates: [[min_lat, lat_step],
-            [min_lon, lon_step]]
+    Parameters
+    ----------
+    geom : shapely.geometry
+        geometry of the region to consider
+    nightlight : sparse.csr_matrix
+        nightlight values
+    coord_nl : np.array
+        nightlight coordinates: [[min_lat, lat_step],
+        [min_lon, lon_step]]
 
-    Returns:
-        nightlight_reg, lat_reg, lon_reg (2d arrays with nightlight values,
-        and coordinates in a square containing the country)
-        on_land_reg (2d array of same size as previous with True values on land
-        points)
+    Returns
+    -------
+    nightlight_reg, lat_reg, lon_reg (2d arrays with nightlight values,
+    and coordinates in a square containing the country)
+    on_land_reg (2d array of same size as previous with True values on land
+    points)
     """
     in_lat = (math.floor((geom.bounds[1] - coord_nl[0, 0]) / coord_nl[0, 1]),
               math.ceil((geom.bounds[3] - coord_nl[0, 0]) / coord_nl[0, 1]))
@@ -436,18 +478,26 @@ def _resample_land(geom, nightlight, lat, lon, res_fact, on_land):
     """Model land exposures from nightlight intensities and normalized
     to GDP * (income_group + 1).
 
-    Parameters:
-        geom (shapely.geometry): geometry of the region to consider
-        nightlight (np.array): nightlight values
-        lat (np.array): latitude values in meshgrid
-        lon (np.array): longitude values in meshgrid
-        res_fact (float): resampling factor
-        on_land (np.array): array with true values in land points. same size
-            as nightlight, lat, lon
+    Parameters
+    ----------
+    geom : shapely.geometry
+        geometry of the region to consider
+    nightlight : np.array
+        nightlight values
+    lat : np.array
+        latitude values in meshgrid
+    lon : np.array
+        longitude values in meshgrid
+    res_fact : float
+        resampling factor
+    on_land : np.array
+        array with true values in land points. same size
+        as nightlight, lat, lon
 
-    Returns:
-        nightlight_res, lat_res, lon_res (1d arrays with nightlight on land
-        values and coordinates)
+    Returns
+    -------
+    nightlight_res, lat_res, lon_res (1d arrays with nightlight on land
+    values and coordinates)
     """
     nightlight_res, lat_res, lon_res = nightlight, lat, lon
     if res_fact != 1.0:
@@ -470,14 +520,20 @@ def _set_econ_indicators(nightlight, gdp_val, inc_grp, poly_val):
     """Model land exposures from nightlight intensities and normalized
     to GDP * (income_group + 1).
 
-    Parameters:
-        nightlight (np.matrix): nightlight values
-        gdp (float): GDP to interpolate in the region
-        inc_grp (float): index to weight exposures in the region
-        poly_val (list): list of polynomial coefficients to apply to nightlight
+    Parameters
+    ----------
+    nightlight : np.matrix
+        nightlight values
+    gdp : float
+        GDP to interpolate in the region
+    inc_grp : float
+        index to weight exposures in the region
+    poly_val : list
+        list of polynomial coefficients to apply to nightlight
 
-    Returns:
-        np.array
+    Returns
+    -------
+    np.array
     """
     if nightlight.sum() > 0:
         nightlight = polyval(np.asarray(nightlight), poly_val)
