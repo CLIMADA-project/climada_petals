@@ -633,12 +633,10 @@ def _init_centroids(dis_xarray, centr_res_factor=1):
     """
     res_data = np.min(np.abs([np.diff(dis_xarray.lon.values).min(),
                               np.diff(dis_xarray.lat.values).min()]))
-    centroids = Centroids()
-    centroids.set_raster_from_pnt_bounds((dis_xarray.lon.values.min(),
-                                          dis_xarray.lat.values.min(),
-                                          dis_xarray.lon.values.max(),
-                                          dis_xarray.lat.values.max()),
-                                         res=res_data / centr_res_factor)
+    centroids = Centroids.from_pnt_bounds(
+        (dis_xarray.lon.values.min(), dis_xarray.lat.values.min(),
+         dis_xarray.lon.values.max(), dis_xarray.lat.values.max()),
+        res=res_data / centr_res_factor)
     centroids.set_meta_to_lat_lon()
     centroids.set_area_approx()
     centroids.set_on_land()

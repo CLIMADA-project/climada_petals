@@ -106,9 +106,7 @@ class HazRegion():
             centroids.set_meta_to_lat_lon()
             lat, lon = centroids.lat, centroids.lon
         else:
-            lat, lon = latlon
-            centroids = Centroids()
-            centroids.set_lat_lon(lat, lon)
+            centroids = Centroids.from_lat_lon(*latlon)
         msk = shapely.vectorized.contains(self.shape, lon, lat)
         centroids = centroids.select(sel_cen=msk)
         centroids.id = np.arange(centroids.lon.shape[0])

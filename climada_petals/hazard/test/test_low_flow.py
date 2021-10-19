@@ -67,7 +67,6 @@ def init_test_data_clustering():
 
 def init_test_centroids(data):
     """define centroids for test data:"""
-    centroids = Centroids()
     grid = np.meshgrid(np.arange(data.lat.min(), data.lat.max()+.5, .5),
                        np.arange(data.lon.min(), data.lon.max()+.5, .5))
     lat = list()
@@ -75,7 +74,7 @@ def init_test_centroids(data):
     for arrlat, arrlon in zip(list(grid[0]), list(grid[1])):
         lat += list(arrlat)
         lon += list(arrlon)
-    centroids.set_lat_lon(np.array(lat), np.array(lon))
+    centroids = Centroids.from_lat_lon(np.array(lat), np.array(lon))
     centroids.set_lat_lon_to_meta()
     return centroids
 
