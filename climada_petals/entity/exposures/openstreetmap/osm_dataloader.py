@@ -424,7 +424,7 @@ class OSMFileQuery:
 
         # features consisting in multipolygon results:
         elif ci_type in ['air']:
-            gdf = self.retrieve('multipolygons',  DICT_CIS_OSM[ci_type]['osm_keys'],
+            gdf = self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
                                  DICT_CIS_OSM[ci_type]['osm_query'])
 
         # features consisting in points, multipolygons and lines:
