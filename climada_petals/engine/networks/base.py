@@ -29,101 +29,45 @@ LOGGER = logging.getLogger(__name__)
 
 class Network:
     
-    def __init__(self, edges=None, nodes=None, graph=None):
+    def __init__(self, 
+                 edges=gpd.GeoDataFrame(), 
+                 nodes=gpd.GeoDataFrame(), 
+                 ci_type=None):
         """
-        gdf_nodes : id identifier needs to be first column of nodes
-        gdf_edges : from_id and to_id need to be first two columns of edges
+        
         """
-        self.edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
-        self.nodes = gpd.GeoDataFrame(columns=['name_id', 'ci_type'])
-        
-        if graph is not None:
-            edges, nodes = self._assemble_from_graph(graph)
-            
-        if edges is not None:
-            self.edges = gpd.GeoDataFrame(edges)
-        if nodes is not None:
-            self.nodes = gpd.GeoDataFrame(nodes)
-        
-        self._update_func_level()
-        self.ci_type = self._update_ci_types()        
-    
-    def _update_ci_types(self):
-        return np.unique(np.unique(self.edges.ci_type).tolist().append(
-                         np.unique(self.nodes.ci_type).tolist()))
-    
-    def _update_func_level(self):
-        if not hasattr(self.edges, 'func_level'):
-            self.edges['func_level'] = 1
-        if not hasattr(self.nodes, 'func_level'):
-            self.nodes['func_level'] = 1
-        
-        self.edges.func_level[np.isnan(self.edges.func_level)] = 1
-        self.nodes.func_level[np.isnan(self.nodes.func_level)] = 1
-        
-
-    def _assemble_from_graph(self, graph):
-        
-        edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
-            {'source':'from_id', 'target':'to_id'}, axis=1))
-        nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
-                ).rename({'vertex ID':'name_id'}, axis=1))
-        
-        return edges, nodes
-
-class MultiNetwork:
-    
-    def __init__(self, edges=None, nodes=None, networks=None, graphs=None):
-        """
-        either edges, nodes or networks=[]
-        
-        nodes : id identifier needs to be first column of nodes
-        edges : from_id and to_id need to be first two columns of edges
-        networks : networks.base.Network instances
-        graphs : igraph.Graph instances
-        """
-            
-        if networks is not None:
-            edges, nodes = self._assemble_from_nws(networks)
-        
-        if graphs is not None:
-            edges, nodes = self._assemble_from_graphs(graphs)
-    
+        if edges.empty:
+            edges = gpd.GeoDataFrame(
+                columns=['from_id', 'to_id', 'orig_id', 'ci_type'])
         if not hasattr(edges, 'orig_id'):
-            edges = self._add_orig_id(edges)
-        if not hasattr(nodes, 'orig_id'):
-            nodes = self._add_orig_id(nodes)
-            
+            edges['orig_id'] = self._add_orig_id(edges)
         self.edges = edges
-        self.nodes = nodes
-        self.ci_type =  self._update_ci_types()
-        self._update_func_level()
-
     
-    def _add_orig_id(self, gdf):
-        gdf['orig_id'] = range(len(gdf))
-              
-    def _update_ci_types(self):
-        return np.unique(np.unique(self.edges.ci_type).tolist().append(
-                         np.unique(self.nodes.ci_type).tolist()))
-    def _update_func_level(self):
-        if not hasattr(self.edges, 'func_level'):
-            self.edges['func_level'] = 1
-        if not hasattr(self.nodes, 'func_level'):
-            self.nodes['func_level'] = 1
+        if nodes.empty:
+            nodes = gpd.GeoDataFrame(
+                columns=[['name_id', 'orig_id', 'ci_type']])    
+        if not hasattr(nodes, 'orig_id'):
+            nodes['orig_id'] = self._add_orig_id(nodes)
+        self.nodes = nodes
         
-        self.edges.func_level[np.isnan(self.edges.func_level)] = 1
-        self.nodes.func_level[np.isnan(self.nodes.func_level)] = 1
+        if not ci_type:
+            ci_type = self._update_ci_types(edges, nodes)
+        self.ci_type = ci_type
         
-    def _assemble_from_nws(self, networks):
-        
+        # TODO: remove
+        # self._update_func_level()
+
+          
+    @classmethod
+    def from_nws(cls, networks):
         edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
         nodes = gpd.GeoDataFrame(columns=['name_id', 'ci_type'])
+        
         id_counter_nodes = 0
         
-        for network in networks:
-            edge_gdf = network.edges.reset_index(drop=True)
-            node_gdf = network.nodes.reset_index(drop=True)
+        for nw in networks:
+            edge_gdf = nw.edges.reset_index(drop=True)
+            node_gdf = nw.nodes.reset_index(drop=True)
             edge_gdf['from_id'] = edge_gdf['from_id']  + id_counter_nodes
             edge_gdf['to_id'] = edge_gdf['to_id']  + id_counter_nodes
             node_gdf['name_id'] = range(id_counter_nodes, 
@@ -132,21 +76,35 @@ class MultiNetwork:
             edges = edges.append(edge_gdf)
             nodes = nodes.append(node_gdf)
     
-        return edges.reset_index(drop=True), nodes.reset_index(drop=True)
+        network = Network(edges=edges.reset_index(drop=True), 
+                          nodes=nodes.reset_index(drop=True))
+        
+        return network
     
-    def _assemble_from_graphs(self, graphs):
+    @classmethod
+    def from_graphs(cls, graphs):
         
         graph = ig.Graph()
-        
         for g in graphs:
             graph += g
         
         edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
             {'source':'from_id', 'target':'to_id'}, axis=1))
         nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
-                ).rename({'vertex ID':'name_id'}, axis=1))
+                ).rename({'vertex ID':'name_id'}, axis=1))           
         
-        return edges, nodes
+        network = Network(edges=edges, 
+                          nodes=nodes)
+        
+        return network
+    
+    @classmethod
+    def _update_ci_types(cls, edges, nodes):
+        return np.unique(np.unique(edges.ci_type).tolist().append(
+                         np.unique(nodes.ci_type).tolist()))
+    @classmethod
+    def _add_orig_id(cls, gdf):
+        return range(len(gdf))
     
     def plot_cis(self, ci_types=[], **kwargs):
         
@@ -175,7 +133,7 @@ class MultiNetwork:
                 edgecolor=color, label=label)
         
         handles, labels = ax.get_legend_handles_labels()
-        # manually define patch for airport s
+        # manually define patch for airports
         # patch = mpatches.Patch(color='pink', label='airport')
         # handles.append(patch) 
         ax.legend(handles=handles, loc='upper left')
@@ -184,3 +142,13 @@ class MultiNetwork:
         
         return plt.show()
     
+    # TODO: remove from Network class; belongs somewhere else
+    # def _update_func_level(self):
+    #     if not hasattr(self.edges, 'func_level'):
+    #         self.edges['func_level'] = 1
+    #     if not hasattr(self.nodes, 'func_level'):
+    #         self.nodes['func_level'] = 1
+        
+    #     self.edges.func_level[np.isnan(self.edges.func_level)] = 1
+    #     self.nodes.func_level[np.isnan(self.nodes.func_level)] = 1
+
