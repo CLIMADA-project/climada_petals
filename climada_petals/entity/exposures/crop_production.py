@@ -1048,12 +1048,10 @@ def normalize_several_exp(input_dir=None, output_dir=None,
     for file_firr in filenames_firr:
         _, _, crop_irr, years = file_firr.split('_')
         crop, _ = crop_irr.split('-')
-        exp_firr = CropProduction()
-        exp_firr.read_hdf5(str(Path(output_dir, 'Exposure', file_firr)))
+        exp_firr = CropProduction.from_hdf5(str(Path(output_dir, 'Exposure', file_firr)))
 
         filename_noirr = 'crop_production_' + crop + '-' + 'noirr' + '_' + years
-        exp_noirr = CropProduction()
-        exp_noirr.read_hdf5(str(Path(output_dir, 'Exposure', filename_noirr)))
+        exp_noirr = CropProduction.from_hdf5(str(Path(output_dir, 'Exposure', filename_noirr)))
 
         if return_data:
             countries, ratio, exp_firr2, exp_noirr2, fao_cp, \
