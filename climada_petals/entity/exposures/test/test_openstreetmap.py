@@ -96,9 +96,7 @@ class TestOSMFileQuery(unittest.TestCase):
         
     def test_retrieve(self):
         OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
-        osm_keys = ['highway']
-        osm_query =  """highway"""
-        gdf = OSM_FQ.retrieve('lines', osm_keys, osm_query)
+        gdf = OSM_FQ.retrieve('lines', ['highway'], 'highway')
         
         self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'geometry'])
         
