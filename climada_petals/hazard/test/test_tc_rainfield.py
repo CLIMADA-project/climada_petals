@@ -37,9 +37,8 @@ HAZ_TEST_MAT = DATA_DIR.joinpath('TCrain_brb_test.mat')
 TEST_TRACK = Path(hazard_test.__file__).parent.joinpath('data', 'trac_brb_test.csv')
 TEST_TRACK_SHORT = Path(hazard_test.__file__).parent.joinpath('data', 'trac_short_test.csv')
 
-CENTR_TEST_BRB = Centroids()
 centr_test_mat = Path(hazard_test.__file__).parent.joinpath('data', 'centr_brb_test.mat')
-CENTR_TEST_BRB.read_mat(centr_test_mat)
+CENTR_TEST_BRB = Centroids.from_mat(centr_test_mat)
 
 class TestReader(unittest.TestCase):
     """Test loading funcions from the TCRain class"""
@@ -134,11 +133,9 @@ class TestModel(unittest.TestCase):
 
     def test_rainfield_from_track_pass(self):
         """Test _rainfield_from_track function. Compare to MATLAB reference."""
-        tc_track = TCTracks()
-        tc_track.read_processed_ibtracs_csv(TEST_TRACK)
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
-        rainfall = rainfield_from_track(tc_track.data[0],
-                                        CENTR_TEST_BRB)
+        rainfall = rainfield_from_track(tc_track.data[0], CENTR_TEST_BRB)
 
         rainfall = np.round(rainfall, decimals=9)
 
@@ -147,8 +144,7 @@ class TestModel(unittest.TestCase):
         self.assertAlmostEqual(rainfall[0, 200], 76.315923838)
 
     def test_rainfield_diff_time_steps(self):
-        tc_track = TCTracks()
-        tc_track.read_processed_ibtracs_csv(TEST_TRACK)
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
 
         train_org = TCRain.from_tracks(tc_track)
 

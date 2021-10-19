@@ -80,8 +80,7 @@ class TestSupplyChain(unittest.TestCase):
                         col_iso3=2, col_sectors=1)
 
         # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard('TC')
-        hazard.read_mat(HAZ_TEST_MAT)
+        hazard = Hazard.from_mat(HAZ_TEST_MAT)
 
         # Read demo entity values
         # Set the entity default file to the demo one
@@ -192,8 +191,7 @@ class TestSupplyChain(unittest.TestCase):
                         col_iso3=2, col_sectors=1)
 
         # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard('TC')
-        hazard.read_mat(HAZ_TEST_MAT)
+        hazard = Hazard.from_mat(HAZ_TEST_MAT)
 
         # Read demo entity values
         # Set the entity default file to the demo one
@@ -247,8 +245,7 @@ class TestSupplyChain(unittest.TestCase):
                         col_iso3=2, col_sectors=1)
 
         # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard('TC')
-        hazard.read_mat(HAZ_TEST_MAT)
+        hazard = Hazard.from_mat(HAZ_TEST_MAT)
 
         # Read demo entity values
         # Set the entity default file to the demo one
