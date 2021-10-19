@@ -90,8 +90,7 @@ class TestSupplyChain(unittest.TestCase):
         exp.gdf.region_id = 840 #assign right id for USA
         exp.assign_centroids(hazard)
 
-        impf_tc= ImpfTropCyclone()
-        impf_tc.set_emanuel_usa()
+        impf_tc = ImpfTropCyclone.from_emanuel_usa()
         impf_set = ImpactFuncSet()
         impf_set.append(impf_tc)
         impf_set.check()
@@ -203,8 +202,7 @@ class TestSupplyChain(unittest.TestCase):
         exp.gdf.region_id = 840 #assign right id for USA
         exp.assign_centroids(hazard)
 
-        impf_tc= ImpfTropCyclone()
-        impf_tc.set_emanuel_usa()
+        impf_tc = ImpfTropCyclone.from_emanuel_usa()
         impf_set = ImpactFuncSet()
         impf_set.append(impf_tc)
         impf_set.check()
@@ -259,8 +257,7 @@ class TestSupplyChain(unittest.TestCase):
         exp.gdf.region_id = 840 #assign right id for USA
         exp.assign_centroids(hazard)
 
-        impf_tc= ImpfTropCyclone()
-        impf_tc.set_emanuel_usa()
+        impf_tc = ImpfTropCyclone.from_emanuel_usa()
         impf_set = ImpactFuncSet()
         impf_set.append(impf_tc)
         impf_set.check()
