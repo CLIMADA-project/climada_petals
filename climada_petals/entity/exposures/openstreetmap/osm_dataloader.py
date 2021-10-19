@@ -433,7 +433,7 @@ class OSMFileQuery:
             gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
                                  DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(
-                self.retrieve('multipolygons',  DICT_CIS_OSM[ci_type]['osm_keys'],
+                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
                                  DICT_CIS_OSM[ci_type]['osm_query']))
             gdf = gdf.append(
                 self.retrieve('lines', DICT_CIS_OSM[ci_type]['osm_keys'],
