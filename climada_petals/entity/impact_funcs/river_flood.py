@@ -68,6 +68,10 @@ class ImpfRiverFlood(ImpactFunc):
         -------
         impf : ImpfRiverFlood
             New ImpfRiverFlood object with parameters for the specified world region.
+
+        Raises
+        ------
+        ValueError
         """
         impf = cls()
         if region.lower() == "africa":
@@ -125,6 +129,8 @@ class ImpfRiverFlood(ImpactFunc):
                                  0.9836, 1.0000, 1.0000, 1.0000, 1.0000])
             impf.mdr = np.array([0.0000, 0.4908, 0.7112, 0.8420, 0.9494, 0.9836,
                                  1.0000, 1.0000, 1.0000, 1.0000])
+        else:
+            raise ValueError(f"Unrecognized world region: {region}")
         impf.paa = np.ones(len(impf.intensity))
         return impf
 
