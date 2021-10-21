@@ -23,7 +23,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
 import igraph as ig
 
-from climada_petals.engine.networks.nw_calcs import MultiGraphCalcs, GraphMaker
+from climada_petals.engine.networks.nw_calcs import GraphCalcs, GraphMaker
 
 LOGGER = logging.getLogger(__name__)
 
@@ -237,7 +237,7 @@ class PowerFlow():
         fig.tight_layout()
 
 
-class PowerCascades(MultiGraphCalcs):
+class PowerCascades(GraphCalcs):
     
     def __init__(self, nw_or_graph):
         """
@@ -287,7 +287,7 @@ class PowerCascades(MultiGraphCalcs):
             varlist=[a*b for a,b in zip(func_level_parent,load_parent)])
  
     
-class HealthCascades(MultiGraphCalcs):
+class HealthCascades(GraphCalcs):
     
     def update_health_paths(self):
         es = self.select_edges('dependency_people_health')

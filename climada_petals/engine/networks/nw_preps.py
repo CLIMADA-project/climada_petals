@@ -31,7 +31,6 @@ sys.path.insert(1, '/Users/evelynm/trails/src/trails')
 import simplify
 
 from climada.util import coordinates as u_coords
-from climada_petals.engine.networks.nw_calcs import MultiGraphCalcs
 
 LOGGER = logging.getLogger(__name__)
 
@@ -268,46 +267,38 @@ class UtilFunctionalData():
 
 class PowerFunctionalData():
     
-    def assign_edemand_iea(self, multinet, path_elcons_iea):
+    def assign_edemand_iea(self, gdf_people, path_elcons_iea):
         """Assigns loads (mw) to each people cluster"""
         
         df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
-        bool_ppl = multinet.nodes.ci_type=='people'
-        multinet.nodes[['el_load_mw', 'el_load_resid_mw','el_load_indust_mw',
-                        'el_load_pubser_mw']] = 0
         
         # Country meta-data
-        pop_tot = multinet.nodes[bool_ppl].counts.sum()
+        pop_tot = gdf_people.counts.sum()
         
-        per_cap_resid_cons_mwh = df_el_cons.iloc[-1]['Residential'] * \
-            KTOE_TO_MWH/pop_tot
-        per_cap_indust_cons_mwh = df_el_cons.iloc[-1]['Industry'] * \
-            KTOE_TO_MWH/pop_tot
-        per_cap_pubser_cons_mwh = df_el_cons.iloc[-1]['Commercial and public services'] * \
-            KTOE_TO_MWH/pop_tot
-        per_cap_cons_mwh = per_cap_resid_cons_mwh + \
-            per_cap_indust_cons_mwh + per_cap_pubser_cons_mwh
-            
-        # add to multinet as loads (MW -> annual demand / hr)
-        multinet.nodes.el_load_mw.loc[bool_ppl] = \
-            multinet.nodes[bool_ppl].counts*per_cap_cons_mwh/HRS_PER_YEAR
-        multinet.nodes.el_load_resid_mw.loc[bool_ppl] =  \
-            multinet.nodes[bool_ppl].counts*per_cap_resid_cons_mwh/HRS_PER_YEAR
-        multinet.nodes.el_load_indust_mw.loc[bool_ppl] =  \
-           multinet.nodes[bool_ppl].counts*per_cap_indust_cons_mwh/HRS_PER_YEAR
-        multinet.nodes.el_load_pubser_mw.loc[bool_ppl] =  \
-            multinet.nodes[bool_ppl].counts*per_cap_pubser_cons_mwh/HRS_PER_YEAR
+        # convert annual cons. data to loads (MW = annual demand / hr)
+        per_cap_resid_mw = df_el_cons.iloc[-1]['Residential'] * \
+            KTOE_TO_MWH/pop_tot/HRS_PER_YEAR
+        per_cap_indust_mw = df_el_cons.iloc[-1]['Industry'] * \
+            KTOE_TO_MWH/pop_tot/HRS_PER_YEAR
+        per_cap_pubser_mw = df_el_cons.iloc[-1]['Commercial and public services'] * \
+            KTOE_TO_MWH/pop_tot/HRS_PER_YEAR
+        per_cap_mw = per_cap_resid_mw + per_cap_indust_mw + per_cap_pubser_mw
         
-        return multinet
+        for var, var_per_cap in zip(
+                ['el_load_mw', 'el_load_resid_mw','el_load_indust_mw', 
+                 'el_load_pubser_mw'],
+                [per_cap_mw, per_cap_resid_mw, per_cap_indust_mw, 
+                 per_cap_pubser_mw]):
+            gdf_people[var] = gdf_people.counts * var_per_cap
+       
+        return gdf_people
         
-    def assign_esupply_iea(self, multinet, path_elimpexp_iea, path_elcons_iea):
+    def assign_esupply_iea(self, gdf_pplants, path_elimpexp_iea, path_elcons_iea):
         """Assigns generation (mw) to each power plant"""
         
         df_el_impexp = pd.read_csv(path_elimpexp_iea, skiprows=4)
         df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
-        
-        bool_pplants = multinet.nodes.ci_type=='power plant'
-        
+                
         # Latest annual Import/Export data from the IEA (2018)
         # imports positive, exports negative sign        
         tot_el_imp_mwh = df_el_impexp.iloc[-1]['Imports']*KTOE_TO_MWH
@@ -324,14 +315,13 @@ class PowerFunctionalData():
         
         # generation from WRI power plants database (usually incomplete)
         # TODO: check for last year in csv (not hardcoded 2017)
-        multinet.nodes.estimated_generation_gwh_2017 = \
-            pd.to_numeric(multinet.nodes.estimated_generation_gwh_2017, 
-                          errors='coerce')
-        gen_pplants_mwh = multinet.nodes[bool_pplants].estimated_generation_gwh_2017*1000
-        tot_gen_pplants_mwh = gen_pplants_mwh.sum()
+        gdf_pplants.estimated_generation_gwh_2017 = pd.to_numeric(
+            gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
+            
+        gen_pplants_mwh = gdf_pplants.estimated_generation_gwh_2017*1000
         
         # fill plants with no estimated generation by remainder of country production (2017!)
-        gen_unassigned = tot_el_gen_mwh - tot_gen_pplants_mwh
+        gen_unassigned = tot_el_gen_mwh - gen_pplants_mwh.sum()
         gen_pplants_mwh[np.isnan(gen_pplants_mwh)] = gen_unassigned/np.isnan(gen_pplants_mwh).sum()
         
         # sanity check
@@ -345,152 +335,17 @@ class PowerFunctionalData():
         # add el. generation to network, 
         # add another imp/exp balance node outside of cntry shape
         # TODO: split into sub-function
-        multinet.nodes['el_gen_mw'] = 0
-        multinet.nodes.el_gen_mw.loc[bool_pplants] = gen_pplants_mwh/HRS_PER_YEAR
+        gdf_pplants['el_gen_mw'] = gen_pplants_mwh/HRS_PER_YEAR
         imp_exp_balance = gpd.GeoDataFrame(
-            {'geometry':[shapely.geometry.Point(max(multinet.nodes[bool_pplants].geometry.x)+1,
-                                                max(multinet.nodes[bool_pplants].geometry.y)+1)],
+            {'geometry':[shapely.geometry.Point(max(gdf_pplants.geometry.x)+1,
+                                                max(gdf_pplants.geometry.y)+1)],
              'name': ['imp_exp_balance'],
              'el_gen_mw': [tot_imp_exp_balance_mwh/HRS_PER_YEAR],
-             'name_id' : max(multinet.nodes.name_id)+1,
-             'orig_id' : max(multinet.nodes.name_id)+1,
-             'ci_type' : 'power plant',
-             'func_level' : 1})
+             'ci_type' : 'power plant'
+             })
         
-        multinet.nodes = multinet.nodes.append(imp_exp_balance, ignore_index=True)
-        
-        return  multinet
+        return  gdf_pplants.append(imp_exp_balance, ignore_index=True)
 
     def assign_linecapa():
         pass
 
-# class NetworkPreprocess():
-#     """
-#     DF operations to add nodes & edges info, other relevant attr info to gdf
-#     built to eventually phase out trails repo code
-
-#     # not yet implemented:
-#     # splitting and merging lines where sensible
-#     # simplifying structures (loops, curves, deg 2 nodes, etc.)
-#     # dropping hanging nodes
-#     """
-
-#     @staticmethod
-#     def consolidate_ci_attrs(gdf, to_drop=None, to_keep=None):
-#         if to_drop:
-#             to_drop = [col for col in to_drop if col in gdf.columns]
-#             gdf = gdf.drop(to_drop, axis=1)
-#         if to_keep:
-#             to_keep = [col for col in to_keep if col in gdf.columns]
-#             gdf = gdf[to_keep]
-#         return gdf
-
-#     @staticmethod
-#     def add_endpoints(gdf_edges):
-#         """
-#         For a gdf where rows represent spatial lines, retrieve coordinates
-#         of their endpoints.
-
-#         Parameters
-#         ----------
-#         gdf_edges
-
-#         Returns
-#         --------
-#         gdf_edges
-
-#         """
-#         gdf_edges[['coords_from','coords_to']] = pd.DataFrame(gdf_edges.apply(
-#             lambda row: (row.geometry.coords[0],
-#                          row.geometry.coords[-1]), axis=1
-#             ).tolist(), index=gdf_edges.index)
-
-#         return gdf_edges
-
-#     def _unique_points(gdf_edges):
-#         if ((not hasattr(gdf_edges, 'coords_from')) or
-#             (not hasattr(gdf_edges, 'coords_to'))):
-#             LOGGER.error('Endpoints are missing. Run add_endpoints() first.')
-#             return None
-#         else:
-#             return gpd.GeoDataFrame(gdf_edges['coords_from'].append(
-#                 gdf_edges['coords_to']), columns=['coords']).drop_duplicates().reset_index(drop=True)
-#     @staticmethod
-#     def _add_ci_type(gdf, ci_type):
-#         gdf['ci_type'] = ci_type
-#         return gdf
-
-#     @staticmethod
-#     def get_nodegdf(gdf_edges):
-#         """
-#         get a gdf with all unique nodes from the
-#         endpoints of a lines-gdf
-#         """
-#         gdf_nodes = NetworkPreprocess._unique_points(gdf_edges)
-#         gdf_nodes['orig_id'] = gdf_nodes.index
-#         gdf_nodes['geometry'] = gdf_nodes.apply(
-#             lambda row: shapely.geometry.Point(row.coords), axis=1)
-#         gdf_nodes['ci_type'] = np.unique(gdf_edges.ci_type)[0]
-#         return gdf_nodes
-
-#     @staticmethod
-#     def add_topology(gdf_edges, gdf_nodes):
-#         node_dict = OrderedDict(gdf_nodes[['coords','orig_id']].values.tolist())
-#         gdf_edges['from_id'] = itemgetter(*gdf_edges.coords_from.values.tolist())(node_dict)
-#         gdf_edges['to_id'] = itemgetter(*gdf_edges.coords_to.values.tolist())(node_dict)
-#         gdf_edges['orig_id'] = gdf_edges.index
-#         return gdf_edges
-
-#     @staticmethod
-#     def ecols_to_graphorder(gdf_edges):
-#         return gdf_edges.reindex(['from_id','to_id'] +
-#                                  [x for x in list(gdf_edges)
-#                                   if x not in ['from_id','to_id']], axis=1)
-#     @staticmethod
-#     def vcols_to_graphorder(gdf_nodes):
-#         return gdf_nodes.reindex(['name'] +
-#                                  [x for x in list(gdf_nodes)
-#                                   if x not in ['name']], axis=1)
-
-#     @staticmethod
-#     def arrange_gdfs(gdf, type='edges', ci_type=None):
-#         """wrapper w/o topology"""
-#         #TODO: don't hard-code attrs to keep
-#         gdf = NetworkPreprocess._add_ci_type(gdf, ci_type)
-#         if not hasattr(gdf, 'orig_id'):
-#             gdf['orig_id'] = gdf.index
-
-#         if type == 'edges':
-#             gdf = NetworkPreprocess.consolidate_ci_attrs(
-#                 gdf, to_keep=['geometry', 'ci_type', 'from_id', 'to_id',
-#                                     'orig_id','distance', 'name', 'highway', 'power'])
-#             gdf = NetworkPreprocess.ecols_to_graphorder(gdf)
-
-#         elif type == 'nodes':
-#             gdf = NetworkPreprocess.consolidate_ci_attrs(
-#                 gdf, to_keep=['geometry', 'ci_type', 'orig_id', 'power', 'counts'])
-#             gdf['name'] = gdf.orig_id
-#             gdf = NetworkPreprocess.vcols_to_graphorder(gdf)
-
-#         return gdf
-
-#     @staticmethod
-#     def preprocess_edges_nodes(gdf_edges, ci_type):
-#         """complete wrapper"""
-#         gdf_edges = NetworkPreprocess.add_endpoints(gdf_edges)
-#         gdf_edges = NetworkPreprocess._add_ci_type(gdf_edges, ci_type)
-#         gdf_nodes = NetworkPreprocess.get_nodegdf(gdf_edges)
-#         gdf_edges = NetworkPreprocess.add_topology(gdf_edges, gdf_nodes)
-#         # TODO: don't hard-code this!
-#         gdf_edges = NetworkPreprocess.consolidate_ci_attrs(
-#             gdf_edges, to_keep=['from_id', 'to_id', 'orig_id', 'geometry',
-#                                 'ci_type',  'distance'])
-#         gdf_nodes = NetworkPreprocess.consolidate_ci_attrs(
-#             gdf_nodes, to_keep=['geometry', 'ci_type', 'coords', 'orig_id'])
-#         gdf_edges = NetworkPreprocess.ecols_to_graphorder(gdf_edges)
-#         gdf_nodes = NetworkPreprocess.vcols_to_graphorder(gdf_nodes)
-
-#         return gdf_edges, gdf_nodes
-
-#     def add_nodes_to_graph():
-#         pass
