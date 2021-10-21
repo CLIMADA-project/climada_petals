@@ -199,6 +199,11 @@ class TCForecast(TCTracks):
             id_no (int): Numerical ID; optional. Else use date + random int.
         """     
         # Open the bufr file
+        try:
+            # for the case that file is str, try open it
+            file = open(file, 'rb')
+        except TypeError:
+            pass
         bufr = ec.codes_bufr_new_from_file(file)
         # we need to instruct ecCodes to expand all the descriptors
         # i.e. unpack the data values
