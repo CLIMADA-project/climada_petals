@@ -249,7 +249,7 @@ class TCForecast(TCTracks):
         lon_init = self._check_variable(lon_init_temp, ens_no)
         pre_init = self._check_variable(pre_init_temp, ens_no)
         wnd_init = self._check_variable(wnd_init_temp, ens_no)
-        
+
         # Putting variables into dictionaries
         latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(len(ens_no))}
         longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(len(ens_no))}
