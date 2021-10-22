@@ -74,45 +74,46 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
             https://dataverse.harvard.edu/
             dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
 
-        Optional parameters:
-            data_path (str): absolute path where files are stored.
-                Default: SYSTEM_DIR
-
-            country (str): Three letter country code of country to be cut out.
-                No default (global)
-            name_adm1 (str): Name of admin1 (e.g. Federal State) to be cut out.
-                No default
-            name_adm2 (str): Name of admin2 to be cut out.
-                No default
-
-            spam_variable (str): select one agricultural variable:
-                'A'		physical area
-                'H'		harvested area
-                'P'		production
-                'Y'		yield
-                'V_agg'	value of production, aggregated to all crops,
-                                 food and non-food (default)
-                 Warning: for A, H, P and Y, currently all crops are summed up
-
-            spam_technology (str): select one agricultural technology type:
-                'TA'	   all technologies together, ie complete crop (default)
-                'TI'   irrigated portion of crop
-                'TH'   rainfed high inputs portion of crop
-                'TL'   rainfed low inputs portion of crop
-                'TS'   rainfed subsistence portion of crop
-                'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
-                ! different impact_ids are assigned to each technology (1-6)
-
-            save_name_adm1 (Boolean): Determines how many aditional data are saved:
-                False: only basics (lat, lon, total value), region_id per country
-                True: like 1 + name of admin1
-
-            haz_type (str): hazard type abbreviation, e.g.
-                'DR' for Drought or
-                'CP' for CropPotential
-
-
-        Returns:
+        Parameters
+        ----------
+        data_path : str
+            absolute path where files are stored.
+            Default: SYSTEM_DIR
+        country : str
+            Three letter country code of country to be cut out.
+            No default (global)
+        name_adm1 : str
+            Name of admin1 (e.g. Federal State) to be cut out.
+            No default
+        name_adm2 : str
+            Name of admin2 to be cut out.
+            No default
+        spam_variable : str
+            select one agricultural variable:
+            'A'		physical area
+            'H'		harvested area
+            'P'		production
+            'Y'		yield
+            'V_agg'	value of production, aggregated to all crops,
+            food and non-food (default)
+            Warning: for A, H, P and Y, currently all crops are summed up
+        spam_technology : str
+            select one agricultural technology type:
+            'TA'	   all technologies together, ie complete crop (default)
+            'TI'   irrigated portion of crop
+            'TH'   rainfed high inputs portion of crop
+            'TL'   rainfed low inputs portion of crop
+            'TS'   rainfed subsistence portion of crop
+            'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
+            ! different impact_ids are assigned to each technology (1-6)
+        save_name_adm1 : Boolean
+            Determines how many aditional data are saved:
+            False: only basics (lat, lon, total value), region_id per country
+            True: like 1 + name of admin1
+        haz_type : str
+            hazard type abbreviation, e.g.
+            'DR' for Drought or
+            'CP' for CropPotential
         """
         data_p = parameters.get('data_path', SYSTEM_DIR)
         spam_t = parameters.get('spam_technology', 'TA')
@@ -231,28 +232,31 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         """Reads data from SPAM CSV file and cuts out the data for the
             according country, admin1, or admin2 (if requested).
 
-        Optional parameters:
-            data_path (str): absolute path where files are stored. Default: SYSTEM_DIR
+        Parameters
+        ----------
+        data_path : str
+            absolute path where files are stored. Default: SYSTEM_DIR
+        spam_variable : str
+            select one agricultural variable:
+            'A'		physical area
+            'H'		harvested area
+            'P'		production
+            'Y'		yield
+            'V_agg'	value of production, aggregated to all crops,
+            food and non-food (default)
+        spam_technology : str
+            select one agricultural technology type:
+            'TA'	   all technologies together, ie complete crop (default)
+            'TI'   irrigated portion of crop
+            'TH'   rainfed high inputs portion of crop
+            'TL'   rainfed low inputs portion of crop
+            'TS'   rainfed subsistence portion of crop
+            'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
 
-            spam_variable (str): select one agricultural variable:
-                'A'		physical area
-                'H'		harvested area
-                'P'		production
-                'Y'		yield
-                'V_agg'	value of production, aggregated to all crops,
-                                 food and non-food (default)
-
-            spam_technology (str): select one agricultural technology type:
-                'TA'	   all technologies together, ie complete crop (default)
-                'TI'   irrigated portion of crop
-                'TH'   rainfed high inputs portion of crop
-                'TL'   rainfed low inputs portion of crop
-                'TS'   rainfed subsistence portion of crop
-                'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
-
-
-        Returns:
-            data: PandaFrame with all data for selected country / region
+        Returns
+        -------
+        data :
+            PandaFrame with all data for selected country / region
         """
         data_path = parameters.get('data_path', SYSTEM_DIR)
         spam_tech = parameters.get('spam_technology', 'TA')
@@ -320,17 +324,19 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         """
         restrict data to given country (admin0) or admin1/ admin2.
 
-        Input:
-            data: dataframe from _read_spam_file()
-
-        Optional parameters:
-
-            country(str): Three letter country code of country to be cut out.
-                No default (global)
-            name_adm1 (str): Name of admin1 (e.g. Federal State) to be cut out.
-                No default
-            name_adm2 (str): Name of admin2 to be cut out.
-                No default
+        Parameters
+        ----------
+        data :
+            dataframe from _read_spam_file()
+        country(str) :
+            Three letter country code of country to be cut out.
+            No default (global)
+        name_adm1 : str
+            Name of admin1 (e.g. Federal State) to be cut out.
+            No default
+        name_adm2 : str
+            Name of admin2 to be cut out.
+            No default
         """
         adm0 = parameters.get('country')
         adm1 = parameters.get('name_adm1')
@@ -371,18 +377,20 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         """
         Download and unzip CSV files from https://dataverse.harvard.edu/file
 
-        Inputs:
-            data_path (str): absolute path where files are to be stored.
-                                Default: SYSTEM_DIR
-
-            spam_variable (str): select one variable:
-                'A'		physical area
-                'H'		harvested area
-                'P'		production
-                'Y'		yield
-                'V_agg'	value of production, aggregated to all crops,
-                                 food and non-food (default)
-                'cell5m' concordance_data to retrieve lat / lon
+        Parameters
+        ----------
+        data_path : str
+            absolute path where files are to be stored.
+            Default: SYSTEM_DIR
+        spam_variable : str
+            select one variable:
+            'A'		physical area
+            'H'		harvested area
+            'P'		production
+            'Y'		yield
+            'V_agg'	value of production, aggregated to all crops,
+            food and non-food (default)
+            'cell5m' concordance_data to retrieve lat / lon
         """
         try:
             fname = Path(data_path, FILENAME_PERMALINKS)

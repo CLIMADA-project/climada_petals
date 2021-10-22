@@ -79,9 +79,7 @@ def sample_events_from_probs(prob_matrix, n_years, dist='binom'):
 
 
 class Landslide(Hazard):
-    """Landslide Hazard set generation.
-    Attributes:
-    """
+    """Landslide Hazard set generation."""
 
     def __init__(self):
         """Empty constructor."""
@@ -115,7 +113,7 @@ class Landslide(Hazard):
         For more on projected & geographic CRS, see
         https://desktop.arcgis.com/en/arcmap/10.3/guide-books/map-projections/about-projected-coordinate-systems.htm
 
-        Parameters:
+        Parameters
         ----------
         bbox : tuple
             (minx, miny, maxx, maxy) geographic extent of interest
@@ -126,11 +124,12 @@ class Landslide(Hazard):
             which are created. Whith EPSG:4326, this is degrees. Default is
             0.008333.
 
-        Returns:
-        --------
-            self (Landslide() inst.): instance filled with historic LS hazard
-                set for either point hazards or polygons with specified
-                surrounding extent.
+        Returns
+        -------
+        self : Landslide
+            instance filled with historic LS hazard
+            set for either point hazards or polygons with specified
+            surrounding extent.
         """
         if isinstance(input_gdf, gpd.GeoDataFrame):
             LOGGER.info('Using pre-loaded gdf')

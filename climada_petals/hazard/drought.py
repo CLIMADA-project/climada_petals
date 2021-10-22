@@ -70,8 +70,10 @@ HAZ_TYPE = 'DR'
 class Drought(Hazard):
     """Contains drought events.
 
-    Attributes:
-        SPEI (float): Standardize Precipitation Evapotraspiration Index
+    Attributes
+    ----------
+    SPEI : float
+        Standardize Precipitation Evapotraspiration Index
     """
     vars_opt = Hazard.vars_opt.union({'spei'})
     """Name of the variables that aren't need to compute the impact."""
@@ -191,9 +193,14 @@ class Drought(Hazard):
 
     def __traslate_matrix(self, spei_3d):
         """return hazard intensity as a simple threshold on the SPEI values
-        Parameters: see read_indices_spei, just call before
-        Returns: matrix
-        sparse.csr_matrix
+
+        Parameters
+        ----------
+        see read_indices_spei, just call before
+
+        Returns
+        -------
+        matrix, sparse.csr_matrix
         """
 
         intensity_thres = self.threshold
@@ -224,10 +231,16 @@ class Drought(Hazard):
 
     def hazard_def(self, intensity_matrix):
         """return hazard set
-        Parameters: see intensity_from_spei
-        Returns:
-            Drought, full hazard set
-            check using new_haz.check()"""
+
+        Parameters
+        ----------
+        see intensity_from_spei
+
+        Returns
+        -------
+        Drought, full hazard set
+        check using new_haz.check()
+        """
 
         if self.intensity_definition == 2:
             HAZ_TYPE = 'DR_sumthr'

@@ -23,12 +23,15 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 
+from climada.hazard.centroids import Centroids
+from climada.util.api_client import Client
 from climada_petals.hazard.low_flow import LowFlow, unique_clusters, \
     _compute_threshold_grid, _read_and_combine_nc, _split_bbox
-from climada.util.constants import DEMO_DIR as INPUT_DIR
-from climada.hazard.centroids import Centroids
 
+
+client = Client()
 FN_STR_DEMO = 'co2_dis_global_daily_DEMO_FR'
+INPUT_DIR, _ = client.download_dataset(client.get_dataset(name='ISIMIP_low_flow_historical'))
 
 
 def init_test_data_unique_clusters():
