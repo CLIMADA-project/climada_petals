@@ -232,22 +232,22 @@ class TCForecast(TCTracks):
         ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
         
         # values at timestep 0
-        lat_init = ec.codes_get_array(bufr, '#2#latitude')
-        lon_init = ec.codes_get_array(bufr, '#2#longitude')
-        pre_init = ec.codes_get_array(bufr, '#1#pressureReducedToMeanSeaLevel')
-        max_wind_init = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
+        lat_init_temp = ec.codes_get_array(bufr, '#2#latitude')
+        lon_init_temp = ec.codes_get_array(bufr, '#2#longitude')
+        pre_init_temp = ec.codes_get_array(bufr, '#1#pressureReducedToMeanSeaLevel')
+        wnd_init_temp = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
         
-        if len(lat_init) == len(ens_no) and len(max_wind_init) == len(ens_no):
-            latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(len(ens_no))}
-            longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(len(ens_no))}
-            pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(len(ens_no))}
-            max_wind = {ind_ens: np.array(max_wind_init[ind_ens]) for ind_ens in range(len(ens_no))}
-
-        else:
-            latitude = {ind_ens: np.array(lat_init[0]) for ind_ens in range(len(ens_no))}
-            longitude = {ind_ens: np.array(lon_init[0]) for ind_ens in range(len(ens_no))}
-            pressure = {ind_ens: np.array(pre_init[0]) for ind_ens in range(len(ens_no))}
-            max_wind = {ind_ens: np.array(max_wind_init[0]) for ind_ens in range(len(ens_no))}
+        # check dimention of the variables, and replace missing value with NaN
+        lat_init = self._check_variable(lat_init_temp, ens_no)
+        lon_init = self._check_variable(lon_init_temp, ens_no)
+        pre_init = self._check_variable(pre_init_temp, ens_no)
+        wnd_init = self._check_variable(wnd_init_temp, ens_no)
+        
+        # Putting variables into dictionaries
+        latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(len(ens_no))}
+        longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(len(ens_no))}
+        pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(len(ens_no))}
+        max_wind = {ind_ens: np.array(wnd_init[ind_ens]) for ind_ens in range(len(ens_no))}
         
         # getting the forecasted storms
         timesteps_int = [0 for x in range(n_timestep)]
@@ -302,7 +302,7 @@ class TCForecast(TCTracks):
             pre = self._check_variable(pre_temp, ens_no)
             wnd = self._check_variable(wnd_temp, ens_no)
             
-            # appending values
+            # appending values into dictionaries
             for ind_ens in range(len(ens_no)):
                 latitude[ind_ens] = np.append(latitude[ind_ens], lat[ind_ens])
                 longitude[ind_ens] = np.append(longitude[ind_ens], lon[ind_ens])
@@ -360,12 +360,11 @@ class TCForecast(TCTracks):
         timestamp = timestamp_origin + timestep_int.astype('timedelta64[h]')
         
         # some weak storms have only perturbed analysis, which gives a 
-        # size 1 array with value 4
+        # size 1 array in ens_type with value 4
         try:
             ens_bool = msg['ens_type'][index] != 0
         except LookupError:
             ens_bool = msg['ens_type'][0] != 0
-            LOGGER.info('All tracks has the same ensemble type')
             return None
         
         try:
