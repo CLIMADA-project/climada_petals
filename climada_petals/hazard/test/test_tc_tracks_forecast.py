@@ -32,11 +32,9 @@ TEST_BUFR_FILES = [
         'tracks_22S_HEROLD_2020031912.eps.bufr4',
     ]
 ]
-# TEST_BUFR_FILES = [open(f, 'rb') for f in TEST_BUFR_FILES_PATH]
 """TC tracks in four BUFR formats as provided by ECMWF. Sourced from
 https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
 """
-
 
 class TestECMWF(unittest.TestCase):
     """Test reading of BUFR TC track forecasts"""
