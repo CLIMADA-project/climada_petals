@@ -22,6 +22,7 @@ Define TCTracks auxiliary methods: BUFR based TC predictions (from ECMWF)
 __all__ = ['TCForecast']
 
 # standard libraries
+import os
 import datetime as dt
 import fnmatch
 import ftplib
@@ -119,6 +120,12 @@ class TCForecast(TCTracks):
                 file.seek(0)  # reset cursor if opened file instance
             except AttributeError:
                 pass
+            
+            if os.name == 'nt':
+                try:
+                    file = file.file # if file is tempfile._TemporaryFileWrapper in windows, change to 
+                except AttributeError:
+                    pass
 
             self.read_one_bufr_tc(file, id_no=i)
 
