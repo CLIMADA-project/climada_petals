@@ -104,7 +104,7 @@ class TestOSMFileQuery(unittest.TestCase):
     def test_retrieve_cis(self):
         OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
         gdf = OSM_FQ.retrieve_cis('road')
-        self.assertTrue(len(gdf)==22)
+        self.assertEqual(len(gdf), 22)
         self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'man_made', 'public_transport', 'bus', 'name',
        'geometry'])
 
