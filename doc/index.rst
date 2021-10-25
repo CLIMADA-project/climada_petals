@@ -3,18 +3,6 @@ This is the documentation for version v\ |version|. In `CLIMADA-project <https:/
 
 ------------
 
-----------
-User guide
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   guide/Guide_get_started
-   guide/Guide_Introduction
-   guide/Guide_Installation
-   guide/Guide_Euler
-
 ---------
 Tutorials
 ---------
@@ -46,22 +34,6 @@ Tutorials
    tutorial/climada_util_earth_engine
    tutorial/climada_util_yearsets
 
----------------
-Developer guide
----------------
-
-.. toctree::
-   :maxdepth: 1
-
-   guide/Guide_Git_Development
-   guide/Guide_CLIMADA_Tutorial
-   guide/Guide_Configuration
-   guide/Guide_Continuous_Integration_and_Testing
-   guide/Guide_Reviewer_Checklist
-   guide/Guide_PythonDos-n-Donts
-   guide/Guide_Py_Performance
-   guide/Guide_Miscellaneous
-
 ----------------------
 Software documentation
 ----------------------
@@ -71,7 +43,7 @@ Documents functions, classes and methods:
 .. toctree::
    :maxdepth: 1
 
-   climada/climada
+   climada_petals/climada_petals
 * :ref:`genindex`
 * :ref:`modindex`
 
