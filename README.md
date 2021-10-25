@@ -1,7 +1,7 @@
 [![DOI](https://zenodo.org/badge/112729129.svg)](https://zenodo.org/badge/latestdoi/112729129)
-[![Build Status](http://ied-wcr-jenkins.ethz.ch/buildStatus/icon?job=climada_branches/develop)](http://ied-wcr-jenkins.ethz.ch/job/climada_branches/)
-[![Documentation build status](https://img.shields.io/readthedocs/climada-python.svg?style=flat-square)](https://readthedocs.org/projects/climada-python/builds/)
-![Jenkins Coverage](https://img.shields.io/jenkins/coverage/cobertura/http/ied-wcr-jenkins.ethz.ch/climada_ci_night.svg)
+[![Build Status](http://ied-wcr-jenkins.ethz.ch/buildStatus/icon?job=petals_branches/develop)](http://ied-wcr-jenkins.ethz.ch/job/petals_branches/)
+[![Documentation build status](https://img.shields.io/readthedocs/climada-petals.svg?style=flat-square)](https://readthedocs.org/projects/climada-petals/builds/)
+![Jenkins Coverage](https://img.shields.io/jenkins/coverage/cobertura/http/ied-wcr-jenkins.ethz.ch/petals_ci_night.svg)
 
 # CLIMADA
 
@@ -17,7 +17,7 @@ This is the Python (3.8+) version of CLIMADA - please see https://github.com/dav
 
 ## Getting started
 
-CLIMADA runs on Windows, macOS and Linux. Download the [latest release](https://github.com/CLIMADA-project/climada_python/releases). Install CLIMADA's dependencies specified in  the downloaded file `climada_python-x.y.z/requirements/env_climada.yml` with conda. See the documentation for more [information on installing](https://climada-python.readthedocs.io/en/latest/guide/Guide_Installation.html).
+CLIMADA runs on Windows, macOS and Linux. Download the [latest release](https://github.com/CLIMADA-project/climada_petals/releases). Install CLIMADA's dependencies specified in  the downloaded file `climada_python-x.y.z/requirements/env_climada.yml` with conda. See the documentation for more [information on installing](https://climada-python.readthedocs.io/en/latest/guide/Guide_Installation.html).
 
 Follow the [tutorial](https://climada-python.readthedocs.io/en/latest/guide/tutorial.html) `climada_python-x.y.z/doc/tutorial/1_main_climada.ipynb` in a Jupyter Notebook to see what can be done with CLIMADA and how.
 
@@ -25,8 +25,8 @@ Follow the [tutorial](https://climada-python.readthedocs.io/en/latest/guide/tuto
 
 Documentation is available on Read the Docs:
 
-* [online (recommended)](https://climada-python.readthedocs.io/en/latest/)
-* [PDF file](https://buildmedia.readthedocs.org/media/pdf/climada-python/latest/climada-python.pdf)
+* [online (recommended)](https://climada-petals.readthedocs.io/en/latest/)
+* [PDF file](https://buildmedia.readthedocs.org/media/pdf/climada-petals/latest/climada-petals.pdf)
 * [petals Tutorials on GitHub](https://github.com/CLIMADA-project/climada_petals/tree/main/doc/tutorial)
 
 ## Citing CLIMADA
@@ -58,11 +58,11 @@ To contribute follow these steps:
 8. Push the changes to GitHub (`git push origin develop`).
 9. On GitHub, create a new pull request onto the develop branch of CLIMADA-project/climada_python.
 
-See our [contribution guidelines](https://climada-python.readthedocs.io/en/latest/guide/developer.html) for more information.
+See our [developer guide](https://climada-python.readthedocs.io/en/latest/#developer-guide) for more information.
 
 ## Versioning
 
-We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [releases on this repository](https://github.com/CLIMADA-project/climada_python/releases).
+We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [releases on this repository](https://github.com/CLIMADA-project/climada_petals/releases).
 
 ## License
 
