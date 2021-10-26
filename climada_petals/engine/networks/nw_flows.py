@@ -23,7 +23,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
 import igraph as ig
 
-from climada_petals.engine.networks.nw_calcs import GraphCalcs, GraphMaker
+from climada_petals.engine.networks.nw_calcs import GraphCalcs, Graph
 
 LOGGER = logging.getLogger(__name__)
 
@@ -248,7 +248,7 @@ class PowerCascades(GraphCalcs):
         if isinstance(nw_or_graph, ig.Graph):
             self.graph = nw_or_graph
         else:
-            return GraphMaker.__init__(self, nw_or_graph)
+            return Graph.__init__(self, nw_or_graph)
 
         
     def assign_edemand_pline(self):

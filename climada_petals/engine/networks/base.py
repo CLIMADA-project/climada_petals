@@ -142,6 +142,14 @@ class Network:
         
         return plt.show()
     
+    def initialize_funcstates(self):
+        """ """
+        self.edges[['func_internal','func_tot']] = 1
+        self.nodes[['func_internal','func_tot']] = 1
+        self.edges['imp_dir'] = 0
+        self.nodes['imp_dir'] = 0
+    
+    
     # TODO: remove from Network class; belongs somewhere else
     # def _update_func_level(self):
     #     if not hasattr(self.edges, 'func_level'):
