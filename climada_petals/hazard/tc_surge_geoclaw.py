@@ -375,11 +375,16 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, gauges=None,
     # create work directory
     GEOCLAW_WORK_DIR.mkdir(parents=True, exist_ok=True)
     work_dir = GEOCLAW_WORK_DIR
-    while work_dir.exists():
+    work_dir_already_exists = True
+    while work_dir_already_exists:
         work_dir = (dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
                     + f"{np.random.randint(0, 100):02d}-{track.sid}")
         work_dir = GEOCLAW_WORK_DIR.joinpath(work_dir)
-    work_dir.mkdir(parents=True)
+        try:
+            work_dir.mkdir(parents=True)
+            work_dir_already_exists = False
+        except FileExistsError:
+            work_dir_already_exists = True
 
     # get landfall events
     LOGGER.info("Determine georegions and temporal periods of landfall events...")
