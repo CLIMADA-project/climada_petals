@@ -317,7 +317,7 @@ class OSMFileQuery:
 
         return query
 
-    def retrieve(self, geo_type, constraint_dict):
+    def retrieve(self, geo_type, osm_keys, osm_query):
         """
         Function to extract geometries and tag info for entires in the OSM file
         matching certain OSM key-value constraints.
@@ -330,11 +330,11 @@ class OSMFileQuery:
         ----------
         geo_type : str
             Type of geometry to retrieve. One of [points, lines, multipolygons]
-        constraint_dict :  dict
-            A dict with the keys "osm_keys" and "osm_query". osm_keys contains
+        osm_keys : list
             a list with all the osm keys that should be reported as columns in
             the output gdf.
-            osm_query contains an osm query string of the syntax
+        osm_query : str
+            query string of the syntax
             "key(='value') (and/or further queries)".
             See examples in DICT_CIS_OSM in case of doubt.
 
@@ -366,9 +366,14 @@ class OSMFileQuery:
         and to quickly check the validity. The wizard can help you find the
         correct keys / values you are looking for.
         """
+        constraint_dict = {
+            'osm_keys' : osm_keys,
+            'osm_query' : osm_query}
+        
         driver = ogr.GetDriverByName('OSM')
         data = driver.Open(self.osm_path)
         query = self._query_builder(geo_type, constraint_dict)
+        LOGGER.debug("query: %s", query)
         sql_lyr = data.ExecuteSQL(query)
         features = []
         if data is not None:
@@ -377,12 +382,14 @@ class OSMFileQuery:
                 try:
                     fields = [feature.GetField(key) for key in
                               ['osm_id', *constraint_dict['osm_keys']]]
-                    geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
+                    wkb = feature.geometry().ExportToWkb()
+                    geom = shapely.wkb.loads(bytes(wkb))
                     if geom is None:
                         continue
                     fields.append(geom)
                     features.append(fields)
-                except:
+                except Exception as exc:
+                    LOGGER.info('%s - %s', exc.__class__, exc)
                     LOGGER.warning("skipped OSM feature")
         else:
             LOGGER.error("""Nonetype error when requesting SQL. Check the
@@ -412,22 +419,28 @@ class OSMFileQuery:
         """
         # features consisting in points and multipolygon results:
         if ci_type in ['healthcare','education','food']:
-            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type])
+            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(
-                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]))
+                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
+                              DICT_CIS_OSM[ci_type]['osm_query']))
 
         # features consisting in multipolygon results:
         elif ci_type in ['air']:
-            gdf = self.retrieve('multipolygons', DICT_CIS_OSM[ci_type])
+            gdf = self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query'])
 
         # features consisting in points, multipolygons and lines:
         elif ci_type in ['gas','oil','telecom','water','wastewater','power',
                          'rail','road']:
-            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type])
+            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(
-                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]))
+                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query']))
             gdf = gdf.append(
-                self.retrieve('lines', DICT_CIS_OSM[ci_type]))
+                self.retrieve('lines', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query']))
         else:
             LOGGER.warning('feature not in DICT_CIS_OSM. Returning empty gdf')
             gdf = gpd.GeoDataFrame()

@@ -66,6 +66,9 @@ climada_petals/test/data/test_write_hazard.tif
 climada_petals/util/test/data/save_test.pkl
 climada_petals/util/test/data/test_write_raster.tif
 
+# ReadTheDocs
+json
+
 # Translations
 *.mo
 *.pot

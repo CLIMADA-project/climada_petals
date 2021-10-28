@@ -131,7 +131,8 @@ class RiverFlood(Hazard):
 
                 # TODO: replace this call to `set_raster` with a call to `from_raster` when
                 # replacing `set_from_nc` with a @classmethod `from_nc`
-                self.set_raster(files_intensity=[dph_path],
+                self.set_raster(haz_type=HAZ_TYPE,
+                                files_intensity=[dph_path],
                                 files_fraction=[frc_path], band=bands.tolist(),
                                 transform=meta_centroids.meta['transform'],
                                 width=meta_centroids.meta['width'],
@@ -155,7 +156,8 @@ class RiverFlood(Hazard):
                     cntry_geom = u_coord.get_land_geometry(iso_codes)
                     # TODO: replace this call to `set_raster` with a call to `from_raster` when
                     # replacing `set_from_nc` with a @classmethod `from_nc`
-                    self.set_raster(files_intensity=[dph_path],
+                    self.set_raster(haz_type=HAZ_TYPE,
+                                    files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
                                     geometry=cntry_geom)
@@ -164,7 +166,8 @@ class RiverFlood(Hazard):
                     cntry_geom = u_coord.get_land_geometry(countries)
                     # TODO: replace this call to `set_raster` with a call to `from_raster` when
                     # replacing `set_from_nc` with a @classmethod `from_nc`
-                    self.set_raster(files_intensity=[dph_path],
+                    self.set_raster(haz_type=HAZ_TYPE,
+                                    files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
                                     geometry=cntry_geom)
@@ -177,7 +180,8 @@ class RiverFlood(Hazard):
 
             # TODO: replace this call to `set_raster` with a call to `from_raster` when
             # replacing `set_from_nc` with a @classmethod `from_nc`
-            self.set_raster(files_intensity=[dph_path],
+            self.set_raster(haz_type=HAZ_TYPE,
+                            files_intensity=[dph_path],
                             files_fraction=[frc_path],
                             band=bands.tolist(),
                             geometry=rand_geom)
@@ -187,7 +191,8 @@ class RiverFlood(Hazard):
             # centroids as raster
             # TODO: replace this call to `set_raster` with a call to `from_raster` when
             # replacing `set_from_nc` with a @classmethod `from_nc`
-            self.set_raster(files_intensity=[dph_path],
+            self.set_raster(haz_type=HAZ_TYPE,
+                            files_intensity=[dph_path],
                             files_fraction=[frc_path],
                             band=bands.tolist())
             # self.centroids.set_meta_to_lat_lon()
