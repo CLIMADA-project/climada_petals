@@ -56,7 +56,7 @@ DEMO_GDP2ASSET = DEMO_DIR.joinpath('gdp2asset_CHE_exposure.nc')
 
 
 """
-dictionary for the generation of the correct download api-address at 
+dictionary for the generation of the correct download api-address at
 geofabrik.de, relating ISO3-country codes to the region & written-out name.
 Adapted from the GitHub repo osm_clipper (https://github.com/ElcoK/osm_clipper)
 Used by OSMRaw().get_data_geofabrik().
@@ -91,7 +91,7 @@ DICT_GEOFABRIK = {
    'ERI' : ('africa', 'eritrea'),
    'ETH' : ('africa', 'ethiopia'),
    'GAB' : ('africa', 'gabon'),
-   'GMB' : ('africa', 'senegal-and-gambia'), #TOGETHER WITH SENEGAL
+   'GMB' : ('africa', 'senegal-and-gambia'),  #TOGETHER WITH SENEGAL
    'GHA' : ('africa', 'ghana'),
    'GIN' : ('africa', 'guinea'),
    'GNB' : ('africa', 'guinea-bissau'),
@@ -112,7 +112,7 @@ DICT_GEOFABRIK = {
    'RWA' : ('africa', 'rwanda'),
    'SHN' : ('africa', 'saint-helena-ascension-and-tristan-da-cunha'),
    'STP' : ('africa', 'sao-tome-and-principe'),
-   'SEN' : ('africa', 'senegal-and-gambia'), #TOGETHER WITH THE GAMBIA
+   'SEN' : ('africa', 'senegal-and-gambia'),  #TOGETHER WITH THE GAMBIA
    'SYC' : ('africa', 'seychelles'),
    'SLE' : ('africa', 'sierra-leone'),
    'SOM' : ('africa', 'somalia'),
@@ -132,27 +132,27 @@ DICT_GEOFABRIK = {
    'BTN' : ('asia', 'bhutan'),
    'KHM' : ('asia', 'cambodia'),
    'CHN' : ('asia', 'china'),
-   'SAU' : ('asia', 'gcc-states'), #Together with Kuwait, the United Arab Emirates, Qatar, Bahrain, and Oman
-   'KWT' : ('asia', 'gcc-states'), #Together with Saudi Arabia, the United Arab Emirates, Qatar, Bahrain, and Oman
-   'ARE' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, Qatar, Bahrain, and Oman
-   'QAT' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Bahrain, and Oman
-   'OMN' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Oman
-   'BHR' : ('asia', 'gcc-states'), #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Bahrain
+   'SAU' : ('asia', 'gcc-states'),  #Together with Kuwait, the United Arab Emirates, Qatar, Bahrain, and Oman
+   'KWT' : ('asia', 'gcc-states'),  #Together with Saudi Arabia, the United Arab Emirates, Qatar, Bahrain, and Oman
+   'ARE' : ('asia', 'gcc-states'),  #Together with Saudi Arabia, Kuwait, Qatar, Bahrain, and Oman
+   'QAT' : ('asia', 'gcc-states'),  #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Bahrain, and Oman
+   'OMN' : ('asia', 'gcc-states'),  #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Oman
+   'BHR' : ('asia', 'gcc-states'),  #Together with Saudi Arabia, Kuwait, the United Arab Emirates, Qatar and Bahrain
    'IND' : ('asia', 'india'),
    'IDN' : ('asia', 'indonesia'),
    'IRN' : ('asia', 'iran'),
    'IRQ' : ('asia', 'iraq'),
-   'ISR' : ('asia', 'israel-and-palestine'),       # TOGETHER WITH PALESTINE
-   'PSE' : ('asia', 'israel-and-palestine'),       # TOGETHER WITH ISRAEL
+   'ISR' : ('asia', 'israel-and-palestine'),  # TOGETHER WITH PALESTINE
+   'PSE' : ('asia', 'israel-and-palestine'),  # TOGETHER WITH ISRAEL
    'JPN' : ('asia', 'japan'),
    'JOR' : ('asia', 'jordan'),
    'KAZ' : ('asia', 'kazakhstan'),
    'KGZ' : ('asia', 'kyrgyzstan'),
    'LAO' : ('asia', 'laos'),
    'LBN' : ('asia', 'lebanon'),
-   'MYS' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH SINGAPORE AND BRUNEI
-   'SGP' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH MALAYSIA AND BRUNEI
-   'BRN' : ('asia', 'malaysia-singapore-brunei'), # TOGETHER WITH MALAYSIA AND SINGAPORE
+   'MYS' : ('asia', 'malaysia-singapore-brunei'),  # TOGETHER WITH SINGAPORE AND BRUNEI
+   'SGP' : ('asia', 'malaysia-singapore-brunei'),  # TOGETHER WITH MALAYSIA AND BRUNEI
+   'BRN' : ('asia', 'malaysia-singapore-brunei'),  # TOGETHER WITH MALAYSIA AND SINGAPORE
    'MDV' : ('asia', 'maldives'),
    'MNG' : ('asia', 'mongolia'),
    'MMR' : ('asia', 'myanmar'),
@@ -160,7 +160,7 @@ DICT_GEOFABRIK = {
    'PRK' : ('asia', 'north-korea'),
    'PAK' : ('asia', 'pakistan'),
    'PHL' : ('asia', 'philippines'),
-   'RUS-A' : ('asia', 'russia'), # Asian part of Russia
+   'RUS-A' : ('asia', 'russia'),  # Asian part of Russia
    'KOR' : ('asia', 'south-korea'),
    'LKA' : ('asia', 'sri-lanka'),
    'SYR' : ('asia', 'syria'),
@@ -218,7 +218,7 @@ DICT_GEOFABRIK = {
    'POL' : ('europe', 'poland'),
    'PRT' : ('europe', 'portugal'),
    'ROU' : ('europe', 'romania'),
-   'RUS-E' : ('europe', 'russia'), # European part of Russia
+   'RUS-E' : ('europe', 'russia'),  # European part of Russia
    'SRB' : ('europe', 'serbia'),
    'SVK' : ('europe', 'slovakia'),
    'SVN' : ('europe', 'slovenia'),
@@ -263,25 +263,25 @@ DICT_GEOFABRIK = {
 }
 
 """
-nested dictionary that contains collections of relevant columns (osm_keys) and 
-key - value pairs (osm_query) to extract critical infrastructure data from an 
+nested dictionary that contains collections of relevant columns (osm_keys) and
+key - value pairs (osm_query) to extract critical infrastructure data from an
 osm.pbf file, via the function OSM_FileQuery().retrieve_cis()
 
 Currently implemented for:
-    * educational facilities, 
-    * electric power, 
-    * food supply, 
-    * healthcare facilities, 
+    * educational facilities,
+    * electric power,
+    * food supply,
+    * healthcare facilities,
     * natural gas infrastructure,
-    * oil infrastructure, 
-    * road, 
-    * rail,  
-    * telecommunications, 
-    * water supply, 
+    * oil infrastructure,
+    * road,
+    * rail,
+    * telecommunications,
+    * water supply,
     * wastewater.
 
 Note: If modified, make sure that key exists in osm.config file, under the
-respective geometry/-ies. 
+respective geometry/-ies.
 """
 DICT_CIS_OSM =  {
         'education' : {
@@ -295,11 +295,11 @@ DICT_CIS_OSM =  {
                              building='childcare' or amenity='childcare'"""},
         'healthcare' : {
             'osm_keys' : ['amenity','building','healthcare','name'],
-            'osm_query' : """amenity='hospital' or healthcare='hospital' or 
+            'osm_query' : """amenity='hospital' or healthcare='hospital' or
                              building='hospital' or building='clinic' or
                              amenity='clinic' or healthcare='clinic' or 
                              amenity='doctors' or healthcare='doctors'
-                             """}, 
+                             """},
         'water' : {
             'osm_keys' : ['man_made','pump','pipeline','emergency','name'],
             'osm_query' : """man_made='water_well' or man_made='water_works' or
@@ -327,17 +327,13 @@ DICT_CIS_OSM =  {
                              utility='telecom'"""},
         'road' :  {
             'osm_keys' : ['highway','man_made','public_transport','bus','name'],
-            'osm_query' : """highway='motorway' or highway='motorway_link' or
-                             highway='trunk' or highway='trunk_link' or
-                             highway='primary' or highway='primary_link' or
-                             highway='secondary' or highway='secondary_link' or
-                             highway='tertiary' or highway='tertiary_link' or
-                             highway='residential' or highway='road' or
-                             highway='service' or highway='unclassified' or
-                             highway='traffic_signals' or
-                             (public_transport='*' and bus='yes') or 
-                             (bridge='*' and highway='*') or 
-                             (tunnel='*' and highway='*')"""},
+            'osm_query' : """highway in ('motorway', 'motorway_link', 'trunk', 'trunk_link',
+                            'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary',
+                            'tertiary_link', 'residential', 'road', 'service', 'unclassified',
+                            'traffic_signals')
+                             or (public_transport='*' and bus='yes')
+                             or (bridge='*' and highway='*')
+                             or (tunnel='*' and highway='*')"""},
         'rail' : {
             'osm_keys' : ['railway','name'],
             'osm_query' : """railway='rail' or railway='tram' or
@@ -362,10 +358,9 @@ DICT_CIS_OSM =  {
                               man_made='petroleum_well' or 
                               man_made='oil_refinery' or
                               amenity='fuel'"""},
-
         'power' : {
               'osm_keys' : ['power','voltage','utility','name'],
-              'osm_query' : """power='line' or power='cable' or 
+              'osm_query' : """power='line' or power='cable' or
                                power='minor_line' or power='plant' or
                                power='generator' or power='substation' or
                                power='transformer' or
