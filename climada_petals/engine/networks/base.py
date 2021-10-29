@@ -84,7 +84,7 @@ class Network:
     @classmethod
     def from_graphs(cls, graphs):
         
-        graph = ig.Graph()
+        graph = ig.Graph(directed=graphs[0].is_directed())
         for g in graphs:
             graph += g
         
