@@ -129,7 +129,8 @@ class RiverFlood(Hazard):
                 meta_centroids = copy.copy(dest_centroids)
                 meta_centroids.set_lat_lon_to_meta()
 
-                self.set_raster(files_intensity=[dph_path],
+                self.set_raster(haz_type=HAZ_TYPE,
+                                files_intensity=[dph_path],
                                 files_fraction=[frc_path], band=bands.tolist(),
                                 transform=meta_centroids.meta['transform'],
                                 width=meta_centroids.meta['width'],
@@ -151,14 +152,16 @@ class RiverFlood(Hazard):
                     iso_codes = u_coord.region2isos(reg)
                     # envelope containing counties
                     cntry_geom = u_coord.get_land_geometry(iso_codes)
-                    self.set_raster(files_intensity=[dph_path],
+                    self.set_raster(haz_type=HAZ_TYPE,
+                                    files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
                                     geometry=cntry_geom)
                     # self.centroids.set_meta_to_lat_lon()
                 else:
                     cntry_geom = u_coord.get_land_geometry(countries)
-                    self.set_raster(files_intensity=[dph_path],
+                    self.set_raster(haz_type=HAZ_TYPE,
+                                    files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
                                     geometry=cntry_geom)
@@ -169,7 +172,8 @@ class RiverFlood(Hazard):
 
             rand_geom = shapes.geometry[0]
 
-            self.set_raster(files_intensity=[dph_path],
+            self.set_raster(haz_type=HAZ_TYPE,
+                            files_intensity=[dph_path],
                             files_fraction=[frc_path],
                             band=bands.tolist(),
                             geometry=rand_geom)
@@ -177,7 +181,8 @@ class RiverFlood(Hazard):
 
         elif not centroids:
             # centroids as raster
-            self.set_raster(files_intensity=[dph_path],
+            self.set_raster(haz_type=HAZ_TYPE,
+                            files_intensity=[dph_path],
                             files_fraction=[frc_path],
                             band=bands.tolist())
             # self.centroids.set_meta_to_lat_lon()
