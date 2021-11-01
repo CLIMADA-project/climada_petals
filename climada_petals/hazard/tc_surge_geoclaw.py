@@ -132,7 +132,7 @@ class TCSurgeGeoClaw(Hazard):
             Maximum offshore distance of the centroids in kilometers. Default: 10
         max_latitude : float, optional
             Maximum latitude of potentially affected centroids. Default: 61
-        mod_zos : float, optiona (IGNORED ON THIS BRANCH!)
+        mod_zos : float, optional
             The scalar sea level rise is added to the base sea level that is extracted from the
             specified zos_path. Default: 0
         pool : an object with `map` functionality, optional
@@ -163,7 +163,7 @@ class TCSurgeGeoClaw(Hazard):
             [TCSurgeGeoClaw.from_xr_track(t, centroids, coastal_idx, zos_path, topo_path,
                                           topo_res_as=topo_res_as,
                                           node_max_dist_deg=node_max_dist_deg,
-                                          gauges=gauges, pool=pool)
+                                          gauges=gauges, mod_zos=mod_zos, pool=pool)
              for t in tracks.data])
         TropCyclone.frequency_from_tracks(haz, tracks.data)
         haz.tag.description = description
@@ -171,7 +171,7 @@ class TCSurgeGeoClaw(Hazard):
 
     @staticmethod
     def from_xr_track(track, centroids, coastal_idx, zos_path, topo_path,
-                      topo_res_as=30, node_max_dist_deg=5.5, gauges=None, pool=None):
+                      topo_res_as=30, node_max_dist_deg=5.5, gauges=None, mod_zos=0, pool=None):
         """Generate a TC surge hazard from a single xarray track dataset
 
         Parameters
@@ -196,6 +196,9 @@ class TCSurgeGeoClaw(Hazard):
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes. The result is stored in the `gauge_data`
             attribute.
+        mod_zos : float, optional
+            The scalar sea level rise is added to the base sea level that is extracted from the
+            specified zos_path. Default: 0
         pool : an object with `map` functionality, optional
             If given, landfall events are processed in parallel.
 
@@ -207,7 +210,7 @@ class TCSurgeGeoClaw(Hazard):
         intensity = np.zeros(centroids.coord.shape[0])
         intensity[coastal_idx], gauge_data = geoclaw_surge_from_track(
             track, coastal_centroids, zos_path, topo_path,
-            gauges=gauges, pool=pool, topo_res_as=topo_res_as,
+            gauges=gauges, mod_zos=mod_zos, pool=pool, topo_res_as=topo_res_as,
             node_max_dist_deg=node_max_dist_deg)
 
         new_haz = TCSurgeGeoClaw()
@@ -295,7 +298,7 @@ def get_coastal_centroids_idx(centroids, max_dist_coast_km, max_latitude=90):
 
 
 def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=30, gauges=None,
-                             pool=None, node_max_dist_deg=5.5):
+                             mod_zos=0, pool=None, node_max_dist_deg=5.5):
     """Compute TC surge height on centroids from a single track dataset
 
     Parameters
@@ -314,6 +317,9 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=
     gauges : list of pairs (lat, lon), optional
         The locations of tide gauges where to measure temporal changes in sea level height.
         This is used mostly for validation purposes.
+    mod_zos : float, optional
+        The scalar sea level rise is added to the base sea level that is extracted from the
+        specified zos_path. Default: 0
     pool : an object with `map` functionality, optional
         If given, landfall events are processed in parallel.
     node_max_dist_deg : float, optional
@@ -380,11 +386,16 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=
     # create work directory
     GEOCLAW_WORK_DIR.mkdir(parents=True, exist_ok=True)
     work_dir = GEOCLAW_WORK_DIR
-    while work_dir.exists():
+    work_dir_already_exists = True
+    while work_dir_already_exists:
         work_dir = (dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
                     + f"{np.random.randint(0, 100):02d}-{track.sid}")
         work_dir = GEOCLAW_WORK_DIR.joinpath(work_dir)
-    work_dir.mkdir(parents=True)
+        try:
+            work_dir.mkdir(parents=True)
+            work_dir_already_exists = False
+        except FileExistsError:
+            work_dir_already_exists = True
 
     # get landfall events
     LOGGER.info("Determine georegions and temporal periods of landfall events...")
@@ -400,7 +411,8 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=
             runners.append(GeoclawRunner(work_dir, track.sel(time=event['time_mask_buffered']),
                                          event['period'][0], event,
                                          track_centr[event['centroid_mask']], zos_path,
-                                         topo_path, topo_res_as=topo_res_as, gauges=gauges))
+                                         topo_path, topo_res_as=topo_res_as, gauges=gauges,
+                                         mod_zos=mod_zos))
 
         if pool is not None:
             pool.map(GeoclawRunner.run, runners)
@@ -435,7 +447,7 @@ class GeoclawRunner():
         `height_above_geoid` information.
     """
     def __init__(self, base_dir, track, time_offset, areas, centroids, zos_path, topo_path,
-                 topo_res_as=30, gauges=None):
+                 topo_res_as=30, gauges=None, mod_zos=0):
         """Initialize GeoClaw working directory with ClawPack rundata
 
         Parameters
@@ -461,6 +473,9 @@ class GeoclawRunner():
         gauges : list of pairs (lat, lon), optional
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes.
+        mod_zos : float, optional
+            The scalar sea level rise is added to the base sea level that is extracted from the
+            specified zos_path. Default: 0
         """
         gauges = [] if gauges is None else gauges
 
@@ -479,6 +494,7 @@ class GeoclawRunner():
         self.gauge_data = [{'location': g, 'base_sea_level': 0, 'topo_height': -32768.0,
                             'time': [], 'height_above_geoid': [], 'in_domain': True}
                            for g in gauges]
+        self.mod_zos = mod_zos
         self.surge_h = np.zeros(centroids.shape[0])
 
         # compute time horizon
@@ -663,7 +679,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         for area in self.areas['surge_areas']:
             x_1, y_1, x_2, y_2 = area
             regions.append([maxlevel - 1, maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
-        refinedata.speed_tolerance = list(np.arange(1.0, maxlevel))
+        refinedata.speed_tolerance = list(np.arange(1.0, maxlevel - 2))
         refinedata.variable_dt_refinement_ratios = True
         refinedata.wave_tolerance = 1.0
 
@@ -723,7 +739,9 @@ include $(CLAW)/clawutil/src/Makefile.common
             else:
                 months[-1, 1] += 1
         months = np.unique(months, axis=0)
-        geodata.sea_level = mean_max_sea_level(self.zos_path, months, self.areas['wind_area'])
+        geodata.sea_level = np.mean([mean_max_sea_level(self.zos_path, months, area)
+                                     for area in self.areas['surge_areas']])
+        geodata.sea_level += self.mod_zos
 
         # load elevation data, resolution depending on area of refinement
         topodata.topofiles = []
@@ -992,12 +1010,21 @@ def mean_max_sea_level(path, months, bounds):
                              % ", ".join(f"{m[0]:04d}-{m[1]:02d}" for m in months))
         zos_ds = zos_ds.sel(time=mask_time)
 
-        # enlarge bounds until the mean is valid
+        # enlarge bounds until the mean is valid or until max_pad_deg is reached
         pad = 0.25
+        i_pad = 0
+        max_pad_deg = 5
         mean = np.nan
+        bounds_padded = bounds
         while np.isnan(mean):
-            mean = _temporal_mean_of_max_within_bounds(zos_ds, bounds)
-            bounds = (bounds[0] - pad, bounds[1] - pad, bounds[2] + pad, bounds[2] + pad)
+            if i_pad * pad > max_pad_deg:
+                raise IndexError(
+                    f"The sea level data set doesn't intersect the specified bounds: {bounds}")
+            mean = _temporal_mean_of_max_within_bounds(zos_ds, bounds_padded)
+            bounds_padded = (
+                bounds_padded[0] - pad, bounds_padded[1] - pad,
+                bounds_padded[2] + pad, bounds_padded[3] + pad)
+            i_pad += 1
     return mean
 
 
@@ -1008,10 +1035,11 @@ def _temporal_mean_of_max_within_bounds(ds, bounds):
     mask_lon = (bounds[0] <= lon) & (lon <= bounds[2]) & np.isfinite(ds.lon)
     mask_bounds = (mask_lat & mask_lon)
     if not np.any(mask_bounds):
-        raise IndexError("The sea level data set doesn't intersect the required bounds: %s"
-                         % bounds)
+        return np.nan
     ds = ds.where(mask_bounds, drop=True)
     values = ds.zos.values[:]
+    if np.all(np.isnan(values)):
+        return np.nan
     return np.nanmean(np.nanmax(values, axis=(1, 2)))
 
 
@@ -1237,8 +1265,10 @@ class TCSurgeEvents():
         for i_event, mask_buf in enumerate(self.time_mask_buffered):
             track = self.track.sel(time=mask_buf)
             mask = self.time_mask[i_event][mask_buf]
-            lf_radii = np.fmax(self.lf_roci_factor * track.radius_oci.values,
-                               self.lf_rmw_factor * track.radius_max_wind.values)
+            lf_radii = np.fmin(
+                track.radius_oci.values,
+                np.fmax(self.lf_roci_factor * track.radius_oci.values,
+                        self.lf_rmw_factor * track.radius_max_wind.values))
 
             # wind area (maximum bounds to consider)
             pad = track.radius_oci / 60
