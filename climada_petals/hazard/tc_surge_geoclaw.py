@@ -1224,8 +1224,10 @@ class TCSurgeEvents():
         for i_event, mask_buf in enumerate(self.time_mask_buffered):
             track = self.track.sel(time=mask_buf)
             mask = self.time_mask[i_event][mask_buf]
-            lf_radii = np.fmax(self.lf_roci_factor * track.radius_oci.values,
-                               self.lf_rmw_factor * track.radius_max_wind.values)
+            lf_radii = np.fmin(
+                track.radius_oci.values,
+                np.fmax(self.lf_roci_factor * track.radius_oci.values,
+                        self.lf_rmw_factor * track.radius_max_wind.values))
 
             # wind area (maximum bounds to consider)
             pad = track.radius_oci / 60
