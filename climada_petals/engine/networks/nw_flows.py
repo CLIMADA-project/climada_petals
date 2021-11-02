@@ -237,6 +237,37 @@ class PowerFlow():
         fig.tight_layout()
 
 
+
+class PowerCluster():
+    
+    def balance_supply_flows(cis_graph, mw_per_cap, source_ci='power plant', sink_ci='substation'):
+        
+        power_vs = cis_graph.graph.vs.select(ci_type_in=['power line', source_ci, sink_ci])
+        power_subgraph = cis_graph.graph.subgraph(power_vs)
+        
+        # make vs-matching dict between power_vs indices and power_graph vs. indices
+        subgraph_graph_vsdict = dict((k,v) for k, v in 
+                                     zip([subvx.index for subvx in power_subgraph.vs],
+                                         [vx.index for vx in power_vs]))
+        
+        # adjust supply in sinks & flows such that matches source capacity
+        for cluster in power_subgraph.clusters():
+            sources = power_subgraph.vs[cluster].select(ci_type=source_ci)
+            sinks = power_subgraph.vs[cluster].select(ci_type=sink_ci)
+            psupply = sum([source['el_gen_mw']*source['func_tot'] for source in sources])
+            pdemand = sum([sink['supply_substation_people']*mw_per_cap for sink in sinks])
+            if pdemand > 0:
+                adj_fact = min(1, 1-(pdemand-psupply)/pdemand)
+                for sink in sinks:
+                    graph_vx = cis_graph.graph.vs[subgraph_graph_vsdict[sink.index]]
+                    graph_vx['supply_substation_people']*=adj_fact
+                    dep_edges = [edge for edge in graph_vx.incident(mode='out') if 'dependency_' in edge['ci_type']]
+                    for edge in dep_edges:
+                        target_ci = edge['ci_type'].split('_')[-1]
+                        edge[f'flow_substation_{target_ci}']*=adj_fact
+                        
+        return cis_graph
+    
 class PowerCascades(GraphCalcs):
     
     def __init__(self, nw_or_graph):
