@@ -529,13 +529,14 @@ include $(CLAW)/clawutil/src/Makefile.common
         """Run GeoClaw script and set `surge_h` attribute."""
         LOGGER.info("Running GeoClaw in %s...", self.work_dir)
         self.stdout = ""
+        time_span = self.time_horizon[1] - self.time_horizon[0]
+        perc = -100
+        last_perc = -100
+        stopped = False
         with subprocess.Popen(["make", ".output"],
                               cwd=self.work_dir,
                               stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT) as proc:
-            time_span = self.time_horizon[1] - self.time_horizon[0]
-            last_perc = -100
-            stopped = False
             for line in proc.stdout:
                 line = line.decode()
                 self.stdout += line
@@ -555,6 +556,11 @@ include $(CLAW)/clawutil/src/Makefile.common
                         # for parallelized output, print the time offset each time
                         LOGGER.info("%s: %d%%", self.time_offset_str, perc)
                         last_perc = perc
+        if perc < 99.9:
+            # sometimes, GeoClaw fails without a specific error output
+            stopped = True
+        elif int(last_perc) != 100:
+            LOGGER.info("%s: 100%%", self.time_offset_str)
 
         with open(self.work_dir.joinpath("stdout.log"), "w") as file_p:
             file_p.write(self.stdout)
