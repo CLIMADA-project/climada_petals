@@ -731,22 +731,15 @@ include $(CLAW)/clawutil/src/Makefile.common
         geodata.dry_tolerance = 1.e-2
 
         # get sea level information for affected months
-        months = np.stack((self.track.time.dt.year, self.track.time.dt.month), axis=-1)
-        if self.track.time[0].dt.day < 8:
-            if months[0, 1] == 1:
-                months[0, 0] -= 1
-                months[0, 1] = 12
-            else:
-                months[0, 1] -= 1
-        if self.track.time[-1].dt.day > 22:
-            if months[-1, 1] == 12:
-                months[-1, 0] += 1
-                months[-1, 1] = 1
-            else:
-                months[-1, 1] += 1
-        months = np.unique(months, axis=0)
-        geodata.sea_level = np.mean([mean_max_sea_level(self.zos_path, months, area)
-                                     for area in self.areas['surge_areas']])
+        pad = np.timedelta64(7, "D")
+        tr_times = self.track.time
+        tr_times_with_pad = xr.concat([tr_times - pad, tr_times, tr_times + pad], "time")
+        tr_months = np.unique(
+            np.stack((tr_times_with_pad.dt.year, tr_times_with_pad.dt.month), axis=-1),
+            axis=0)
+        geodata.sea_level = np.mean(
+            [mean_max_sea_level(self.zos_path, tr_months, area)
+             for area in self.areas['surge_areas']])
         geodata.sea_level += self.mod_zos
 
         # load elevation data, resolution depending on area of refinement
