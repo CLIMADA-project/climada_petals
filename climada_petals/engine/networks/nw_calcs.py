@@ -62,7 +62,7 @@ class GraphCalcs():
     
     def link_vertices_closest(self, from_ci, to_ci, 
                               link_name=None, dist_thresh=None,
-                              bidir=False,func_thresh=0):
+                              bidir=False, k=1):
         """
         match all vertices of graph_assign to closest vertices in graph_base.
         Updated in vertex attributes (vID of graph_base, geometry & distance)
@@ -72,44 +72,50 @@ class GraphCalcs():
         gdf_vs_target = gdf_vs[gdf_vs.ci_type == to_ci]
         gdf_vs_source = gdf_vs[gdf_vs.ci_type == from_ci]
 
-        dist, ix_match = self._ckdnearest(gdf_vs_target, gdf_vs_source)
-        
+        # shape: (target vs, k)
+        dists, ix_matches = self._ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
+        if k>1:
+            dists = dists.flatten()
+            ix_matches = ix_matches.flatten()
         # TODO: dist_thresh condition only holds vaguely for m input & lat/lon coordinates (EPSG4326)
-        dist_thresh_bool = [((not dist_thresh) or (distance < (dist_thresh/(ONE_LAT_KM*1000))))
-                          for distance in dist]
+        # shape: (target vs, k)
+        dists_thresh_bool = [((not dist_thresh) or (dist < (dist_thresh/(ONE_LAT_KM*1000))))
+                            for dist in dists]
         
-        edge_geoms = self.make_edge_geometries(gdf_vs_target.geometry[dist_thresh_bool],
-                                               gdf_vs_source.loc[ix_match].geometry[dist_thresh_bool])
-        # TODO: update orig_ids for new edges!!
+        # shape: (target vs, ..)
+        if k > 1:
+            gdf_target_old = gdf_vs_target.copy()
+            for i in range(k-1):
+                gdf_vs_target = gdf_vs_target.append(gdf_target_old)
+           
+        edge_geoms = self.make_edge_geometries(gdf_vs_target.geometry[dists_thresh_bool],
+                                                    gdf_vs_source.loc[ix_matches].geometry[dists_thresh_bool])
         if not link_name:
             link_name = f'dependency_{from_ci}_{to_ci}'
-        self.graph.add_edges(zip(ix_match[dist_thresh_bool],
-                                 gdf_vs_target.index[dist_thresh_bool]), 
-                                 attributes =
-                                  {'geometry' : edge_geoms,
-                                   'ci_type' : [link_name],
-                                   'distance' : dist[dist_thresh_bool]*(ONE_LAT_KM*1000),
-                                   'func_internal' : 1,
-                                   'func_tot' : 1,
-                                   'imp_dir' : 0,
-                                   'access_cnstr' : False,
-                                   'func_thresh' : func_thresh})
+
+        self.graph.add_edges(zip(ix_matches[dists_thresh_bool],
+                                     gdf_vs_target.index[dists_thresh_bool]), 
+                                         attributes =
+                                          {'geometry' : edge_geoms,
+                                           'ci_type' : [link_name],
+                                           'distance' : dists[dists_thresh_bool]*(ONE_LAT_KM*1000),
+                                           'func_internal' : 1,
+                                           'func_tot' : 1,
+                                           'imp_dir' : 0})
         if bidir:
-            self.graph.add_edges(zip(gdf_vs_target.index[dist_thresh_bool],ix_match[dist_thresh_bool]), 
-                                 attributes =
-                                  {'geometry' : edge_geoms,
-                                   'ci_type' : [link_name],
-                                   'distance' : dist[dist_thresh_bool]*(ONE_LAT_KM*1000),
-                                   'func_internal' : 1,
-                                   'func_tot' : 1,
-                                   'imp_dir' : 0,
-                                   'access_cnstr' : False,
-                                   'func_thresh' : func_thresh})
+            self.graph.add_edges(zip(gdf_vs_target.index[dists_thresh_bool],
+                                          ix_matches[dists_thresh_bool]), 
+                                         attributes =
+                                          {'geometry' : edge_geoms,
+                                           'ci_type' : [link_name],
+                                           'distance' : dists[dists_thresh_bool]*(ONE_LAT_KM*1000),
+                                           'func_internal' : 1,
+                                           'func_tot' : 1,
+                                           'imp_dir' : 0})
 
     def link_vertices_shortest_paths(self, from_ci, to_ci, via_ci, 
                                     dist_thresh=100000, criterion='distance',
-                                    link_name=None, 
-                                    bidir=False,func_thresh=0):
+                                    link_name=None, bidir=False):
         """make all links below certain dist_thresh along shortest paths length"""
         
         vs_from = self.graph.vs.select(ci_type=from_ci)
@@ -138,24 +144,17 @@ class GraphCalcs():
                         self.graph.add_edge(vx, vs_to[index],geometry=edge_geom,
                                             ci_type=link_name, 
                                             distance=dist,func_internal=1, 
-                                            func_tot=1, imp_dir=0, 
-                                            dist_thresh=dist_thresh,
-                                            access_cnstr=True,
-                                            func_thresh=func_thresh)
-                        
+                                            func_tot=1, imp_dir=0)  
                         if bidir:
                             self.graph.add_edge(vs_to[index], vx,geometry=edge_geom,
                                             ci_type=link_name, 
                                             distance=dist,func_internal=1, 
-                                            func_tot=1, imp_dir=0, 
-                                            dist_thresh=dist_thresh,
-                                            access_cnstr=True,
-                                            func_thresh=func_thresh)
+                                            func_tot=1, imp_dir=0)
 
                         
     def link_vertices_shortest_path(self, from_ci, to_ci, via_ci, 
                                     dist_thresh=100000, criterion='distance',
-                                    link_name=None, bidir=False,func_thresh=0):
+                                    link_name=None, bidir=False):
         """only single shortest path below dist_thresh is chosen"""
         
         vs_from = self.graph.vs.select(ci_type=from_ci)
@@ -189,20 +188,15 @@ class GraphCalcs():
                 #TODO: collect all edges to be added and assign in one add_edges call
                 self.graph.add_edge(vx, vs_to[min_index], geometry=edge_geom,
                                     ci_type=link_name, distance=min_dist,
-                                    func_internal=1, func_tot=1, imp_dir=0,
-                                    dist_thresh=dist_thresh,access_cnstr=True,
-                                    func_thresh=func_thresh)
+                                    func_internal=1, func_tot=1, imp_dir=0)
                 if bidir:
                     self.graph.add_edge( vs_to[min_index], vx, geometry=edge_geom,
                                     ci_type=link_name, distance=min_dist,
-                                    func_internal=1, func_tot=1, imp_dir=0,
-                                    dist_thresh=dist_thresh,access_cnstr=True,
-                                    func_thresh=func_thresh)
+                                    func_internal=1, func_tot=1, imp_dir=0)
 
 
     def place_dependency(self, source, target, single_link=True, 
-                         access_cnstr=False, dist_thresh=None,
-                         flow_var='binary',func_thresh=0):
+                         access_cnstr=False, dist_thresh=None):
         """
         source : supporting infra
         target : dependent infra / ppl
@@ -227,29 +221,19 @@ class GraphCalcs():
         if not access_cnstr:
             if single_link:
                 self.link_vertices_closest(source, target, link_name=dep_name,
-                                           dist_thresh=dist_thresh,
-                                           func_thresh=func_thresh)
+                                           dist_thresh=dist_thresh, k=1)
             else:
-                raise NotImplementedError('closest links for several nearest '+
-                                          'neighbours not yet implemented.')
+                self.link_vertices_closest(source, target, link_name=dep_name,
+                                           dist_thresh=dist_thresh, k=10)
         else:
             if single_link:
                 self.link_vertices_shortest_path(source, target, via_ci='road', 
                                     dist_thresh=dist_thresh, criterion='distance',
-                                    link_name=dep_name, func_thresh=func_thresh)
+                                    link_name=dep_name)
             else:
                 self.link_vertices_shortest_paths(source, target, via_ci='road', 
                                     dist_thresh=dist_thresh, criterion='distance',
-                                    link_name=dep_name,func_thresh=func_thresh)
-           
-        # place base demand
-        self.place_demands(target, source, flow_var)
-       
-        # distribute flows from targets
-        self.calc_flows(target, source)
-        
-        # backwards-assign supplies from edges
-        self.calc_supplies(target, source)
+                                    link_name=dep_name)
 
     
     def place_demands(self, ci_type_demand, ci_type_supply, flow_var):
@@ -274,13 +258,14 @@ class GraphCalcs():
         # initialize flow
         self.graph.es.select(ci_type=dep_name).set_attribute_values(flow_name, 0)
         
-        # consider only functioning dependency edges & functioning targets
+        # consider only functioning dependency edges (requiring functioning 
+        # source implicitly) & functioning targets
         dep_es = self.graph.es.select(ci_type=dep_name).select(func_tot_gt=0)
         target_vs = self.graph.vs.select(ci_type=ci_type_target).select(func_tot_gt=0)
 
         for target_vx in target_vs:
             eindex = [edge.index for edge in dep_es 
-                      if ((edge.target==target_vx.index) & edge['func_tot']>0)]
+                      if edge.target==target_vx.index]
             flow = 0 if len(eindex) < 1 else target_vx[demand_name]/len(eindex)
             for edge in self.graph.es[eindex]:
                 edge[flow_name] +=flow
@@ -298,7 +283,11 @@ class GraphCalcs():
         dep_es = self.graph.es.select(ci_type=dep_name).select(func_tot_gt=0)
         
         for edge in dep_es:
-            self.graph.vs[edge.source][supply_name]+=edge[flow_name]       
+            self.graph.vs[edge.source][supply_name]+=edge[flow_name]
+            # place a checker for now TODO: remove once sure that updating works
+            if self.graph.vs[edge.source]['func_state'] < edge['func_thresh']:
+                LOGGER.warning('Funcstate of source below threshold.'+
+                               f'Check updating mechanism. Edge: {edge.index}')
     
     def cluster_nodesums(self, sum_variable):
         df_vs = self.graph.get_vertex_dataframe()
@@ -325,7 +314,8 @@ class GraphCalcs():
         es = self.graph.es.select(ci_type_in=dep_names)
         func_list = []
         for edge in es:
-            func_list.append(self.graph.vs[edge.source]['func_tot'])
+            func_list.append(1 if self.graph.vs[edge.source]['func_tot'] 
+                             > edge['func_thresh'] else 0)
         es.set_attribute_values('func_internal', func_list)
         es.set_attribute_values('func_tot', func_list)
 
@@ -350,7 +340,7 @@ class GraphCalcs():
                     dist = weight[path].sum()
                     if dist < distance:
                         distance = dist
-            func_list.append(distance < edge['dist_thresh'])
+            func_list.append(1 if distance < edge['dist_thresh'] else 0)
             
         es_access.set_attribute_values('func_internal', func_list)
         es_access.set_attribute_values('func_tot', func_list)       
@@ -361,7 +351,8 @@ class GraphCalcs():
             dep_edges = [edge for edge in vx.incident(mode='in') if 
                          'dependency_' in edge['ci_type']]
             if dep_edges:
-                vx['func_tot'] = min([edge['func_tot'] for edge in dep_edges])
+                vx['func_tot'] = min(min([edge['func_tot'] for edge in dep_edges]),
+                                     vx['func_internal'])
     
     def _funcstate_iteration(self):
         
@@ -457,7 +448,7 @@ class GraphCalcs():
         
         return ig.plot(self.graph, **visual_style) 
 
-    def _ckdnearest(self, vs_assign, gdf_base):
+    def _ckdnearest(self, vs_assign, gdf_base, k=1):
         """
         see https://gis.stackexchange.com/a/301935
 
@@ -480,8 +471,8 @@ class GraphCalcs():
             n_assign = np.array([(vs_assign.geometry.x, vs_assign.geometry.y)])
         n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
         btree = cKDTree(n_base)
-        dist, idx = btree.query(n_assign, k=1)
-        return dist, gdf_base.iloc[idx].index
+        dist, idx = btree.query(n_assign, k=k)
+        return dist, np.array(gdf_base.iloc[idx.flatten()].index).reshape(dist.shape)
 
 
     def make_edge_geometries(self, vs_geoms_from, vs_geoms_to):
@@ -511,7 +502,7 @@ class GraphCalcs():
                 supporting_edges = [edge for edge in vx.incident(mode='in') 
                                     if f"dependency_{supporting_ci}" in edge['ci_type']]
                 supply_act += sum([edge[flow_var] for edge in supporting_edges])
-                vx[sd_var] = 1 - (supply_act - vx[demand_var])/vx[demand_var]
+                vx[sd_var] = 1 + (supply_act - vx[demand_var])/vx[demand_var]
     
     def return_network(self):
         return Network.from_graphs([self.graph])

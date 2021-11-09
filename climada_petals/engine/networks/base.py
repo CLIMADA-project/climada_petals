@@ -148,15 +148,12 @@ class Network:
         self.nodes[['func_internal','func_tot']] = 1
         self.edges['imp_dir'] = 0
         self.nodes['imp_dir'] = 0
-    
-    
-    # TODO: remove from Network class; belongs somewhere else
-    # def _update_func_level(self):
-    #     if not hasattr(self.edges, 'func_level'):
-    #         self.edges['func_level'] = 1
-    #     if not hasattr(self.nodes, 'func_level'):
-    #         self.nodes['func_level'] = 1
         
-    #     self.edges.func_level[np.isnan(self.edges.func_level)] = 1
-    #     self.nodes.func_level[np.isnan(self.nodes.func_level)] = 1
+    def initialize_dependency(self, source, target):
+        self.nodes[f'capacity_{source}_{target}'] = 0
+        self.nodes[self.nodes['ci_type']==f'{source}'][f'capacity_{source}_{target}'] = 1
+        self.nodes[self.nodes['ci_type']==f'{target}'][f'capacity_{source}_{target}'] = -1
+        
+    
+
 

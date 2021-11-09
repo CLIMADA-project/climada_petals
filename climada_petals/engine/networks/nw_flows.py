@@ -240,9 +240,10 @@ class PowerFlow():
 
 class PowerCluster():
     
-    def balance_supply_flows(cis_graph, mw_per_cap, source_ci='power plant', sink_ci='substation'):
+    def calc_supply_demand_ratio(cis_graph, mw_per_cap, source_ci='power plant',
+                                 sink_ci='substation', demand_ci='people'):
         
-        power_vs = cis_graph.graph.vs.select(ci_type_in=['power line', source_ci, sink_ci])
+        power_vs = cis_graph.graph.vs.select(ci_type_in=['power line', source_ci, sink_ci, demand_ci])
         power_subgraph = cis_graph.graph.subgraph(power_vs)
         
         # make vs-matching dict between power_vs indices and power_graph vs. indices
@@ -250,104 +251,28 @@ class PowerCluster():
                                      zip([subvx.index for subvx in power_subgraph.vs],
                                          [vx.index for vx in power_vs]))
         
-        # adjust supply in sinks & flows such that matches source capacity
+        df_sd_ratio = pd.DataFrame(columns=['vx_index', 'sd_ratio'])
+        power_index = []
+        sd_ratios = []
+
         for cluster in power_subgraph.clusters():
             sources = power_subgraph.vs[cluster].select(ci_type=source_ci)
             sinks = power_subgraph.vs[cluster].select(ci_type=sink_ci)
             psupply = sum([source['el_gen_mw']*source['func_tot'] for source in sources])
-            pdemand = sum([sink['supply_substation_people']*mw_per_cap for sink in sinks])
-            if pdemand > 0:
-                adj_fact = min(1, 1-(pdemand-psupply)/pdemand)
-                for sink in sinks:
-                    graph_vx = cis_graph.graph.vs[subgraph_graph_vsdict[sink.index]]
-                    graph_vx['supply_substation_people']*=adj_fact
-                    dep_edges = [edge for edge in graph_vx.incident(mode='out') if 'dependency_' in edge['ci_type']]
-                    for edge in dep_edges:
-                        target_ci = edge['ci_type'].split('_')[-1]
-                        edge[f'flow_substation_{target_ci}']*=adj_fact
-                        
-        return cis_graph
-    
-class PowerCascades(GraphCalcs):
-    
-    def __init__(self, nw_or_graph):
-        """
-        nw_or_graph : instance of networks.base.Network or .MultiNetwork or
-            igraph.Graph
-        """
-        
-        if isinstance(nw_or_graph, ig.Graph):
-            self.graph = nw_or_graph
-        else:
-            return Graph.__init__(self, nw_or_graph)
-
-        
-    def assign_edemand_pline(self):
-        """
-        assign per-capita derived electricity consumption from 
-        people nodes to the upstream power node.
-        """
-        self._assign_to_parent(edge_type = 'dependency_people_power', 
-            varname = 'el_load_mw')
-
-    
-    def get_power_access_level(self, ci_type):
-        """
-        for ci_type dependent on power, get the power access level 
-        (corresponding to the functionality level of its upstream power node)
-        """
-        access_level = self._get_var_from_parent(
-            edge_type = f'dependency_{ci_type}_power', 
-            varname = 'func_level')
-        self._assign_to_child(edge_type =f'dependency_{ci_type}_power', 
-            varname = 'power_access_level', varlist=access_level)
-        
-    
-    def get_actual_power_supplied(self, ci_type):
+            pdemand = sum([sink['counts']*mw_per_cap for sink in sinks])
+            
+            power_index.append([subgraph_graph_vsdict[source.index] for source in sources])           
+            power_index.append([subgraph_graph_vsdict[sink.index] for sink in sinks])
+            
+            try:
+                sd_ratio = min(1, psupply/pdemand)
+            except ZeroDivisionError:
+                sd_ratio = 1
                 
-        func_level_parent = self._get_var_from_parent(
-            edge_type = f'dependency_{ci_type}_power', 
-            varname = 'func_level')
-        
-        load_parent = self._get_var_from_parent(
-            edge_type = f'dependency_{ci_type}_power', 
-            varname = 'el_load_mw')
-        
-        self._assign_to_child(edge_type = f'dependency_{ci_type}_power', 
-            varname = 'actual_supply_mw', 
-            varlist=[a*b for a,b in zip(func_level_parent,load_parent)])
- 
-    
-class HealthCascades(GraphCalcs):
-    
-    def update_health_paths(self):
-        es = self.select_edges('dependency_people_health')
-        edgeweights = self._make_edgeweights('distance','people', 'health',
-                                                'road')
-        for edge in es:
-            path = self.get_shortest_paths(self.graph.vs[edge.source],
-                                           self.graph.vs[edge.target], 
-                                           edgeweights, mode='out', 
-                                           output='epath')
-            edge['distance'] = self.get_path_distance(*path)
-    
-    def get_health_access_level(self, pow_thresh=0.8, dist_thresh=100000, func_thresh=0.7):
-        """
-        
-        """
-        vs_ppl = self.select_nodes('people')
-        for vx in vs_ppl:
-            edge_list = vx.incident()
-            bool_access_health = []
-            for edge in edge_list:
-                bool_access_health.append(
-                    (edge['ci_type'] == 'dependency_people_health') & 
-                    (edge['distance'] < dist_thresh) & 
-                    (self.graph.vs[edge.target]['func_level'] > func_thresh) & 
-                    (self.graph.vs[edge.target]['power_access_level'] > pow_thresh))
-            if sum(bool_access_health)>0:
-                vx['health_access_level'] = 1
-            else:
-                vx['health_access_level'] = 0
+            sd_ratios.append(sd_ratio for item in range(len(sources)+len(sinks)))
+            
+        power_index = [power_index for]                
+        return cis_graph
+
 
         
