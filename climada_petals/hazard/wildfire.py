@@ -25,6 +25,7 @@ import logging
 import itertools
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -34,6 +35,9 @@ from sklearn.neighbors import BallTree
 from sklearn.cluster import DBSCAN
 import numba
 
+import rasterio
+import shapely.geometry
+
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
 from climada.hazard.tag import Tag as TagHazard
@@ -41,7 +45,11 @@ from climada.util.constants import ONE_LAT_KM
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
 
+
 LOGGER = logging.getLogger(__name__)
+
+BBOX = (-180, -85, 180, 85)  # [Lon min, lat min, lon max, lat max]
+""""Default geographical bounding box of the land extent covered by ISIMIP"""
 
 HAZ_TYPE = 'WF'
 """ Hazard type acronym for Wild Fire, might be changed to WFseason or WFsingle """
@@ -1272,6 +1280,55 @@ class WildFire(Hazard):
         else:
             ens_size = 1
         self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
+
+    def from_isimip_netcdf(self, input_dir=None, filename=None, bbox=BBOX):
+
+        """Wrapper to fill hazard from crop yield NetCDF file.
+        Build and tested for output from ISIMIP2 and ISIMIP3, but might also work
+        for other NetCDF containing gridded crop model output from other sources.
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+        filename : string
+            name of netcdf file in input_dir.
+        bbox : list of four floats
+            bounding box:
+            [lon min, lat min, lon max, lat max]
+
+
+        """
+
+        # read indixes of bands to be extracted
+        raster = rasterio.open(str(Path(input_dir, filename)))
+        nr_bands = raster.count
+        id_bands = np.arange(1, nr_bands+1).tolist()
+
+        # hazard setup: set attributes
+        [lonmin, latmin, lonmax, latmax] = bbox
+        self.set_raster([str(Path(input_dir, filename))], band=id_bands,
+                        geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
+
+        self.intensity.data[np.isnan(self.intensity.data)] = 0.0
+        self.intensity.todense()
+
+        (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
+        endyear, _ = endyearnc.split('.')
+
+
+        self.event_name = [str(n) for n in range(int(startyear), int(endyear) + 1)]
+        self.frequency = np.ones(len(self.event_name)) * (1 / len(self.event_name))
+        self.fraction = self.intensity.copy()
+        self.fraction.data.fill(1.0)
+        #self.units = ' ' franction of burnt area
+        self.date = np.array(u_dt.str_to_date(
+            [event_ + '-01-01' for event_ in self.event_name]))
+        self.centroids.set_meta_to_lat_lon()
+        self.centroids.region_id = (
+            u_coord.coord_on_land(self.centroids.lat, self.centroids.lon)).astype(dtype=int)
+        self.check()
+        return self
 
 @numba.njit
 def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
