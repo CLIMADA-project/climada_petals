@@ -215,9 +215,10 @@ class RelativeCropyield(Hazard):
 
         # hazard setup: set attributes
         [lonmin, latmin, lonmax, latmax] = bbox
-        self.set_raster([str(Path(input_dir, filename))], band=id_bands,
+        intensity_def = self.intensity_def  # all attributes are reset by set_raster
+        self.set_raster([str(Path(input_dir, filename))], band=id_bands, haz_type=HAZ_TYPE,
                         geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
-
+        self.intensity_def = intensity_def  # restore intensity_def, s.a.
         self.intensity.data[np.isnan(self.intensity.data)] = 0.0
         self.intensity.todense()
         self.crop = crop
