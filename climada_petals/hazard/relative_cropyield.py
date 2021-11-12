@@ -97,7 +97,7 @@ class RelativeCropyield(Hazard):
         'Yearly Yield' [t/(ha*y)], 'Relative Yield', or 'Percentile'
     """
 
-    def __init__(self, pool=None):
+    def __init__(self, haz_type=HAZ_TYPE, pool=None):
         """Empty constructor."""
         Hazard.__init__(self, HAZ_TYPE)
         if pool:
@@ -225,7 +225,7 @@ class RelativeCropyield(Hazard):
         haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands, haz_type=HAZ_TYPE,
                               geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
         haz.tag.haz_type = HAZ_TYPE
-        haz.intensity_def = cls.intensity_def
+        haz.intensity_def = INT_DEF
         haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
         haz.intensity.todense()
         haz.crop = crop
@@ -293,14 +293,14 @@ class RelativeCropyield(Hazard):
         """This function is deprecated, use RelativeCropyield.set_rel_yield_to_int instead."""
         LOGGER.warning("The use of RelativeCropyield.set_rel_yield_to_int is deprecated."
                        "Use RelativeCropyield.rel_yield_to_int instead.")
-        self.__dict__ = rel_yield_to_int(*args, **kwargs).__dict__
+        self.__dict__ = rel_yield_to_int(self, *args, **kwargs).__dict__
 
 
     def set_percentile_to_int(self, *args, **kwargs):
         """This function is deprecated, use RelativeCropyield.set_percentile_to_int instead."""
         LOGGER.warning("The use of RelativeCropyield.set_percentile_to_int is deprecated."
                        "Use RelativeCropyield.percentile_to_int instead.")
-        self.__dict__ =  percentile_to_int(*args, **kwargs).__dict__
+        self.__dict__ =  percentile_to_int(self, *args, **kwargs).__dict__
 
 
     def plot_intensity_cp(self, event=None, dif=False, axis=None, **kwargs):
@@ -402,7 +402,7 @@ class RelativeCropyield(Hazard):
         return fig
 
 
-def rel_yield_to_int(haz, hist_mean):
+def rel_yield_to_int(haz_cy, hist_mean):
     """Sets relative yield (yearly yield / historic mean) as intensity
 
     Parameters
@@ -418,13 +418,13 @@ def rel_yield_to_int(haz, hist_mean):
     [idx] = np.where(hist_mean != 0)
 
     # initialize new hazard_matrix
-    hazard_matrix = np.zeros(haz.intensity.shape, dtype=np.float32)
+    hazard_matrix = np.zeros(haz_cy.intensity.shape, dtype=np.float32)
 
     # compute relative yield for each event:
-    for event in range(len(haz.event_id)):
-        hazard_matrix[event, idx] = (haz.intensity[event, idx] / hist_mean[idx])-1
+    for event in range(len(haz_cy.event_id)):
+        hazard_matrix[event, idx] = (haz_cy.intensity[event, idx] / hist_mean[idx])-1
     
-    new_haz = copy.deepcopy(haz)
+    new_haz = copy.deepcopy(haz_cy)
     new_haz.intensity = sparse.csr_matrix(hazard_matrix)
     new_haz.intensity_def = 'Relative Yield'
     new_haz.units = ''
@@ -432,7 +432,7 @@ def rel_yield_to_int(haz, hist_mean):
     return new_haz
 
 
-def percentile_to_int(haz, reference_intensity=None):
+def percentile_to_int(haz_cy, reference_intensity=None):
     """Sets percentile to intensity
 
     Parameters
@@ -447,16 +447,16 @@ def percentile_to_int(haz, reference_intensity=None):
     hazard with modified intensity
     """
 
-    hazard_matrix = np.zeros(haz.intensity.shape)
+    hazard_matrix = np.zeros(haz_cy.intensity.shape)
     if reference_intensity is None:
-        reference_intensity = haz.intensity
+        reference_intensity = haz_cy.intensity
 
-    for centroid in range(haz.intensity.shape[1]):
+    for centroid in range(haz_cy.intensity.shape[1]):
         nevents = reference_intensity.shape[0]
         array = reference_intensity[:, centroid].toarray().reshape(nevents)
         hazard_matrix[:, centroid] = np.array([scipy.stats.percentileofscore(array, event)
                                                for event in array])/100
-    new_haz = copy.deepcopy(haz)
+    new_haz = copy.deepcopy(haz_cy)
     new_haz.intensity = sparse.csr_matrix(hazard_matrix)
     new_haz.intensity_def = 'Percentile'
     new_haz.units = ''
