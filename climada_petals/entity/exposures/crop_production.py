@@ -571,7 +571,8 @@ class CropProduction(Exposures):
                                          bbox=bbox, input_dir=input_dir)
 
     def set_mean_of_several_isimip_models(self, *args, **kwargs):
-        """This function is deprecated, use CropPoduction.from_mean_of_several_isimip_models instead."""
+        """This function is deprecated, use
+        CropPoduction.from_mean_of_several_isimip_models instead."""
         LOGGER.warning("The use of CropPoduction.set_mean_of_several_isimip_models is deprecated."
                        "Use CropPoduction.from_mean_of_several_isimip_models instead.")
         self.__dict__ = CropProduction.from_mean_of_several_isimip_models(*args, **kwargs).__dict__
@@ -670,8 +671,8 @@ class CropProduction(Exposures):
 
         # The calculations are repeated for all remaining exposures (starting from index 1 as
         # the first exposure has been saved in combined_exp[:, 0])
-        for j, fn in enumerate(filenames['subset'][1:]):
-            exp = cls.from_isimip_netcdf(input_dir, filename=fn, hist_mean=hist_mean,
+        for j, fname in enumerate(filenames['subset'][1:]):
+            exp = cls.from_isimip_netcdf(input_dir, filename=fname, hist_mean=hist_mean,
                                      bbox=bbox, yearrange=yearrange,
                                      crop=crop, irr=irr, unit=unit,
                                      isimip_version=isimip_version)
