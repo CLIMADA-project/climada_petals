@@ -31,14 +31,13 @@ FILENAME_YIELD = 'crop_production_demo_data_yields_CHE.nc4'
 
 class TestCropProduction(unittest.TestCase):
     """Test CropProduction Class methods"""
-    def test_set_from_area_and_yield_nc4(self):
+    def test_from_area_and_yield_nc4(self):
         """Test defining crop_production Exposure from area and yield
         data extracted from netcdf test data for Switzerland"""
-        exp = CropProduction()
-        exp.set_from_area_and_yield_nc4('whe', 2, 2,
-                                        FILENAME_YIELD, FILENAME_AREA,
-                                        'yield.tot', 'cultivated area all',
-                                        input_dir=INPUT_DIR)
+        exp = CropProduction.from_area_and_yield_nc4('whe', 2, 2,
+                                                     FILENAME_YIELD, FILENAME_AREA,
+                                                     'yield.tot', 'cultivated area all',
+                                                     input_dir=INPUT_DIR)
 
         self.assertEqual(exp.crop, 'whe')
         self.assertEqual(exp.gdf.shape[0], 55)
@@ -50,8 +49,7 @@ class TestCropProduction(unittest.TestCase):
     def test_isimip_load_central_EU(self):
         """Test defining crop_production Exposure from complete demo file
         (Central Europe), isimip approach"""
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                       bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
 
@@ -66,8 +64,7 @@ class TestCropProduction(unittest.TestCase):
 
     def test_set_value_to_usd(self):
         """Test calculating crop_production Exposure in [USD/y]"""
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                       bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
         exp.set_value_to_usd(INPUT_DIR, yearrange=(2000, 2018))
@@ -87,8 +84,7 @@ class TestCropProduction(unittest.TestCase):
         """Test calculating crop_production Exposure in [kcal/y]"""
 
         # (1) biomass = True
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                       bbox=[-5, 45, 10, 50], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
         max_tonnes = exp.gdf.value.max()
@@ -104,8 +100,7 @@ class TestCropProduction(unittest.TestCase):
         self.assertEqual(exp.gdf.value.min(), 0.0)
 
         # (2) biomass = False
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                    bbox=[-5, 45, 10, 50], yearrange=np.array([2001, 2005]),
                                    scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
         max_tonnes = exp.gdf.value.max()
@@ -118,8 +113,7 @@ class TestCropProduction(unittest.TestCase):
 
     def set_value_to_usd(self):
         """Test calculating cropyield_isimip Exposure in [USD/y]"""
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                       bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', crop = 'mai', irr='firr', unit='USD/y')
         self.assertEqual(exp.gdf.longitude.min(), -4.75)
@@ -134,8 +128,7 @@ class TestCropProduction(unittest.TestCase):
     def test_normalize_with_fao_cp(self):
         """ Test normalizing of two given exposures countrywise (usually firr + norr)
         with the mean crop production quantity"""
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                           bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                           scenario='flexible', crop = 'mai', unit='t/y', irr='firr')
         country_list, ratio, exp_firr_norm, exp_noirr_norm, fao_crop_production, _exp_tot_production = \
