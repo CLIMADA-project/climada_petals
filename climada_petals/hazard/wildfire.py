@@ -34,7 +34,6 @@ from scipy import sparse
 from sklearn.neighbors import BallTree
 from sklearn.cluster import DBSCAN
 import numba
-
 import rasterio
 import shapely.geometry
 
@@ -1281,11 +1280,10 @@ class WildFire(Hazard):
             ens_size = 1
         self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
 
-    def from_isimip_netcdf(self, input_dir=None, filename=None, bbox=BBOX):
+    def from_netcdf(self, input_dir, filename, id_bands, event_list, bbox=BBOX):
 
-        """Wrapper to fill hazard from crop yield NetCDF file.
-        Build and tested for output from ISIMIP2 and ISIMIP3, but might also work
-        for other NetCDF containing gridded crop model output from other sources.
+        """Wrapper to fill hazard from NetCDF file.
+        Build and tested for output from ISIMIP2 and Sentinel data.
 
         Parameters
         ----------
@@ -1293,17 +1291,20 @@ class WildFire(Hazard):
             path to input data directory,
         filename : string
             name of netcdf file in input_dir.
+        id_bands: list
+            list of indices of the bands to be extracted from the input file
+            can be generated with function 'from_firemip' and 'from_sentinel' for
+            specific data
+        event_list:list
+            list containing events in the format 'yyyy-mm-dd'
+            can be generated with function 'from_firemip' and 'from_sentinel' for
+            specific data
         bbox : list of four floats
             bounding box:
             [lon min, lat min, lon max, lat max]
 
 
         """
-
-        # read indixes of bands to be extracted
-        raster = rasterio.open(str(Path(input_dir, filename)))
-        nr_bands = raster.count
-        id_bands = np.arange(1, nr_bands+1).tolist()
 
         # hazard setup: set attributes
         [lonmin, latmin, lonmax, latmax] = bbox
@@ -1312,22 +1313,20 @@ class WildFire(Hazard):
 
         self.intensity.data[np.isnan(self.intensity.data)] = 0.0
         self.intensity.todense()
-
-        (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
-        endyear, _ = endyearnc.split('.')
-
-
-        self.event_name = [str(n) for n in range(int(startyear), int(endyear) + 1)]
+        
+        self.event_name = event_list
+        #self.event_id = np.arange(1, len(event_list)+1)
         self.frequency = np.ones(len(self.event_name)) * (1 / len(self.event_name))
+        self.date = np.array(u_dt.str_to_date(event_list))
+        
         self.fraction = self.intensity.copy()
         self.fraction.data.fill(1.0)
         #self.units = ' ' franction of burnt area
-        self.date = np.array(u_dt.str_to_date(
-            [event_ + '-01-01' for event_ in self.event_name]))
         self.centroids.set_meta_to_lat_lon()
         self.centroids.region_id = (
             u_coord.coord_on_land(self.centroids.lat, self.centroids.lon)).astype(dtype=int)
         self.check()
+        
         return self
 
 @numba.njit
@@ -1360,3 +1359,62 @@ def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
             brightness_ev[0, ind[idx]] = max(brightness_ev[0, ind[idx]], \
                          np.max(fir_bright[lat_lon_cpy == index_uni[idx]]))
     return brightness_ev
+
+def from_sentinel(filename):
+    """Read ids of contained bands and month covered by Sentinel data
+
+    Parameters
+    ----------
+    input_dir : Path or str
+        path to input data directory,
+    filename : string
+        name of netcdf file in input_dir.
+    
+    Returns
+    ----------
+    id_bands: list
+        list of indices of the bands contained in the input file
+    event_list:list
+        list of events contained in the input file in the format 'yyyy-mm-dd'
+
+    """
+    
+    (_, _, _, date, _, _, _) = filename.split('_')
+    year = date[0:4]
+    month = date[4:6]
+    day = date[6:8]
+    event_list = [year + '-' + month + '-' + day]
+    id_bands = [1]
+    
+    return id_bands, event_list
+
+def from_firemip(input_dir, filename):
+    """Read ids of contained bands and month covered by Firemip data
+
+    Parameters
+    ----------
+    input_dir : Path or str
+        path to input data directory,
+    filename : string
+        name of netcdf file in input_dir
+    
+    Returns
+    ----------
+    id_bands: list
+        list of indices of the bands contained in the input file
+    event_list:list
+        list of events contained in the input file in the format 'yyyy-mm-dd'
+
+    """
+    
+    # read indixes of bands to be extracted
+    raster = rasterio.open(str(Path(input_dir, filename)))
+    nr_bands = raster.count
+    id_bands = np.arange(1, nr_bands+1).tolist()
+    (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
+    endyear, _ = endyearnc.split('.')
+    event_names = [str(n) for n in range(int(startyear), int(endyear) + 1)]
+    event_list = [event_ + '-01-01' for event_ in event_names]
+    
+    return id_bands, event_list
+    
