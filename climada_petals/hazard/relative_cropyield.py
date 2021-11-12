@@ -97,7 +97,7 @@ class RelativeCropyield(Hazard):
         'Yearly Yield' [t/(ha*y)], 'Relative Yield', or 'Percentile'
     """
 
-    def __init__(self, haz_type=HAZ_TYPE, pool=None):
+    def __init__(self, pool=None):
         """Empty constructor."""
         Hazard.__init__(self, HAZ_TYPE)
         if pool:
@@ -114,7 +114,7 @@ class RelativeCropyield(Hazard):
         LOGGER.warning("The use of RelativeCropyield.set_from_isimip_netcdf is deprecated."
                        "Use RelativeCropyield.from_isimip_netcdf instead.")
         self.__dict__ = RelativeCropyield.from_isimip_netcdf(*args, **kwargs).__dict__
-    
+
     @classmethod
     def from_isimip_netcdf(cls, input_dir=None, filename=None, bbox=None,
                            yearrange=None, ag_model=None, cl_model=None, bias_corr=None,
@@ -423,7 +423,7 @@ def rel_yield_to_int(haz_cy, hist_mean):
     # compute relative yield for each event:
     for event in range(len(haz_cy.event_id)):
         hazard_matrix[event, idx] = (haz_cy.intensity[event, idx] / hist_mean[idx])-1
-    
+
     new_haz = copy.deepcopy(haz_cy)
     new_haz.intensity = sparse.csr_matrix(hazard_matrix)
     new_haz.intensity_def = 'Relative Yield'
