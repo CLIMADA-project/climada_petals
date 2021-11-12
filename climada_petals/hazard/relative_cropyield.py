@@ -109,10 +109,17 @@ class RelativeCropyield(Hazard):
         self.crop = ''
         self.intensity_def = INT_DEF
 
-    def set_from_isimip_netcdf(self, input_dir=None, filename=None, bbox=None,
-                               yearrange=None, ag_model=None, cl_model=None, bias_corr=None,
-                               scenario=None, soc=None, co2=None, crop=None,
-                               irr=None, fn_str_var=None):
+    def set_from_isimip_netcdf(self, *args, **kwargs):
+        """This function is deprecated, use RelativeCropyield.from_isimip_netcdf instead."""
+        LOGGER.warning("The use of RelativeCropyield.set_from_isimip_netcdf is deprecated."
+                       "Use RelativeCropyield.from_isimip_netcdf instead.")
+        self.__dict__ = RelativeCropyield.from_isimip_netcdf(*args, **kwargs).__dict__
+    
+    @classmethod
+    def from_isimip_netcdf(cls, input_dir=None, filename=None, bbox=None,
+                           yearrange=None, ag_model=None, cl_model=None, bias_corr=None,
+                           scenario=None, soc=None, co2=None, crop=None,
+                           irr=None, fn_str_var=None):
 
         """Wrapper to fill hazard from crop yield NetCDF file.
         Build and tested for output from ISIMIP2 and ISIMIP3, but might also work
@@ -161,7 +168,7 @@ class RelativeCropyield(Hazard):
 
         Raises
         ------
-        NameError
+        RelativeCropyield
         """
         if not fn_str_var:
             fn_str_var = FN_STR_VAR
@@ -215,27 +222,25 @@ class RelativeCropyield(Hazard):
 
         # hazard setup: set attributes
         [lonmin, latmin, lonmax, latmax] = bbox
-        # TODO: replace this call to `set_raster` with a call to `from_raster` when replacing
-        # `set_from_isimip_netcdf` with a @classmethod `from_isimip_netcdf`
-        intensity_def = self.intensity_def  # all attributes are reset by set_raster
-        self.set_raster([str(Path(input_dir, filename))], band=id_bands, haz_type=HAZ_TYPE,
-                        geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
-        self.intensity_def = intensity_def  # restore intensity_def, s.a.
-        self.intensity.data[np.isnan(self.intensity.data)] = 0.0
-        self.intensity.todense()
-        self.crop = crop
-        self.event_name = [str(n) for n in range(int(yearrange[0]), int(yearrange[-1] + 1))]
-        self.frequency = np.ones(len(self.event_name)) * (1 / len(self.event_name))
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
-        self.units = 't / y / ha'
-        self.date = np.array(dt.str_to_date(
-            [event_ + '-01-01' for event_ in self.event_name]))
-        self.centroids.set_meta_to_lat_lon()
-        self.centroids.region_id = (
-            coord.coord_on_land(self.centroids.lat, self.centroids.lon)).astype(dtype=int)
-        self.check()
-        return self
+        haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands, haz_type=HAZ_TYPE,
+                              geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
+        haz.tag.haz_type = HAZ_TYPE
+        haz.intensity_def = cls.intensity_def
+        haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
+        haz.intensity.todense()
+        haz.crop = crop
+        haz.event_name = [str(n) for n in range(int(yearrange[0]), int(yearrange[-1] + 1))]
+        haz.frequency = np.ones(len(haz.event_name)) * (1 / len(haz.event_name))
+        haz.fraction = haz.intensity.copy()
+        haz.fraction.data.fill(1.0)
+        haz.units = 't / y / ha'
+        haz.date = np.array(dt.str_to_date(
+            [event_ + '-01-01' for event_ in haz.event_name]))
+        haz.centroids.set_meta_to_lat_lon()
+        haz.centroids.region_id = (
+            coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
+        haz.check()
+        return haz
 
     def calc_mean(self, yearrange_mean=None,
                   save=False, output_dir=None):
@@ -284,63 +289,19 @@ class RelativeCropyield(Hazard):
 
         return hist_mean
 
+    def set_rel_yield_to_int(self, *args, **kwargs):
+        """This function is deprecated, use RelativeCropyield.set_rel_yield_to_int instead."""
+        LOGGER.warning("The use of RelativeCropyield.set_rel_yield_to_int is deprecated."
+                       "Use RelativeCropyield.rel_yield_to_int instead.")
+        self.__dict__ = rel_yield_to_int(*args, **kwargs).__dict__
 
-    def set_rel_yield_to_int(self, hist_mean):
-        """Sets relative yield (yearly yield / historic mean) as intensity
 
-        Parameters
-        ----------
-        hist_mean : array
-            historic mean per centroid
+    def set_percentile_to_int(self, *args, **kwargs):
+        """This function is deprecated, use RelativeCropyield.set_percentile_to_int instead."""
+        LOGGER.warning("The use of RelativeCropyield.set_percentile_to_int is deprecated."
+                       "Use RelativeCropyield.percentile_to_int instead.")
+        self.__dict__ =  percentile_to_int(*args, **kwargs).__dict__
 
-        Returns
-        -------
-        hazard with modified intensity [unitless]
-        """
-        # determine idx of the centroids with a mean yield !=0
-        [idx] = np.where(hist_mean != 0)
-
-        # initialize new hazard_matrix
-        hazard_matrix = np.zeros(self.intensity.shape, dtype=np.float32)
-
-        # compute relative yield for each event:
-        for event in range(len(self.event_id)):
-            hazard_matrix[event, idx] = (self.intensity[event, idx] / hist_mean[idx])-1
-
-        self.intensity = sparse.csr_matrix(hazard_matrix)
-        self.intensity_def = 'Relative Yield'
-        self.units = ''
-
-        return self
-
-    def set_percentile_to_int(self, reference_intensity=None):
-        """Sets percentile to intensity
-
-        Parameters
-        ----------
-        reference_intensity : AD
-            intensity to be used as reference
-            (e.g. the historic intensity can be used in order to be able
-            to directly compare historic and future projection data)
-
-        Returns
-        -------
-        hazard with modified intensity
-        """
-        hazard_matrix = np.zeros(self.intensity.shape)
-        if reference_intensity is None:
-            reference_intensity = self.intensity
-
-        for centroid in range(self.intensity.shape[1]):
-            nevents = reference_intensity.shape[0]
-            array = reference_intensity[:, centroid].toarray().reshape(nevents)
-            hazard_matrix[:, centroid] = np.array([scipy.stats.percentileofscore(array, event)
-                                                   for event in array])/100
-        self.intensity = sparse.csr_matrix(hazard_matrix)
-        self.intensity_def = 'Percentile'
-        self.units = ''
-
-        return self
 
     def plot_intensity_cp(self, event=None, dif=False, axis=None, **kwargs):
         """Plots intensity with predefined settings depending on the intensity definition
@@ -439,6 +400,68 @@ class RelativeCropyield(Hazard):
                 row = row + 1
 
         return fig
+
+
+def rel_yield_to_int(haz, hist_mean):
+    """Sets relative yield (yearly yield / historic mean) as intensity
+
+    Parameters
+    ----------
+    hist_mean : array
+        historic mean per centroid
+
+    Returns
+    -------
+    hazard with modified intensity [unitless]
+    """
+    # determine idx of the centroids with a mean yield !=0
+    [idx] = np.where(hist_mean != 0)
+
+    # initialize new hazard_matrix
+    hazard_matrix = np.zeros(haz.intensity.shape, dtype=np.float32)
+
+    # compute relative yield for each event:
+    for event in range(len(haz.event_id)):
+        hazard_matrix[event, idx] = (haz.intensity[event, idx] / hist_mean[idx])-1
+    
+    new_haz = copy.deepcopy(haz)
+    new_haz.intensity = sparse.csr_matrix(hazard_matrix)
+    new_haz.intensity_def = 'Relative Yield'
+    new_haz.units = ''
+
+    return new_haz
+
+
+def percentile_to_int(haz, reference_intensity=None):
+    """Sets percentile to intensity
+
+    Parameters
+    ----------
+    reference_intensity : AD
+        intensity to be used as reference
+        (e.g. the historic intensity can be used in order to be able
+        to directly compare historic and future projection data)
+
+    Returns
+    -------
+    hazard with modified intensity
+    """
+
+    hazard_matrix = np.zeros(haz.intensity.shape)
+    if reference_intensity is None:
+        reference_intensity = haz.intensity
+
+    for centroid in range(haz.intensity.shape[1]):
+        nevents = reference_intensity.shape[0]
+        array = reference_intensity[:, centroid].toarray().reshape(nevents)
+        hazard_matrix[:, centroid] = np.array([scipy.stats.percentileofscore(array, event)
+                                               for event in array])/100
+    new_haz = copy.deepcopy(haz)
+    new_haz.intensity = sparse.csr_matrix(hazard_matrix)
+    new_haz.intensity_def = 'Percentile'
+    new_haz.units = ''
+
+    return new_haz
 
 
 def set_multiple_rc_from_isimip(input_dir=None, output_dir=None, bbox=None,
