@@ -24,6 +24,8 @@ import shapely
 from scipy.spatial import cKDTree
 
 from climada_petals.engine.networks.base import Network
+from climada_petals.engine.networks.nw_flows import PowerCluster
+
 from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
@@ -60,9 +62,10 @@ class GraphCalcs():
                                 geometry=edge_geom, ci_type=vs_assign.ci_type,
                                 distance = 1)
     
-    def link_vertices_closest(self, from_ci, to_ci, 
-                              link_name=None, dist_thresh=None,
-                              bidir=False, k=1):
+            
+    def link_vertices_closest_k(self, from_ci, to_ci, 
+                                link_name=None, dist_thresh=None,
+                                bidir=False, k=5):
         """
         match all vertices of graph_assign to closest vertices in graph_base.
         Updated in vertex attributes (vID of graph_base, geometry & distance)
@@ -85,16 +88,17 @@ class GraphCalcs():
         # shape: (target vs, ..)
         if k > 1:
             gdf_target_old = gdf_vs_target.copy()
-            for i in range(k-1):
-                gdf_vs_target = gdf_vs_target.append(gdf_target_old)
+            gdf_vs_target = pd.DataFrame(columns=gdf_target_old.columns)
+            for __, row in gdf_target_old.iterrows():
+                gdf_vs_target = gdf_vs_target.append([row]*k)
            
-        edge_geoms = self.make_edge_geometries(gdf_vs_target.geometry[dists_thresh_bool],
-                                                    gdf_vs_source.loc[ix_matches].geometry[dists_thresh_bool])
+        edge_geoms = self.make_edge_geometries(gdf_vs_source.loc[ix_matches].geometry[dists_thresh_bool],
+                                               gdf_vs_target.geometry[dists_thresh_bool])
         if not link_name:
             link_name = f'dependency_{from_ci}_{to_ci}'
 
         self.graph.add_edges(zip(ix_matches[dists_thresh_bool],
-                                     gdf_vs_target.index[dists_thresh_bool]), 
+                                 gdf_vs_target.index[dists_thresh_bool]), 
                                          attributes =
                                           {'geometry' : edge_geoms,
                                            'ci_type' : [link_name],
@@ -104,7 +108,7 @@ class GraphCalcs():
                                            'imp_dir' : 0})
         if bidir:
             self.graph.add_edges(zip(gdf_vs_target.index[dists_thresh_bool],
-                                          ix_matches[dists_thresh_bool]), 
+                                     ix_matches[dists_thresh_bool]), 
                                          attributes =
                                           {'geometry' : edge_geoms,
                                            'ci_type' : [link_name],
@@ -220,11 +224,11 @@ class GraphCalcs():
         # make links
         if not access_cnstr:
             if single_link:
-                self.link_vertices_closest(source, target, link_name=dep_name,
+                self.link_vertices_closest_k(source, target, link_name=dep_name,
                                            dist_thresh=dist_thresh, k=1)
             else:
-                self.link_vertices_closest(source, target, link_name=dep_name,
-                                           dist_thresh=dist_thresh, k=10)
+                self.link_vertices_closest_k(source, target, link_name=dep_name,
+                                             dist_thresh=dist_thresh, k=5)
         else:
             if single_link:
                 self.link_vertices_shortest_path(source, target, via_ci='road', 
@@ -234,154 +238,6 @@ class GraphCalcs():
                 self.link_vertices_shortest_paths(source, target, via_ci='road', 
                                     dist_thresh=dist_thresh, criterion='distance',
                                     link_name=dep_name)
-
-    
-    def place_demands(self, ci_type_demand, ci_type_supply, flow_var):
-        """place base demand"""
-        
-        # initialize demand
-        demand_name = f'demand_{ci_type_demand}_{ci_type_supply}'
-        self.graph.vs.select(ci_type=ci_type_demand).set_attribute_values(
-            demand_name, 0)
-        
-        # only functional vertices have demands
-        target_vs = self.graph.vs.select(ci_type=ci_type_demand).select(func_tot_gt=0)
-        demand_vals = 1 if flow_var=='binary' else target_vs.get_attribute_values(flow_var)
-        target_vs.set_attribute_values(demand_name, demand_vals)
-
-    def calc_flows(self, ci_type_target, ci_type_source):
-        
-        flow_name = f'flow_{ci_type_source}_{ci_type_target}'
-        dep_name = f'dependency_{ci_type_source}_{ci_type_target}'
-        demand_name = f'demand_{ci_type_target}_{ci_type_source}'
-        
-        # initialize flow
-        self.graph.es.select(ci_type=dep_name).set_attribute_values(flow_name, 0)
-        
-        # consider only functioning dependency edges (requiring functioning 
-        # source implicitly) & functioning targets
-        dep_es = self.graph.es.select(ci_type=dep_name).select(func_tot_gt=0)
-        target_vs = self.graph.vs.select(ci_type=ci_type_target).select(func_tot_gt=0)
-
-        for target_vx in target_vs:
-            eindex = [edge.index for edge in dep_es 
-                      if edge.target==target_vx.index]
-            flow = 0 if len(eindex) < 1 else target_vx[demand_name]/len(eindex)
-            for edge in self.graph.es[eindex]:
-                edge[flow_name] +=flow
-        
-    def calc_supplies(self, ci_type_target, ci_type_source):
-        
-        supply_name = f'supply_{ci_type_source}_{ci_type_target}'
-        dep_name = f'dependency_{ci_type_source}_{ci_type_target}'
-        flow_name = f'flow_{ci_type_source}_{ci_type_target}'
-
-        # initialize supply
-        self.graph.vs.select(ci_type=ci_type_source).set_attribute_values(supply_name, 0)
-
-        # consider only functioning dependency edges
-        dep_es = self.graph.es.select(ci_type=dep_name).select(func_tot_gt=0)
-        
-        for edge in dep_es:
-            self.graph.vs[edge.source][supply_name]+=edge[flow_name]
-            # place a checker for now TODO: remove once sure that updating works
-            if self.graph.vs[edge.source]['func_state'] < edge['func_thresh']:
-                LOGGER.warning('Funcstate of source below threshold.'+
-                               f'Check updating mechanism. Edge: {edge.index}')
-    
-    def cluster_nodesums(self, sum_variable):
-        df_vs = self.graph.get_vertex_dataframe()
-        df_vs['vs_membership'] = self.graph.clusters().membership
-        return df_vs.groupby(['vs_membership'])[sum_variable].sum()
-    
-    def cluster_edgesums(self, sum_variable):
-        df_es = self.graph.get_edge_dataframe()
-        df_es['es_membership'] = self.get_cluster_affiliation_es()
-        return df_es.groupby(['es_membership'])[sum_variable].sum()
-    
-    def get_cluster_affiliation_es(self):
-        vs_membership = self.graph.clusters().membership
-        vs_cluster_dict = dict(zip(range(self.graph.vcount()),vs_membership))
-        return [vs_cluster_dict[x] for x in 
-                self.graph.get_edge_dataframe()['source']]
-    
-    def update_dependency_funcstate(self):
-        
-        # all types of dependencies: check that source still functional
-        dep_names = [dep_name for dep_name in 
-                     np.unique(self.graph.es.get_attribute_values('ci_type')) 
-                     if 'dependency' in dep_name]
-        es = self.graph.es.select(ci_type_in=dep_names)
-        func_list = []
-        for edge in es:
-            func_list.append(1 if self.graph.vs[edge.source]['func_tot'] 
-                             > edge['func_thresh'] else 0)
-        es.set_attribute_values('func_internal', func_list)
-        es.set_attribute_values('func_tot', func_list)
-
-        # access dependencies: check that path additionally satisfies dist_thresh constraint
-        es_access = es.select(access_cnstr=True).select(func_tot_gt=0)
-        func_list=[]
-        
-        for edge in es_access:
-            source = self.graph.vs[edge.source]
-            target = self.graph.vs[edge.source]
-            
-            # TODO: don't hard-code via-ci
-            weight = self._make_edgeweights('distance', source['ci_type'], 
-                                            target['ci_type'], 'road')
-            
-            paths = self.get_shortest_paths(source, target, weight, 
-                                            mode='out', output='epath')
-            distance = edge['dist_thresh']
-            
-            if paths:
-                for path in paths:
-                    dist = weight[path].sum()
-                    if dist < distance:
-                        distance = dist
-            func_list.append(1 if distance < edge['dist_thresh'] else 0)
-            
-        es_access.set_attribute_values('func_internal', func_list)
-        es_access.set_attribute_values('func_tot', func_list)       
-
-    def update_target_funcstate(self):
-        
-        for vx in self.graph.vs.select(ci_type_notin='people'):
-            dep_edges = [edge for edge in vx.incident(mode='in') if 
-                         'dependency_' in edge['ci_type']]
-            if dep_edges:
-                vx['func_tot'] = min(min([edge['func_tot'] for edge in dep_edges]),
-                                     vx['func_internal'])
-    
-    def _funcstate_iteration(self):
-        
-        func_es_t0 = sum(self.graph.es.get_attribute_values('func_tot'))   
-        func_vs_t0 = sum(self.graph.vs.get_attribute_values('func_tot'))
-        
-        self.update_dependency_funcstate()
-        self.update_target_funcstate()
-        
-        func_es_t1 = sum(self.graph.es.get_attribute_values('func_tot'))   
-        func_vs_t1 = sum(self.graph.vs.get_attribute_values('func_tot'))
-        
-        return func_es_t0-func_es_t1, func_vs_t0-func_vs_t1
-    
-    def update_funcstates(self):
-        
-        diff_func_es, diff_func_vs = self._funcstate_iteration()
-        iteration_round=0
-        
-        while ((diff_func_es!=0) or (diff_func_vs!=0) and iteration_round<100):
-            diff_func_es, diff_func_vs = self._funcstate_iteration()
-            iteration_round+=1
-            print(f'Iteration Round: {iteration_round}')       
-            print(f'Func_state diff (vs): {diff_func_vs}, func-state diff (es) : {diff_func_es}')
-            
-        if iteration_round < 100:
-            print('Converged!')
-        else:
-            print('Cascade did not converge within 100 steps')
         
     def get_shortest_paths(self, from_vs, to_vs, edgeweights, mode='out', 
                            output='epath'):
@@ -409,6 +265,182 @@ class GraphCalcs():
             ix_matches.append(point_tree.query_ball_point(assign_loc, dist_thresh))
         return ix_matches
     
+    def _funcstates_sum(self):
+        """return the total funcstate sum func_tot across all vertices and edges
+        
+        Parameters
+        ---------
+        
+        Returns
+        -------
+        tuple (int, int) :
+            sum of vertex func_tot, sum of edges func_tot
+        
+        """
+        return (sum(self.graph.vs.get_attribute_values('func_tot')), 
+                sum(self.graph.es.get_attribute_values('func_tot')))
+
+    def _update_cis_internally(self, df_dependencies):
+        ci_types = np.unique(np.append(
+            np.unique(df_dependencies.source), 
+            np.unique(df_dependencies.target)))
+        
+        for ci_type in ci_types:
+            if ci_type=='substation':
+                LOGGER.info('Updating power clusters')
+                # TODO: This is poorly hard-coded and poorly assigned.
+                self = PowerCluster.set_capacity_from_sd_ratio(
+                    self, mw_per_cap=0.000079, source_ci='power plant',
+                    sink_ci='substation')
+            else:
+                LOGGER.info('No internal update method for CI type' +
+                               f' {ci_type}')
+    
+    def _update_functional_dependencies(self, df_dependencies):
+    
+        for __, row in df_dependencies[
+                df_dependencies['type_I']=='functional'].iterrows():
+        
+            vs_source_target = self.graph.vs.select(
+                ci_type_in=[row.source, row.target])
+                        
+            subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(vs_source_target)
+
+            # adjacency matrix of selected subgraph
+            adj_sub = np.array(vs_source_target.subgraph().get_adjacency().data)
+            
+            # Hadamard product func_tot (*) capacity
+            func_capa = np.multiply(
+                vs_source_target.get_attribute_values('func_tot'),
+                vs_source_target.get_attribute_values(
+                    f'capacity_{row.source}_{row.target}'))
+            
+            # for dependencies w/ access_cnstr, set (x,y) in adj to 0 if length of  
+            # path x-->y now > thresh_dist
+            if row.access_cnstr:
+
+                for source_ix_sub, target_ix_sub in zip(*np.where(adj_sub==1)):
+    
+                    # TODO: don't hard-code via-ci
+                    weight = self._make_edgeweights(
+                        'distance', row.source, row.target, 'road')
+                    
+                    # path search on original graph
+                    paths = self.get_shortest_paths(
+                        self.graph.vs[subgraph_graph_vsdict[source_ix_sub]],
+                        self.graph.vs[subgraph_graph_vsdict[target_ix_sub]], 
+                        weight, mode='out', output='epath')
+                    
+                    distance = row.thresh_dist
+                    
+                    if paths:
+                        for path in paths:
+                            dist = weight[path].sum()
+                            if dist < distance:
+                                distance = dist
+                                
+                    if distance >= row.thresh_dist:
+                        adj_sub[source_ix_sub, target_ix_sub] = 0
+                        
+            # propagate capacities down from source --> target along adj
+            capa_rec = np.dot(func_capa, adj_sub)   
+            
+            # functionality thesholds for recieved capacity
+            func_thresh = np.array([row.thresh_func if vx['ci_type'] == row.target 
+                                    else 0 for vx in vs_source_target])
+            
+            # boolean vector whether received capacity great enough to supply endusers
+            capa_suff = (capa_rec >= np.array(func_thresh)).astype(int)
+            
+            # update funcstates
+            # unclear if less faulty than just assigning directly to 
+            # vs_source_target, which is a view of that vs.
+
+            self.graph.vs[[vx.index for vx in vs_source_target]
+                          ]['func_tot'] = [np.min([capa, func]) for capa, func
+                                           in zip(capa_suff, vs_source_target['func_tot'])]  
+         
+    def _update_enduser_dependencies(self, df_dependencies):
+
+        for __, row in df_dependencies[
+                df_dependencies['type_I']=='enduser'].iterrows():
+            
+            vs_source_target = self.graph.vs.select(
+                ci_type_in=[row.source, row.target])
+                        
+            subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(vs_source_target)
+
+            # adjacency matrix of selected subgraph
+            adj_sub = np.array(vs_source_target.subgraph().get_adjacency().data)
+            
+            # Hadamard product func_tot (*) capacity
+            func_capa = np.multiply(
+                vs_source_target.get_attribute_values('func_tot'),
+                vs_source_target.get_attribute_values(
+                    f'capacity_{row.source}_{row.target}'))
+            
+            # for dependencies w/ access_cnstr, set (x,y) in adj to 0 if length of  
+            # path x-->y now > thresh_dist
+            if row.access_cnstr:
+                for source_ix_sub, target_ix_sub in zip(*np.where(adj_sub==1)):
+                    # TODO: don't hard-code via-ci
+                    weight = self._make_edgeweights(
+                        'distance', row.source, row.target, 'road')
+                    
+                    # path search on original graph
+                    paths = self.get_shortest_paths(
+                        self.graph.vs[subgraph_graph_vsdict[source_ix_sub]],
+                        self.graph.vs[subgraph_graph_vsdict[target_ix_sub]], 
+                        weight, mode='out', output='epath')
+                    
+                    distance = row.thresh_dist
+                    
+                    if paths:
+                        for path in paths:
+                            dist = weight[path].sum()
+                            if dist < distance:
+                                distance = dist
+                                
+                    if distance >= row.thresh_dist:
+                        adj_sub[source_ix_sub, target_ix_sub] = 0
+                        
+            # propagate capacities down from source --> target along adj
+            capa_rec = np.dot(func_capa, adj_sub)   
+            
+            # functionality thesholds for recieved capacity
+            func_thresh = np.array([row.thresh_func if vx['ci_type'] == row.target 
+                                    else 0 for vx in vs_source_target])
+            
+            # boolean vector whether received capacity great enough to supply endusers
+            capa_suff = (capa_rec >= np.array(func_thresh)).astype(int)
+            
+            # unclear if less faulty than just assigning directly to 
+            # vs_source_target, which is a view of that vs.
+            self.graph.vs[[vx.index for vx in vs_source_target]
+                          ][f'actual_supply_{row.source}_{row.target}'] = capa_suff
+
+    def _get_subgraph2graph_vsdict(self, vertex_seq):
+        return dict((k,v) for k, v in zip(
+            [subvx.index for subvx in self.graph.subgraph(vertex_seq).vs],
+            [vx.index for vx in vertex_seq]))
+
+    def cascade(self, df_dependencies):
+        """
+        wrapper for internal state update, functional dependency iterations,
+        enduser dependency updates
+        """
+        delta = -1
+        while delta != 0:
+            func_state_tot_vs, func_state_tot_es = self._funcstates_sum()
+            self._update_cis_internally(df_dependencies)
+            self._update_functional_dependencies(df_dependencies)
+            func_state_tot_vs2, func_state_tot_es2 = self._funcstates_sum()
+            delta = func_state_tot_vs-func_state_tot_vs2
+            LOGGER.info('Iterating functional state updates.'+
+                        f' Current delta: {delta}')
+
+        self._update_enduser_dependencies(df_dependencies)
+
     def get_path_distance(self, epath):
         return sum(self.graph.es[epath]['distance'])
         
@@ -483,26 +515,6 @@ class GraphCalcs():
         return [shapely.geometry.LineString([geom_from, geom_to]) for
                                              geom_from, geom_to in
                                             zip(vs_geoms_from, vs_geoms_to)]
-    
-    def calc_supply_demand_balance(self):
-        
-        vertex_vars = self.graph.vs.attribute_names()
-        
-        for vx in self.graph.vs:
-            ci_type_vx = vx['ci_type']
-            supporting_cis = [dvar.split('_')[-1] for dvar in vertex_vars if 
-                              f"demand_{ci_type_vx}" in dvar]
-        
-            for supporting_ci in supporting_cis:
-                demand_var = f"demand_{ci_type_vx}_{supporting_ci}"
-                flow_var = f"flow_{supporting_ci}_{ci_type_vx}"
-                sd_var = f"sd_balance_{supporting_ci}_{ci_type_vx}"  
-                
-                supply_act = 0
-                supporting_edges = [edge for edge in vx.incident(mode='in') 
-                                    if f"dependency_{supporting_ci}" in edge['ci_type']]
-                supply_act += sum([edge[flow_var] for edge in supporting_edges])
-                vx[sd_var] = 1 + (supply_act - vx[demand_var])/vx[demand_var]
     
     def return_network(self):
         return Network.from_graphs([self.graph])

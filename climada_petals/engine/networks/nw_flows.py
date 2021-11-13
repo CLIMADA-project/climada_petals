@@ -21,9 +21,6 @@ import numpy as np
 import pandapower as pp
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.pyplot as plt
-import igraph as ig
-
-from climada_petals.engine.networks.nw_calcs import GraphCalcs, Graph
 
 LOGGER = logging.getLogger(__name__)
 
@@ -240,38 +237,42 @@ class PowerFlow():
 
 class PowerCluster():
     
-    def calc_supply_demand_ratio(cis_graph, mw_per_cap, source_ci='power plant',
-                                 sink_ci='substation', demand_ci='people'):
+    def set_capacity_from_sd_ratio(cis_graph, mw_per_cap, source_ci='power plant',
+                                   sink_ci='substation', demand_ci='people'):
         
-        power_vs = cis_graph.graph.vs.select(ci_type_in=['power line', source_ci, sink_ci, demand_ci])
+        capacity_vars = [var for var in cis_graph.graph.vs.attributes()
+                         if f'capacity_{sink_ci}_' in var]
+        power_vs = cis_graph.graph.vs.select(
+            ci_type_in=['power line', source_ci, sink_ci, demand_ci])
+        
+        # make subgraph spanning all nodes, but only functional edges
         power_subgraph = cis_graph.graph.subgraph(power_vs)
+        power_subgraph.delete_edges(func_tot_lt=0.1)
         
         # make vs-matching dict between power_vs indices and power_graph vs. indices
         subgraph_graph_vsdict = dict((k,v) for k, v in 
                                      zip([subvx.index for subvx in power_subgraph.vs],
                                          [vx.index for vx in power_vs]))
-        
-        df_sd_ratio = pd.DataFrame(columns=['vx_index', 'sd_ratio'])
-        power_index = []
-        sd_ratios = []
 
-        for cluster in power_subgraph.clusters():
+        for cluster in power_subgraph.clusters(mode='weak'):
+            
             sources = power_subgraph.vs[cluster].select(ci_type=source_ci)
             sinks = power_subgraph.vs[cluster].select(ci_type=sink_ci)
-            psupply = sum([source['el_gen_mw']*source['func_tot'] for source in sources])
-            pdemand = sum([sink['counts']*mw_per_cap for sink in sinks])
+            demands = power_subgraph.vs[cluster].select(ci_type=demand_ci)
             
-            power_index.append([subgraph_graph_vsdict[source.index] for source in sources])           
-            power_index.append([subgraph_graph_vsdict[sink.index] for sink in sinks])
+            psupply = sum([source['el_gen_mw']*source['func_tot'] 
+                           for source in sources])
+            pdemand = sum([demand['counts']*mw_per_cap for demand in demands])
             
             try:
                 sd_ratio = min(1, psupply/pdemand)
             except ZeroDivisionError:
                 sd_ratio = 1
-                
-            sd_ratios.append(sd_ratio for item in range(len(sources)+len(sinks)))
             
-        power_index = [power_index for]                
+            for var in capacity_vars:
+                cis_graph.graph.vs[[subgraph_graph_vsdict[sink.index] 
+                                    for sink in sinks]][var] = sd_ratio
+            
         return cis_graph
 
 

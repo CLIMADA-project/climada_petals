@@ -149,10 +149,10 @@ class Network:
         self.edges['imp_dir'] = 0
         self.nodes['imp_dir'] = 0
         
-    def initialize_dependency(self, source, target):
+    def initialize_capacity(self, source, target):
         self.nodes[f'capacity_{source}_{target}'] = 0
-        self.nodes[self.nodes['ci_type']==f'{source}'][f'capacity_{source}_{target}'] = 1
-        self.nodes[self.nodes['ci_type']==f'{target}'][f'capacity_{source}_{target}'] = -1
+        self.nodes.loc[self.nodes['ci_type']==f'{source}',f'capacity_{source}_{target}'] = 1
+        self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
         
     
 
