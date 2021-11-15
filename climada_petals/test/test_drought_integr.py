@@ -39,8 +39,7 @@ class TestIntegr(unittest.TestCase):
 
         imp_drought = Impact()
         dr_impf = ImpactFuncSet()
-        impf_def = ImpfDrought()
-        impf_def.set_default()
+        impf_def = ImpfDrought.from_default()
         dr_impf.append(impf_def)
 
         exposure_agrar = SpamAgrar()
