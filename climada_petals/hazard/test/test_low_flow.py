@@ -161,7 +161,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
         and keep monthly data"""
 
         # init test hazard instance from trimmed ISIMIP output netcdf file
-        haz = LowFlow. from_netcdf(input_dir=INPUT_DIR, percentile=2.5,
+        haz = LowFlow.from_netcdf(input_dir=INPUT_DIR, percentile=2.5,
                     yearrange=(2001, 2003), yearrange_ref=(2001, 2003),
                     gh_model='h08', cl_model='gfdl-esm2m',
                     scenario='historical', scenario_ref='historical', soc='histsoc',
