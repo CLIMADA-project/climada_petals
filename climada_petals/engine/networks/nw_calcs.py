@@ -29,6 +29,7 @@ from climada_petals.engine.networks.nw_flows import PowerCluster
 from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel('INFO')
 
 
 class GraphCalcs():
@@ -247,9 +248,7 @@ class GraphCalcs():
         
     def _make_edgeweights(self, criterion, from_ci, to_ci, via_ci):
         
-        allowed_edges= [f'dependency_{from_ci}_{via_ci}', 
-                        f'dependency_{to_ci}_{via_ci}',
-                        f'{via_ci}']
+        allowed_edges= [f'{via_ci}']
         
         return np.array([1*edge[criterion] if (
             (edge['ci_type'] in allowed_edges) & (edge['func_internal']==1))
@@ -300,7 +299,7 @@ class GraphCalcs():
     
         for __, row in df_dependencies[
                 df_dependencies['type_I']=='functional'].iterrows():
-        
+            
             vs_source_target = self.graph.vs.select(
                 ci_type_in=[row.source, row.target])
                         
@@ -347,7 +346,7 @@ class GraphCalcs():
             
             # functionality thesholds for recieved capacity
             func_thresh = np.array([row.thresh_func if vx['ci_type'] == row.target 
-                                    else 0 for vx in vs_source_target])
+                                    else -9999 for vx in vs_source_target])
             
             # boolean vector whether received capacity great enough to supply endusers
             capa_suff = (capa_rec >= np.array(func_thresh)).astype(int)

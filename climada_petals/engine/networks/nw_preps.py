@@ -27,6 +27,7 @@ import simplify
 
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel('INFO')
 
 # =============================================================================
 # Topological simplifications
