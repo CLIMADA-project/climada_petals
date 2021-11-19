@@ -33,6 +33,7 @@ from climada.util import coordinates as u_coords
 LOGGER = logging.getLogger(__name__)
 
 KTOE_TO_MWH = 11630 # conversion factor MWh/ktoe (kilo ton of oil equivalents)
+TJ_TO_MWH = 277.778 # comversion factor MWh/TJ
 HRS_PER_YEAR = 8760
 
 class UtilFunctionalData():
@@ -105,22 +106,29 @@ class PowerFunctionalData():
        
         return gdf_people
         
-    def assign_esupply_iea(self, gdf_pplants, path_elimpexp_iea, path_elcons_iea):
+    def assign_esupply_iea(self, gdf_pplants, path_elimpexp_iea, path_elcons_iea, unit='ktoe'):
         """Assigns generation (mw) to each power plant"""
+        
+        if unit=='ktoe':
+            conv_fact = KTOE_TO_MWH
+        elif unit == 'TJ':
+            conv_fact = TJ_TO_MWH
+        else:
+            raise KeyError('Invalid unit entered')
         
         df_el_impexp = pd.read_csv(path_elimpexp_iea, skiprows=4)
         df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
                 
         # Latest annual Import/Export data from the IEA (2018)
         # imports positive, exports negative sign        
-        tot_el_imp_mwh = df_el_impexp.iloc[-1]['Imports']*KTOE_TO_MWH
-        tot_el_exp_mwh = df_el_impexp.iloc[-1]['Exports']*KTOE_TO_MWH
+        tot_el_imp_mwh = df_el_impexp.iloc[-1]['Imports']*conv_fact
+        tot_el_exp_mwh = df_el_impexp.iloc[-1]['Exports']*conv_fact
         tot_imp_exp_balance_mwh = tot_el_imp_mwh + tot_el_exp_mwh
         
         # Latest annual consumption data from the IEA (2018)
         tot_cons_mwh = df_el_cons.iloc[-1][
             ['Residential', 'Industry','Commercial and public services']
-            ].sum()*KTOE_TO_MWH
+            ].sum()*conv_fact
         
         # Annual generation (2018): assumed as el. consumption + imp/exp balance
         tot_el_gen_mwh = tot_cons_mwh - tot_imp_exp_balance_mwh
@@ -157,7 +165,28 @@ class PowerFunctionalData():
              })
         
         return  gdf_pplants.append(imp_exp_balance, ignore_index=True)
-
+    
+    
+    def balance_el_generation(self, gdf_pplants, per_cap_cons, pop_no):
+        
+        gdf_pplants.estimated_generation_gwh_2017 = pd.to_numeric(
+            gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
+        
+        tot_cons = per_cap_cons*pop_no
+        
+        imp_exp_balance = tot_cons - gdf_pplants.estimated_generation_gwh_2017.sum()
+        
+        gdf_pplants['el_gen_mw'] = gdf_pplants.estimated_generation_gwh_2017*1000/HRS_PER_YEAR
+        
+        imp_exp_balance = gpd.GeoDataFrame(
+            {'geometry':[shapely.geometry.Point(max(gdf_pplants.geometry.x)+1,
+                                                max(gdf_pplants.geometry.y)+1)],
+             'name': ['imp_exp_balance'],
+             'el_gen_mw': [imp_exp_balance/HRS_PER_YEAR],
+             'ci_type' : 'power plant'
+             })
+        return  gdf_pplants.append(imp_exp_balance, ignore_index=True)
+    
     def assign_linecapa():
         pass
 

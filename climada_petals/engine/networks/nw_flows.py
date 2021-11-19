@@ -266,12 +266,13 @@ class PowerCluster():
             
             try:
                 sd_ratio = min(1, psupply/pdemand)
+                print(sd_ratio)
             except ZeroDivisionError:
                 sd_ratio = 1
             
             for var in capacity_vars:
                 cis_graph.graph.vs[[subgraph_graph_vsdict[sink.index] 
-                                    for sink in sinks]][var] = sd_ratio
+                                    for sink in sinks]].set_attribute_values(var, sd_ratio)
             
         return cis_graph
 
