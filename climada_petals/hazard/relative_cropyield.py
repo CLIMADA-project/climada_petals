@@ -166,9 +166,13 @@ class RelativeCropyield(Hazard):
             FileName STRing depending on VARiable and
             ISIMIP simuation round
 
+        Returns
+        -------
+        RelativeCropyield
+
         Raises
         ------
-        RelativeCropyield
+        NameError
         """
         if not fn_str_var:
             fn_str_var = FN_STR_VAR
@@ -370,16 +374,16 @@ class RelativeCropyield(Hazard):
         nr_subplots = len(event)
 
         if len_lon >= len_lat:
-            colums = int(np.floor(np.sqrt(nr_subplots / (len_lon / len_lat))))
-            rows = int(np.ceil(nr_subplots / colums))
+            columns = int(np.floor(np.sqrt(nr_subplots / (len_lon / len_lat))))
+            rows = int(np.ceil(nr_subplots / columns))
         else:
             rows = int(np.floor(np.sqrt(nr_subplots / (len_lat / len_lon))))
-            colums = int(np.ceil(nr_subplots / colums))
+            columns = int(np.ceil(nr_subplots / rows))
 
-        fig, axes = plt.subplots(rows, colums, sharex=True, sharey=True,
-                                 figsize=(colums * len_lon, rows * len_lat),
+        fig, axes = plt.subplots(rows, columns, sharex=True, sharey=True,
+                                 figsize=(columns * len_lon, rows * len_lat),
                                  subplot_kw=dict(projection=cartopy.crs.PlateCarree()))
-        colum = 0
+        column = 0
         row = 0
 
         for year in range(nr_subplots):
@@ -387,16 +391,16 @@ class RelativeCropyield(Hazard):
                                         np.min(self.centroids.lat), np.max(self.centroids.lat)])
 
             if rows == 1:
-                self.plot_intensity_cp(event=event[year], axis=axes[colum])
-            elif colums == 1:
+                self.plot_intensity_cp(event=event[year], axis=axes[column])
+            elif columns == 1:
                 self.plot_intensity_cp(event=event[year], axis=axes[row])
             else:
-                self.plot_intensity_cp(event=event[year], axis=axes[row, colum])
+                self.plot_intensity_cp(event=event[year], axis=axes[row, column])
 
-            if colum <= colums - 2:
-                colum = colum + 1
+            if column <= columns - 2:
+                column = column + 1
             else:
-                colum = 0
+                column = 0
                 row = row + 1
 
         return fig
