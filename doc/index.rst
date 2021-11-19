@@ -13,6 +13,7 @@ Tutorials
    tutorial/climada_engine_SupplyChain
    tutorial/climada_entity_BlackMarble
    tutorial/climada_exposures_openstreetmap
+   tutorial/climada_hazard_drought
    tutorial/climada_hazard_emulator
    tutorial/climada_hazard_entity_Crop
    tutorial/climada_hazard_Landslide

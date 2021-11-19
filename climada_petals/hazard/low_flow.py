@@ -136,7 +136,14 @@ class LowFlow(Hazard):
         else:
             self.pool = None
 
-    def set_from_nc(self, input_dir=None, centroids=None, countries=None, reg=None,
+    def set_from_nc(self, *args, **kwargs):
+        """This function is deprecated, use LowFlow.from_netcdf instead."""
+        LOGGER.warning("The use of LowFlow.set_from_nc is deprecated."
+                       "Use LowFlow.from_netcdf instead.")
+        self.__dict__ = LowFlow.from_netcdf(*args, **kwargs).__dict__
+
+    @classmethod
+    def from_netcdf(cls, input_dir=None, centroids=None, countries=None, reg=None,
                     bbox=None, percentile=2.5, min_intensity=1, min_number_cells=1,
                     min_days_per_month=1, yearrange=TARGET_YEARRANGE,
                     yearrange_ref=REFERENCE_YEARRANGE, gh_model=None, cl_model=None,
@@ -231,6 +238,12 @@ class LowFlow(Hazard):
         Raises
         ------
         NameError
+
+        Returns
+        -------
+        LowFlow
+            hazard set with lowflow calculated from netcdf file
+            containing discharge data
         """
         if input_dir:
             if not Path(input_dir).is_dir():
@@ -249,24 +262,27 @@ class LowFlow(Hazard):
             centr_handling = 'full_hazard'
 
         # read data and call preprocessing routine:
-        self.lowflow_df, centroids_import = data_preprocessing_percentile(
+        haz = cls()
+        haz.lowflow_df, centroids_import = data_preprocessing_percentile(
             percentile, yearrange, yearrange_ref, input_dir, gh_model, cl_model,
             scenario, scenario_ref, soc, soc_ref, fn_str_var, bbox, min_days_per_month,
             keep_dis_data, yearchunks, mask_threshold)
 
         if centr_handling == 'full_hazard':
             centroids = centroids_import
-        self.identify_clusters()
-        self.set_intensity_from_clusters(centroids, min_intensity, min_number_cells,
+        haz.identify_clusters()
+        haz.set_intensity_from_clusters(centroids, min_intensity, min_number_cells,
                                  yearrange, yearrange_ref, gh_model, cl_model,
                                  scenario, scenario_ref, soc, soc_ref, fn_str_var, keep_dis_data)
+        return haz
 
     def set_intensity_from_clusters(self, centroids=None, min_intensity=1, min_number_cells=1,
                             yearrange=TARGET_YEARRANGE, yearrange_ref=REFERENCE_YEARRANGE,
                             gh_model=None, cl_model=None,
                             scenario='historical', scenario_ref='historical', soc='histsoc',
                             soc_ref='histsoc', fn_str_var=FN_STR_VAR, keep_dis_data=False):
-        """ Build low flow hazards with events from clustering and centroids and add attributes.
+        """ Build low flow hazards with events from clustering and centroids and
+        (re)set attributes.
         """
         # sum "dis" (days per month below threshold) per pixel and
         # cluster_id and write to hazard.intensity
