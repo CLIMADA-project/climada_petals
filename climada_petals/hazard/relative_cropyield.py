@@ -215,6 +215,8 @@ class RelativeCropyield(Hazard):
 
         # hazard setup: set attributes
         [lonmin, latmin, lonmax, latmax] = bbox
+        # TODO: replace this call to `set_raster` with a call to `from_raster` when replacing
+        # `set_from_isimip_netcdf` with a @classmethod `from_isimip_netcdf`
         intensity_def = self.intensity_def  # all attributes are reset by set_raster
         self.set_raster([str(Path(input_dir, filename))], band=id_bands, haz_type=HAZ_TYPE,
                         geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))

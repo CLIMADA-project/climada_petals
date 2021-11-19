@@ -33,7 +33,7 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 
 from climada import CONFIG
-from climada.hazard.base import Hazard
+from climada.hazard import Hazard, Centroids
 from climada.util.files_handler import download_file
 from climada.util.dates_times import datetime64_to_ordinal
 from climada.util.constants import SYSTEM_DIR
@@ -267,7 +267,7 @@ class Drought(Hazard):
         lon_1d = lon_2d.reshape(n_centroids,)
         lat_1d = lat_2d.reshape(n_centroids,)
 
-        self.centroids.set_lat_lon(lat_1d, lon_1d)
+        self.centroids = Centroids.from_lat_lon(lat_1d, lon_1d)
 
         self.event_id = np.arange(1, self.n_years + 1, 1)
         # frequency set when all eventsavailable
