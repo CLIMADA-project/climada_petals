@@ -54,8 +54,7 @@ class TestIntegr(unittest.TestCase):
         exp.assign_centroids(haz, threshold=20)
 
         impf_cp = ImpactFuncSet()
-        impf_def = ImpfRelativeCropyield()
-        impf_def.set_relativeyield()
+        impf_def = ImpfRelativeCropyield.impf_relativeyield()
         impf_cp.append(impf_def)
         impf_cp.check()
 
@@ -82,7 +81,7 @@ class TestIntegr(unittest.TestCase):
     def test_EU_nan(self):
         """Test whether setting the zeros in exp.value to NaN changes the impact"""
         bbox=[0, 42, 10, 52]
-        haz = RelativeCropyield.set_from_isimip_netcdf(input_dir=INPUT_DIR, yearrange=(2001, 2005), bbox=bbox,
+        haz = RelativeCropyield.from_isimip_netcdf(input_dir=INPUT_DIR, yearrange=(2001, 2005), bbox=bbox,
                                                        ag_model='lpjml', cl_model='ipsl-cm5a-lr', scenario='historical',
                                                        soc='2005soc', co2='co2', crop='whe', irr='noirr',
                                                        fn_str_var=FN_STR_DEMO)
@@ -96,8 +95,7 @@ class TestIntegr(unittest.TestCase):
         exp.assign_centroids(haz, threshold=20)
 
         impf_cp = ImpactFuncSet()
-        impf_def = ImpfRelativeCropyield()
-        impf_def.set_relativeyield()
+        impf_def = ImpfRelativeCropyield.impf_relativeyield()
         impf_cp.append(impf_def)
         impf_cp.check()
 
