@@ -90,3 +90,27 @@ class ImpfWildfire(ImpactFunc):
         i_n = (self.intensity-i_thresh)/(i_half-i_thresh)
         self.paa = i_n**3 / (1 + i_n**3)
         self.mdd = np.ones(len(self.intensity))
+
+    def hit_or_miss(self, impf_id=2):
+
+        """ This function defines a hit-or-miss impact function meaning
+        that the impact is set to 0% for intensity = 0 (miss) and to
+        100% for intensity = 1 (hit).
+
+        Parameters
+        ----------
+        impf_id : int, optional, default = 1
+            impact function id
+
+        Returns
+        -------
+        self : climada.entity.impact_funcs.ImpfWildfire instance
+
+        """
+
+        self.id = impf_id
+        self.name = "wildfire hit or miss 1 km"
+        self.intensity_unit = " "
+        self.intensity = np.arange(0, 2)
+        self.paa = np.arange(0, 1)
+        self.mdd = np.ones(len(self.intensity))
