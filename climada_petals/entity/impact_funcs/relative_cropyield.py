@@ -47,7 +47,12 @@ class ImpfRelativeCropyield(ImpactFunc):
 
     @classmethod
     def impf_relativeyield(cls):
-        """Impact functions defining the impact as intensity"""
+        """Impact functions defining the impact as intensity
+
+        Returns
+        -------
+        impf : climada.entity.impact_funcs.ImpfRelativeCropyield instance
+        """
         impf = cls()
         impf.haz_type = 'RC'
         impf.id = 1
