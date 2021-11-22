@@ -22,6 +22,7 @@ Define TCTracks auxiliary methods: BUFR based TC predictions (from ECMWF)
 __all__ = ['TCForecast']
 
 # standard libraries
+import os
 import datetime as dt
 import fnmatch
 import ftplib
@@ -82,7 +83,7 @@ MISSING_LONG = ec.CODES_MISSING_LONG
 class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
     obtained from numerical weather prediction runs.
-
+    
     Attributes:
         data (list(xarray.Dataset)): Same as in parent class, adding the
             following attributes
@@ -97,13 +98,16 @@ class TCForecast(TCTracks):
         dissemination server into instance. Use path or files argument
         to use local files instead.
 
-        Parameters:
-            path (str, list(str)): A location in the filesystem. Either a
-                path to a single BUFR TC track file, or a folder containing
-                only such files, or a globbing pattern. Passed to
-                climada.util.files_handler.get_file_names
-            files (file-like): An explicit list of file objects, bypassing
-                get_file_names
+        Parameters
+        ----------
+        path : str, list(str)
+            A location in the filesystem. Either a
+            path to a single BUFR TC track file, or a folder containing
+            only such files, or a globbing pattern. Passed to
+            climada.util.files_handler.get_file_names
+        files : file-like
+            An explicit list of file objects, bypassing
+            get_file_names
         """
         if path is None and files is None:
             files = self.fetch_bufr_ftp()
@@ -116,6 +120,12 @@ class TCForecast(TCTracks):
                 file.seek(0)  # reset cursor if opened file instance
             except AttributeError:
                 pass
+            
+            if os.name == 'nt':
+                try:
+                    file = file.file # if file is tempfile._TemporaryFileWrapper in windows, change to 
+                except AttributeError:
+                    pass
 
             self.read_one_bufr_tc(file, id_no=i)
 
@@ -132,15 +142,19 @@ class TCForecast(TCTracks):
         persistently to the given location. A list of opened file-like objects
         gets returned.
 
-        Parameters:
-            target_dir (str): An existing directory to write the files to. If
-                None, the files get returned as tempfiles.
-            remote_dir (str, optional): If set, search this ftp folder for
-                forecast files; defaults to the latest. Format:
-                yyyymmddhhmmss, e.g. 20200730120000
+        Parameters
+        ----------
+        target_dir : str
+            An existing directory to write the files to. If
+            None, the files get returned as tempfiles.
+        remote_dir : str, optional
+            If set, search this ftp folder for
+            forecast files; defaults to the latest. Format:
+            yyyymmddhhmmss, e.g. 20200730120000
 
-        Returns:
-            [str] or [filelike]
+        Returns
+        -------
+        [str] or [filelike]
         """
         con = ftplib.FTP(host=ECMWF_FTP, user=ECMWF_USER, passwd=ECMWF_PASS)
 
@@ -198,6 +212,11 @@ class TCForecast(TCTracks):
             id_no (int): Numerical ID; optional. Else use date + random int.
         """     
         # Open the bufr file
+        try:
+            # for the case that file is str, try open it
+            file = open(file, 'rb')
+        except TypeError:
+            pass
         bufr = ec.codes_bufr_new_from_file(file)
         # we need to instruct ecCodes to expand all the descriptors
         # i.e. unpack the data values
@@ -226,21 +245,22 @@ class TCForecast(TCTracks):
         ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
         
         # values at timestep 0
-        lat_init = ec.codes_get_array(bufr, '#2#latitude')
-        lon_init = ec.codes_get_array(bufr, '#2#longitude')
-        pre_init = ec.codes_get_array(bufr, '#1#pressureReducedToMeanSeaLevel')
-        max_wind_init = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
+        lat_init_temp = ec.codes_get_array(bufr, '#2#latitude')
+        lon_init_temp = ec.codes_get_array(bufr, '#2#longitude')
+        pre_init_temp = ec.codes_get_array(bufr, '#1#pressureReducedToMeanSeaLevel')
+        wnd_init_temp = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
         
-        if len(lat_init) == len(ens_no) and len(max_wind_init) == len(ens_no):
-            latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(len(ens_no))}
-            longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(len(ens_no))}
-            pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(len(ens_no))}
-            max_wind = {ind_ens: np.array(max_wind_init[ind_ens]) for ind_ens in range(len(ens_no))}
-        else:
-            latitude = {ind_ens: np.array(lat_init[0]) for ind_ens in range(len(ens_no))}
-            longitude = {ind_ens: np.array(lon_init[0]) for ind_ens in range(len(ens_no))}
-            pressure = {ind_ens: np.array(pre_init[0]) for ind_ens in range(len(ens_no))}
-            max_wind = {ind_ens: np.array(max_wind_init[0]) for ind_ens in range(len(ens_no))}
+        # check dimention of the variables, and replace missing value with NaN
+        lat_init = self._check_variable(lat_init_temp, ens_no)
+        lon_init = self._check_variable(lon_init_temp, ens_no)
+        pre_init = self._check_variable(pre_init_temp, ens_no)
+        wnd_init = self._check_variable(wnd_init_temp, ens_no)
+
+        # Putting variables into dictionaries
+        latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(len(ens_no))}
+        longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(len(ens_no))}
+        pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(len(ens_no))}
+        max_wind = {ind_ens: np.array(wnd_init[ind_ens]) for ind_ens in range(len(ens_no))}
         
         # getting the forecasted storms
         timesteps_int = [0 for x in range(n_timestep)]
@@ -295,7 +315,7 @@ class TCForecast(TCTracks):
             pre = self._check_variable(pre_temp, ens_no)
             wnd = self._check_variable(wnd_temp, ens_no)
             
-            # appending values
+            # appending values into dictionaries
             for ind_ens in range(len(ens_no)):
                 latitude[ind_ens] = np.append(latitude[ind_ens], lat[ind_ens])
                 longitude[ind_ens] = np.append(longitude[ind_ens], lon[ind_ens])
@@ -353,12 +373,11 @@ class TCForecast(TCTracks):
         timestamp = timestamp_origin + timestep_int.astype('timedelta64[h]')
         
         # some weak storms have only perturbed analysis, which gives a 
-        # size 1 array with value 4
+        # size 1 array in ens_type with value 4
         try:
             ens_bool = msg['ens_type'][index] != 0
         except LookupError:
             ens_bool = msg['ens_type'][0] != 0
-            LOGGER.info('All tracks has the same ensemble type')
             return None
         
         try:
@@ -442,4 +461,3 @@ class TCForecast(TCTracks):
                            len(ens_no))
         else:
             raise ValueError
-            

@@ -46,10 +46,14 @@ class GDP2Asset(Exposures):
         group not available for that year, consider the value of the closest
         available year.
 
-        Parameters:
-            countries (list): list of country names ISO3
-            ref_year (int, optional): reference year. Default: 2016
-            path (string): path to exposure dataset (ISIMIP)
+        Parameters
+        ----------
+        countries : list
+            list of country names ISO3
+        ref_year : int, optional
+            reference year. Default: 2016
+        path : string
+            path to exposure dataset (ISIMIP)
         """
         gdp2a_list = []
         tag = Tag()
@@ -101,14 +105,23 @@ class GDP2Asset(Exposures):
     def _set_one_country(countryISO, ref_year, path=None):
         """Extract coordinates of selected countries or region
         from NatID grid.
-        Parameters:
-            countryISO(str): ISO3 of country
-            ref_year(int): year under consideration
-            path(str): path for gdp-files
-        Raises:
-            KeyError, OSError
-        Returns:
-            GDP2Asset
+
+        Parameters
+        ----------
+        countryISO : str
+            ISO3 of country
+        ref_year : int
+            year under consideration
+        path : str
+            path for gdp-files
+
+        Raises
+        ------
+        KeyError, OSError
+
+        Returns
+        -------
+        GDP2Asset
         """
         natID = u_coord.country_iso2natid(countryISO)
         natID_info = pd.read_csv(RIVER_FLOOD_REGIONS_CSV)
@@ -130,14 +143,23 @@ class GDP2Asset(Exposures):
 
 def _read_GDP(shp_exposures, ref_year, path=None):
     """Read GDP-values for the selected area and convert it to asset.
-        Parameters:
-            shp_exposure(2d-array float): coordinates of area
-            ref_year(int): year under consideration
-            path(str): path for gdp-files
-        Raises:
-            KeyError, OSError
-        Returns:
-            np.array
+
+        Parameters
+        ----------
+        shp_exposure : 2d-array float
+            coordinates of area
+        ref_year : int
+            year under consideration
+        path : str
+            path for gdp-files
+
+        Raises
+        ------
+        KeyError, OSError
+
+        Returns
+        -------
+        np.array
         """
     try:
         gdp_file = xr.open_dataset(path)
@@ -202,13 +224,20 @@ def _test_gdp_centr_match(gdp_lat, gdp_lon, shp_exposures):
 
 def _fast_impf_mapping(countryID, natID_info):
     """Assign region-ID and impact function id.
-        Parameters:
-            countryID (int)
-            natID_info: dataframe of lookuptable
-        Raises:
-            KeyError
-        Returns:
-            float,float
+
+        Parameters
+        ----------
+        countryID : int
+        natID_info :
+            dataframe of lookuptable
+
+        Raises
+        ------
+        KeyError
+
+        Returns
+        -------
+        float,float
         """
     nat = natID_info['ID']
     impf_RF = natID_info['impf_RF']

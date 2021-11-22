@@ -21,7 +21,7 @@ import sys
 sys.path.insert(0, os.path.abspath('../'))
 
 # set version
-from climada import _version
+from climada_petals import _version
 __version__ = _version.__version__
 
 # -- General configuration -----------------------------------------------------
@@ -61,7 +61,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'climada'
+project = u'climada_petals'
 copyright = u'2017, ETH Zurich'
 author = u'CLIMADA contributors'
 
@@ -190,7 +190,7 @@ html_static_path = ['_static']
 #html_file_suffix = ''
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'climadadoc'
+htmlhelp_basename = 'climada_petalsdoc'
 
 
 # -- Options for LaTeX output --------------------------------------------------
@@ -204,7 +204,7 @@ htmlhelp_basename = 'climadadoc'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-    (master_doc, 'climada.tex', u'CLIMADA documentation',
+    (master_doc, 'climada_petals.tex', u'CLIMADA petals documentation',
      u'CLIMADA contributors', 'manual'),
 ]
 

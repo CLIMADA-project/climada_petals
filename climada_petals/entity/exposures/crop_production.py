@@ -143,8 +143,10 @@ class CropProduction(Exposures):
     geopandas GeoDataFrame with metadata and columns (pd.Series) defined in
     Attributes and Exposures.
 
-    Attributes:
-        crop (str): crop typee.g., 'mai', 'ric', 'whe', 'soy'
+    Attributes
+    ----------
+    crop : str
+        crop typee.g., 'mai', 'ric', 'whe', 'soy'
     """
 
     _metadata = Exposures._metadata + ['crop']
@@ -156,32 +158,47 @@ class CropProduction(Exposures):
 
         """Wrapper to fill exposure from NetCDF file from ISIMIP. Requires historical
         mean relative cropyield module as additional input.
-        Optional Parameters:
-            input_dir (Path or str): path to input data directory,
-                default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-            filename (string): name of the landuse data file to use,
-                e.g. "histsoc_landuse-15crops_annual_1861_2005.nc""
-            hist_mean (str or array): historic mean crop yield per centroid (or path)
-            bbox (list of four floats): bounding box:
-                [lon min, lat min, lon max, lat max]
-            yearrange (int tuple): year range for exposure set
-               e.g., (1990, 2010)
-            scenario (string): climate change and socio economic scenario
-               e.g., '1860soc', 'histsoc', '2005soc', 'rcp26soc','rcp60soc','2100rcp26soc'
-            cl_model (string): abbrev. climate model (only for future projections of lu data)
-               e.g., 'gfdl-esm2m', 'hadgem2-es', 'ipsl-cm5a-lr','miroc5'
-            crop (string): crop type
-               e.g., 'mai', 'ric', 'whe', 'soy'
-            irr (string): irrigation type, default: 'combined'
-                f.i 'firr' (full irrigation), 'noirr' (no irrigation) or 'combined'= firr+noirr
-            isimip_version(str): 'ISIMIP2' (default) or 'ISIMIP3'
-            unit (string): unit of the exposure (per year)
-                f.i 't/y' (default), 'USD/y', or 'kcal/y'
-            fn_str_var (string): FileName STRing depending on VARiable and
-                ISIMIP simuation round
 
-        Returns:
-            Exposure
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+            default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
+        filename : string
+            name of the landuse data file to use,
+            e.g. "histsoc_landuse-15crops_annual_1861_2005.nc""
+        hist_mean : str or array
+            historic mean crop yield per centroid (or path)
+        bbox : list of four floats
+            bounding box:
+            [lon min, lat min, lon max, lat max]
+        yearrange : int tuple
+            year range for exposure set
+            e.g., (1990, 2010)
+        scenario : string
+            climate change and socio economic scenario
+            e.g., '1860soc', 'histsoc', '2005soc', 'rcp26soc','rcp60soc','2100rcp26soc'
+        cl_model : string
+            abbrev. climate model (only for future projections of lu data)
+            e.g., 'gfdl-esm2m', 'hadgem2-es', 'ipsl-cm5a-lr','miroc5'
+        crop : string
+            crop type
+            e.g., 'mai', 'ric', 'whe', 'soy'
+        irr : string
+            irrigation type, default: 'combined'
+            f.i 'firr' (full irrigation), 'noirr' (no irrigation) or 'combined'= firr+noirr
+        isimip_version : str
+            'ISIMIP2' (default) or 'ISIMIP3'
+        unit : string
+            unit of the exposure (per year)
+            f.i 't/y' (default), 'USD/y', or 'kcal/y'
+        fn_str_var : string
+            FileName STRing depending on VARiable and
+            ISIMIP simuation round
+
+        Returns
+        -------
+        Exposure
         """
         # parameters not provided in method call are set to default values:
         if irr is None:
@@ -250,7 +267,7 @@ class CropProduction(Exposures):
         lon, lat = np.meshgrid(data.lon.values, data.lat.values)
         self.gdf['latitude'] = lat.flatten()
         self.gdf['longitude'] = lon.flatten()
-        self.gdf['region_id'] = u_coord.get_country_code(self.gdf.latitude, self.gdf.longitude)
+        self.gdf['region_id'] = u_coord.get_country_code(self.gdf.latitude, self.gdf.longitude, gridded=True)
 
         # The indeces of the yearrange to be extracted are determined
         time_idx = (int(yearrange[0] - yearchunk['startyear']),
@@ -376,7 +393,7 @@ class CropProduction(Exposures):
     def set_from_area_and_yield_nc4(self, crop_type, layer_yield, layer_area,
                                     filename_yield, filename_area, var_yield,
                                     var_area, bbox=BBOX, input_dir=INPUT_DIR):
-        
+
         """
         Set crop_production exposure from cultivated area [ha] and
         yield [t/ha/year] provided in two netcdf files with the same grid.
@@ -442,7 +459,7 @@ class CropProduction(Exposures):
         self.gdf['latitude'] = lat.flatten()
         self.gdf['longitude'] = lon.flatten()
         self.gdf['region_id'] = u_coord.get_country_code(self.gdf.latitude,
-                                                         self.gdf.longitude)
+                                                         self.gdf.longitude, gridded=True)
         self.gdf[INDICATOR_IMPF + DEF_HAZ_TYPE] = 1
         self.gdf[INDICATOR_IMPF] = 1
         # calc annual crop production, [t/y] = [ha] * [t/ha/y]:
@@ -530,28 +547,42 @@ class CropProduction(Exposures):
         """Wrapper to fill exposure from several NetCDF files with crop yield data
         from ISIMIP.
 
-        Optional Parameters:
-            input_dir (string): path to input data directory
-            historic mean (array): historic mean crop production per centroid
-            bbox (list of four floats): bounding box:
-                [lon min, lat min, lon max, lat max]
-            yearrange (int tuple): year range for exposure set,e.g., (1976, 2005)
-            scenario (string): climate change and socio economic scenario
-               e.g., 'histsoc' or 'rcp60soc'
-            cl_model (string): abbrev. climate model (only when landuse data
+        Parameters
+        ----------
+        input_dir : string
+            path to input data directory
+        hist_mean : array
+            historic mean crop production per centroid
+        bbox : list of four floats
+            bounding box:
+            [lon min, lat min, lon max, lat max]
+        yearrange : int tuple
+            year range for exposure set,e.g., (1976, 2005)
+        scenario : string
+            climate change and socio economic scenario
+            e.g., 'histsoc' or 'rcp60soc'
+        cl_model : string
+            abbrev. climate model (only when landuse data
             is future projection)
-               e.g., 'gfdl-esm2m' etc.
-            crop (string): crop type
-               e.g., 'mai', 'ric', 'whe', 'soy'
-            irr (string): irrigation type
-                f.i 'rainfed', 'irrigated' or 'combined'= rainfed+irrigated
-            isimip_version(str): 'ISIMIP2' (default) or 'ISIMIP3'
-            unit (string): unit of the exposure (per year)
-                f.i 't/y' (default), 'USD/y', or 'kcal/y'
-            fn_str_var (string): FileName STRing depending on VARiable and
-                ISIMIP simuation round
-        Returns:
-            Exposure
+            e.g., 'gfdl-esm2m' etc.
+        crop : string
+            crop type
+            e.g., 'mai', 'ric', 'whe', 'soy'
+        irr : string
+            irrigation type
+            f.i 'rainfed', 'irrigated' or 'combined'= rainfed+irrigated
+        isimip_version : str
+            'ISIMIP2' (default) or 'ISIMIP3'
+        unit : string
+            unit of the exposure (per year)
+            f.i 't/y' (default), 'USD/y', or 'kcal/y'
+        fn_str_var : string
+            FileName STRing depending on VARiable and
+            ISIMIP simuation round
+
+        Returns
+        -------
+        Exposure
         """
         if not bbox:
             bbox = BBOX
@@ -626,8 +657,9 @@ class CropProduction(Exposures):
                 is used (best for crop model output in dry matter, default for
                 raw crop model output)
 
-        Returns:
-            Exposure with unit kcal/y
+        Returns
+        -------
+        Exposure with unit kcal/y
         """
         if self.value_unit != 't/y':
             LOGGER.warning('self.unit is not t/y.')
@@ -645,17 +677,22 @@ class CropProduction(Exposures):
         """Calculates the exposure in USD using country and year specific data published
         by the FAO.
 
-        Optional Parameters:
-            input_dir (Path or str): directory containing the input (FAO pricing) data,
-                default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-            yearrange (array): year range for prices, can also be set to a single year
-                Default is set to the arbitrary time range (2000, 2018)
-                The data is available for the years 1991-2018
-            crop (str): crop type
-               e.g., 'mai', 'ric', 'whe', 'soy'
+        Parameters
+        ----------
+        input_dir : Path or str
+            directory containing the input (FAO pricing) data,
+            default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
+        yearrange : array
+            year range for prices, can also be set to a single year
+            Default is set to the arbitrary time range (2000, 2018)
+            The data is available for the years 1991-2018
+        crop : str
+            crop type
+            e.g., 'mai', 'ric', 'whe', 'soy'
 
-        Returns:
-            Exposure
+        Returns
+        -------
+        Exposure
         """
         if not input_dir:
             input_dir = INPUT_DIR
@@ -680,38 +717,39 @@ class CropProduction(Exposures):
         fao_country = u_coord.country_faocode2iso(getattr(fao['file'], 'Area Code').values)
 
         # create a list of the countries contained in the exposure
-        iso3alpha = list()
+        iso3num = list()
         self.gdf.region_id[self.gdf.region_id == -99] = 0
-        iso3alpha = np.asarray(u_coord.country_to_iso(
-            self.gdf.region_id, representation="alpha3", fillvalue='Other country'), dtype=object)
-        iso3alpha[iso3alpha == ""] = 'No country'
-        list_countries = np.unique(iso3alpha)
+        iso3num = np.asarray(u_coord.country_to_iso(
+            self.gdf.region_id, representation="numeric", fillvalue=999), dtype=object)
+        list_countries = np.unique(iso3num)
 
         # iterate over all countries that are covered in the exposure, extract the according price
         # and calculate the crop production in USD/y
         area_price = np.zeros(self.gdf.value.size)
         for country in list_countries:
-            [idx_country] = (iso3alpha == country).nonzero()
-            if country == 'Other country':
+            [idx_country] = (iso3num == country).nonzero()
+            if country == 999:
                 price = 0
                 area_price[idx_country] = self.gdf.value[idx_country] * price
-            elif country != 'No country' and country != 'Other country':
+            # zero means no country, 999 other country
+            elif country != 0 and country != 999:
                 idx_price = np.where((np.asarray(fao_country) == country) &
                                      (np.asarray(fao['crops']) == \
                                      (CROP_NAME[self.crop])['fao']) &
                                      (fao['year'] >= yearrange[0]) &
                                      (fao['year'] <= yearrange[1]))
-                price = np.mean(fao['price'][idx_price])
                 # if no price can be determined for a specific yearrange and country, the world
                 # average for that crop (in the specified yearrange) is used
-                if math.isnan(price) or price == 0:
+                if idx_price[0].size != 0:
+                    price = np.mean(fao['price'][idx_price])
+
+                else:
                     idx_price = np.where((np.asarray(fao['crops']) == \
                                           (CROP_NAME[self.crop])['fao']) &
                                          (fao['year'] >= yearrange[0]) &
                                          (fao['year'] <= yearrange[1]))
                     price = np.mean(fao['price'][idx_price])
                 area_price[idx_country] = self.gdf.value[idx_country] * price
-
 
         self.gdf['value'] = area_price
         self.value_unit = 'USD/y'
@@ -721,9 +759,12 @@ class CropProduction(Exposures):
     def aggregate_countries(self):
         """Aggregate exposure data by country.
 
-        Returns:
-            list_countries (list): country codes (numerical ISO3)
-            country_values (array): aggregated exposure value
+        Returns
+        -------
+        list_countries : list
+            country codes (numerical ISO3)
+        country_values : array
+            aggregated exposure value
         """
 
         list_countries = np.unique(self.gdf.region_id)
@@ -740,23 +781,35 @@ def init_full_exp_set_isimip(input_dir=None, filename=None, hist_mean_dir=None,
         input directory and saves them as hdf5 files in the output directory.
         Exposures are aggregated per crop and irrigation type.
 
-        Parameters:
-        input_dir (str or Path): path to input data directory,
-            default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-        filename (string): if not specified differently, the file
-            'histsoc_landuse-15crops_annual_1861_2005.nc' will be used
-        output_dir (string): path to output data directory
-        bbox (list of four floats): bounding box:
-            [lon min, lat min, lon max, lat max]
-        yearrange (array): year range for hazard set, e.g., (1976, 2005)
-        isimip_version(str): 'ISIMIP2' (default) or 'ISIMIP3'
-        unit (str): unit in which to return exposure (e.g., t/y or USD/y)
-        return_data (boolean): returned output
-            False: returns list of filenames only, True: returns also list of data
+    Parameters
+    ----------
+    input_dir : str or Path
+        path to input data directory,
+        default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
+    filename : string
+        if not specified differently, the file
+        'histsoc_landuse-15crops_annual_1861_2005.nc' will be used
+    output_dir : string
+        path to output data directory
+    bbox : list of four floats
+        bounding box:
+        [lon min, lat min, lon max, lat max]
+    yearrange : array
+        year range for hazard set, e.g., (1976, 2005)
+    isimip_version : str
+        'ISIMIP2' (default) or 'ISIMIP3'
+    unit : str
+        unit in which to return exposure (e.g., t/y or USD/y)
+    return_data : boolean
+        returned output
+        False: returns list of filenames only, True: returns also list of data
 
-    Returns:
-        filename_list (list): all filenames of saved initiated exposure files
-        output_list (list): list containing all inisiated Exposure instances
+    Returns
+    -------
+    filename_list : list
+        all filenames of saved initiated exposure files
+    output_list : list
+        list containing all inisiated Exposure instances
     """
     if not bbox:
         bbox = BBOX
@@ -812,34 +865,45 @@ def normalize_with_fao_cp(exp_firr, exp_noirr, input_dir=None,
     Refer to the beginning of the script for guidance on where to download the
     required crop production data from FAO.Stat.
 
-    Parameters:
-        exp_firr (crop_production): exposure under full irrigation
-        exp_noirr (crop_production): exposure under no irrigation
+    Parameters
+    ----------
+    exp_firr : crop_production
+        exposure under full irrigation
+    exp_noirr : crop_production
+        exposure under no irrigation
+    input_dir : Path or str
+        directory containing exposure input data,
+        default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
+    yearrange : array
+        the mean crop production in this year range is used to normalize
+        the exposure data
+        Default is set to the arbitrary time range (2008, 2018)
+        The data is available for the years 1961-2018
+    unit : str
+        unit in which to return exposure (t/y or USD/y)
+    return_data : boolean
+        returned output
+        True: returns country list, ratio = FAO/ISIMIP, normalized exposures, crop production
+        per country as documented by the FAO and calculated by the ISIMIP dataset
+        False: country list, ratio = FAO/ISIMIP, normalized exposures
 
-    Optional Parameters:
-        input_dir (Path or str): directory containing exposure input data,
-            default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-        yearrange (array): the mean crop production in this year range is used to normalize
-            the exposure data
-            Default is set to the arbitrary time range (2008, 2018)
-            The data is available for the years 1961-2018
-        unit (str): unit in which to return exposure (t/y or USD/y)
-        return_data (boolean): returned output
-            True: returns country list, ratio = FAO/ISIMIP, normalized exposures, crop production
-            per country as documented by the FAO and calculated by the ISIMIP dataset
-            False: country list, ratio = FAO/ISIMIP, normalized exposures
-
-    Returns:
-        country_list (list): List of country codes (numerical ISO3)
-        ratio (list): List of ratio of FAO crop production and aggregated exposure
-            for each country
-        exp_firr_norm (CropProduction): Normalized CropProduction (full irrigation)
-        exp_noirr_norm (CropProduction): Normalized CropProduction (no irrigation)
-
-    Returns (optional):
-        fao_crop_production (list): FAO crop production value per country
-        exp_tot_production(list): Exposure crop production value per country
-            (before normalization)
+    Returns
+    -------
+    country_list : list
+        List of country codes (numerical ISO3)
+    ratio : list
+        List of ratio of FAO crop production and aggregated exposure
+        for each country
+    exp_firr_norm : CropProduction
+        Normalized CropProduction (full irrigation)
+    exp_noirr_norm : CropProduction
+        Normalized CropProduction (no irrigation)
+    Returns : optional
+    fao_crop_production : list
+        FAO crop production value per country
+    exp_tot_production : list
+        Exposure crop production value per country
+        (before normalization)
     """
     if not input_dir:
         input_dir = INPUT_DIR
@@ -919,32 +983,45 @@ def normalize_several_exp(input_dir=None, output_dir=None,
     """
     Multiple exposure sets saved as HDF5 files in input directory are normalized
     (i.e. bias corrected) against FAO statistics of crop production.
-        Optional Parameters:
-            input_dir (Path or str): directory containing exposure input data
-            output_dir (Path or str): directory containing exposure datasets (output of
-                                                                              exposure creation)
-            yearrange (array): the mean crop production in this year range is used to normalize
-                the exposure data (default 2008-2018)
-            unit (str): unit in which to return exposure (t/y or USD/y)
-            return_data (boolean): returned output
-                True: lists containing data for each exposure file. Lists: crops, country list,
-                    ratio = FAO/ISIMIP, normalized exposures, crop production
-                    per country as documented by the FAO and calculated by the ISIMIP dataset
-                False: lists containing data for each exposure file. Lists: crops, country list,
-                    ratio = FAO/ISIMIP, normalized exposures
 
-        Returns:
-            crop_list (list): List of crops
-            country_list (list): List of country codes (numerical ISO3)
-            ratio (list): List of ratio of FAO crop production and aggregated exposure
-                for each country
-            exp_firr_norm (list): List of normalized CropProduction Exposures (full irrigation)
-            exp_noirr_norm (list): List of normalize CropProduction Exposures (no irrigation)
+    Parameters
+    ----------
+    input_dir : Path or str
+        directory containing exposure input data
+    output_dir : Path or str
+        directory containing exposure datasets (output of
+        exposure creation)
+    yearrange : array
+        the mean crop production in this year range is used to normalize
+        the exposure data (default 2008-2018)
+    unit : str
+        unit in which to return exposure (t/y or USD/y)
+    return_data : boolean
+        returned output
+        True: lists containing data for each exposure file. Lists: crops, country list,
+        ratio = FAO/ISIMIP, normalized exposures, crop production
+        per country as documented by the FAO and calculated by the ISIMIP dataset
+        False: lists containing data for each exposure file. Lists: crops, country list,
+        ratio = FAO/ISIMIP, normalized exposures
 
-        Returns (optional):
-            fao_crop_production (list): FAO crop production value per country
-            exp_tot_production(list): Exposure crop production value per country
-                (before normalization)
+    Returns
+    -------
+    crop_list : list
+        List of crops
+    country_list : list
+        List of country codes (numerical ISO3)
+    ratio : list
+        List of ratio of FAO crop production and aggregated exposure
+        for each country
+    exp_firr_norm : list
+        List of normalized CropProduction Exposures (full irrigation)
+    exp_noirr_norm : list
+        List of normalize CropProduction Exposures (no irrigation)
+    fao_crop_production : list, optional
+        FAO crop production value per country
+    exp_tot_production : list, optional
+        Exposure crop production value per country
+        (before normalization)
     """
     if input_dir is None:
         input_dir = INPUT_DIR
@@ -1003,17 +1080,23 @@ def normalize_several_exp(input_dir=None, output_dir=None,
 def semilogplot_ratio(crop, countries, ratio, output_dir=None, save=True):
     """Plot ratio = FAO/ISIMIP against country codes.
 
-        Parameters:
-            crop (str): crop to plot
-            countries (list): country codes of countries to plot
-            ratio (array): ratio = FAO/ISIMIP crop production data of countries to plot
-        Optional Parameters:
-            save (boolean): True saves figure, else figure is not saved.
-            output_dir (str): directory to save figure
-        Returns:
-            fig (plt figure handle)
-            axes (plot axes handle)
+    Parameters
+    ----------
+    crop : str
+        crop to plot
+    countries : list
+        country codes of countries to plot
+    ratio : array
+        ratio = FAO/ISIMIP crop production data of countries to plot
+    save : boolean
+        True saves figure, else figure is not saved.
+    output_dir : str
+        directory to save figure
 
+    Returns
+    -------
+    fig (plt figure handle)
+    axes (plot axes handle)
     """
     if output_dir is None:
         output_dir = OUTPUT_DIR

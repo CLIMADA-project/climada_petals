@@ -26,17 +26,15 @@ from climada import CONFIG
 from climada_petals.hazard.tc_tracks_forecast import TCForecast
 
 DATA_DIR = CONFIG.hazard.test_data.dir()
-TEST_BUFR_FILES_PATH = [
+TEST_BUFR_FILES = [
     DATA_DIR.joinpath(tbf) for tbf in [
         'tracks_22S_HEROLD_2020031912.det.bufr4',
         'tracks_22S_HEROLD_2020031912.eps.bufr4',
     ]
 ]
-TEST_BUFR_FILES = [open(f, 'rb') for f in TEST_BUFR_FILES_PATH]
 """TC tracks in four BUFR formats as provided by ECMWF. Sourced from
 https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
 """
-
 
 class TestECMWF(unittest.TestCase):
     """Test reading of BUFR TC track forecasts"""
@@ -46,15 +44,15 @@ class TestECMWF(unittest.TestCase):
         forecast = TCForecast()
         forecast.fetch_ecmwf(files=TEST_BUFR_FILES)
 
-        self.assertEqual(forecast.data[0].time.size, 2)
+        self.assertEqual(forecast.data[0].time.size, 3)
         self.assertEqual(forecast.data[1].lat[2], -27.)
         self.assertEqual(forecast.data[0].lon[2], 73.5)
         self.assertEqual(forecast.data[1].time_step[2], 6)
         self.assertEqual(forecast.data[1].max_sustained_wind[2], 14.9)
         self.assertEqual(forecast.data[0].central_pressure[1], 1000.)
         self.assertEqual(forecast.data[0]['time.year'][1], 2020)
-        self.assertEqual(forecast.data[17]['time.month'][7], 3)
-        self.assertEqual(forecast.data[17]['time.day'][7], 21)
+        self.assertEqual(forecast.data[16]['time.month'][7], 3)
+        self.assertEqual(forecast.data[16]['time.day'][7], 21)
         self.assertEqual(forecast.data[0].max_sustained_wind_unit, 'm/s')
         self.assertEqual(forecast.data[0].central_pressure_unit, 'mb')
         self.assertEqual(forecast.data[1].sid, '22S')

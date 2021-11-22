@@ -87,11 +87,14 @@ class RelativeCropyield(Hazard):
     Based on modelled crop yield, from ISIMIP (www.isimip.org, required input data).
     Attributes as defined in Hazard and the here defined additional attributes.
 
-    Attributes:
-        crop_type (str): crop type ('whe' for wheat, 'mai' for maize, 'soy' for soybeans
-                                    and 'ric' for rice)
-        intensity_def (str): intensity defined as:
-            'Yearly Yield' [t/(ha*y)], 'Relative Yield', or 'Percentile'
+    Attributes
+    ----------
+    crop_type : str
+        crop type ('whe' for wheat, 'mai' for maize, 'soy' for soybeans
+        and 'ric' for rice)
+    intensity_def : str
+        intensity defined as:
+        'Yearly Yield' [t/(ha*y)], 'Relative Yield', or 'Percentile'
     """
 
     def __init__(self, pool=None):
@@ -114,34 +117,51 @@ class RelativeCropyield(Hazard):
         """Wrapper to fill hazard from crop yield NetCDF file.
         Build and tested for output from ISIMIP2 and ISIMIP3, but might also work
         for other NetCDF containing gridded crop model output from other sources.
-        Parameters:
-            input_dir (Path or str): path to input data directory,
-                default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-            filename (string): name of netcdf file in input_dir. If filename is given,
-                the other parameters specifying the model run are not required!
-            bbox (list of four floats): bounding box:
-                [lon min, lat min, lon max, lat max]
-            yearrange (int tuple): year range for hazard set, f.i. (1976, 2005)
-            ag_model (str): abbrev. agricultural model (only when input_dir is selected)
-                f.i. 'clm-crop', 'gepic','lpjml','pepic'
-            cl_model (str): abbrev. climate model (only when input_dir is selected)
-                f.i. ['gfdl-esm2m', 'hadgem2-es','ipsl-cm5a-lr','miroc5'
-            bias_corr (str): bias correction of climate forcing,
-                f.i. 'ewembi' (ISIMIP2b, default) or 'w5e5' (ISIMIP3b)
-            scenario (str): climate change scenario (only when input_dir is selected)
-                f.i. 'historical' or 'rcp60' or 'ISIMIP2a'
-            soc (str): socio-economic trajectory (only when input_dir is selected)
-                f.i. '2005soc' or 'histsoc'
-            co2 (str): CO2 forcing scenario (only when input_dir is selected)
-                f.i. 'co2' or '2005co2'
-            crop (str): crop type (only when input_dir is selected)
-                f.i. 'whe', 'mai', 'soy' or 'ric'
-            irr (str): irrigation type (only when input_dir is selected)
-                f.i 'noirr' or 'irr'
-            fn_str_var (str): FileName STRing depending on VARiable and
-                ISIMIP simuation round
-        raises:
-            NameError
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+            default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
+        filename : string
+            name of netcdf file in input_dir. If filename is given,
+            the other parameters specifying the model run are not required!
+        bbox : list of four floats
+            bounding box:
+            [lon min, lat min, lon max, lat max]
+        yearrange : int tuple
+            year range for hazard set, f.i. (1976, 2005)
+        ag_model : str
+            abbrev. agricultural model (only when input_dir is selected)
+            f.i. 'clm-crop', 'gepic','lpjml','pepic'
+        cl_model : str
+            abbrev. climate model (only when input_dir is selected)
+            f.i. ['gfdl-esm2m', 'hadgem2-es','ipsl-cm5a-lr','miroc5'
+        bias_corr : str
+            bias correction of climate forcing,
+            f.i. 'ewembi' (ISIMIP2b, default) or 'w5e5' (ISIMIP3b)
+        scenario : str
+            climate change scenario (only when input_dir is selected)
+            f.i. 'historical' or 'rcp60' or 'ISIMIP2a'
+        soc : str
+            socio-economic trajectory (only when input_dir is selected)
+            f.i. '2005soc' or 'histsoc'
+        co2 : str
+            CO2 forcing scenario (only when input_dir is selected)
+            f.i. 'co2' or '2005co2'
+        crop : str
+            crop type (only when input_dir is selected)
+            f.i. 'whe', 'mai', 'soy' or 'ric'
+        irr : str
+            irrigation type (only when input_dir is selected)
+            f.i 'noirr' or 'irr'
+        fn_str_var : str
+            FileName STRing depending on VARiable and
+            ISIMIP simuation round
+
+        Raises
+        ------
+        NameError
         """
         if not fn_str_var:
             fn_str_var = FN_STR_VAR
@@ -195,9 +215,10 @@ class RelativeCropyield(Hazard):
 
         # hazard setup: set attributes
         [lonmin, latmin, lonmax, latmax] = bbox
-        self.set_raster([str(Path(input_dir, filename))], band=id_bands,
+        intensity_def = self.intensity_def  # all attributes are reset by set_raster
+        self.set_raster([str(Path(input_dir, filename))], band=id_bands, haz_type=HAZ_TYPE,
                         geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
-
+        self.intensity_def = intensity_def  # restore intensity_def, s.a.
         self.intensity.data[np.isnan(self.intensity.data)] = 0.0
         self.intensity.todense()
         self.crop = crop
@@ -218,16 +239,22 @@ class RelativeCropyield(Hazard):
                   save=False, output_dir=None):
         """Calculates mean of the hazard for a given reference time period
 
-            Optional Parameters:
-            yearrange_mean (array): time period used to calculate the mean intensity
-                default: 1976-2005 (historical)
-            save (boolean): save mean to file? default: False
-            output_dir (str or Path): path of output directory,
-                default: {CONFIG.exposures.crop_production.local_data}/Output
+        Parameters
+        ----------
+        yearrange_mean : array
+            time period used to calculate the mean intensity
+            default: 1976-2005 (historical)
+        save : boolean
+            save mean to file? default: False
+        output_dir : str or Path
+            path of output directory,
+            default: {CONFIG.exposures.crop_production.local_data}/Output
 
-            Returns:
-                hist_mean(array): contains mean value over the given reference
-                    time period for each centroid
+        Returns
+        -------
+        hist_mean(array) :
+            contains mean value over the given reference
+            time period for each centroid
         """
         if output_dir is None:
             output_dir = OUTPUT_DIR
@@ -259,11 +286,14 @@ class RelativeCropyield(Hazard):
     def set_rel_yield_to_int(self, hist_mean):
         """Sets relative yield (yearly yield / historic mean) as intensity
 
-            Parameters:
-                hist_mean (array): historic mean per centroid
+        Parameters
+        ----------
+        hist_mean : array
+            historic mean per centroid
 
-            Returns:
-                hazard with modified intensity [unitless]
+        Returns
+        -------
+        hazard with modified intensity [unitless]
         """
         # determine idx of the centroids with a mean yield !=0
         [idx] = np.where(hist_mean != 0)
@@ -284,13 +314,16 @@ class RelativeCropyield(Hazard):
     def set_percentile_to_int(self, reference_intensity=None):
         """Sets percentile to intensity
 
-            Parameters:
-                reference_intensity (AD): intensity to be used as reference
-                    (e.g. the historic intensity can be used in order to be able
-                     to directly compare historic and future projection data)
+        Parameters
+        ----------
+        reference_intensity : AD
+            intensity to be used as reference
+            (e.g. the historic intensity can be used in order to be able
+            to directly compare historic and future projection data)
 
-            Returns:
-                hazard with modified intensity
+        Returns
+        -------
+        hazard with modified intensity
         """
         hazard_matrix = np.zeros(self.intensity.shape)
         if reference_intensity is None:
@@ -310,14 +343,19 @@ class RelativeCropyield(Hazard):
     def plot_intensity_cp(self, event=None, dif=False, axis=None, **kwargs):
         """Plots intensity with predefined settings depending on the intensity definition
 
-        Optional Parameters:
-            event (int or str): event_id or event_name
-            dif (boolean): variable signilizing whether absolute values or the difference between
-                future and historic are plotted (False: his/fut values; True: difference = fut-his)
-            axis (geoaxes): axes to plot on
+        Parameters
+        ----------
+        event : int or str
+            event_id or event_name
+        dif : boolean
+            variable signilizing whether absolute values or the difference between
+            future and historic are plotted (False: his/fut values; True: difference = fut-his)
+        axis : geoaxes
+            axes to plot on
 
-        Returns:
-            axes (geoaxes)
+        Returns
+        -------
+        axes (geoaxes)
         """
         if not dif:
             if self.intensity_def == 'Yearly Yield':
@@ -342,11 +380,14 @@ class RelativeCropyield(Hazard):
     def plot_time_series(self, event=None):
         """Plots a time series of intensities (a series of sub plots)
 
-        Optional Parameters:
-            event (int or str): event_id or event_name
+        Parameters
+        ----------
+        event : int or str
+            event_id or event_name
 
-        Returns:
-            figure
+        Returns
+        -------
+        figure
         """
 
         # if no event range is given, all events contained in self are plotted
@@ -405,26 +446,38 @@ def set_multiple_rc_from_isimip(input_dir=None, output_dir=None, bbox=None,
     """Wrapper to generate full hazard set from all ISIMIP-NetCDF files with
     crop yield in a given input directory and save it to output directory.
 
-        Optional Parameters:
-            input_dir (pathlib.Path or str): path to input data directory,
-                default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-            output_dir (pathlib.Path or str): path to output data directory,
-                default: {CONFIG.exposures.crop_production.local_data}/Output
-            bbox (list of four floats): bounding box:
-                [lon min, lat min, lon max, lat max]
-            isimip_run (string): name of the ISIMIP run (f.i. ISIMIP2a or ISIMIP2b)
-            yearrange_his (int tuple): year range for the historical hazard sets
-            yearrange_mean (int tuple): year range for the historical mean
-            return_data (boolean): returned output
-                False: returns list of filenames only
-                True: returns also list of data
-            save (boolean): save output data to output_dir
-            combine_subcrops (boolean): combine crops: ric=ri1+ri2, whe=swh+wwh
-        Return:
-            filename_list (list): list of filenames
+    Parameters
+    ----------
+    input_dir : pathlib.Path or str
+        path to input data directory,
+        default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
+    output_dir : pathlib.Path or str
+        path to output data directory,
+        default: {CONFIG.exposures.crop_production.local_data}/Output
+    bbox : list of four floats
+        bounding box:
+        [lon min, lat min, lon max, lat max]
+    isimip_run : string
+        name of the ISIMIP run (f.i. ISIMIP2a or ISIMIP2b)
+    yearrange_his : int tuple
+        year range for the historical hazard sets
+    yearrange_mean : int tuple
+        year range for the historical mean
+    return_data : boolean
+        returned output
+        False: returns list of filenames only
+        True: returns also list of data
+    save : boolean
+        save output data to output_dir
+    combine_subcrops : boolean
+        combine crops: ric=ri1+ri2, whe=swh+wwh
 
-        Optional Return:
-            output_list (list): list of generated output data (hazards and historical mean)
+    Returns
+    -------
+    filename_list : list
+        list of filenames
+    output_list : list, optional
+        list of generated output data (hazards and historical mean)
     """
     if bbox is None:
         bbox = BBOX
@@ -577,27 +630,39 @@ def init_hazard_sets_isimip(filenames, input_dir=None, bbox=None, isimip_run=Non
                             yearrange_his=None, combine_subcrops=True):
     """Initialize full hazard set.
 
-        Parameters:
-            filenames (list): list of filenames
+    Parameters
+    ----------
+    filenames : list
+        list of filenames
+    input_dir : pathlib.Path
+        path to input data directory, default: INPUT_DIR
+    bbox : list of four floats
+        bounding box:
+        [lon min, lat min, lon max, lat max], default: BBOX
+    isimip_run : string
+        name of the ISIMIP run ('ISIMIP2a', 'ISIMIP2b', or 'ISIMIP3b')
+        Deafult: 'ISIMIP2b''
+    yearrange_his : int tuple
+        year range for the historical hazard sets
+    combine_subcrops : bool
+        ignore crops ri2 (2nd harvest rice) and wwh (winter wheat)
+        at this step (will be added to ri1 and wwh to form ric and whe later on)
 
-        Optional Parameters:
-            input_dir (pathlib.Path): path to input data directory, default: INPUT_DIR
-            bbox (list of four floats): bounding box:
-                [lon min, lat min, lon max, lat max], default: BBOX
-            isimip_run (string): name of the ISIMIP run ('ISIMIP2a', 'ISIMIP2b', or 'ISIMIP3b')
-                Deafult: 'ISIMIP2b''
-            yearrange_his (int tuple): year range for the historical hazard sets
-            combine_subcrops (bool): ignore crops ri2 (2nd harvest rice) and wwh (winter wheat)
-                at this step (will be added to ri1 and wwh to form ric and whe later on)
-
-        Return:
-            his_file_list (list): list of historical input hazard files
-            file_props (dict): file properties of all historical input hazard files
-            hist_mean_per_crop (dict): empty dictonary to save hist_mean values for each
-                crop-irr combination
-            scenario_list (list): list of all future scenarios
-            crop_irr_list (list): list of all crop-irr combinations
-            combi_crop_irr_list (list): list of all crop-irr combinations for combined crops
+    Returns
+    -------
+    his_file_list : list
+        list of historical input hazard files
+    file_props : dict
+        file properties of all historical input hazard files
+    hist_mean_per_crop : dict
+        empty dictonary to save hist_mean values for each
+        crop-irr combination
+    scenario_list : list
+        list of all future scenarios
+    crop_irr_list : list
+        list of all crop-irr combinations
+    combi_crop_irr_list : list
+        list of all crop-irr combinations for combined crops
     """
     # set default values for parameters not defined:
     if input_dir is None:
@@ -706,19 +771,29 @@ def calc_his_haz_isimip(his_file, file_props, input_dir=None, bbox=None,
                         yearrange_mean=None):
     """Create historical hazard and calculate historical mean.
 
-        Parameters:
-            his_file (string): file name of historical input hazard file
-            file_props (dict): file properties of all historical input hazard files
-            input_dir (Path): path to input data directory, default: INPUT_DIR
-            bbox (list of four floats): bounding box:
-                [lon min, lat min, lon max, lat max]
-            yearrange_mean (int tuple): year range for the historical mean
-                default: 1976 - 2005
+    Parameters
+    ----------
+    his_file : string
+        file name of historical input hazard file
+    file_props : dict
+        file properties of all historical input hazard files
+    input_dir : Path
+        path to input data directory, default: INPUT_DIR
+    bbox : list of four floats
+        bounding box:
+        [lon min, lat min, lon max, lat max]
+    yearrange_mean : int tuple
+        year range for the historical mean
+        default: 1976 - 2005
 
-        Return:
-            haz_his (RelativeCropyield): historical hazard
-            filename (string): name to save historical hazard
-            hist_mean (array): historical mean of the historical hazard
+    Returns
+    -------
+    haz_his : RelativeCropyield
+        historical hazard
+    filename : string
+        name to save historical hazard
+    hist_mean : array
+        historical mean of the historical hazard
     """
     if input_dir is None:
         input_dir = Path(INPUT_DIR)
@@ -793,25 +868,35 @@ def calc_fut_haz_isimip(his_file, scenario, file_props, hist_mean, input_dir=Non
                         bbox=None, fut_file=None, yearrange_fut=None):
     """Create future hazard.
 
-        Parameters:
-            his_file (string): file name of historical input hazard file
-            scenario (string): future scenario, e.g. rcp60
-            file_props (dict): file properties of all historical input hazard files
-            hist_mean (array): historical mean of the historical hazard for the same model
-                combination and crop-irr cobination
+    Parameters
+    ----------
+    his_file : string
+        file name of historical input hazard file
+    scenario : string
+        future scenario, e.g. rcp60
+    file_props : dict
+        file properties of all historical input hazard files
+    hist_mean : array
+        historical mean of the historical hazard for the same model
+        combination and crop-irr cobination
+    input_dir : Path
+        path to input data directory, default: INPUT_DIR
+    bbox : list of four floats
+        bounding box:
+        [lon min, lat min, lon max, lat max]
+    fut_file : string
+        file name of future input hazard file. If given,
+        prefered over scenario and file_props
+    yearrange_fut : tuple
+        start and end year to be extracted
+        For None (default) yearrange_fut is set from filename or YEARCHUNKS
 
-        Optional Parameters:
-            input_dir (Path): path to input data directory, default: INPUT_DIR
-            bbox (list of four floats): bounding box:
-                [lon min, lat min, lon max, lat max]
-            fut_file (string): file name of future input hazard file. If given,
-                prefered over scenario and file_props
-            yearrange_fut (tuple): start and end year to be extracted
-                For None (default) yearrange_fut is set from filename or YEARCHUNKS
-
-        Return:
-            haz_fut (RelativeCropyield): future hazard
-            filename (string): name to save future hazard
+    Returns
+    -------
+    haz_fut : RelativeCropyield
+        future hazard
+    filename : string
+        name to save future hazard
     """
     if input_dir is None:
         input_dir = Path(INPUT_DIR)
@@ -893,13 +978,19 @@ def read_wheat_mask_isimip3(input_dir=None, filename=None, bbox=None):
     Required in set_multiple_rc_from_isimip() if isimip_version is ISIMIP3b and
     combine_crops is True.
 
-    Optional Parameters:
-        input_dir (Path or str): path to directory containing input file, default: INPUT_DIR
-        filename (str): name of file
-        bbox (tuple): geogr. bounding box, tuple or array with for elements.
+    Parameters
+    ----------
+    input_dir : Path or str
+        path to directory containing input file, default: INPUT_DIR
+    filename : str
+        name of file
+    bbox : tuple
+        geogr. bounding box, tuple or array with for elements.
 
-    Returns:
-        whe_mask (xarray)"""
+    Returns
+    -------
+    whe_mask (xarray)
+    """
 
     if input_dir is None:
         input_dir = Path(INPUT_DIR)
@@ -915,21 +1006,28 @@ def read_wheat_mask_isimip3(input_dir=None, filename=None, bbox=None):
 def plot_comparing_maps(haz_his, haz_fut, axes=None, nr_cli_models=1, model=1):
     """Plots comparison maps of historic and future data and their difference fut-his
 
-    Parameters:
-        haz_his (RelativeCropyield): historic hazard
-        haz_fut (RelativeCropyield): future hazard
-        axes (Geoaxes): subplot axes that are generated if not given
-            (sets the figure size depending on the extent of the single plots and
-             the amount of rows)
-        nr_cli_models (int): number of climate models and respectively nr of rows within
-            the subplot
-        model (int): current row to plot - this method can be used in a loop to plot
-            subplots in one figure consisting of several rows of subplots.
-            One row displays the intensity for present and future climate and the difference of
-            the two for one model-combination (ag_model and cl_model)
+    Parameters
+    ----------
+    haz_his : RelativeCropyield
+        historic hazard
+    haz_fut : RelativeCropyield
+        future hazard
+    axes : Geoaxes
+        subplot axes that are generated if not given
+        (sets the figure size depending on the extent of the single plots and
+        the amount of rows)
+    nr_cli_models : int
+        number of climate models and respectively nr of rows within
+        the subplot
+    model : int
+        current row to plot - this method can be used in a loop to plot
+        subplots in one figure consisting of several rows of subplots.
+        One row displays the intensity for present and future climate and the difference of
+        the two for one model-combination (ag_model and cl_model)
 
-    Returns:
-        figure, geoaxes
+    Returns
+    -------
+    figure, geoaxes
     """
 
 
