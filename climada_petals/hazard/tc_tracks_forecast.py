@@ -123,7 +123,7 @@ class TCForecast(TCTracks):
 
             if os.name == 'nt':
                 try:
-                    file = file.file # if file is tempfile._TemporaryFileWrapper in windows, change to
+                    file = file.file # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
                 except AttributeError:
                     pass
 
