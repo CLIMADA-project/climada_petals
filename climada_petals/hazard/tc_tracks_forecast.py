@@ -199,7 +199,8 @@ class TCForecast(TCTracks):
         return localfiles
 
     def read_one_bufr_tc(self, file, id_no=None):
-        """ Read a single BUFR TC track file.
+        """ Read a single BUFR TC track file tailored to the ECMWF TC track
+        predictions format.
 
         Parameters:
             file (str, filelike): Path object, string, or file-like object
