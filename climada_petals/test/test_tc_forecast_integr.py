@@ -101,4 +101,3 @@ class TestTCForecast(unittest.TestCase):
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestTCForecast)
     unittest.TextTestRunner(verbosity=2).run(TESTS)
-    
