@@ -83,7 +83,7 @@ MISSING_LONG = ec.CODES_MISSING_LONG
 class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
     obtained from numerical weather prediction runs.
-    
+
     Attributes:
         data (list(xarray.Dataset)): Same as in parent class, adding the
             following attributes
@@ -120,10 +120,10 @@ class TCForecast(TCTracks):
                 file.seek(0)  # reset cursor if opened file instance
             except AttributeError:
                 pass
-            
+
             if os.name == 'nt':
                 try:
-                    file = file.file # if file is tempfile._TemporaryFileWrapper in windows, change to 
+                    file = file.file # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
                 except AttributeError:
                     pass
 
@@ -205,12 +205,13 @@ class TCForecast(TCTracks):
         return localfiles
 
     def read_one_bufr_tc(self, file, id_no=None):
-        """ Read a single BUFR TC track file.
+        """ Read a single BUFR TC track file tailored to the ECMWF TC track
+        predictions format.
 
         Parameters:
             file (str, filelike): Path object, string, or file-like object
             id_no (int): Numerical ID; optional. Else use date + random int.
-        """     
+        """
         # Open the bufr file
         try:
             # for the case that file is str, try open it
@@ -221,7 +222,7 @@ class TCForecast(TCTracks):
         # we need to instruct ecCodes to expand all the descriptors
         # i.e. unpack the data values
         ec.codes_set(bufr, 'unpack', 1)
-        
+
         # get the forcast time
         timestamp_origin = dt.datetime(
             ec.codes_get(bufr, 'year'), ec.codes_get(bufr, 'month'),
@@ -229,10 +230,10 @@ class TCForecast(TCTracks):
             ec.codes_get(bufr, 'minute'),
         )
         timestamp_origin = np.datetime64(timestamp_origin)
-        
+
         # get storm identifier
         sid = ec.codes_get(bufr, 'stormIdentifier').strip()
-        
+
         # number of timestep (size of the forecast time + initial timestep)
         try:
             n_timestep = ec.codes_get_size(bufr, 'timePeriod') + 1
@@ -240,16 +241,16 @@ class TCForecast(TCTracks):
             LOGGER.warning("Track %s has no defined timePeriod."
                             "Track is discarded.", sid)
             return None
-            
+
         # ensemble members number
         ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
-        
+
         # values at timestep 0
         lat_init_temp = ec.codes_get_array(bufr, '#2#latitude')
         lon_init_temp = ec.codes_get_array(bufr, '#2#longitude')
         pre_init_temp = ec.codes_get_array(bufr, '#1#pressureReducedToMeanSeaLevel')
         wnd_init_temp = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
-        
+
         # check dimention of the variables, and replace missing value with NaN
         lat_init = self._check_variable(lat_init_temp, ens_no)
         lon_init = self._check_variable(lon_init_temp, ens_no)
@@ -261,13 +262,13 @@ class TCForecast(TCTracks):
         longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(len(ens_no))}
         pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(len(ens_no))}
         max_wind = {ind_ens: np.array(wnd_init[ind_ens]) for ind_ens in range(len(ens_no))}
-        
+
         # getting the forecasted storms
         timesteps_int = [0 for x in range(n_timestep)]
         for ind_timestep in range(1, n_timestep):
             rank1 = ind_timestep * 2 + 2 # rank for getting storm centre information
             rank3 = ind_timestep * 2 + 3 # rank for getting max wind information
-            
+
             timestep = ec.codes_get_array(bufr, "#%d#timePeriod" % ind_timestep)
             if len(timestep) == 1:
                 timesteps_int[ind_timestep] = timestep[0]
@@ -276,7 +277,7 @@ class TCForecast(TCTracks):
                     if timestep[i] != MISSING_LONG:
                         timesteps_int[ind_timestep] = timestep[i]
                         break
-            
+
             # Location of the storm
             sig_values = ec.codes_get_array(bufr, "#%d#meteorologicalAttributeSignificance" % rank1)
             if len(sig_values) == 1:
@@ -286,14 +287,14 @@ class TCForecast(TCTracks):
                     if sig_values[j] != ec.CODES_MISSING_LONG:
                         significance = sig_values[j]
                         break
-            # get lat, lon, and pre of all ensemble members at ind_timestep        
+            # get lat, lon, and pre of all ensemble members at ind_timestep
             if significance == 1:
                 lat_temp = ec.codes_get_array(bufr, "#%d#latitude" % rank1)
                 lon_temp = ec.codes_get_array(bufr, "#%d#longitude" % rank1)
                 pre_temp = ec.codes_get_array(bufr, "#%d#pressureReducedToMeanSeaLevel" % (ind_timestep + 1))
             else:
                 raise ValueError('unexpected meteorologicalAttributeSignificance=', significance)
-                
+
             # Location of max wind
             sig_values = ec.codes_get_array(bufr, "#%d#meteorologicalAttributeSignificance" % rank3)
             if len(sig_values) == 1:
@@ -303,18 +304,18 @@ class TCForecast(TCTracks):
                     if sig_values[j] != ec.CODES_MISSING_LONG:
                         significanceWind = sig_values[j]
                         break
-            # max_wind of all ensemble members at ind_timestep    
+            # max_wind of all ensemble members at ind_timestep
             if significanceWind == 3:
                 wnd_temp = ec.codes_get_array(bufr, "#%d#windSpeedAt10M" % (ind_timestep + 1))
             else:
                 raise ValueError('unexpected meteorologicalAttributeSignificance=', significance)
-                
+
             # check dimention of the variables, and replace missing value with NaN
             lat = self._check_variable(lat_temp, ens_no)
             lon = self._check_variable(lon_temp, ens_no)
             pre = self._check_variable(pre_temp, ens_no)
             wnd = self._check_variable(wnd_temp, ens_no)
-            
+
             # appending values into dictionaries
             for ind_ens in range(len(ens_no)):
                 latitude[ind_ens] = np.append(latitude[ind_ens], lat[ind_ens])
@@ -322,7 +323,7 @@ class TCForecast(TCTracks):
                 pressure[ind_ens] = np.append(pressure[ind_ens], pre[ind_ens])
                 max_wind[ind_ens] = np.append(max_wind[ind_ens], wnd[ind_ens])
 
-        
+
         # storing information into a dictionary
         msg = {
             # subset forecast data
@@ -371,15 +372,15 @@ class TCForecast(TCTracks):
 
         timestep_int = np.array(msg['timestamp']).squeeze()
         timestamp = timestamp_origin + timestep_int.astype('timedelta64[h]')
-        
-        # some weak storms have only perturbed analysis, which gives a 
+
+        # some weak storms have only perturbed analysis, which gives a
         # size 1 array in ens_type with value 4
         try:
             ens_bool = msg['ens_type'][index] != 0
         except LookupError:
             ens_bool = msg['ens_type'][0] != 0
             return None
-        
+
         try:
             track = xr.Dataset(
                 data_vars={
