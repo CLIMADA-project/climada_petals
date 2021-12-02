@@ -20,6 +20,7 @@ Agriculture exposures from ISIMIP and FAO.
 """
 import logging
 from pathlib import Path
+import copy
 
 import numpy as np
 import xarray as xr
@@ -683,114 +684,18 @@ class CropProduction(Exposures):
         exp.check()
         return exp
 
-    def set_value_to_kcal(self, biomass=True):
-        """Converts the exposure value from tonnes to kcal per year using
-        conversion factor per crop type.
 
-        Optional Parameter:
-            biomass (bool): if true, KCAL_PER_TON['biomass'] is used (default,
-                for FAO normalized crop production). If False, KCAL_PER_TON['drymatter']
-                is used (best for crop model output in dry matter, default for
-                raw crop model output)
+    def set_value_to_kcal(self, *args, **kwargs):
+        """This function is deprecated, use function value_to_kcal instead."""
+        LOGGER.warning("The use of CropProduction.set_value_to_kcal is deprecated."
+                       "Use function value_to_kcal instead.")
+        self.__dict__ = value_to_kcal(self, *args, **kwargs).__dict__
 
-        Returns
-        -------
-        Exposure with unit kcal/y
-        """
-        if self.value_unit != 't/y':
-            LOGGER.warning('self.unit is not t/y.')
-        self.gdf['tonnes_per_year'] = self.gdf['value'].values
-        if biomass:
-            self.gdf.value *= KCAL_PER_TON['biomass'][self.crop]
-        else:
-            self.gdf.value *= KCAL_PER_TON['drymatter'][self.crop]
-
-        self.value_unit = 'kcal/y'
-        return self
-
-    def set_value_to_usd(self, input_dir=None, yearrange=None):
-        # to do: check api availability?; default yearrange for single year (e.g. 5a)
-        """Calculates the exposure in USD using country and year specific data published
-        by the FAO.
-
-        Parameters
-        ----------
-        input_dir : Path or str
-            directory containing the input (FAO pricing) data,
-            default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-        yearrange : array
-            year range for prices, can also be set to a single year
-            Default is set to the arbitrary time range (2000, 2018)
-            The data is available for the years 1991-2018
-        crop : str
-            crop type
-            e.g., 'mai', 'ric', 'whe', 'soy'
-
-        Returns
-        -------
-        Exposure
-        """
-        if not input_dir:
-            input_dir = INPUT_DIR
-        input_dir = Path(input_dir)
-        if yearrange is None:
-            yearrange = YEARS_FAO
-        # the exposure in t/y is saved as 'tonnes_per_year'
-        self.gdf['tonnes_per_year'] = self.gdf['value'].values
-
-        # account for the case of only specifying one year as yearrange
-        if len(yearrange) == 1:
-            yearrange = (yearrange[0], yearrange[0])
-
-        # open both FAO files and extract needed variables
-        # FAO_FILE: contains producer prices per crop, country and year
-        fao = dict()
-        fao['file'] = pd.read_csv(input_dir / FAO_FILE)
-        fao['crops'] = fao['file'].Item.values
-        fao['year'] = fao['file'].Year.values
-        fao['price'] = fao['file'].Value.values
-
-        fao_country = u_coord.country_faocode2iso(getattr(fao['file'], 'Area Code').values)
-
-        # create a list of the countries contained in the exposure
-        iso3num = list()
-        self.gdf.region_id[self.gdf.region_id == -99] = 0
-        iso3num = np.asarray(u_coord.country_to_iso(
-            self.gdf.region_id, representation="numeric", fillvalue=999), dtype=object)
-        list_countries = np.unique(iso3num)
-
-        # iterate over all countries that are covered in the exposure, extract the according price
-        # and calculate the crop production in USD/y
-        area_price = np.zeros(self.gdf.value.size)
-        for country in list_countries:
-            [idx_country] = (iso3num == country).nonzero()
-            if country == 999:
-                price = 0
-                area_price[idx_country] = self.gdf.value[idx_country] * price
-            # zero means no country, 999 other country
-            elif country != 0 and country != 999:
-                idx_price = np.where((np.asarray(fao_country) == country) &
-                                     (np.asarray(fao['crops']) == \
-                                     (CROP_NAME[self.crop])['fao']) &
-                                     (fao['year'] >= yearrange[0]) &
-                                     (fao['year'] <= yearrange[1]))
-                # if no price can be determined for a specific yearrange and country, the world
-                # average for that crop (in the specified yearrange) is used
-                if idx_price[0].size != 0:
-                    price = np.mean(fao['price'][idx_price])
-
-                else:
-                    idx_price = np.where((np.asarray(fao['crops']) == \
-                                          (CROP_NAME[self.crop])['fao']) &
-                                         (fao['year'] >= yearrange[0]) &
-                                         (fao['year'] <= yearrange[1]))
-                    price = np.mean(fao['price'][idx_price])
-                area_price[idx_country] = self.gdf.value[idx_country] * price
-
-        self.gdf['value'] = area_price
-        self.value_unit = 'USD/y'
-        self.check()
-        return self
+    def set_value_to_usd(self, *args, **kwargs):
+        """This function is deprecated, use functiom value_to_usd instead."""
+        LOGGER.warning("The use of CropProduction.set_value_to_usd is deprecated."
+                       "Use function value_to_usd instead.")
+        self.__dict__ = value_to_usd(self, *args, **kwargs).__dict__
 
     def aggregate_countries(self):
         """Aggregate exposure data by country.
@@ -809,6 +714,131 @@ class CropProduction(Exposures):
             country_values[i] = self.gdf.loc[self.gdf.region_id == iso_nr].value.sum()
 
         return list_countries, country_values
+
+
+def value_to_kcal(exp_cp, biomass=True):
+    """Converts the exposure value from tonnes to kcal per year using
+    conversion factor per crop type.
+
+    Parameters
+    ----------
+    exp_cp : CropProduction
+        CropProduction exposure object with units tonnes per year ('t/y')
+    biomass : bool (optional)
+        if true, KCAL_PER_TON['biomass'] is used (default,
+        for FAO normalized crop production). If False, KCAL_PER_TON['drymatter']
+        is used (best for crop model output in dry matter, default for
+        raw crop model output)
+
+    Returns
+    -------
+    new_exp : CropProduction
+        CropProduction exposure object with unit 'kcal/y'
+    """
+    if exp_cp.value_unit != 't/y':
+        LOGGER.warning('self.unit is not t/y.')
+    # create deep copy of exposure
+    new_exp = copy.deepcopy(exp_cp)
+    new_exp.gdf['tonnes_per_year'] = exp_cp.gdf['value'].values
+    if biomass:
+        new_exp.gdf.value *= KCAL_PER_TON['biomass'][exp_cp.crop]
+    else:
+        new_exp.gdf.value *= KCAL_PER_TON['drymatter'][exp_cp.crop]
+
+    new_exp.value_unit = 'kcal/y'
+    return new_exp
+
+def value_to_usd(exp_cp, input_dir=None, yearrange=None):
+    # to do: check api availability?; default yearrange for single year (e.g. 5a)
+    """Calculates the exposure in USD per year using country and year specific 
+    data published by the FAO, requires crop production exposure with unit 't/y'
+
+    Parameters
+    ----------
+    exp_cp : CropProduction
+        CropProduction exposure object with units tonnes per year ('t/y')
+    input_dir : Path or str (optional)
+        directory containing the input (FAO pricing) data,
+        default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
+    yearrange : np.array (optional)
+        year range for prices, can also be set to a single year
+        Default is set to the arbitrary time range (2000, 2018)
+        The data is available for the years 1991-2018
+    crop : str
+        crop type
+        e.g., 'mai', 'ric', 'whe', 'soy'
+
+    Returns
+    -------
+    new_exp : CropProduction
+        CropProduction exposure object with unit 'USD/y'
+    """
+    if not input_dir:
+        input_dir = INPUT_DIR
+    input_dir = Path(input_dir)
+    if yearrange is None:
+        yearrange = YEARS_FAO
+    # create deep copy of exposure
+    new_exp = copy.deepcopy(exp_cp)
+
+    # account for the case of only specifying one year as yearrange
+    if len(yearrange) == 1:
+        yearrange = (yearrange[0], yearrange[0])
+
+    # open both FAO files and extract needed variables
+    # FAO_FILE: contains producer prices per crop, country and year
+    fao = dict()
+    fao['file'] = pd.read_csv(input_dir / FAO_FILE)
+    fao['crops'] = fao['file'].Item.values
+    fao['year'] = fao['file'].Year.values
+    fao['price'] = fao['file'].Value.values
+
+    fao_country = u_coord.country_faocode2iso(getattr(fao['file'], 'Area Code').values)
+
+    # create deep copy of exposure
+    new_exp = copy.deepcopy(exp_cp)
+
+    # create a list of the countries contained in the exposure
+    iso3num = list()
+    new_exp.gdf.region_id[exp_cp.gdf.region_id == -99] = 0
+    iso3num = np.asarray(u_coord.country_to_iso(
+        new_exp.gdf.region_id, representation="numeric", fillvalue=999), dtype=object)
+    list_countries = np.unique(iso3num)
+
+    # iterate over all countries that are covered in the exposure, extract the according price
+    # and calculate the crop production in USD/y
+    area_price = np.zeros(new_exp.gdf.value.size)
+    for country in list_countries:
+        [idx_country] = (iso3num == country).nonzero()
+        if country == 999:
+            price = 0
+            area_price[idx_country] = new_exp.gdf.value[idx_country] * price
+        # zero means no country, 999 other country
+        elif country != 0 and country != 999:
+            idx_price = np.where((np.asarray(fao_country) == country) &
+                                 (np.asarray(fao['crops']) == \
+                                 (CROP_NAME[new_exp.crop])['fao']) &
+                                 (fao['year'] >= yearrange[0]) &
+                                 (fao['year'] <= yearrange[1]))
+            # if no price can be determined for a specific yearrange and country, the world
+            # average for that crop (in the specified yearrange) is used
+            if idx_price[0].size != 0:
+                price = np.mean(fao['price'][idx_price])
+
+            else:
+                idx_price = np.where((np.asarray(fao['crops']) == \
+                                      (CROP_NAME[new_exp.crop])['fao']) &
+                                     (fao['year'] >= yearrange[0]) &
+                                     (fao['year'] <= yearrange[1]))
+                price = np.mean(fao['price'][idx_price])
+            area_price[idx_country] = new_exp.gdf.value[idx_country] * price
+
+    # the exposure values in t/y is saved as 'tonnes_per_year'
+    new_exp.gdf['tonnes_per_year'] = exp_cp.gdf['value'].values
+    new_exp.gdf['value'] = area_price
+    new_exp.value_unit = 'USD/y'
+    new_exp.check()
+    return new_exp
 
 def init_full_exp_set_isimip(input_dir=None, filename=None, hist_mean_dir=None,
                              output_dir=None, bbox=None, yearrange=None, unit=None,
