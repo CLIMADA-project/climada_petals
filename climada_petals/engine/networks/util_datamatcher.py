@@ -172,20 +172,16 @@ class PowerFunctionalData():
         gdf_pplants.estimated_generation_gwh_2017 = pd.to_numeric(
             gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
         
-        tot_cons = per_cap_cons*pop_no
+        tot_cons_mw = per_cap_cons*pop_no/HRS_PER_YEAR
+        tot_prod_mw = gdf_pplants.estimated_generation_gwh_2017.sum()*1000/HRS_PER_YEAR
         
-        imp_exp_balance = tot_cons - gdf_pplants.estimated_generation_gwh_2017.sum()
-        
+        unassigned = tot_cons_mw - tot_prod_mw
+        nans = np.isnan(gdf_pplants.estimated_generation_gwh_2017).sum()
+
         gdf_pplants['el_gen_mw'] = gdf_pplants.estimated_generation_gwh_2017*1000/HRS_PER_YEAR
+        gdf_pplants['el_gen_mw'][np.isnan(gdf_pplants.el_gen_mw)] = unassigned/nans
         
-        imp_exp_balance = gpd.GeoDataFrame(
-            {'geometry':[shapely.geometry.Point(max(gdf_pplants.geometry.x)+1,
-                                                max(gdf_pplants.geometry.y)+1)],
-             'name': ['imp_exp_balance'],
-             'el_gen_mw': [imp_exp_balance/HRS_PER_YEAR],
-             'ci_type' : 'power plant'
-             })
-        return  gdf_pplants.append(imp_exp_balance, ignore_index=True)
+        return  gdf_pplants
     
     def assign_linecapa():
         pass

@@ -237,8 +237,8 @@ class PowerFlow():
 
 class PowerCluster():
     
-    def set_capacity_from_sd_ratio(cis_graph, mw_per_cap, source_ci='power plant',
-                                   sink_ci='substation', demand_ci='people'):
+    def set_capacity_from_sd_ratio(cis_graph, per_cap_cons, source_ci='power plant',
+                                   sink_ci='substation', demand_ci='people', source_var='el_gen_mw'):
         
         capacity_vars = [var for var in cis_graph.graph.vs.attributes()
                          if f'capacity_{sink_ci}_' in var]
@@ -260,13 +260,12 @@ class PowerCluster():
             sinks = power_subgraph.vs[cluster].select(ci_type=sink_ci)
             demands = power_subgraph.vs[cluster].select(ci_type=demand_ci)
             
-            psupply = sum([source['el_gen_mw']*source['func_tot'] 
+            psupply = sum([source[source_var]*source['func_tot'] 
                            for source in sources])
-            pdemand = sum([demand['counts']*mw_per_cap for demand in demands])
+            pdemand = sum([demand['counts']*per_cap_cons for demand in demands])
             
             try:
                 sd_ratio = min(1, psupply/pdemand)
-                print(sd_ratio)
             except ZeroDivisionError:
                 sd_ratio = 1
             

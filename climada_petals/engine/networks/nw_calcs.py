@@ -314,7 +314,7 @@ class GraphCalcs():
         return (sum(self.graph.vs.get_attribute_values('func_tot')), 
                 sum(self.graph.es.get_attribute_values('func_tot')))
 
-    def _update_cis_internally(self, df_dependencies, p_source, p_sink, mw_per_cap):
+    def _update_cis_internally(self, df_dependencies, p_source, p_sink, per_cap_cons, source_var='el_gen_mw'):
         ci_types = np.unique(np.append(
             np.unique(df_dependencies.source), 
             np.unique(df_dependencies.target)))
@@ -324,8 +324,8 @@ class GraphCalcs():
                 LOGGER.info('Updating power clusters')
                 # TODO: This is poorly hard-coded and poorly assigned.
                 self = PowerCluster.set_capacity_from_sd_ratio(
-                    self, mw_per_cap=mw_per_cap, source_ci=p_source,
-                    sink_ci=p_sink)
+                    self, per_cap_cons=per_cap_cons, source_ci=p_source,
+                    sink_ci=p_sink, source_var=source_var)
             else:
                 LOGGER.info('No internal update method for CI type' +
                                f' {ci_type}')
@@ -472,7 +472,7 @@ class GraphCalcs():
             [subvx.index for subvx in self.graph.subgraph(vertex_seq).vs],
             [vx.index for vx in vertex_seq]))
 
-    def cascade(self, df_dependencies, p_source='power plant', p_sink='substation', mw_per_cap=0.000079):
+    def cascade(self, df_dependencies, p_source='power plant', p_sink='substation', per_cap_cons=0.000079, source_var='el_gen_mw'):
         """
         wrapper for internal state update, functional dependency iterations,
         enduser dependency updates
@@ -481,7 +481,8 @@ class GraphCalcs():
         while delta != 0:
             func_state_tot_vs, func_state_tot_es = self._funcstates_sum()
             self._update_cis_internally(df_dependencies, p_source=p_source,
-                                        p_sink=p_sink, mw_per_cap=mw_per_cap)
+                                        p_sink=p_sink, per_cap_cons=per_cap_cons,
+                                        source_var=source_var)
             self._update_functional_dependencies(df_dependencies)
             func_state_tot_vs2, func_state_tot_es2 = self._funcstates_sum()
             delta = func_state_tot_vs-func_state_tot_vs2
