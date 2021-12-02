@@ -515,6 +515,7 @@ class CropProduction(Exposures):
                        "Use CropPoduction.from_spam_ray_mirca instead.")
         self.__dict__ = CropProduction.from_spam_ray_mirca(*args, **kwargs).__dict__
 
+    @classmethod
     def from_spam_ray_mirca(cls, crop_type, irrigation_type='all',
                             bbox=BBOX, input_dir=INPUT_DIR):
         """

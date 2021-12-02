@@ -21,7 +21,7 @@ Unit Tests on LitPop exposures.
 import unittest
 import numpy as np
 from climada_petals.entity.exposures import crop_production as cp
-#import CropProduction, normalize_with_fao_cp
+
 from climada.util.constants import DEMO_DIR
 
 INPUT_DIR = DEMO_DIR
