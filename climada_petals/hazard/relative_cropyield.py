@@ -946,8 +946,6 @@ def calc_fut_haz_isimip(his_file, scenario, file_props, hist_mean, input_dir=Non
             yearrange_fut = (YEARCHUNKS[scenario]['startyear'],
                              YEARCHUNKS[scenario]['endyear'])
 
-    startyear, endyear = yearrange_fut
-
     haz_fut = RelativeCropyield()
     haz_fut.set_from_isimip_netcdf(input_dir=input_dir, filename=fut_file,
                                    bbox=bbox, yearrange=yearrange_fut,
@@ -1005,7 +1003,7 @@ def calc_fut_haz_isimip(his_file, scenario, file_props, hist_mean, input_dir=Non
                 file_props[his_file]['cl_model'] + '_' + scenario + '_' +
                 file_props[his_file]['soc'] + '_' + file_props[his_file]['co2'] +
                 '_' + file_props[his_file]['combi_crop'] + '-' + file_props[his_file]['irr']+ '_' +
-                str(startyear) + '-' + str(endyear) + '.hdf5')
+                str(yearrange_fut[0]) + '-' + str(yearrange_fut[1]) + '.hdf5')
     return haz_fut, filename
 
 def read_wheat_mask_isimip3(input_dir=None, filename=None, bbox=None):

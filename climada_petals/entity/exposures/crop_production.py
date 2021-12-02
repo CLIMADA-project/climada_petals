@@ -750,7 +750,7 @@ def value_to_kcal(exp_cp, biomass=True):
 
 def value_to_usd(exp_cp, input_dir=None, yearrange=None):
     # to do: check api availability?; default yearrange for single year (e.g. 5a)
-    """Calculates the exposure in USD per year using country and year specific 
+    """Calculates the exposure in USD per year using country and year specific
     data published by the FAO, requires crop production exposure with unit 't/y'
 
     Parameters
