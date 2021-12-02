@@ -294,16 +294,16 @@ class RelativeCropyield(Hazard):
         return hist_mean
 
     def set_rel_yield_to_int(self, *args, **kwargs):
-        """This function is deprecated, use RelativeCropyield.set_rel_yield_to_int instead."""
+        """This function is deprecated, use function rel_yield_to_int instead."""
         LOGGER.warning("The use of RelativeCropyield.set_rel_yield_to_int is deprecated."
-                       "Use RelativeCropyield.rel_yield_to_int instead.")
+                       "Use function rel_yield_to_int instead.")
         self.__dict__ = rel_yield_to_int(self, *args, **kwargs).__dict__
 
 
     def set_percentile_to_int(self, *args, **kwargs):
-        """This function is deprecated, use RelativeCropyield.set_percentile_to_int instead."""
+        """This function is deprecated, use function percentile_to_int instead."""
         LOGGER.warning("The use of RelativeCropyield.set_percentile_to_int is deprecated."
-                       "Use RelativeCropyield.percentile_to_int instead.")
+                       "Use function percentile_to_int instead.")
         self.__dict__ =  percentile_to_int(self, *args, **kwargs).__dict__
 
 
@@ -407,16 +407,19 @@ class RelativeCropyield(Hazard):
 
 
 def rel_yield_to_int(haz_cy, hist_mean):
-    """Sets relative yield (yearly yield / historic mean) as intensity
+    """Return hazard with relative yield (yearly yield / historic mean) as intensity
 
     Parameters
     ----------
-    hist_mean : array
+    haz_cy : RelativeCropyield
+        RelativeCropyield hazard instance with abs. yield as intensity.
+    hist_mean : np.array
         historic mean per centroid
 
     Returns
     -------
-    hazard with modified intensity [unitless]
+    RelativeCropyield
+        Hazard with modified intensity [unitless]
     """
     # determine idx of the centroids with a mean yield !=0
     [idx] = np.where(hist_mean != 0)
@@ -437,10 +440,12 @@ def rel_yield_to_int(haz_cy, hist_mean):
 
 
 def percentile_to_int(haz_cy, reference_intensity=None):
-    """Sets percentile to intensity
+    """returns RC hazard with percentile as intensity.
 
     Parameters
     ----------
+    haz_cy : RelativeCropyield
+        RelativeCropyield hazard instance with abs. yield as intensity.
     reference_intensity : AD
         intensity to be used as reference
         (e.g. the historic intensity can be used in order to be able
@@ -448,7 +453,8 @@ def percentile_to_int(haz_cy, reference_intensity=None):
 
     Returns
     -------
-    hazard with modified intensity
+    RelativeCropyield
+        hazard with modified intensity
     """
 
     hazard_matrix = np.zeros(haz_cy.intensity.shape)
