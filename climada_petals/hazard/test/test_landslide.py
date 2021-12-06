@@ -28,11 +28,10 @@ from climada import CONFIG
 from climada_petals.hazard.landslide import Landslide, sample_events_from_probs
 import climada.util.coordinates as u_coord
 
-# DATA_DIR = CONFIG.hazard.test_data.dir()
-# LS_HIST_FILE = DATA_DIR / 'test_ls_hist.shp'
-# LS_PROB_FILE = DATA_DIR / 'test_ls_prob.tif'
-LS_HIST_FILE = '/Users/evelynm/climada_petals/climada_petals/hazard/test/data/test_ls_hist.shp'
-LS_PROB_FILE = '/Users/evelynm/climada_petals/climada_petals/hazard/test/data/test_ls_prob.tif'
+DATA_DIR = CONFIG.hazard.test_data.dir()
+LS_HIST_FILE = DATA_DIR / 'test_ls_hist.shp'
+LS_PROB_FILE = DATA_DIR / 'test_ls_prob.tif'
+
 
 class TestLandslideModule(unittest.TestCase):
 
