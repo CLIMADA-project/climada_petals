@@ -241,7 +241,7 @@ class Landslide(Hazard):
         sample_events_from_probs()
         """
         
-        haz = Landslide()
+        haz = cls()
         # raster with occurrence probs
         haz.centroids.meta, prob_matrix = \
             u_coord.read_raster(path_sourcefile, geometry=[shapely.geometry.box(*bbox, ccw=True)])
