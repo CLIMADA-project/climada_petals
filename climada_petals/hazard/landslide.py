@@ -132,7 +132,7 @@ class Landslide(Hazard):
             set for either point hazards or polygons with specified
             surrounding extent.
         """
-        haz = Landslide()
+        haz = cls()
         if isinstance(input_gdf, gpd.GeoDataFrame):
             LOGGER.info('Using pre-loaded gdf')
             gdf_cropped = input_gdf.copy().cx[bbox[0]:bbox[2], bbox[1]:bbox[3]]
