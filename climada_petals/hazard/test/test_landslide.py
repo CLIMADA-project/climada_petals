@@ -28,14 +28,36 @@ from climada import CONFIG
 from climada_petals.hazard.landslide import Landslide, sample_events_from_probs
 import climada.util.coordinates as u_coord
 
-DATA_DIR = CONFIG.hazard.test_data.dir()
-LS_HIST_FILE = DATA_DIR / 'test_ls_hist.shp'
-LS_PROB_FILE = DATA_DIR / 'test_ls_prob.tif'
+# DATA_DIR = CONFIG.hazard.test_data.dir()
+# LS_HIST_FILE = DATA_DIR / 'test_ls_hist.shp'
+# LS_PROB_FILE = DATA_DIR / 'test_ls_prob.tif'
+LS_HIST_FILE = '/Users/evelynm/climada_petals/climada_petals/hazard/test/data/test_ls_hist.shp'
+LS_PROB_FILE = '/Users/evelynm/climada_petals/climada_petals/hazard/test/data/test_ls_prob.tif'
 
 class TestLandslideModule(unittest.TestCase):
 
+    def test_from_hist(self):
+        """ Test function from_hist()"""
+        LS_hist = Landslide.from_hist(bbox=(20,40,23,46),
+                                  input_gdf=LS_HIST_FILE)
+        self.assertEqual(LS_hist.size, 272)
+        self.assertEqual(LS_hist.tag.haz_type, 'LS')
+        self.assertEqual(np.unique(LS_hist.intensity.data),np.array([1]))
+        self.assertEqual(np.unique(LS_hist.fraction.data),np.array([1]))
+        self.assertTrue((LS_hist.frequency.data<=1).all())
+
+        input_gdf = gpd.read_file(LS_HIST_FILE)
+        LS_hist = Landslide()
+        LS_hist.set_ls_hist(bbox=(20,40,23,46),
+                                  input_gdf=input_gdf)
+        self.assertEqual(LS_hist.size, 272)
+        self.assertEqual(LS_hist.tag.haz_type, 'LS')
+        self.assertEqual(np.unique(LS_hist.intensity.data),np.array([1]))
+        self.assertEqual(np.unique(LS_hist.fraction.data),np.array([1]))
+        self.assertTrue((LS_hist.frequency.data<=1).all())    
+
     def test_set_ls_hist(self):
-        """ Test function set_ls_hist()"""
+        """ Test deprecated function set_ls_hist()"""
         LS_hist = Landslide()
         LS_hist.set_ls_hist(bbox=(20,40,23,46),
                                   input_gdf=LS_HIST_FILE)
@@ -54,9 +76,67 @@ class TestLandslideModule(unittest.TestCase):
         self.assertEqual(np.unique(LS_hist.intensity.data),np.array([1]))
         self.assertEqual(np.unique(LS_hist.fraction.data),np.array([1]))
         self.assertTrue((LS_hist.frequency.data<=1).all())
+        
+    def test_from_prob(self):
+        """ Test the function from_prob()"""
+        
+        n_years=1000
+        LS_prob = Landslide.from_prob(bbox=(8,45,11,46),
+                            path_sourcefile=LS_PROB_FILE, n_years=n_years,
+                            dist='binom')
 
+        self.assertEqual(LS_prob.tag.haz_type, 'LS')
+        self.assertEqual(LS_prob.intensity.shape,(1, 43200))
+        self.assertEqual(LS_prob.fraction.shape,(1, 43200))
+        self.assertTrue(max(LS_prob.intensity.data)<=1)
+        self.assertEqual(min(LS_prob.intensity.data),0)
+        self.assertTrue(max(LS_prob.fraction.data)<=n_years)
+        self.assertEqual(min(LS_prob.fraction.data),0)
+        self.assertEqual(LS_prob.frequency.shape, (1, 43200))
+        self.assertEqual(min(LS_prob.frequency.data),0)
+        self.assertTrue(max(LS_prob.frequency.data)<=1/n_years)
+        self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
+        self.assertTrue(LS_prob.centroids.coord.max() <= 46)
+        self.assertTrue(LS_prob.centroids.coord.min() >= 8)
+
+        n_years=300
+        LS_prob = Landslide.from_prob(bbox=(8,45,11,46),
+                            path_sourcefile=LS_PROB_FILE,
+                            dist='poisson', n_years=n_years)
+        self.assertEqual(LS_prob.tag.haz_type, 'LS')
+        self.assertEqual(LS_prob.intensity.shape,(1, 43200))
+        self.assertEqual(LS_prob.fraction.shape,(1, 43200))
+        self.assertTrue(max(LS_prob.intensity.data)<=1)
+        self.assertEqual(min(LS_prob.intensity.data),0)
+        self.assertTrue(max(LS_prob.fraction.data)<=n_years)
+        self.assertEqual(min(LS_prob.fraction.data),0)
+        self.assertEqual(LS_prob.frequency.shape, (1, 43200))
+        self.assertEqual(min(LS_prob.frequency.data),0)
+        self.assertTrue(max(LS_prob.frequency.data)<=1/n_years)
+        self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
+        self.assertTrue(LS_prob.centroids.coord.max() <= 46)
+        self.assertTrue(LS_prob.centroids.coord.min() >= 8)
+
+        corr_fact = 1.8*10e6
+        LS_prob = Landslide.from_prob(bbox=(8,45,11,46),
+                            path_sourcefile=LS_PROB_FILE,
+                            dist='poisson', corr_fact=corr_fact)
+        self.assertEqual(LS_prob.tag.haz_type, 'LS')
+        self.assertEqual(LS_prob.intensity.shape,(1, 43200))
+        self.assertEqual(LS_prob.fraction.shape,(1, 43200))
+        self.assertTrue(max(LS_prob.intensity.data)<=1)
+        self.assertEqual(min(LS_prob.intensity.data),0)
+        self.assertTrue(max(LS_prob.fraction.data)<=n_years)
+        self.assertEqual(min(LS_prob.fraction.data),0)
+        self.assertEqual(LS_prob.frequency.shape, (1, 43200))
+        self.assertEqual(min(LS_prob.frequency.data),0)
+        self.assertTrue(max(LS_prob.frequency.data)<=1/n_years)
+        self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
+        self.assertTrue(LS_prob.centroids.coord.max() <= 46)
+        self.assertTrue(LS_prob.centroids.coord.min() >= 8)
+        
     def test_set_ls_prob(self):
-        """ Test the function set_ls_prob()"""
+        """ Test deprecated function set_ls_prob()"""
         LS_prob = Landslide()
         n_years=1000
         LS_prob.set_ls_prob(bbox=(8,45,11,46),
