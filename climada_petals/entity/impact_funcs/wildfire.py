@@ -105,7 +105,7 @@ class ImpfWildfire(ImpactFunc):
 
         Returns
         -------
-        self : climada.entity.impact_funcs.ImpfWildfire instance
+        impf : climada.entity.impact_funcs.ImpfWildfire instance
 
         """
         
@@ -116,3 +116,5 @@ class ImpfWildfire(ImpactFunc):
         impf.intensity = np.arange(0, 2)
         impf.paa = np.arange(0, 1)
         impf.mdd = np.ones(len(impf.intensity))
+        
+        return impf
