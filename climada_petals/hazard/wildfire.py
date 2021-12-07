@@ -1279,7 +1279,8 @@ class WildFire(Hazard):
             ens_size = 1
         self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
 
-    def from_netcdf(self, input_dir, filename, id_bands, event_list, bbox=BBOX):
+    @classmethod
+    def from_netcdf(cls, input_dir, filename, id_bands, event_list, bbox=BBOX):
 
         """Wrapper to fill hazard from NetCDF file.
         Build and tested for output from ISIMIP2 and Sentinel data.
@@ -1307,26 +1308,26 @@ class WildFire(Hazard):
 
         # hazard setup: set attributes
         [lonmin, latmin, lonmax, latmax] = bbox
-        self.set_raster([str(Path(input_dir, filename))], band=id_bands,
-                        geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
+        haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands,
+                              geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
 
-        self.intensity.data[np.isnan(self.intensity.data)] = 0.0
-        self.intensity.todense()
-        
-        self.event_name = event_list
+        haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
+        haz.intensity.todense()
+
+        haz.event_name = event_list
         #self.event_id = np.arange(1, len(event_list)+1)
-        self.frequency = np.ones(len(self.event_name)) * (1 / len(self.event_name))
-        self.date = np.array(u_dt.str_to_date(event_list))
-        
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        haz.frequency = np.ones(len(haz.event_name)) * (1 / len(haz.event_name))
+        haz.date = np.array(u_dt.str_to_date(event_list))
+
+        haz.fraction = haz.intensity.copy()
+        haz.fraction.data.fill(1.0)
         #self.units = ' ' franction of burnt area
-        self.centroids.set_meta_to_lat_lon()
-        self.centroids.region_id = (
-            u_coord.coord_on_land(self.centroids.lat, self.centroids.lon)).astype(dtype=int)
-        self.check()
-        
-        return self
+        haz.centroids.set_meta_to_lat_lon()
+        haz.centroids.region_id = (
+            u_coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
+        haz.check()
+
+        return haz
 
 @numba.njit
 def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
@@ -1368,7 +1369,7 @@ def from_sentinel(filename):
         path to input data directory,
     filename : string
         name of netcdf file in input_dir.
-    
+
     Returns
     ----------
     id_bands: list
@@ -1377,14 +1378,14 @@ def from_sentinel(filename):
         list of events contained in the input file in the format 'yyyy-mm-dd'
 
     """
-    
+
     (_, _, _, date, _, _, _) = filename.split('_')
     year = date[0:4]
     month = date[4:6]
     day = date[6:8]
     event_list = [year + '-' + month + '-' + day]
     id_bands = [1]
-    
+
     return id_bands, event_list
 
 def from_firemip(input_dir, filename):
@@ -1396,7 +1397,7 @@ def from_firemip(input_dir, filename):
         path to input data directory,
     filename : string
         name of netcdf file in input_dir
-    
+
     Returns
     ----------
     id_bands: list
@@ -1405,7 +1406,7 @@ def from_firemip(input_dir, filename):
         list of events contained in the input file in the format 'yyyy-mm-dd'
 
     """
-    
+
     # read indixes of bands to be extracted
     raster = rasterio.open(str(Path(input_dir, filename)))
     nr_bands = raster.count
@@ -1414,6 +1415,5 @@ def from_firemip(input_dir, filename):
     endyear, _ = endyearnc.split('.')
     event_names = [str(n) for n in range(int(startyear), int(endyear) + 1)]
     event_list = [event_ + '-01-01' for event_ in event_names]
-    
+
     return id_bands, event_list
-    
