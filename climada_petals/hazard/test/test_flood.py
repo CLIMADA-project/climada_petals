@@ -144,11 +144,10 @@ class TestRiverFlood(unittest.TestCase):
     def test_centroids_flood(self):
 
         # this is going to go through the meta part
-        rand_centroids = Centroids()
         lat = np.arange(47, 56, 0.2)
         lon = np.arange(5, 15, 0.2)
         lon, lat = np.meshgrid(lon, lat)
-        rand_centroids.set_lat_lon(lat.flatten(), lon.flatten())
+        rand_centroids = Centroids.from_lat_lon(lat.flatten(), lon.flatten())
         rf = RiverFlood()
         rf.set_from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
                        centroids=rand_centroids, ISINatIDGrid=False)
@@ -181,9 +180,7 @@ class TestRiverFlood(unittest.TestCase):
 
     def test_meta_centroids_flood(self):
         min_lat, max_lat, min_lon, max_lon = 45.7, 47.8, 7.5, 10.5
-        cent = Centroids()
-        cent.set_raster_from_pnt_bounds((min_lon, min_lat, max_lon, max_lat),
-                                        res=0.05)
+        cent = Centroids.from_pnt_bounds((min_lon, min_lat, max_lon, max_lat), res=0.05)
         rf_rast = RiverFlood()
         rf_rast.set_from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
                             centroids=cent)

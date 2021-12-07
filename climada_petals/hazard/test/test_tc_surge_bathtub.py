@@ -48,8 +48,7 @@ class tmp_artifical_topo(object):
         lon = np.arange(bounds[0] + 0.5 * res_deg, bounds[2], res_deg)
         self.shape = (lat.size, lon.size)
         self.transform = rasterio.Affine(res_deg, 0, bounds[0], 0, -res_deg, bounds[3])
-        centroids = Centroids()
-        centroids.set_lat_lon(*[ar.ravel() for ar in np.meshgrid(lon, lat)][::-1])
+        centroids = Centroids.from_lat_lon(*[ar.ravel() for ar in np.meshgrid(lon, lat)][::-1])
         centroids.set_dist_coast(signed=True, precomputed=True)
         self.dist_coast = centroids.dist_coast
 
@@ -94,8 +93,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         lon = np.arange(bounds[0] + 0.5 * res_deg, bounds[2], res_deg)
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
-        centroids = Centroids()
-        centroids.set_lat_lon(lat, lon)
+        centroids = Centroids.from_lat_lon(lat, lon)
         centroids.set_dist_coast(signed=True, precomputed=True)
 
         dem_bounds = (bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
@@ -155,8 +153,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         lon = np.arange(bounds[0] + 0.5 * res_deg, bounds[2], res_deg)
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
-        centroids = Centroids()
-        centroids.set_lat_lon(lat, lon)
+        centroids = Centroids.from_lat_lon(lat, lon)
         centroids.set_dist_coast(signed=True, precomputed=True)
 
         wind_haz = TropCyclone.from_tracks(tc_track, centroids=centroids)

@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-from climada.hazard.drought import Drought
+from climada_petals.hazard.drought import Drought
 
-from climada.entity.impact_funcs.drought import IFDrought
+from climada_petals.entity.impact_funcs.drought import ImpfDrought
 # from climada.entity import Entity
 from climada.entity import ImpactFuncSet
 from climada.engine import Impact
-from climada.entity.exposures.spam_agrar import SpamAgrar
+from climada_petals.entity.exposures.spam_agrar import SpamAgrar
 import numpy as np
 
 """Set Area to be analysed"""
@@ -55,11 +55,11 @@ new_haz = d.setup()
 
 """Initialize Impact function"""
 dr_impf = ImpactFuncSet()
-impf_def = IFDrought()
+impf_def = ImpfDrought.from_default_sum()
 """set impact function: for min: set_default; for sum-thr: set_default_sumthr; for sum: set_default_sum"""
 #impf_def.set_default()
 #impf_def.set_default_sumthr()
-impf_def.set_default_sum()
+
 dr_impf.append(impf_def)
 
 """Initialize Exposure"""
@@ -69,7 +69,7 @@ exposure_agrar.init_spam_agrar(country='CHE')
 """If intensity def is not default, exposure has to be adapted"""
 """In case of sum-thr: 'impf_DR_sumthr', in case of sum:'impf_DR_sum'"""
 #exposure_agrar['impf_DR_sumthr'] = np.ones(exposure_agrar.shape[0])
-exposure_agrar['impf_DR_sum'] = np.ones(exposure_agrar.shape[0])
+exposure_agrar.gdf['impf_DR_sum'] = np.ones(exposure_agrar.gdf.shape[0])
 
 """Initialize impact of the drought"""
 imp_drought = Impact()
