@@ -21,6 +21,7 @@ import pandas as pd
 import shapely
 import logging
 import sys
+import numpy as np
 
 sys.path.insert(1, '/Users/evelynm/trails/src/trails')
 import simplify
@@ -155,6 +156,42 @@ class NetworkPreprocess():
 
         return edges, nodes
 
+    @staticmethod
+    def close_gaps(self, df, tolerance):
+        """Close gaps in LineString geometry where it should be contiguous.
+        Snaps both lines to a centroid of a gap in between.
+        """
+        geom = df.geometry.values.data
+        coords = pygeos.get_coordinates(geom)
+        indices = pygeos.get_num_coordinates(geom)
+    
+        # generate a list of start and end coordinates and create point geometries
+        edges = [0]
+        i = 0
+        for ind in indices:
+            ix = i + ind
+            edges.append(ix - 1)
+            edges.append(ix)
+            i = ix
+        edges = edges[:-1]
+        points = pygeos.points(np.unique(coords[edges], axis=0))
+    
+        buffered = pygeos.buffer(points, tolerance)
+    
+        dissolved = pygeos.union_all(buffered)
+    
+        exploded = [
+            pygeos.get_geometry(dissolved, i)
+            for i in range(pygeos.get_num_geometries(dissolved))
+        ]
+    
+        centroids = pygeos.centroid(exploded)
+    
+        snapped = pygeos.snap(geom, pygeos.union_all(centroids), tolerance)
+    
+        return snapped
+
+
 class RoadPreprocess(NetworkPreprocess):
     
     def __init__(self):
@@ -165,6 +202,7 @@ class RoadPreprocess(NetworkPreprocess):
 
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
+            edges['geometry'] = self.close_gaps(self, edges, tolerance=0.1)
         if nodes.empty:
             nodes = None #simplify cannot handle empty df for nodes, only None
         else:
@@ -181,6 +219,7 @@ class RoadPreprocess(NetworkPreprocess):
         network = simplify.reset_ids(network)
         network = simplify.add_distances(network)
         network = simplify.merge_multilinestrings(network)
+        simplify.snap_nodes(network, threshold=0.001)
 
         return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
 
