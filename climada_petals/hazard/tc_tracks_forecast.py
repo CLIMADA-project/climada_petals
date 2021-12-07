@@ -92,7 +92,7 @@ class TCForecast(TCTracks):
                                deterministic run)
     """
 
-    def fetch_ecmwf(self, path=None, files=None):
+    def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None):
         """
         Fetch and read latest ECMWF TC track predictions from the FTP
         dissemination server into instance. Use path or files argument
@@ -100,39 +100,43 @@ class TCForecast(TCTracks):
 
         Parameters
         ----------
-        path : str, list(str)
+        path : str, list(str), optional
             A location in the filesystem. Either a
             path to a single BUFR TC track file, or a folder containing
             only such files, or a globbing pattern. Passed to
             climada.util.files_handler.get_file_names
-        files : file-like
+        files : file-like, optional
             An explicit list of file objects, bypassing
             get_file_names
+        target_dir : str, optional
+            An existing directory in the filesystem. When set, downloaded BUFR
+            files will be saved here, otherwise they will be downloaded as
+            temporary files.
+        remote_dir : str, optional
+            If set, search the ECMWF FTP folder for forecast files in the
+            directory; otherwise defaults to the latest. Format:
+            yyyymmddhhmmss, e.g. 20200730120000
         """
         if path is None and files is None:
-            files = self.fetch_bufr_ftp()
+            files = self.fetch_bufr_ftp(target_dir, remote_dir)
         elif files is None:
             files = get_file_names(path)
+        elif not isinstance(files, list):
+            files = [files]
+
 
         for i, file in tqdm.tqdm(enumerate(files, 1), desc='Processing',
                                  unit=' files', total=len(files)):
-            try:
-                file.seek(0)  # reset cursor if opened file instance
-            except AttributeError:
-                pass
+            # Open the bufr file if not already
+            if isinstance(file, str) or isinstance(file, Path):
+                file = open(file, 'rb')
 
-            if os.name == 'nt':
-                try:
-                    file = file.file # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
-                except AttributeError:
-                    pass
+            if os.name == 'nt' and hasattr(file, 'file'):
+                file = file.file # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
 
             self.read_one_bufr_tc(file, id_no=i)
 
-            try:
-                file.close()  # discard if tempfile
-            except AttributeError:
-                pass
+            file.close()  # discards if tempfile
 
     @staticmethod
     def fetch_bufr_ftp(target_dir=None, remote_dir=None):
@@ -154,7 +158,7 @@ class TCForecast(TCTracks):
 
         Returns
         -------
-        [str] or [filelike]
+        [filelike]
         """
         con = ftplib.FTP(host=ECMWF_FTP, user=ECMWF_USER, passwd=ECMWF_PASS)
 
@@ -164,7 +168,7 @@ class TCForecast(TCTracks):
                 remote = pd.Series(con.nlst())
                 # Identify directories with forecasts initialised as 00 or 12 UTC
                 remote = remote[remote.str.contains('120000|000000$')]
-                # Select the most recent directory to process (names are formatted yyyymmddhhmmss)
+                # Select the most recent directory (names are formatted yyyymmddhhmmss)
                 remote = remote.sort_values(ascending=False)
                 remote_dir = remote.iloc[0]
 
@@ -189,12 +193,8 @@ class TCForecast(TCTracks):
                     lfile = tempfile.TemporaryFile(mode='w+b')
 
                 con.retrbinary('RETR ' + rfile, lfile.write)
-
-                if target_dir:
-                    localfiles.append(lfile.name)
-                    lfile.close()
-                else:
-                    localfiles.append(lfile)
+                lfile.seek(0)
+                localfiles.append(lfile)
 
         except ftplib.all_errors as err:
             con.quit()
@@ -213,17 +213,17 @@ class TCForecast(TCTracks):
             id_no (int): Numerical ID; optional. Else use date + random int.
         """
         # Open the bufr file
-        try:
+        if isinstance(file, str) or isinstance(file, Path):
             # for the case that file is str, try open it
             file = open(file, 'rb')
-        except TypeError:
-            pass
+
         bufr = ec.codes_bufr_new_from_file(file)
+
         # we need to instruct ecCodes to expand all the descriptors
         # i.e. unpack the data values
         ec.codes_set(bufr, 'unpack', 1)
 
-        # get the forcast time
+        # get the forecast time
         timestamp_origin = dt.datetime(
             ec.codes_get(bufr, 'year'), ec.codes_get(bufr, 'month'),
             ec.codes_get(bufr, 'day'), ec.codes_get(bufr, 'hour'),
@@ -234,60 +234,57 @@ class TCForecast(TCTracks):
         # get storm identifier
         sid = ec.codes_get(bufr, 'stormIdentifier').strip()
 
-        # number of timestep (size of the forecast time + initial timestep)
+        # number of timesteps (size of the forecast time + initial analysis timestep)
         try:
             n_timestep = ec.codes_get_size(bufr, 'timePeriod') + 1
         except ec.CodesInternalError:
-            LOGGER.warning("Track %s has no defined timePeriod."
-                            "Track is discarded.", sid)
+            LOGGER.warning("Track %s has no defined timePeriod. Track is discarded.", sid)
             return None
 
-        # ensemble members number
+        # get number of ensemble members
         ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
+        n_ens = len(ens_no)
 
-        # values at timestep 0
+        # See documentation for link to ensemble types
+        # Sometimes only one value is given instead of an array and it needs to be reproduced across all tracks
+        ens_type = ec.codes_get_array(bufr, 'ensembleForecastType')
+        if len(ens_type) == 1:
+            ens_type = np.repeat(ens_type, n_ens)
+
+        # values at timestep 0 (perturbed from the analysis for each ensemble member)
         lat_init_temp = ec.codes_get_array(bufr, '#2#latitude')
         lon_init_temp = ec.codes_get_array(bufr, '#2#longitude')
         pre_init_temp = ec.codes_get_array(bufr, '#1#pressureReducedToMeanSeaLevel')
         wnd_init_temp = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
 
-        # check dimention of the variables, and replace missing value with NaN
-        lat_init = self._check_variable(lat_init_temp, ens_no)
-        lon_init = self._check_variable(lon_init_temp, ens_no)
-        pre_init = self._check_variable(pre_init_temp, ens_no)
-        wnd_init = self._check_variable(wnd_init_temp, ens_no)
+        # check dimension of the variables, and replace missing value with NaN
+        lat_init = self._check_variable(lat_init_temp, n_ens, varname="Latitude at time 0")
+        lon_init = self._check_variable(lon_init_temp, n_ens, varname="Longitude at time 0")
+        pre_init = self._check_variable(pre_init_temp, n_ens, varname="Pressure at time 0")
+        wnd_init = self._check_variable(wnd_init_temp, n_ens, varname="Maximum 10m wind at time 0")
 
-        # Putting variables into dictionaries
-        latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(len(ens_no))}
-        longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(len(ens_no))}
-        pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(len(ens_no))}
-        max_wind = {ind_ens: np.array(wnd_init[ind_ens]) for ind_ens in range(len(ens_no))}
+        # Create dictionaries of lists to store output for each variable.
+        # Each dict entry is an ensemble member, and it contains a list of forecast values by timestep
+        latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(n_ens)}
+        longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(n_ens)}
+        pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(n_ens)}
+        max_wind = {ind_ens: np.array(wnd_init[ind_ens]) for ind_ens in range(n_ens)}
 
         # getting the forecasted storms
         timesteps_int = [0 for x in range(n_timestep)]
         for ind_timestep in range(1, n_timestep):
-            rank1 = ind_timestep * 2 + 2 # rank for getting storm centre information
-            rank3 = ind_timestep * 2 + 3 # rank for getting max wind information
+            rank1 = ind_timestep * 2 + 2  # rank for getting storm centre information
+            rank3 = ind_timestep * 2 + 3  # rank for getting max wind information
 
+            # Get timestep
             timestep = ec.codes_get_array(bufr, "#%d#timePeriod" % ind_timestep)
-            if len(timestep) == 1:
-                timesteps_int[ind_timestep] = timestep[0]
-            else:
-                for i in range(len(timestep)):
-                    if timestep[i] != MISSING_LONG:
-                        timesteps_int[ind_timestep] = timestep[i]
-                        break
+            timesteps_int[ind_timestep] = self.get_value_from_bufr_array(timestep)
 
-            # Location of the storm
+            # Location of the storm: first check significance value matches what we expect
             sig_values = ec.codes_get_array(bufr, "#%d#meteorologicalAttributeSignificance" % rank1)
-            if len(sig_values) == 1:
-                significance = sig_values[0]
-            else:
-                for j in range(len(sig_values)):
-                    if sig_values[j] != ec.CODES_MISSING_LONG:
-                        significance = sig_values[j]
-                        break
-            # get lat, lon, and pre of all ensemble members at ind_timestep
+            significance = self.get_value_from_bufr_array(sig_values)
+
+            # get lat, lon, and pressure of all ensemble members at ind_timestep
             if significance == 1:
                 lat_temp = ec.codes_get_array(bufr, "#%d#latitude" % rank1)
                 lon_temp = ec.codes_get_array(bufr, "#%d#longitude" % rank1)
@@ -295,29 +292,24 @@ class TCForecast(TCTracks):
             else:
                 raise ValueError('unexpected meteorologicalAttributeSignificance=', significance)
 
-            # Location of max wind
+            # Location of max wind: check significance value matches what we expect
             sig_values = ec.codes_get_array(bufr, "#%d#meteorologicalAttributeSignificance" % rank3)
-            if len(sig_values) == 1:
-                significanceWind = sig_values[0]
-            else:
-                for j in range(len(sig_values)):
-                    if sig_values[j] != ec.CODES_MISSING_LONG:
-                        significanceWind = sig_values[j]
-                        break
-            # max_wind of all ensemble members at ind_timestep
+            significanceWind = self.get_value_from_bufr_array(sig_values)
+
+            # max_wind of each ensemble members at ind_timestep
             if significanceWind == 3:
                 wnd_temp = ec.codes_get_array(bufr, "#%d#windSpeedAt10M" % (ind_timestep + 1))
             else:
                 raise ValueError('unexpected meteorologicalAttributeSignificance=', significance)
 
-            # check dimention of the variables, and replace missing value with NaN
-            lat = self._check_variable(lat_temp, ens_no)
-            lon = self._check_variable(lon_temp, ens_no)
-            pre = self._check_variable(pre_temp, ens_no)
-            wnd = self._check_variable(wnd_temp, ens_no)
+            # check dimension of the variables, and replace missing value with NaN
+            lat = self._check_variable(lat_temp, n_ens, varname="Latitude at time "+str(ind_timestep))
+            lon = self._check_variable(lon_temp, n_ens, varname="Longitude at time "+str(ind_timestep))
+            pre = self._check_variable(pre_temp, n_ens, varname="Pressure at time "+str(ind_timestep))
+            wnd = self._check_variable(wnd_temp, n_ens, varname="Maximum 10m wind at time "+str(ind_timestep))
 
             # appending values into dictionaries
-            for ind_ens in range(len(ens_no)):
+            for ind_ens in range(n_ens):
                 latitude[ind_ens] = np.append(latitude[ind_ens], lat[ind_ens])
                 longitude[ind_ens] = np.append(longitude[ind_ens], lon[ind_ens])
                 pressure[ind_ens] = np.append(pressure[ind_ens], pre[ind_ens])
@@ -335,9 +327,9 @@ class TCForecast(TCTracks):
 
             # subset metadata
             'wmo_longname': ec.codes_get(bufr, 'longStormName').strip(),
-            'storm_id': ec.codes_get(bufr, 'stormIdentifier').strip(),
-            'ens_type': ec.codes_get_array(bufr, 'ensembleForecastType'),
-            'ens_number': ec.codes_get_array(bufr, "ensembleMemberNumber"),
+            'storm_id': sid,
+            'ens_type': ens_type,
+            'ens_number': ens_no,
         }
 
         if id_no is None:
@@ -350,7 +342,7 @@ class TCForecast(TCTracks):
         else:
             provider = 'BUFR code ' + str(orig_centre)
 
-        for i in range(len(msg['ens_number'])):
+        for i in range(n_ens):
             name = msg['wmo_longname']
             track = self._subset_to_track(
                 msg, i, provider, timestamp_origin, name, id_no
@@ -359,6 +351,21 @@ class TCForecast(TCTracks):
                 self.append(track)
             else:
                 LOGGER.debug('Dropping empty track %s, subset %d', name, i)
+
+
+    @staticmethod
+    def get_value_from_bufr_array(var):
+        if len(var) == 1:
+            if var[0] == MISSING_LONG:
+                ValueError("Array contained a single, missing value")
+            return var[0]
+        else:
+            for i in range(len(var)):
+                if var[i] != MISSING_LONG:
+                    return var
+                    break
+            raise ValueError("Did not find a non-missing value in the array")
+
 
     @staticmethod
     def _subset_to_track(msg, index, provider, timestamp_origin, name, id_no):
@@ -373,13 +380,10 @@ class TCForecast(TCTracks):
         timestep_int = np.array(msg['timestamp']).squeeze()
         timestamp = timestamp_origin + timestep_int.astype('timedelta64[h]')
 
-        # some weak storms have only perturbed analysis, which gives a
-        # size 1 array in ens_type with value 4
-        try:
-            ens_bool = msg['ens_type'][index] != 0
-        except LookupError:
-            ens_bool = msg['ens_type'][0] != 0
-            return None
+        # 'ens_type' can take a number of values telling us the source of the track.
+        # 0 means the deterministic analysis, which we want to flag.
+        # See documentation for link to ensemble types.
+        ens_bool = msg['ens_type'][index] != 0
 
         try:
             track = xr.Dataset(
@@ -448,17 +452,19 @@ class TCForecast(TCTracks):
         track.attrs['category'] = cat_name
         return track
 
+
     @staticmethod
-    def _check_variable(var, ens_no):
+    def _check_variable(var, n_ens, varname=None):
         """Check the value and dimension of variable"""
-        if len(var) == len(ens_no):
-            var[var==MISSING_DOUBLE] = np.nan
+        if len(var) == n_ens:
+            var[var == MISSING_DOUBLE] = np.nan
             return var
         elif len(var) == 1 and var[0] == MISSING_DOUBLE:
-            return np.repeat(np.nan, len(ens_no))
+            return np.repeat(np.nan, n_ens)
         elif len(var) == 1 and var[0] != MISSING_DOUBLE:
-            return np.repeat(var[0], len(ens_no))
-            LOGGER.warning('Only 1 variable value for %d ensble members, duplicate value to all members',
-                           len(ens_no))
+            LOGGER.warning('%s: only 1 variable value for %d ensemble members, duplicating value to all members. '
+                           'This is only acceptable for lat and lon data at time 0.', varname, n_ens)
+            return np.repeat(var[0], n_ens)
+
         else:
             raise ValueError
