@@ -30,7 +30,7 @@ from scipy import sparse
 from scipy.stats import binom, poisson
 import shapely
 
-from climada.hazard.base import Hazard
+from climada.hazard import Hazard, Centroids
 import climada.util.coordinates as u_coord
 from climada.util.constants import DEF_CRS
 
@@ -141,7 +141,7 @@ class Landslide(Hazard):
         LOGGER.info('Generating a raster with resolution %s for box %s', res, bbox)
         if not gdf_cropped.crs:
             gdf_cropped.crs = DEF_CRS
-        self.centroids.set_raster_from_pnt_bounds(bbox,res,crs=gdf_cropped.crs)
+        self.centroids = Centroids.from_pnt_bounds(bbox, res, crs=gdf_cropped.crs)
 
         n_ev = len(gdf_cropped)
 

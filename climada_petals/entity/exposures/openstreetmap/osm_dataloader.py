@@ -373,6 +373,7 @@ class OSMFileQuery:
         driver = ogr.GetDriverByName('OSM')
         data = driver.Open(self.osm_path)
         query = self._query_builder(geo_type, constraint_dict)
+        LOGGER.debug("query: %s", query)
         sql_lyr = data.ExecuteSQL(query)
         features = []
         if data is not None:
@@ -381,12 +382,14 @@ class OSMFileQuery:
                 try:
                     fields = [feature.GetField(key) for key in
                               ['osm_id', *constraint_dict['osm_keys']]]
-                    geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
+                    wkb = feature.geometry().ExportToWkb()
+                    geom = shapely.wkb.loads(bytes(wkb))
                     if geom is None:
                         continue
                     fields.append(geom)
                     features.append(fields)
-                except:
+                except Exception as exc:
+                    LOGGER.info('%s - %s', exc.__class__, exc)
                     LOGGER.warning("skipped OSM feature")
         else:
             LOGGER.error("""Nonetype error when requesting SQL. Check the
