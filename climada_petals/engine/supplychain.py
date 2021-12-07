@@ -37,7 +37,8 @@ LOGGER = logging.getLogger(__name__)
 WIOD_FILE_LINK = CONFIG.engine.supplychain.resources.wiod16.str()
 """Link to the 2016 release of the WIOD tables."""
 
-WIOD_DIRECTORY = CONFIG.engine.supplychain.local_data.wiod.dir()
+# TODO: change .wiod into .iot
+IOT_DIRECTORY = CONFIG.engine.supplychain.local_data.wiod.dir()
 """Directory where WIOD tables are downloaded into."""
 
 class SupplyChain():
@@ -98,9 +99,47 @@ class SupplyChain():
         self.total_aai_agg = np.array([], dtype='f')
         self.io_data = {}
 
+    # TODO: create one data loading function (discriminating by IO type) 
+    # and one attributes filling func
+
+    def read_exiobase3(self, year=1997):
+        """Read multi-regional input-output tables from EXIOBASE3:
+
+        https://zenodo.org/record/3583071#.Ya9fFH3MK3I
+
+        Data need to first be downloaded via Zotero and stored in WIOD_DIRECTORY.
+
+        Parameters
+        ----------
+        year : int
+            Year of the EXIOBASE table to use. Default year is 1997.
+
+        References
+        ----------
+        https://www.exiobase.eu/index.php/publications/list-of-journal-papers-references
+
+        """
+
+        file_name = 'IOT_{}_ixi/A.txt'.format(year)
+        file_loc = IOT_DIRECTORY / file_name
+
+        mriot = pd.read_csv(file_loc, sep='\t', skiprows=2)   
+
+        self.sectors = mriot.sector.unique()
+        self.mriot_reg_names = mriot.region.unique()
+        self.mriot_data = mriot.iloc[:,2:].astype(float)
+        # TODO: check if operation is correct:
+        self.total_prod = self.mriot_data.sum(1)
+        self.reg_pos = {
+            name: range(len(self.sectors)*i, len(self.sectors)*(i+1))
+            for i, name in enumerate(self.mriot_reg_names)
+            }
+        self.mriot_type = 'EXIOBASE'
+
     def read_wiod16(self, year=2014, range_rows=(5,2469),
                     range_cols=(4,2468), col_iso3=2,
                     col_sectors=1):
+        # TODO: remove all the wiod table-related kwargs
         """Read multi-regional input-output tables of the 2016 release of the
         WIOD project: http://www.wiod.org/database/wiots16
 
@@ -126,11 +165,11 @@ class SupplyChain():
         """
 
         file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
-        file_loc = WIOD_DIRECTORY / file_name
+        file_loc = IOT_DIRECTORY / file_name
 
-        if not file_loc in WIOD_DIRECTORY.iterdir():
+        if not file_loc in IOT_DIRECTORY.iterdir():
             download_link = WIOD_FILE_LINK + file_name
-            u_fh.download_file(download_link, download_dir=WIOD_DIRECTORY)
+            u_fh.download_file(download_link, download_dir=IOT_DIRECTORY)
             LOGGER.info('Downloading WIOD table for year %s', year)
         mriot = pd.read_excel(file_loc, engine='pyxlsb')
 
@@ -169,7 +208,7 @@ class SupplyChain():
             Default is "service".
 
         """
-
+        # TODO: remove built-in selected_subsec arg as this is wiod-dependent. Set sub_sec to default all_secs
         if isinstance(selected_subsec, str):
             built_in_subsec_pos = {'service': range(26, 56),
                                    'manufacturing': range(4, 23),
