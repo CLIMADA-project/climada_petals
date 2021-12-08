@@ -240,7 +240,7 @@ def _fast_impf_mapping(countryID, natID_info):
         float,float
         """
     nat = natID_info['ID']
-    impf_RF = natID_info['if_RF']
+    impf_RF = natID_info['impf_RF']
     reg_ID = natID_info['Reg_ID']
     fancy_impf = np.zeros((max(nat) + 1))
     fancy_impf[:] = np.nan
