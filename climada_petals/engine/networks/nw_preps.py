@@ -202,7 +202,7 @@ class RoadPreprocess(NetworkPreprocess):
 
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
-            edges['geometry'] = self.close_gaps(self, edges, tolerance=0.1)
+            #edges['geometry'] = self.close_gaps(self, edges, tolerance=0.1)
         if nodes.empty:
             nodes = None #simplify cannot handle empty df for nodes, only None
         else:
