@@ -85,7 +85,8 @@ class Landslide(Hazard):
         """Empty constructor."""
         Hazard.__init__(self, HAZ_TYPE)
 
-    def set_ls_hist(self, bbox, input_gdf, res=0.0083333):
+    @classmethod
+    def from_hist(cls, bbox, input_gdf, res=0.0083333):
         """
         Set historic landslide (ls) raster hazard from historical point records,
         for example as can be retrieved from the NASA COOLR initiative,
@@ -126,11 +127,12 @@ class Landslide(Hazard):
 
         Returns
         -------
-        self : Landslide
+        Landslide : Landslide
             instance filled with historic LS hazard
             set for either point hazards or polygons with specified
             surrounding extent.
         """
+        haz = cls()
         if isinstance(input_gdf, gpd.GeoDataFrame):
             LOGGER.info('Using pre-loaded gdf')
             gdf_cropped = input_gdf.copy().cx[bbox[0]:bbox[2], bbox[1]:bbox[3]]
@@ -141,7 +143,7 @@ class Landslide(Hazard):
         LOGGER.info('Generating a raster with resolution %s for box %s', res, bbox)
         if not gdf_cropped.crs:
             gdf_cropped.crs = DEF_CRS
-        self.centroids = Centroids.from_pnt_bounds(bbox, res, crs=gdf_cropped.crs)
+        haz.centroids = Centroids.from_pnt_bounds(bbox, res, crs=gdf_cropped.crs)
 
         n_ev = len(gdf_cropped)
 
@@ -151,31 +153,42 @@ class Landslide(Hazard):
         gdf_cropped['flat_ix'] = u_coord.assign_grid_points(
             gdf_cropped.geometry.x, gdf_cropped.geometry.y,
             grid_width, grid_height, grid_transform)
-        self.intensity = sparse.csr_matrix(
+        haz.intensity = sparse.csr_matrix(
             (np.ones(n_ev), (np.arange(n_ev), gdf_cropped.flat_ix)),
-            shape=(n_ev, self.centroids.size))
-        self.fraction = self.intensity.copy()
-        self.frequency = self.intensity.copy()
+            shape=(n_ev, haz.centroids.size))
+        haz.fraction = haz.intensity.copy()
+        haz.frequency = haz.intensity.copy()
 
         if hasattr(gdf_cropped, 'ev_date'):
-            self.date = pd.to_datetime(gdf_cropped.ev_date, yearfirst=True)
+            haz.date = pd.to_datetime(gdf_cropped.ev_date, yearfirst=True)
         else:
             LOGGER.info('No event dates set from source')
 
-        if self.date.size > 0:
-            self.frequency = np.ones(n_ev)/(
-                (self.date.max()-self.date.min()).value/3.154e+16)
+        if haz.date.size > 0:
+            haz.frequency = np.ones(n_ev)/(
+                (haz.date.max()-haz.date.min()).value/3.154e+16)
         else:
             LOGGER.warning('no event dates to derive proxy frequency from')
 
-        self.units = ''
-        self.event_id = np.arange(n_ev, dtype=int) + 1
-        self.orig = np.ones(n_ev, bool)
+        haz.units = ''
+        haz.event_id = np.arange(n_ev, dtype=int) + 1
+        haz.orig = np.ones(n_ev, bool)
 
-        self.check()
+        haz.check()
+        
+        return haz
 
+    def set_ls_hist(self, *args, **kwargs):
+        """
+        This function is deprecated, use Landslide.from_hist instead.
+        """
+        """"""
+        LOGGER.warning("The use of Landlide.set_ls_hist is deprecated."
+                       "Use Landslide.from_hist instead")
+        self.__dict__ = Landslide.from_hist(*args, **kwargs).__dict__
 
-    def set_ls_prob(self, bbox, path_sourcefile, corr_fact=10e6, n_years=500,
+    @classmethod
+    def from_prob(cls, bbox, path_sourcefile, corr_fact=10e6, n_years=500,
                     dist='poisson'):
         """
         Set probabilistic landslide hazard (fraction, intensity and
@@ -220,37 +233,49 @@ class Landslide(Hazard):
 
         Returns
         -------
-        self : climada.hazard.Landslide instance
+        Landslide : climada.hazard.Landslide instance
             probabilistic LS hazard
 
         See also
         --------
         sample_events_from_probs()
         """
-
+        
+        haz = cls()
         # raster with occurrence probs
-        self.centroids.meta, prob_matrix = \
+        haz.centroids.meta, prob_matrix = \
             u_coord.read_raster(path_sourcefile, geometry=[shapely.geometry.box(*bbox, ccw=True)])
         prob_matrix = sparse.csr_matrix(prob_matrix.squeeze()/corr_fact)
 
         # sample events from probabilities
-        self.fraction = sample_events_from_probs(prob_matrix, n_years, dist)
+        haz.fraction = sample_events_from_probs(prob_matrix, n_years, dist)
 
         # set frequ. to no. of occurrences per cell / timespan:
-        self.frequency = self.fraction/n_years
+        haz.frequency = haz.fraction/n_years
 
         # set intensity to 1 wherever an occurrence:
-        self.intensity = self.fraction.copy()
-        self.intensity[self.intensity.nonzero()]=1
+        haz.intensity = haz.fraction.copy()
+        haz.intensity[haz.intensity.nonzero()]=1
 
         # meaningless, such that check() method passes:
-        self.date = np.array([])
-        self.event_name = []
-        self.event_id = np.array([1])
+        haz.date = np.array([])
+        haz.event_name = []
+        haz.event_id = np.array([1])
 
         # check for
-        if not self.centroids.meta['crs'].is_epsg_code:
-            self.centroids.meta['crs'] = self.centroids.meta['crs'
+        if not haz.centroids.meta['crs'].is_epsg_code:
+            haz.centroids.meta['crs'] = haz.centroids.meta['crs'
                                ].from_user_input(DEF_CRS)
-        self.centroids.set_geometry_points()
-        self.check()
+        haz.centroids.set_geometry_points()
+        haz.check()
+        return haz
+        
+    def set_ls_prob(self, *args, **kwargs):
+        """
+        This function is deprecated, use Landslide.from_prob instead.
+        """
+        """"""
+        LOGGER.warning("The use of Landlide.set_ls_prob is deprecated."
+                       "Use Landslide.from_prob instead")
+        self.__dict__ = Landslide.from_prob(*args, **kwargs).__dict__
+        
