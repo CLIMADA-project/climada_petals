@@ -66,6 +66,9 @@ https://confluence.ecmwf.int/display/FCST/Tropical+Cyclone+tracks+in+BUFR+-+incl
 with added basin 'X' to deal with it appearing in operational forecasts
 (see e.g. years 2020 and 2021 in the sidebar at https://www.ecmwf.int/en/forecasts/charts/tcyclone/)
 and Wikipedia at https://en.wikipedia.org/wiki/Invest_(meteorology)
+
+The BUFR code table is using EMO BUFR table version 35,
+available at https://confluence.ecmwf.int/display/ECC/WMO%3D35+element+table?src=contextnavpagetreemode
 """
 
 SAFFIR_MS_CAT = np.array([18, 33, 43, 50, 59, 71, 1000])
