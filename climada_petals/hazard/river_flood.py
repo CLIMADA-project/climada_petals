@@ -73,7 +73,8 @@ class RiverFlood(Hazard):
 
         Hazard.__init__(self, HAZ_TYPE)
 
-    def set_from_nc(self, dph_path=None, frc_path=None, origin=False,
+    @classmethod
+    def from_nc(cls, dph_path=None, frc_path=None, origin=False,
                     centroids=None, countries=None, reg=None, shape=None, ISINatIDGrid=False,
                     years=None):
         """Wrapper to fill hazard from nc_flood file
@@ -100,10 +101,18 @@ class RiverFlood(Hazard):
         years : int list
             years that are considered
 
+        
+        Returns
+        -------
+        haz : RiverFlood instance
+        
         Raises
         ------
         NameError
         """
+        
+        haz = cls()
+        
         if years is None:
             years = [2000]
         if dph_path is None:
@@ -118,7 +127,7 @@ class RiverFlood(Hazard):
         with xr.open_dataset(dph_path) as flood_dph:
             time = flood_dph.time.data
 
-        event_index = self._select_event(time, years)
+        event_index = haz._select_event(time, years)
         bands = event_index + 1
 
         if countries or reg:
@@ -129,30 +138,34 @@ class RiverFlood(Hazard):
                 meta_centroids = copy.copy(dest_centroids)
                 meta_centroids.set_lat_lon_to_meta()
 
-                self.set_raster(haz_type=HAZ_TYPE,
+                # TODO: replace this call to `set_raster` with a call to `from_raster` when
+                # replacing `set_from_nc` with a @classmethod `from_nc`
+                haz.set_raster(haz_type=HAZ_TYPE,
                                 files_intensity=[dph_path],
                                 files_fraction=[frc_path], band=bands.tolist(),
                                 transform=meta_centroids.meta['transform'],
                                 width=meta_centroids.meta['width'],
                                 height=meta_centroids.meta['height'],
                                 resampling=Resampling.nearest)
-                x_i = ((dest_centroids.lon - self.centroids.meta['transform'][2]) /
-                       self.centroids.meta['transform'][0]).astype(int)
-                y_i = ((dest_centroids.lat - self.centroids.meta['transform'][5]) /
-                       self.centroids.meta['transform'][4]).astype(int)
+                x_i = ((dest_centroids.lon - haz.centroids.meta['transform'][2]) /
+                       haz.centroids.meta['transform'][0]).astype(int)
+                y_i = ((dest_centroids.lat - haz.centroids.meta['transform'][5]) /
+                       haz.centroids.meta['transform'][4]).astype(int)
 
-                fraction = self.fraction[:, y_i * self.centroids.meta['width'] + x_i]
-                intensity = self.intensity[:, y_i * self.centroids.meta['width'] + x_i]
+                fraction = haz.fraction[:, y_i * haz.centroids.meta['width'] + x_i]
+                intensity = haz.intensity[:, y_i * haz.centroids.meta['width'] + x_i]
 
-                self.centroids = dest_centroids
-                self.intensity = sp.sparse.csr_matrix(intensity)
-                self.fraction = sp.sparse.csr_matrix(fraction)
+                haz.centroids = dest_centroids
+                haz.intensity = sp.sparse.csr_matrix(intensity)
+                haz.fraction = sp.sparse.csr_matrix(fraction)
             else:
                 if reg:
                     iso_codes = u_coord.region2isos(reg)
                     # envelope containing counties
                     cntry_geom = u_coord.get_land_geometry(iso_codes)
-                    self.set_raster(haz_type=HAZ_TYPE,
+                    # TODO: replace this call to `set_raster` with a call to `from_raster` when
+                    # replacing `set_from_nc` with a @classmethod `from_nc`
+                    haz.set_raster(haz_type=HAZ_TYPE,
                                     files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
@@ -160,7 +173,9 @@ class RiverFlood(Hazard):
                     # self.centroids.set_meta_to_lat_lon()
                 else:
                     cntry_geom = u_coord.get_land_geometry(countries)
-                    self.set_raster(haz_type=HAZ_TYPE,
+                    # TODO: replace this call to `set_raster` with a call to `from_raster` when
+                    # replacing `set_from_nc` with a @classmethod `from_nc`
+                    haz.set_raster(haz_type=HAZ_TYPE,
                                     files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
@@ -172,7 +187,9 @@ class RiverFlood(Hazard):
 
             rand_geom = shapes.geometry[0]
 
-            self.set_raster(haz_type=HAZ_TYPE,
+            # TODO: replace this call to `set_raster` with a call to `from_raster` when
+            # replacing `set_from_nc` with a @classmethod `from_nc`
+            haz.set_raster(haz_type=HAZ_TYPE,
                             files_intensity=[dph_path],
                             files_fraction=[frc_path],
                             band=bands.tolist(),
@@ -181,7 +198,9 @@ class RiverFlood(Hazard):
 
         elif not centroids:
             # centroids as raster
-            self.set_raster(haz_type=HAZ_TYPE,
+            # TODO: replace this call to `set_raster` with a call to `from_raster` when
+            # replacing `set_from_nc` with a @classmethod `from_nc`
+            haz.set_raster(haz_type=HAZ_TYPE,
                             files_intensity=[dph_path],
                             files_fraction=[frc_path],
                             band=bands.tolist())
@@ -206,28 +225,36 @@ class RiverFlood(Hazard):
                    metafrc['transform'][4]).astype(int)
             fraction = fraction[:, y_i * metafrc['width'] + x_i]
             intensity = intensity[:, y_i * metaint['width'] + x_i]
-            self.centroids = centroids
-            self.intensity = sp.sparse.csr_matrix(intensity)
-            self.fraction = sp.sparse.csr_matrix(fraction)
+            haz.centroids = centroids
+            haz.intensity = sp.sparse.csr_matrix(intensity)
+            haz.fraction = sp.sparse.csr_matrix(fraction)
 
-        self.units = 'm'
-        self.tag.file_name = str(dph_path) + ';' + str(frc_path)
-        self.event_id = np.arange(self.intensity.shape[0])
-        self.event_name = list(map(str, years))
+        haz.units = 'm'
+        haz.tag.file_name = str(dph_path) + ';' + str(frc_path)
+        haz.event_id = np.arange(haz.intensity.shape[0])
+        haz.event_name = list(map(str, years))
 
         if origin:
-            self.orig = np.ones(self.size, bool)
+            haz.orig = np.ones(haz.size, bool)
         else:
-            self.orig = np.zeros(self.size, bool)
+            haz.orig = np.zeros(haz.size, bool)
 
-        self.frequency = np.ones(self.size) / self.size
+        haz.frequency = np.ones(haz.size) / haz.size
 
         with xr.open_dataset(dph_path) as flood_dph:
-            self.date = np.array([dt.datetime(flood_dph.time[i].dt.year,
+            haz.date = np.array([dt.datetime(flood_dph.time[i].dt.year,
                                               flood_dph.time[i].dt.month,
                                               flood_dph.time[i].dt.day).toordinal()
                                   for i in event_index])
+            
+        return haz
 
+    def set_from_nc(self, *args, **kwargs):
+        """This function is deprecated, use RiverFlood.from_nc instead."""
+        LOGGER.warning("The use of RiverFlood.set_from_nc is deprecated."
+                       "Use LowFlow.from_nc instead.")
+        self.__dict__ = RiverFlood.from_nc(*args, **kwargs).__dict__
+        
     def _select_event(self, time, years):
         """
         Selects events only in specific years and returns corresponding event
@@ -405,8 +432,7 @@ class RiverFlood(Hazard):
 
         natIDs = u_coord.country_iso2natid(country_isos)
 
-        centroids = Centroids()
-        centroids.set_lat_lon(lat, lon)
+        centroids = Centroids.from_lat_lon(lat, lon)
         centroids.id = np.arange(centroids.lon.shape[0])
         # centroids.set_region_id()
         return centroids, country_isos, natIDs

@@ -37,19 +37,17 @@ HAZ_TEST_MAT = DATA_DIR.joinpath('TCrain_brb_test.mat')
 TEST_TRACK = Path(hazard_test.__file__).parent.joinpath('data', 'trac_brb_test.csv')
 TEST_TRACK_SHORT = Path(hazard_test.__file__).parent.joinpath('data', 'trac_short_test.csv')
 
-CENTR_TEST_BRB = Centroids()
 centr_test_mat = Path(hazard_test.__file__).parent.joinpath('data', 'centr_brb_test.mat')
-CENTR_TEST_BRB.read_mat(centr_test_mat)
+CENTR_TEST_BRB = Centroids.from_mat(centr_test_mat)
 
 class TestReader(unittest.TestCase):
     """Test loading funcions from the TCRain class"""
 
     def test_set_one_pass(self):
         """Test _set_from_track function."""
-        tc_track = TCTracks()
-        tc_track.read_processed_ibtracs_csv(TEST_TRACK)
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
-        tc_haz = TCRain._set_from_track(tc_track.data[0], CENTR_TEST_BRB)
+        tc_haz = TCRain._from_track(tc_track.data[0], CENTR_TEST_BRB)
 
         self.assertEqual(tc_haz.tag.haz_type, 'TR')
         self.assertEqual(tc_haz.tag.description, '')
@@ -77,12 +75,10 @@ class TestReader(unittest.TestCase):
         self.assertEqual(tc_haz.fraction.nonzero()[0].size, 296)
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
 
-    def test_set_one_file_pass(self):
-        """Test set function set_from_tracks with one input."""
-        tc_track = TCTracks()
-        tc_track.read_processed_ibtracs_csv(TEST_TRACK_SHORT)
-        tc_haz = TCRain()
-        tc_haz.set_from_tracks(tc_track, CENTR_TEST_BRB)
+    def test_from_file_pass(self):
+        """Test from_tracks constructor with one input."""
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK_SHORT)
+        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
         tc_haz.check()
 
         self.assertEqual(tc_haz.tag.haz_type, 'TR')
@@ -107,11 +103,9 @@ class TestReader(unittest.TestCase):
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 0)
 
     def test_two_files_pass(self):
-        """Test set function set_from_tracks with two ibtracs."""
-        tc_track = TCTracks()
-        tc_track.read_processed_ibtracs_csv([TEST_TRACK_SHORT, TEST_TRACK_SHORT])
-        tc_haz = TCRain()
-        tc_haz.set_from_tracks(tc_track, CENTR_TEST_BRB)
+        """Test from_tracks constructor with two ibtracs."""
+        tc_track = TCTracks.from_processed_ibtracs_csv([TEST_TRACK_SHORT, TEST_TRACK_SHORT])
+        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
         tc_haz.remove_duplicates()
         tc_haz.check()
 
@@ -139,11 +133,9 @@ class TestModel(unittest.TestCase):
 
     def test_rainfield_from_track_pass(self):
         """Test _rainfield_from_track function. Compare to MATLAB reference."""
-        tc_track = TCTracks()
-        tc_track.read_processed_ibtracs_csv(TEST_TRACK)
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
-        rainfall = rainfield_from_track(tc_track.data[0],
-                                        CENTR_TEST_BRB)
+        rainfall = rainfield_from_track(tc_track.data[0], CENTR_TEST_BRB)
 
         rainfall = np.round(rainfall, decimals=9)
 
@@ -152,19 +144,15 @@ class TestModel(unittest.TestCase):
         self.assertAlmostEqual(rainfall[0, 200], 76.315923838)
 
     def test_rainfield_diff_time_steps(self):
-        tc_track = TCTracks()
-        tc_track.read_processed_ibtracs_csv(TEST_TRACK)
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
 
-        train_org = TCRain()
-        train_org.set_from_tracks(tc_track)
+        train_org = TCRain.from_tracks(tc_track)
 
         tc_track.equal_timestep(time_step_h=1)
-        train_1h = TCRain()
-        train_1h.set_from_tracks(tc_track)
+        train_1h = TCRain.from_tracks(tc_track)
 
         tc_track.equal_timestep(time_step_h=0.5)
-        train_05h = TCRain()
-        train_05h.set_from_tracks(tc_track)
+        train_05h = TCRain.from_tracks(tc_track)
 
         np.testing.assert_allclose(train_org.intensity.sum(),
                                    train_1h.intensity.sum(), rtol=1e-1)
