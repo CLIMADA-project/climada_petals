@@ -680,6 +680,8 @@ include $(CLAW)/clawutil/src/Makefile.common
         regions = self.rundata.regiondata.regions
         t_1, t_2 = self.rundata.clawdata.t0, self.rundata.clawdata.tfinal
         maxlevel = amrdata.amr_levels_max
+        x_1, y_1, x_2, y_2 = self.areas['wind_area']
+        regions.append([1, 4, t_1, t_2, x_1, x_2, y_1, y_2])
         x_1, y_1, x_2, y_2 = self.areas['landfall_area']
         regions.append([max(1, maxlevel - 3), maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
         for area in self.areas['surge_areas']:
@@ -711,7 +713,7 @@ include $(CLAW)/clawutil/src/Makefile.common
             ratio2 = np.fmax(ratio1, np.ceil(target / ratio1))
             i_ratio = np.argmin(ratio1 * ratio2)
             ratios += [int(ratio1[i_ratio]), int(ratio2[i_ratio])]
-        ratios += [min(8, ratios[-1] + 2)]
+        ratios += [min(8, ratios[-1] + 1)]
         LOGGER.info("GeoClaw resolution in arc-seconds: %s",
                     str([f"{3600 * base_res / r:.2f}" for r in np.cumprod([1] + ratios)]))
         return ratios
@@ -1145,6 +1147,7 @@ class TCSurgeEvents():
     maxlen_h = 48
     maxbreak_h = 12
     period_buffer_d = 0.5
+    total_roci_factor = 2.5
     lf_roci_factor = 0.6
     lf_rmw_factor = 2.0
     minwind_kt = 34
@@ -1250,7 +1253,7 @@ class TCSurgeEvents():
     def _set_areas(self):
         """For each event, determine areas affected by wind and surge."""
         # total area (maximum bounds to consider)
-        pad = 1 + self.track.radius_oci / 60
+        pad = 1 + self.total_roci_factor * self.track.radius_oci / 60
         self.total_area = (
             float((self.track.lon - pad).min()),
             float((self.track.lat - pad).min()),
@@ -1270,7 +1273,7 @@ class TCSurgeEvents():
                         self.lf_rmw_factor * track.radius_max_wind.values))
 
             # wind area (maximum bounds to consider)
-            pad = track.radius_oci / 60
+            pad = self.total_roci_factor * track.radius_oci / 60
             self.wind_area.append((
                 float((track.lon - pad).min()),
                 float((track.lat - pad).min()),
