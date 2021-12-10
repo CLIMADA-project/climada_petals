@@ -26,6 +26,7 @@ import itertools
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+import copy
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -123,11 +124,11 @@ class WildFire(Hazard):
         prop_proba: float = 0.21
         max_it_propa: int = 500000
 
-    def __init__(self):
-        """Empty constructor. """
-        Hazard.__init__(self, HAZ_TYPE)
+    def __init__(self, **kwargs):
+        """Empty constructor."""
+        Hazard.__init__(self, HAZ_TYPE, **kwargs)
         self.FirmsParams = self.FirmsParams()
-        self.ProbaParams = self.ProbaParams()
+        self.ProbaParams = self.ProbaParams() 
 
     def set_hist_fire_FIRMS(self, df_firms, centr_res_factor=1.0, centroids=None):
         """ Parse FIRMS data and generate historical fires by temporal and spatial
@@ -1417,3 +1418,25 @@ def from_firemip(input_dir, filename):
     event_list = [event_ + '-01-01' for event_ in event_names]
 
     return id_bands, event_list
+
+def calc_burnt_area(haz_fraction):
+    """Return hazard with absolute area burnt as intensity
+
+    Parameters
+    ----------
+    haz_fraction : WildFire
+        WildFire hazard instance with fraction of burnt area as intensity.
+
+    Returns
+    -------
+    new_haz: WildFire
+        WildFire hazard with modified intensity [km2]
+    """
+
+    grid_area = u_coord.get_gridcellarea(haz_fraction.centroids.lat.values)
+
+    new_haz = copy.deepcopy(haz_fraction)
+    new_haz.intensity = sparse.csr_matrix(grid_area)
+    new_haz.units = 'km2'
+
+    return new_haz
