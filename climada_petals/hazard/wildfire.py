@@ -128,7 +128,7 @@ class WildFire(Hazard):
         """Empty constructor."""
         Hazard.__init__(self, HAZ_TYPE, **kwargs)
         self.FirmsParams = self.FirmsParams()
-        self.ProbaParams = self.ProbaParams() 
+        self.ProbaParams = self.ProbaParams()
 
     def set_hist_fire_FIRMS(self, df_firms, centr_res_factor=1.0, centroids=None):
         """ Parse FIRMS data and generate historical fires by temporal and spatial
