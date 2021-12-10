@@ -98,8 +98,8 @@ class TCSurgeGeoClaw(Hazard):
 
     @staticmethod
     def from_tc_tracks(tracks, zos_path, topo_path, centroids=None, description='', gauges=None,
-                       node_max_dist_deg=5.5, inland_max_dist_km=50, offshore_max_dist_km=10,
-                       max_latitude=61, mod_zos=0, pool=None):
+                       topo_res_as=30, node_max_dist_deg=5.5, inland_max_dist_km=50,
+                       offshore_max_dist_km=10, max_latitude=61, mod_zos=0, pool=None):
         """Generate a TC surge hazard instance from a TCTracks object
 
         Parameters
@@ -111,8 +111,8 @@ class TCSurgeGeoClaw(Hazard):
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
         centroids : Centroids, optional
-            Centroids where to measure maximum surge heights. By default, a centroids grid of
-            30 arc-seconds resolution is generated in a bounding box around the given tracks using
+            Centroids where to measure maximum surge heights. By default, a centroids grid at the
+            resolution `topo_res_as` is generated in a bounding box around the given tracks using
             the method `TCTracks.generate_centroids`.
         description : str, optional
             String description of the tropical cyclone events.
@@ -120,6 +120,9 @@ class TCSurgeGeoClaw(Hazard):
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes. The result is stored in the `gauge_data`
             attribute.
+        topo_res_as : float, optional
+            The resolution at which to extract topography data in arc-seconds. Needs to be between
+            3 and 90 (appx. between 90 and 3000 meters). Default: 30
         node_max_dist_deg : float, optional
             Maximum distance from a TC track node in degrees for a centroid to be considered
             as potentially affected. Default: 5.5
@@ -147,7 +150,7 @@ class TCSurgeGeoClaw(Hazard):
         setup_clawpack()
 
         if centroids is None:
-            centroids = tracks.generate_centroids(res_deg=30 / (60 * 60),
+            centroids = tracks.generate_centroids(res_deg=topo_res_as / (60 * 60),
                                                   buffer_deg=node_max_dist_deg)
 
         max_dist_coast_km = (offshore_max_dist_km, inland_max_dist_km)
@@ -158,6 +161,7 @@ class TCSurgeGeoClaw(Hazard):
                     str(tracks.size), str(coastal_idx.size))
         haz = TCSurgeGeoClaw.concat(
             [TCSurgeGeoClaw.from_xr_track(t, centroids, coastal_idx, zos_path, topo_path,
+                                          topo_res_as=topo_res_as,
                                           node_max_dist_deg=node_max_dist_deg,
                                           gauges=gauges, mod_zos=mod_zos, pool=pool)
              for t in tracks.data])
@@ -167,7 +171,7 @@ class TCSurgeGeoClaw(Hazard):
 
     @staticmethod
     def from_xr_track(track, centroids, coastal_idx, zos_path, topo_path,
-                      node_max_dist_deg=5.5, gauges=None, mod_zos=0, pool=None):
+                      topo_res_as=30, node_max_dist_deg=5.5, gauges=None, mod_zos=0, pool=None):
         """Generate a TC surge hazard from a single xarray track dataset
 
         Parameters
@@ -182,6 +186,9 @@ class TCSurgeGeoClaw(Hazard):
             Path to NetCDF file containing gridded monthly sea level data.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
+        topo_res_as : float, optional
+            The resolution at which to extract topography data in arc-seconds. Needs to be between
+            3 and 90 (appx. between 90 and 3000 meters). Default: 30
         node_max_dist_deg : float, optional
             Maximum distance from a TC track node in degrees for a centroid to be considered
             as potentially affected. Default: 5.5
@@ -203,7 +210,8 @@ class TCSurgeGeoClaw(Hazard):
         intensity = np.zeros(centroids.coord.shape[0])
         intensity[coastal_idx], gauge_data = geoclaw_surge_from_track(
             track, coastal_centroids, zos_path, topo_path,
-            gauges=gauges, mod_zos=mod_zos, pool=pool, node_max_dist_deg=node_max_dist_deg)
+            gauges=gauges, mod_zos=mod_zos, pool=pool, topo_res_as=topo_res_as,
+            node_max_dist_deg=node_max_dist_deg)
 
         new_haz = TCSurgeGeoClaw()
         new_haz.tag = TagHazard(HAZ_TYPE, 'Name: ' + track.name)
@@ -289,8 +297,8 @@ def get_coastal_centroids_idx(centroids, max_dist_coast_km, max_latitude=90):
     return coastal_msk.nonzero()[0]
 
 
-def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, gauges=None, mod_zos=0,
-                             pool=None, node_max_dist_deg=5.5):
+def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=30, gauges=None,
+                             mod_zos=0, pool=None, node_max_dist_deg=5.5):
     """Compute TC surge height on centroids from a single track dataset
 
     Parameters
@@ -303,6 +311,9 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, gauges=None,
         Path to NetCDF file containing gridded monthly sea level data.
     topo_path : Path or str
         Path to raster file containing gridded elevation data.
+    topo_res_as : float, optional
+        The resolution at which to extract topography data in arc-seconds. Needs to be between
+        3 and 90 (appx. between 90 and 3000 meters). Default: 30
     gauges : list of pairs (lat, lon), optional
         The locations of tide gauges where to measure temporal changes in sea level height.
         This is used mostly for validation purposes.
@@ -400,7 +411,8 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, gauges=None,
             runners.append(GeoclawRunner(work_dir, track.sel(time=event['time_mask_buffered']),
                                          event['period'][0], event,
                                          track_centr[event['centroid_mask']], zos_path,
-                                         topo_path, gauges=gauges, mod_zos=mod_zos))
+                                         topo_path, topo_res_as=topo_res_as, gauges=gauges,
+                                         mod_zos=mod_zos))
 
         if pool is not None:
             pool.map(GeoclawRunner.run, runners)
@@ -434,9 +446,8 @@ class GeoclawRunner():
         For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time` and
         `height_above_geoid` information.
     """
-
     def __init__(self, base_dir, track, time_offset, areas, centroids, zos_path, topo_path,
-                 gauges=None, mod_zos=0):
+                 topo_res_as=30, gauges=None, mod_zos=0):
         """Initialize GeoClaw working directory with ClawPack rundata
 
         Parameters
@@ -456,6 +467,9 @@ class GeoclawRunner():
             Path to NetCDF file containing gridded monthly sea level data.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
+        topo_res_as : float, optional
+            The resolution at which to extract topography data in arc-seconds. Needs to be between
+            3 and 90 (appx. between 90 and 3000 meters). Default: 30
         gauges : list of pairs (lat, lon), optional
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes.
@@ -464,6 +478,10 @@ class GeoclawRunner():
             specified zos_path. Default: 0
         """
         gauges = [] if gauges is None else gauges
+
+        if topo_res_as < 3 or topo_res_as > 90:
+            raise ValueError("Specify a topo resolution between 3 and 90 arc-seconds!")
+        self.topo_resolution_as = [360, 120, topo_res_as]
 
         LOGGER.info("Prepare GeoClaw to determine surge on %d centroids", centroids.shape[0])
         self.track = track
@@ -651,15 +669,10 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata = self.rundata.clawdata
         amrdata = self.rundata.amrdata
         refinedata = self.rundata.refinement_data
-        amrdata.refinement_ratios_x = [2, 2, 2, 2, 4]
+        amrdata.refinement_ratios_x = self.compute_refinement_ratios()
         amrdata.refinement_ratios_y = amrdata.refinement_ratios_x
         amrdata.refinement_ratios_t = amrdata.refinement_ratios_x
         amrdata.amr_levels_max = len(amrdata.refinement_ratios_x) + 1
-        resolutions = [(clawdata.upper[0] - clawdata.lower[0]) / clawdata.num_cells[0]]
-        for fact in amrdata.refinement_ratios_x:
-            resolutions.append(resolutions[-1] / fact)
-        LOGGER.info("GeoClaw resolution in arc-seconds: %s",
-                    str(["%.2f" % (r * 60 * 60) for r in resolutions]))
         amrdata.aux_type = ['center', 'capacity', 'yleft', 'center', 'center', 'center', 'center']
         amrdata.regrid_interval = 3
         amrdata.regrid_buffer_width = 2
@@ -667,14 +680,43 @@ include $(CLAW)/clawutil/src/Makefile.common
         regions = self.rundata.regiondata.regions
         t_1, t_2 = self.rundata.clawdata.t0, self.rundata.clawdata.tfinal
         maxlevel = amrdata.amr_levels_max
+        x_1, y_1, x_2, y_2 = self.areas['wind_area']
+        regions.append([1, 4, t_1, t_2, x_1, x_2, y_1, y_2])
         x_1, y_1, x_2, y_2 = self.areas['landfall_area']
-        regions.append([maxlevel - 2, maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
+        regions.append([max(1, maxlevel - 3), maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
         for area in self.areas['surge_areas']:
             x_1, y_1, x_2, y_2 = area
-            regions.append([maxlevel, maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
-        refinedata.speed_tolerance = list(np.arange(1.0, maxlevel - 1))
+            regions.append([maxlevel - 1, maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
+        refinedata.speed_tolerance = list(np.arange(1.0, maxlevel - 2))
         refinedata.variable_dt_refinement_ratios = True
         refinedata.wave_tolerance = 1.0
+
+
+    def compute_refinement_ratios(self):
+        # select the refinement ratios so that:
+        # * the last but one resolution is less than self.topo_resolution_as[-1]
+        # * the list of ratios is non-decreasing
+        # * not more than 6 ratios
+        # * no single ratio larger than 8
+        clawdata = self.rundata.clawdata
+        base_res = (clawdata.upper[0] - clawdata.lower[0]) / clawdata.num_cells[0]
+        total_fact = base_res / (self.topo_resolution_as[-1] / 3600)
+        n_ratios = min(5, int(np.round(np.log2(total_fact))))
+        if n_ratios < 2:
+            ratios = [2]
+        else:
+            ratios = [2] * (n_ratios - 2)
+            target = total_fact / np.prod(ratios)
+            ratio1 = np.arange(
+                max(2, np.ceil(target / 8)),
+                max(2, min(np.sqrt(target), 8)) + 1)
+            ratio2 = np.fmax(ratio1, np.ceil(target / ratio1))
+            i_ratio = np.argmin(ratio1 * ratio2)
+            ratios += [int(ratio1[i_ratio]), int(ratio2[i_ratio])]
+        ratios += [min(8, ratios[-1] + 1)]
+        LOGGER.info("GeoClaw resolution in arc-seconds: %s",
+                    str([f"{3600 * base_res / r:.2f}" for r in np.cumprod([1] + ratios)]))
+        return ratios
 
 
     def set_rundata_geo(self):
@@ -708,7 +750,8 @@ include $(CLAW)/clawutil/src/Makefile.common
             self.areas['wind_area'],
             self.areas['landfall_area']
         ] + self.areas['surge_areas']
-        resolutions = [360, 120] + [30 for a in self.areas['surge_areas']]
+        resolutions = self.topo_resolution_as[:2]
+        resolutions += [self.topo_resolution_as[2]] * len(self.areas['surge_areas'])
         dems_for_plot = []
         for res_as, bounds in zip(resolutions, areas):
             bounds, topo = load_topography(self.topo_path, bounds, res_as)
@@ -736,7 +779,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         fgmax_grid.tstart_max = self.rundata.clawdata.t0
         fgmax_grid.tend_max = self.rundata.clawdata.tfinal
         fgmax_grid.dt_check = 0
-        fgmax_grid.min_level_check = self.rundata.amrdata.amr_levels_max
+        fgmax_grid.min_level_check = self.rundata.amrdata.amr_levels_max - 1
         fgmax_grid.arrival_tol = 1.e-2
         fgmax_grid.npts = self.centroids.shape[0]
         fgmax_grid.X = self.centroids[:, 1]
@@ -1104,6 +1147,7 @@ class TCSurgeEvents():
     maxlen_h = 48
     maxbreak_h = 12
     period_buffer_d = 0.5
+    total_roci_factor = 2.5
     lf_roci_factor = 0.6
     lf_rmw_factor = 2.0
     minwind_kt = 34
@@ -1209,7 +1253,7 @@ class TCSurgeEvents():
     def _set_areas(self):
         """For each event, determine areas affected by wind and surge."""
         # total area (maximum bounds to consider)
-        pad = 1 + self.track.radius_oci / 60
+        pad = 1 + self.total_roci_factor * self.track.radius_oci / 60
         self.total_area = (
             float((self.track.lon - pad).min()),
             float((self.track.lat - pad).min()),
@@ -1229,7 +1273,7 @@ class TCSurgeEvents():
                         self.lf_rmw_factor * track.radius_max_wind.values))
 
             # wind area (maximum bounds to consider)
-            pad = track.radius_oci / 60
+            pad = self.total_roci_factor * track.radius_oci / 60
             self.wind_area.append((
                 float((track.lon - pad).min()),
                 float((track.lat - pad).min()),
