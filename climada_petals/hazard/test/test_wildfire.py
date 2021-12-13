@@ -52,7 +52,8 @@ def def_ori_centroids(firms, centr_res_factor):
         firms['longitude'].min() : firms['longitude'].max() : complex(0, nb_centr_lon)]). \
         reshape(2, nb_centr_lat*nb_centr_lon).transpose()
 
-    centroids = Centroids.from_lat_lon(coord[:, 0], coord[:, 1])
+    centroids = Centroids()
+    centroids.set_lat_lon(coord[:, 0], coord[:, 1])
     centroids.set_area_approx()
     centroids.set_on_land()
     centroids.empty_geometry_points()

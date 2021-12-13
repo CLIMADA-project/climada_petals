@@ -122,7 +122,8 @@ class WildFire(Hazard):
         self.FirmsParams = self.FirmsParams()
         self.ProbaParams = self.ProbaParams()
 
-    def set_hist_fire_FIRMS(self, df_firms, centr_res_factor=1.0, centroids=None):
+    @classmethod
+    def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None):
         """ Parse FIRMS data and generate historical fires by temporal and spatial
         clustering. Single fire events are defined as a set of data points
         that are geographically close and/or have consecutive dates. The
@@ -154,42 +155,56 @@ class WildFire(Hazard):
         centroids : Centroids, optional
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
+            
+        Returns
+        ----------
+        haz : WildFire instance
         """
-        self.clear()
+        
+        haz = cls()
 
         # read and initialize data
-        df_firms = self._clean_firms_df(df_firms)
+        df_firms = haz._clean_firms_df(df_firms)
         # compute centroids
-        res_data = self._firms_resolution(df_firms)
+        res_data = haz._firms_resolution(df_firms)
         if not centroids:
-            centroids = self._firms_centroids_creation(df_firms, res_data, centr_res_factor)
+            centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
         else:
             if not centroids.lat.any():
                 centroids.set_meta_to_lat_lon()
-        res_centr = self._centroids_resolution(centroids)
+        res_centr = haz._centroids_resolution(centroids)
 
         # fire identification
         while df_firms.iter_ev.any():
             # Compute cons_id: consecutive fires in current iteration
-            self._firms_cons_days(df_firms)
+            haz._firms_cons_days(df_firms)
             # Compute clus_id: cluster identifier inside cons_id
-            self._firms_clustering(df_firms, res_data)
+            haz._firms_clustering(df_firms, res_data)
             # compute event_id
-            self._firms_fire(df_firms)
+            haz._firms_fire(df_firms)
             LOGGER.info('Remaining fires to identify: %s.', str(np.argwhere(\
             df_firms.iter_ev.values).size))
 
         # remove minor fires
-        if self.FirmsParams.remove_minor_fires_firms:
-            df_firms = self._firms_remove_minor_fires(df_firms,
-                                    self.FirmsParams.minor_fire_thres_firms)
+        if haz.FirmsParams.remove_minor_fires_firms:
+            df_firms = haz._firms_remove_minor_fires(df_firms,
+                                    haz.FirmsParams.minor_fire_thres_firms)
 
         # compute brightness and fill class attributes
         LOGGER.info('Computing intensity of %s fires.',
                     np.unique(df_firms.event_id).size)
-        self._calc_brightness(df_firms, centroids, res_centr)
+        haz._calc_brightness(df_firms, centroids, res_centr)
+        
+        return haz
 
-    def set_hist_fire_seasons_FIRMS(self, df_firms, centr_res_factor=1.0,
+    def set_hist_fire_FIRMS(self, *args, **kwargs):
+            """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
+            LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
+                           "Use WildFire.from_hist_fire_FIRMS .")
+            self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
+
+    @classmethod
+    def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
                                     centroids=None, hemisphere=None,
                                     year_start=None, year_end=None,
                                     keep_all_fires=False):
@@ -230,17 +245,21 @@ class WildFire(Hazard):
         keep_all_fires : bool, optional
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
+            
+        Returns
+        ----------
+        haz : WildFire instance
         """
 
         LOGGER.info('Setting up historical fires for year set.')
-        self.clear()
+        haz = cls()
 
         # read and initialize data
-        df_firms = self._clean_firms_df(df_firms)
+        df_firms = haz._clean_firms_df(df_firms)
         # compute centroids
-        res_data = self._firms_resolution(df_firms)
+        res_data = haz._firms_resolution(df_firms)
         if not centroids:
-            centroids = self._firms_centroids_creation(df_firms, res_data, centr_res_factor)
+            centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
         else:
             if not centroids.coord.size:
                 centroids.set_meta_to_lat_lon()
@@ -268,7 +287,7 @@ class WildFire(Hazard):
 
         for year in years:
             LOGGER.info('Setting up historical fire seasons %s.', str(year))
-            firms_temp = self._select_fire_season(df_firms, year, hemisphere=hemisphere)
+            firms_temp = haz._select_fire_season(df_firms, year, hemisphere=hemisphere)
             # calculate historic fire seasons
             wf_year = WildFire()
             wf_year.set_hist_fire_FIRMS(firms_temp, centroids=centroids)
@@ -281,37 +300,45 @@ class WildFire(Hazard):
             n_fires[idx] = len(wf.event_id)
 
         if keep_all_fires:
-            self.hist_fire_seasons = hist_fire_seasons
+            haz.hist_fire_seasons = hist_fire_seasons
 
         # save
-        self.tag = TagHazard('WFseason')
-        self.centroids = centroids
-        self.n_fires = n_fires
-        self.units = 'K' # Kelvin brightness
+        haz.tag = TagHazard('WFseason')
+        haz.centroids = centroids
+        haz.n_fires = n_fires
+        haz.units = 'K' # Kelvin brightness
 
         # Following values are defined for each fire
-        self.event_id = np.arange(1, len(years)+1).astype(int)
-        self.event_name = list(map(str, years))
-        self.date = np.zeros(len(years), int)
-        self.date_end = np.zeros(len(years), int)
+        haz.event_id = np.arange(1, len(years)+1).astype(int)
+        haz.event_name = list(map(str, years))
+        haz.date = np.zeros(len(years), int)
+        haz.date_end = np.zeros(len(years), int)
         if hemisphere == 'NHS':
             for y_idx, year in enumerate(years):
-                self.date[y_idx] = date.toordinal(date(year, 1, 1))
-                self.date_end[y_idx] = date.toordinal(date(year, 12, 31))
+                haz.date[y_idx] = date.toordinal(date(year, 1, 1))
+                haz.date_end[y_idx] = date.toordinal(date(year, 12, 31))
         elif hemisphere == 'SHS':
             for y_idx, year in enumerate(years):
-                self.date[y_idx] = date.toordinal(date(year, 7, 1))
-                self.date_end[y_idx] = date.toordinal(date(year+1, 6, 30))
-        self.orig = np.ones(len(years), bool)
-        self._set_frequency()
+                haz.date[y_idx] = date.toordinal(date(year, 7, 1))
+                haz.date_end[y_idx] = date.toordinal(date(year+1, 6, 30))
+        haz.orig = np.ones(len(years), bool)
+        haz._set_frequency()
 
         # Following values are defined for each fire and centroid
-        self.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
+        haz.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
         for idx, wf in enumerate(hist_fire_seasons):
-            self.intensity[idx] = wf.intensity.max(axis=0)
-        self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+            haz.intensity[idx] = wf.intensity.max(axis=0)
+        haz.intensity = haz.intensity.tocsr()
+        haz.fraction = haz.intensity.copy()
+        haz.fraction.data.fill(1.0)
+        
+        return haz
+
+    def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
+            """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
+            LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
+                           "Use WildFire.from_hist_fire_seasons_FIRMS .")
+            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__        
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False):
@@ -635,7 +662,8 @@ class WildFire(Hazard):
         -------
         centroids : Centroids
         """
-        centroids = Centroids.from_pnt_bounds((df_firms['longitude'].min(), \
+        centroids = Centroids()
+        centroids.set_raster_from_pnt_bounds((df_firms['longitude'].min(), \
             df_firms['latitude'].min(), df_firms['longitude'].max(), \
             df_firms['latitude'].max()), res=res_data/centr_res_factor)
         centroids.set_meta_to_lat_lon()
