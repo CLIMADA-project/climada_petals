@@ -1428,17 +1428,17 @@ def firemip_dowscaling(haz_firemip, haz_prob):
     haz_firemip : WildFire
         WildFire hazard instance with fraction of burnt area as intensity
     haz_prob : WildFire
-        Probabilistic WildFire hazard 
+        Probabilistic WildFire hazard
 
     Returns
     -------
     haz_downscaled : WildFire
         Downscaled FireMIP wildfire hazard
     """
-    
+
     # set hazard intensity to burnt area per grid cell
     ba_fm = calc_burnt_area(haz_firemip)
-    
+
     haz_downscaled = copy.deepcopy(haz_prob)
     haz_downscaled.intensity[haz_prob.intensity!=0] = 1
     ba_prob = calc_burnt_area(haz_downscaled)
@@ -1464,7 +1464,7 @@ def firemip_dowscaling(haz_firemip, haz_prob):
         # index of the centroid in the probabilistic set
         idx_prob_c = np.where(new_coord == centroid)[0]
         idx_match = idx_matching[:,centroid]
-        
+
         for event_fm, event_prob in enumerate(idx_match):
             if event_prob >= 0:
                 new_intensity[event_fm, idx_prob_c] = haz_prob.intensity[event_prob, idx_prob_c]
