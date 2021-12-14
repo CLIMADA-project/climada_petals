@@ -1419,24 +1419,149 @@ def from_firemip(input_dir, filename):
 
     return id_bands, event_list
 
+def firemip_dowscaling(haz_firemip, haz_prob):
+    """Return wildfire hazard consisting of wildfire seasons that were assigned to
+    FireMIP pixel with a similar value of burnt area per year / fire season
+
+    Parameters
+    ----------
+    haz_firemip : WildFire
+        WildFire hazard instance with fraction of burnt area as intensity
+    haz_prob : WildFire
+        Probabilistic WildFire hazard 
+
+    Returns
+    -------
+    haz_downscaled : WildFire
+        Downscaled FireMIP wildfire hazard
+    """
+    
+    # set hazard intensity to burnt area per grid cell
+    ba_fm = calc_burnt_area(haz_firemip)
+    
+    haz_downscaled = copy.deepcopy(haz_prob)
+    haz_downscaled.intensity[haz_prob.intensity!=0] = 1
+    ba_prob = calc_burnt_area(haz_downscaled)
+
+    # match centroids of probabilistic data to firemip centroids
+    new_coord = u_coord.assign_coordinates(haz_prob.centroids.coord, haz_firemip.centroids.coord)
+
+    # sum up burnt pixel of prob set on the firemip raster
+    nr_years = haz_prob.intensity.shape[0]
+    firemip_c = np.unique(new_coord)
+
+    ba_prob_sum = np.empty([nr_years, len(firemip_c)])
+    for idx in firemip_c:
+        ba_prob_sum[:,idx] = np.sum(ba_prob[:, np.where(new_coord == idx)[0]],1).flatten()
+
+    # match indices of summed up probabilistic fires to best fitting FireMIP data point
+    idx_matching = match_burnt_areas(ba_fm, ba_prob_sum)
+
+    # copy corresponding values from haz_prob to right location in firemip
+    new_intensity = sparse.dok_matrix((haz_firemip.intensity.shape[0], haz_prob.intensity.shape[1]))
+
+    for centroid in firemip_c:
+        # index of the centroid in the probabilistic set
+        idx_prob_c = np.where(new_coord == centroid)[0]
+        idx_match = idx_matching[:,centroid]
+        
+        for event_fm, event_prob in enumerate(idx_match):
+            if event_prob >= 0:
+                new_intensity[event_fm, idx_prob_c] = haz_prob.intensity[event_prob, idx_prob_c]
+
+    haz_downscaled.intensity = new_intensity.tocsr()
+    haz_downscaled.event_id = haz_firemip.event_id
+    haz_downscaled.event_name = haz_firemip.event_name
+
+    return haz_downscaled
+
+
 def calc_burnt_area(haz_fraction):
-    """Return hazard with absolute area burnt as intensity
+    """Return absolute burnt area [km2]
 
     Parameters
     ----------
     haz_fraction : WildFire
-        WildFire hazard instance with fraction of burnt area as intensity.
+        WildFire hazard instance with fraction of burnt area as intensity
 
     Returns
     -------
-    new_haz: WildFire
-        WildFire hazard with modified intensity [km2]
+    burnt_area: csr.matrix
+        burnt area per centroid and event [km2]
     """
 
-    grid_area = u_coord.get_gridcellarea(haz_fraction.centroids.lat.values)
+    grid_area = u_coord.get_gridcellarea(haz_fraction.centroids.lat)
+    burnt_area = haz_fraction.intensity.multiply(grid_area).tocsr()
 
-    new_haz = copy.deepcopy(haz_fraction)
-    new_haz.intensity = sparse.csr_matrix(grid_area)
-    new_haz.units = 'km2'
+    return burnt_area
 
-    return new_haz
+
+def match_burnt_areas(ba_fm, ba_prob_sum):
+    """Return absolute burnt area [km2]
+
+    Parameters
+    ----------
+    ba_fm : csr.matrix
+        Burnt area per pixel and event (year) of FireMIP
+    ba_prob_sum : csr.matrix
+        Burnt area per pixel and event (year) of probabilistic fireseason
+
+
+    Returns
+    -------
+    idx_tot: matrix
+        Array of indices of the probabilistic wildfires that best match the
+        FireMIP input data
+    """
+
+    [years, centroids] = ba_fm.shape
+    idx_matching = np.empty([years, centroids])
+    idx_matching[:] = np.NaN
+
+    #get idx of prob fires per centroid: (has to be adapted so every idx can only be used once)
+    for centroid in range(centroids):
+
+        # sort burnt area per centroid (for prob)
+        ba_fm_c = ba_fm[:, centroid].data
+        # idx_fm = sparse.find(ba_fm_c)[0]
+        # values_fm = sparse.find(ba_fm_c)[2]
+
+        ba_prob_c = ba_prob_sum[:,centroid]
+        values_prob = np.sort(sparse.find(ba_prob_c)[2])
+        idx_prob = (np.argsort(sparse.find(ba_prob_c)[2]))
+
+        # compare burnt area arrays
+        if len(values_prob) != 0:
+            idxs = get_closest(values_prob, ba_fm_c)
+            idx_matching[:, centroid] = idx_prob[idxs]
+
+    return idx_matching.astype(int)
+
+def get_closest(array, values):
+    """Return index of values contained in array that best match values
+
+    Parameters
+    ----------
+    array : np.array
+        Array to be matched on
+    values : np.array
+        Array of values that best matches shall be found for
+
+
+    Returns
+    -------
+    idxs: np.array
+        Array of indices of the values in the provided array that best match the
+        provided values
+    """
+    # array needs to be sorted!
+    # get insert positions
+    # this might be the place to spot doublings
+    idxs = np.searchsorted(array, values, side="left")
+
+    # find indexes where previous index is closer
+    prev_idx_is_less = ((idxs == len(array))|(np.fabs(values - array[np.maximum(idxs-1, 0)]) <
+                                              np.fabs(values - array[np.minimum(idxs, len(array)-1)])))
+    idxs[prev_idx_is_less] -= 1
+
+    return idxs
