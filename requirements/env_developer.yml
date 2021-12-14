@@ -13,3 +13,8 @@ dependencies:
     - nbformat
     - pylint==2.7.1  # 2.7.2 and higher: false positive E1136 and E1137
     - readthedocs-sphinx-ext>=2.1
+    - igraph
+    - seaborn
+    - pygeos
+    - rasterstats
+    - pandapower

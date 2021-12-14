@@ -432,7 +432,7 @@ class OSMFileQuery:
 
         # features consisting in points, multipolygons and lines:
         elif ci_type in ['gas','oil','telecom','water','wastewater','power',
-                         'rail','road']:
+                         'rail','road', 'main_road']:
             gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
                                  DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(

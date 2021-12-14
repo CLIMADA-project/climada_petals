@@ -20,8 +20,10 @@ import logging
 import numpy as np
 import geopandas as gpd
 import pandas as pd
+import pyproj
 import shapely
 from scipy.spatial import cKDTree
+from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
 
@@ -42,29 +44,29 @@ class GraphCalcs():
             igraph.Graph
         """
         self.graph = graph
-
+    
     def link_clusters(self):
         """
-        select random vs from a cluster and match with closest vs from largest
-        cluster
-        """        
-        subgraph_list = self.graph.clusters().subgraphs()
-        gdf_vs_source = subgraph_list[0].get_vertex_dataframe()
+        recursively link cluster to giant component of graph
+        """
+        while len(self.graph.clusters().subgraphs()) > 1:
+            
+            giant = self.graph.clusters().subgraphs()[0]
+            next_cluster = self.graph.clusters().subgraphs()[1]
+            
+            gdf_vs_source = giant.get_vertex_dataframe()
+            gdf_vs_assign = next_cluster.get_vertex_dataframe()
+            dists, ix_match = self._ckdnearest(gdf_vs_assign, gdf_vs_source)
+            source = gdf_vs_assign.geometry.iloc[np.where(dists==min(dists))[0]].values[0]
+            target = gdf_vs_source.geometry.iloc[ix_match[np.where(dists==min(dists))[0]]].values[0]
 
-        for subgraph in subgraph_list[1:]:
-            vs_assign = subgraph.get_vertex_dataframe().iloc[0]
-
-            __, ix_match = self._ckdnearest(vs_assign, gdf_vs_source)
-
-            edge_geom = self.make_edge_geometries(
-                [vs_assign.geometry], 
-                [gdf_vs_source.loc[ix_match].geometry.values[0]])[0]
-
-            self.graph.add_edge(vs_assign.orig_id, 
-                                gdf_vs_source.loc[ix_match].orig_id.values[0], 
-                                geometry=edge_geom, ci_type=vs_assign.ci_type,
-                                distance = 1)
-    
+            edge_geom = self.make_edge_geometries([source],[target])[0]
+            
+            dist = pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
+            self.graph.add_edge(gdf_vs_assign.orig_id.iloc[np.where(dists==min(dists))[0]].values[0], 
+                                gdf_vs_source.orig_id.iloc[ix_match[np.where(dists==min(dists))[0]]].values[0], 
+                                geometry=edge_geom, ci_type=gdf_vs_assign.ci_type.iloc[0],
+                                distance = dist)
             
     def link_vertices_closest_k(self, from_ci, to_ci, 
                                 link_name=None, dist_thresh=None,
@@ -85,7 +87,7 @@ class GraphCalcs():
             ix_matches = ix_matches.flatten()
         # TODO: dist_thresh condition only holds vaguely for m input & lat/lon coordinates (EPSG4326)
         # shape: (target vs, k)
-        dists_thresh_bool = [((not dist_thresh) or (dist < (dist_thresh/(ONE_LAT_KM*1000))))
+        dists_thresh_bool = [((not dist_thresh) or np.isnan(dist_thresh) or (dist < (dist_thresh/(ONE_LAT_KM*1000))))
                             for dist in dists]
         
         # shape: (target vs, ..)
@@ -338,16 +340,17 @@ class GraphCalcs():
             vs_source_target = self.graph.vs.select(
                 ci_type_in=[row.source, row.target])
                         
-            subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(vs_source_target)
+            #subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(vs_source_target)
 
             # adjacency matrix of selected subgraph
-            adj_sub = np.array(vs_source_target.subgraph().get_adjacency().data)
+            adj_sub = csr_matrix(np.array(vs_source_target.subgraph(
+                ).get_adjacency().data))
             
             # Hadamard product func_tot (*) capacity
-            func_capa = np.multiply(
+            func_capa = csr_matrix(np.multiply(
                 vs_source_target.get_attribute_values('func_tot'),
                 vs_source_target.get_attribute_values(
-                    f'capacity_{row.source}_{row.target}'))
+                    f'capacity_{row.source}_{row.target}')))
             
             # for dependencies w/ access_cnstr, set (x,y) in adj to 0 if length of  
             # path x-->y now > thresh_dist
@@ -384,14 +387,14 @@ class GraphCalcs():
                 #         adj_sub[source_ix_sub, target_ix_sub] = 0
                         
             # propagate capacities down from source --> target along adj
-            capa_rec = np.dot(func_capa, adj_sub)   
+            capa_rec = func_capa.dot(adj_sub).toarray().squeeze()
             
             # functionality thesholds for recieved capacity
             func_thresh = np.array([row.thresh_func if vx['ci_type'] == row.target 
                                     else -9999 for vx in vs_source_target])
             
             # boolean vector whether received capacity great enough to supply endusers
-            capa_suff = (capa_rec >= np.array(func_thresh)).astype(int)
+            capa_suff = (capa_rec >= func_thresh).astype(int)
             
             # update funcstates
             # unclear if less faulty than just assigning directly to 
@@ -483,11 +486,14 @@ class GraphCalcs():
             self._update_cis_internally(df_dependencies, p_source=p_source,
                                         p_sink=p_sink, per_cap_cons=per_cap_cons,
                                         source_var=source_var)
+            LOGGER.info('Updating functional states.'+
+                        f' Current delta before: {delta}')
             self._update_functional_dependencies(df_dependencies)
             func_state_tot_vs2, func_state_tot_es2 = self._funcstates_sum()
-            delta = func_state_tot_vs-func_state_tot_vs2
-            LOGGER.info('Iterating functional state updates.'+
-                        f' Current delta: {delta}')
+            delta_vs = func_state_tot_vs-func_state_tot_vs2
+            delta_es = func_state_tot_es-func_state_tot_es2
+            delta = max(abs(delta_vs), abs(delta_es))
+            LOGGER.info(f' Current delta after: {delta}')
 
         self._update_enduser_dependencies(df_dependencies)
 

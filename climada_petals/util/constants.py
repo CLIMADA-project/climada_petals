@@ -334,6 +334,14 @@ DICT_CIS_OSM =  {
                              or (public_transport='*' and bus='yes')
                              or (bridge='*' and highway='*')
                              or (tunnel='*' and highway='*')"""},
+        'main_road' :  {
+            'osm_keys' : ['highway','man_made','name'],
+            'osm_query' : """highway='primary' or
+                             highway='primary_link' or 
+                             highway='trunk' or
+                             highway='motorway' or
+                             highway='motorway_link' or
+                             highway='trunk_link'"""},
         'rail' : {
             'osm_keys' : ['railway','name'],
             'osm_query' : """railway='rail' or railway='tram' or

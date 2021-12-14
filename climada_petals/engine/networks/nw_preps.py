@@ -50,30 +50,21 @@ class NetworkPreprocess():
     def __init__(self, ci_type):
         self.ci_type = ci_type
             
-    def _pygeos_to_shapely(self, geom):
-        """helper: geometry conversion"""
-        return shapely.wkt.loads(pygeos.io.to_wkt(geom))
-
-    def _shapely_to_pygeos(self, geom):
-        """helper: geometry conversion"""
-        return pygeos.io.from_wkt(geom.wkt)
 
     @staticmethod
     def pygeos_to_shapely(self, df, colname='geometry'):
         """helper: dataframe conversion"""
         gdf = df.copy()
-        shapely_geom = list()
-        for geom in gdf[colname]:
-            shapely_geom.append(self._pygeos_to_shapely(geom))
-        gdf[colname] = shapely_geom
-        return gdf
+        gdf[colname] = gdf.apply(lambda row: pygeos.to_shapely(row[colname]),
+                                 axis=1)
+        return gpd.GeoDataFrame(gdf)
 
     @staticmethod
     def shapely_to_pygeos(self, gdf, colname='geometry'):
         """helper: dataframe conversion"""
         df = pd.DataFrame(gdf)
         df[colname] = df.apply(
-            lambda row: self._shapely_to_pygeos(row[colname]), axis=1)
+            lambda row: pygeos.from_shapely(row[colname]), axis=1)
         return df
 
     def _ecols_to_graphorder(self, edges):
@@ -100,8 +91,6 @@ class NetworkPreprocess():
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
         if not nodes.empty:
-            # TODO: Check why doesnt work in here
-            # nodes['geometry'] = nodes.geometry.apply(lambda geom: geom.centroid)
             nodes = self.shapely_to_pygeos(self, nodes)
 
         network = simplify.Network(edges=edges, nodes=nodes)
@@ -118,7 +107,11 @@ class NetworkPreprocess():
             network = simplify.merge_multilinestrings(network)
         
         # convert back to shapely
-        return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
+        if not edges.empty:
+            edges = self.pygeos_to_shapely(self, network.edges)
+        nodes = self.pygeos_to_shapely(self, network.nodes)
+            
+        return edges, nodes
         
     def preprocess(self, gdf_edges=None, gdf_nodes=None):
         """
@@ -157,9 +150,10 @@ class NetworkPreprocess():
         return edges, nodes
 
     @staticmethod
-    def close_gaps(self, df, tolerance):
+    def close_gaps(self, df, tolerance=0.0005):
         """Close gaps in LineString geometry where it should be contiguous.
         Snaps both lines to a centroid of a gap in between.
+        0.0005 (° if lat/lon) ca 55m lat
         """
         geom = df.geometry.values.data
         coords = pygeos.get_coordinates(geom)
@@ -191,7 +185,6 @@ class NetworkPreprocess():
     
         return snapped
 
-
 class RoadPreprocess(NetworkPreprocess):
     
     def __init__(self):
@@ -202,24 +195,23 @@ class RoadPreprocess(NetworkPreprocess):
 
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
-            #edges['geometry'] = self.close_gaps(self, edges, tolerance=0.1)
+
         if nodes.empty:
             nodes = None #simplify cannot handle empty df for nodes, only None
         else:
             self.shapely_to_pygeos(self, nodes)
-    
         network = simplify.Network(edges=edges, nodes=nodes)
+        network = simplify.clean_roundabouts(network)
         network = simplify.add_endpoints(network)
         network = simplify.split_edges_at_nodes(network)
-        network = simplify.clean_roundabouts(network)
         network = simplify.add_ids(network)
         network = simplify.add_topology(network)
         network = simplify.drop_hanging_nodes(network)
         network = simplify.merge_edges(network)
+        network.edges = simplify.drop_duplicate_geometries(network.edges, keep='first') 
         network = simplify.reset_ids(network)
         network = simplify.add_distances(network)
         network = simplify.merge_multilinestrings(network)
-        simplify.snap_nodes(network, threshold=0.001)
 
         return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
 
