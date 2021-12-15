@@ -32,6 +32,7 @@ from climada.util import files_handler as u_fh
 import climada.util.coordinates as u_coord
 from climada.engine import Impact
 from climada.entity.exposures.base import Exposures
+import os
 
 LOGGER = logging.getLogger(__name__)
 WIOD_FILE_LINK = CONFIG.engine.supplychain.resources.wiod16.str()
@@ -105,9 +106,9 @@ class SupplyChain():
     def read_exiobase3(self, year=1997):
         """Read multi-regional input-output tables from EXIOBASE3:
 
-        https://zenodo.org/record/3583071#.Ya9fFH3MK3I
+        https://zenodo.org/record/5589597#.Ybh0A33MK3I
 
-        Data need to first be downloaded via Zotero and stored in WIOD_DIRECTORY.
+        Data need to first be downloaded via Zotero and stored in IOT_DIRECTORY.
 
         Parameters
         ----------
@@ -120,21 +121,24 @@ class SupplyChain():
 
         """
 
-        file_name = 'IOT_{}_ixi/A.txt'.format(year)
-        file_loc = IOT_DIRECTORY / file_name
+        # TODO: automatic data download see suggestion in https://zenodo.org/record/5589597#.Ybh0A33MK3I. This is also automatized in pymrio.
 
-        mriot = pd.read_csv(file_loc, sep='\t', skiprows=2)   
+        folder_name = 'IOT_{}_ixi'.format(year)
+        folder_loc = IOT_DIRECTORY / folder_name
+
+        mriot = pd.read_csv(os.path.join(folder_name, 'Z.txt'), sep='\t', skiprows=2)
+        tot_prod = pd.read_csv(os.path.join(folder_name, 'X.txt'), sep='\t', usecols=[2])
 
         self.sectors = mriot.sector.unique()
         self.mriot_reg_names = mriot.region.unique()
-        self.mriot_data = mriot.iloc[:,2:].astype(float)
-        # TODO: check if operation is correct:
-        self.total_prod = self.mriot_data.sum(1)
+        self.mriot_data = mriot.iloc[:,2:].values.astype(float)
+
+        self.total_prod = tot_prod.values.flatten()
         self.reg_pos = {
             name: range(len(self.sectors)*i, len(self.sectors)*(i+1))
             for i, name in enumerate(self.mriot_reg_names)
             }
-        self.mriot_type = 'EXIOBASE'
+        self.mriot_type = 'EXIOBASE3'
 
     def read_wiod16(self, year=2014, range_rows=(5,2469),
                     range_cols=(4,2468), col_iso3=2,
@@ -244,6 +248,9 @@ class SupplyChain():
 
             self.reg_dir_imp.append(mriot_reg_name)
 
+            if mriot_reg_name == 'NO_CORR':
+                continue
+
             subsec_reg_pos = np.array(selected_subsec) + self.reg_pos[mriot_reg_name][0]
             subsec_reg_prod = self.mriot_data[subsec_reg_pos].sum(axis=1)
 
@@ -278,9 +285,10 @@ class SupplyChain():
         [3] Kitzes, J., An Introduction to Environmentally-Extended Input-Output
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
-
-        io_switch = {'leontief': self._leontief_calc, 'ghosh': self._ghosh_calc,
-                     'eeioa': self._eeioa_calc}
+        # TODO: Consider splitting the computation of coefficients to the indirect risk assessment
+        io_switch = {'leontief': self._leontief_calc,
+                            'ghosh': self._ghosh_calc,
+                            'eeioa': self._eeioa_calc}
 
         # Compute coefficients based on selected IO approach
         coefficients = np.zeros_like(self.mriot_data, dtype=np.float32)
@@ -348,6 +356,17 @@ class SupplyChain():
 
             if not idx_country.size > 0.:
                 mriot_reg_name = 'ROW'
+
+        elif mriot_type == 'EXIOBASE3':
+            mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha2")
+            idx_country = np.where(self.mriot_reg_names == mriot_reg_name)[0]
+
+            if not idx_country.size > 0.:
+                # EXIOBASE3 in fact contains five ROW regions, 
+                # but for now they are all catagorised as ROW.
+                # Most elegant way would be to assign each country
+                # looped from exposure into one of the five ROWs.
+                mriot_reg_name = 'NO_CORR'
 
         elif mriot_type == '':
             mriot_reg_name = exp_regid
