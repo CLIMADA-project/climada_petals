@@ -321,6 +321,9 @@ class GraphCalcs():
             np.unique(df_dependencies.source), 
             np.unique(df_dependencies.target)))
         
+        targets = [edge.target for edge in self.graph.es.select(func_tot_eq=0)]
+        self.graph.vs.select(targets)['func_tot'] = 0
+        
         for ci_type in ci_types:
             if (ci_type=='substation') or (ci_type=='power line'):
                 LOGGER.info('Updating power clusters')
@@ -329,8 +332,12 @@ class GraphCalcs():
                     self, per_cap_cons=per_cap_cons, source_ci=p_source,
                     sink_ci=p_sink, source_var=source_var)
             else:
-                LOGGER.info('No internal update method for CI type' +
-                               f' {ci_type}')
+                LOGGER.info(f'Updating {ci_type}')
+                targets = [edge.target for edge in 
+                           self.graph.es.select(ci_type_eq=f'{ci_type}'
+                                                ).select(func_tot_eq=0)]
+                self.graph.vs.select(
+                    targets).select(ci_type_eq=f'{ci_type}')['func_tot'] = 0
     
     def _update_functional_dependencies(self, df_dependencies):
     
