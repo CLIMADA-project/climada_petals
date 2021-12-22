@@ -585,9 +585,8 @@ class OSMApiQuery:
             if multipoly.area == 0:
                 LOGGER.info('Empty geometry encountered.')
 
-        gdf_rels = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+        gdf_rels =  gpd.GeoDataFrame(
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         # list of lists into list:
         nodes_taken = list(itertools.chain.from_iterable(nodes_taken))
@@ -643,8 +642,7 @@ class OSMApiQuery:
                              else way for way in data_geom]
 
         gdf_ways = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         return nodes_taken, gdf_ways
 
@@ -677,8 +675,7 @@ class OSMApiQuery:
                 data_tags.append(node.tags)
 
         gdf_nodes = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         return gdf_nodes
 
