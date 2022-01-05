@@ -30,12 +30,13 @@ import xarray as xr
 
 from climada import CONFIG
 from climada.hazard import Centroids, TCTracks
-from climada_petals.hazard.tc_surge_geoclaw import (boxcover_points_along_axis,
+from climada_petals.hazard.tc_surge_geoclaw import (area_sea_level_from_monthly_nc,
+                                                    boxcover_points_along_axis,
                                                     bounds_to_str,
                                                     clawpack_info,
                                                     dt64_to_pydt,
                                                     load_topography,
-                                                    mean_max_sea_level,
+                                                    sea_level_from_nc,
                                                     setup_clawpack,
                                                     TCSurgeEvents,
                                                     TCSurgeGeoClaw)
@@ -78,7 +79,7 @@ class TestFuncs(unittest.TestCase):
         boxes, size = boxcover_points_along_axis(points, nsplits)
         self.assertEqual(boxes, boxes_correct)
         self.assertEqual(size, sum((b[2] - b[0]) * (b[3] - b[1]) for b in boxes))
-        boxes, size = boxcover_points_along_axis(points[:,::-1], nsplits)
+        boxes, size = boxcover_points_along_axis(points[:, ::-1], nsplits)
         self.assertEqual(boxes, [[b[1], b[0], b[3], b[2]] for b in boxes_correct])
 
 
@@ -131,7 +132,7 @@ class TestFuncs(unittest.TestCase):
         """Test TCSurgeEvents object"""
         # Artificial track with two "landfall" events
         radii = np.array([40, 40, 40, 30, 30, 30, 40, 30, 30, 30,
-                          40, 40, 40, 30, 30, 30, 30, 30, 40, 60])
+                          40, 40, 40, 30, 30, 30, 30, 30, 40, 40])
         track = xr.Dataset({
             'radius_max_wind': ('time', radii),
             'radius_oci': ('time', 4.1 * radii),
@@ -157,10 +158,10 @@ class TestFuncs(unittest.TestCase):
                                                                np.linspace(-2, 2, 100))]).T
         s_events = TCSurgeEvents(track, centroids)
         self.assertEqual(s_events.nevents, 1)
-        self.assertTrue(np.all(s_events.time_mask_buffered[0][s_events.time_mask[0]]))
-        self.assertTrue(np.all(~s_events.time_mask[0][:7]))
-        self.assertTrue(np.all(s_events.time_mask[0][7:10]))
-        self.assertTrue(np.all(~s_events.time_mask[0][10:]))
+        np.testing.assert_array_equal(s_events.time_mask_buffered[0][s_events.time_mask[0]], True)
+        np.testing.assert_array_equal(s_events.time_mask[0][:7], False)
+        np.testing.assert_array_equal(s_events.time_mask[0][7:10], True)
+        np.testing.assert_array_equal(s_events.time_mask[0][10:], False)
 
         # three sets of centroids
         centroids = np.concatenate([
@@ -168,7 +169,7 @@ class TestFuncs(unittest.TestCase):
             [ar.ravel() for ar in np.meshgrid(np.linspace(6, 8, 50), np.linspace(-2, -0.5, 50))],
             # second half on both sides of the track
             [ar.ravel() for ar in np.meshgrid(np.linspace(19, 22, 50), np.linspace(0.5, 1.5, 50))],
-            [ar.ravel() for ar in np.meshgrid(np.linspace(24, 25, 50), np.linspace(-1.0, 0.3, 50))],
+            [ar.ravel() for ar in np.meshgrid(np.linspace(25, 26, 50), np.linspace(-1.0, 0.3, 50))],
             # at the end, where storm is too weak to create surge
             [ar.ravel() for ar in np.meshgrid(np.linspace(29, 32, 50), np.linspace(0, 1, 50))],
         ], axis=1).T
@@ -176,38 +177,70 @@ class TestFuncs(unittest.TestCase):
         self.assertEqual(s_events.nevents, 2)
         self.assertEqual(len(list(s_events)), 2)
         for i in range(2):
-            self.assertTrue(np.all(s_events.time_mask_buffered[i][s_events.time_mask[i]]))
-        self.assertTrue(np.all(~s_events.time_mask_buffered[0][:1]))
-        self.assertTrue(np.all(s_events.time_mask_buffered[0][1:4]))
-        self.assertTrue(np.all(~s_events.time_mask_buffered[0][4:]))
-        self.assertTrue(np.all(~s_events.time_mask_buffered[1][:12]))
-        self.assertTrue(np.all(s_events.time_mask_buffered[1][12:17]))
-        self.assertTrue(np.all(~s_events.time_mask_buffered[1][17:]))
+            np.testing.assert_array_equal(
+                s_events.time_mask_buffered[i][s_events.time_mask[i]], True)
+        np.testing.assert_array_equal(s_events.time_mask_buffered[0][:6], True)
+        np.testing.assert_array_equal(s_events.time_mask_buffered[0][6:], False)
+        np.testing.assert_array_equal(s_events.time_mask_buffered[1][:11], False)
+        np.testing.assert_array_equal(s_events.time_mask_buffered[1][11:19], True)
+        np.testing.assert_array_equal(s_events.time_mask_buffered[1][19:], False)
         # for the double set in second half, it's advantageous to split surge area in two:
         self.assertEqual(len(s_events.surge_areas[1]), 2)
 
 
     def test_load_sea_level(self):
-        """Test mean_max_sea_level function"""
-        months = [np.array([[2010, 1]]), np.array([[2010, 2]]), np.array([[2010, 1], [2010, 2]])]
+        """Test functions to get sea level from NetCDF files"""
+        periods = [
+            (np.datetime64("2010-01-10"), np.datetime64("2010-01-14")),
+            (np.datetime64("2010-02-08"), np.datetime64("2010-02-20")),
+            (np.datetime64("2010-01-20"), np.datetime64("2010-01-28")),
+        ]
         bounds = [
             (-153.62, -28.79, -144.75, -18.44),
             (-153, -20, -150, -19),
             (-152, -28.5, -145, -27.5),
         ]
         sea_level = []
-        for mon in months:
+        sea_level_fun = area_sea_level_from_monthly_nc(ZOS_PATH)
+        for per in periods:
             for bnd in bounds:
-                sea_level.append(mean_max_sea_level(ZOS_PATH, mon, bnd))
-        sea_level = np.array(sea_level).reshape(len(months), len(bounds))
-        self.assertTrue(np.allclose(sea_level[:-1].mean(axis=0), sea_level[-1]))
-        self.assertTrue(np.all(sea_level[:,0] > sea_level[:,1]))
-        self.assertTrue(np.all(sea_level[:,0] > sea_level[:,2]))
-        self.assertAlmostEqual(sea_level[0,0], 1.332, places=3)
-        self.assertAlmostEqual(sea_level[1,0], 1.270, places=3)
-        self.assertAlmostEqual(sea_level[2,0], 1.301, places=3)
-        self.assertTrue(np.all((sea_level[:,1] < 1.31) & (sea_level[:,1] > 1.24)))
-        self.assertTrue(np.all((sea_level[:,2] < 0.93) & (sea_level[:,2] > 0.88)))
+                sea_level.append(sea_level_fun(bnd, per))
+        sea_level = np.array(sea_level).reshape(len(periods), len(bounds))
+        np.testing.assert_allclose(sea_level[:-1].mean(axis=0), sea_level[-1])
+        np.testing.assert_array_less(sea_level[:, 1], sea_level[:, 0])
+        np.testing.assert_array_less(sea_level[:, 2], sea_level[:, 0])
+        self.assertAlmostEqual(sea_level[0, 0], 1.332, places=3)
+        self.assertAlmostEqual(sea_level[1, 0], 1.270, places=3)
+        self.assertAlmostEqual(sea_level[2, 0], 1.301, places=3)
+        np.testing.assert_array_less(sea_level[:, 1], 1.31)
+        np.testing.assert_array_less(1.24, sea_level[:, 1])
+        np.testing.assert_array_less(sea_level[:, 2], 0.93)
+        np.testing.assert_array_less(0.88, sea_level[:, 2])
+
+        step = 0.083333
+        bounds = [
+            # three areas for which the same grid cell is selected:
+            (-153, -20, -150, -19),
+            (-152, -20.5, -151, -18.5),
+            (-153, -20 + 0.3 * step, -150, -19 + 0.2 * step),
+            # neighboring grid cell is selected:
+            (-153, -20 + step, -150, -19 + step),
+        ]
+        sea_level = []
+        sea_level_fun = sea_level_from_nc(ZOS_PATH)
+        for per in periods:
+            for bnd in bounds:
+                sea_level.append(sea_level_fun(bnd, per))
+        sea_level = np.array(sea_level).reshape(len(periods), len(bounds))
+        np.testing.assert_array_equal(sea_level[:, 0], sea_level[:, 1])
+        np.testing.assert_array_equal(sea_level[:, 0], sea_level[:, 2])
+        self.assertAlmostEqual(sea_level[0, 0], 1.257, places=3)
+        self.assertAlmostEqual(sea_level[1, 0], 1.242, places=3)
+        self.assertAlmostEqual(sea_level[2, 0], 1.257, places=3)
+        # for the neighboring grid cell, sea level should be different, but not too different:
+        dist = np.abs(sea_level[:, 0] - sea_level[:, 3])
+        np.testing.assert_array_less(0, dist)
+        np.testing.assert_array_less(dist, 0.1)
 
 
     def test_load_topography(self):
@@ -241,7 +274,6 @@ class TestFuncs(unittest.TestCase):
                 self.assertLess(zvalues[-4].size, zvalues[-8].size)
 
 
-
 class TestHazardInit(unittest.TestCase):
     """Test init and properties of TCSurgeGeoClaw class"""
 
@@ -270,10 +302,10 @@ class TestHazardInit(unittest.TestCase):
         tracks.data = [track, track]
 
         # first run, with automatic centroids
-        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, ZOS_PATH, TOPO_PATH)
+        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, TOPO_PATH)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape[0], 2)
-        self.assertTrue(np.all(haz.intensity.toarray() == 0))
+        np.testing.assert_array_equal(haz.intensity.toarray(), 0)
 
         # second run, with specified centroids
         coord = np.array([
@@ -286,11 +318,11 @@ class TestHazardInit(unittest.TestCase):
             [-23.37505943, -149.46882493], [-23.36615826, -149.45798872],
         ])
         centroids = Centroids()
-        centroids.set_lat_lon(coord[:,0], coord[:,1])
-        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, ZOS_PATH, TOPO_PATH, centroids=centroids)
+        centroids.set_lat_lon(coord[:, 0], coord[:, 1])
+        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, TOPO_PATH, centroids=centroids)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape, (2, coord.shape[0]))
-        self.assertTrue(np.all(haz.intensity.toarray() == 0))
+        np.testing.assert_array_equal(haz.intensity.toarray(), 0)
 
 
 # Execute Tests

@@ -75,6 +75,7 @@ GEOCLAW_WORK_DIR = CONFIG.hazard.tc_surge_geoclaw.geoclaw_work_dir.dir()
 KN_TO_MS = (1.0 * ureg.knot).to(ureg.meter / ureg.second).magnitude
 NM_TO_KM = (1.0 * ureg.nautical_mile).to(ureg.kilometer).magnitude
 MBAR_TO_PA = (1.0 * ureg.mbar).to(ureg.pascal).magnitude
+DEG_TO_NM = 60
 """Unit conversion factors."""
 
 
@@ -97,17 +98,15 @@ class TCSurgeGeoClaw(Hazard):
         self.basin = list()
 
     @staticmethod
-    def from_tc_tracks(tracks, zos_path, topo_path, centroids=None, description='', gauges=None,
+    def from_tc_tracks(tracks, topo_path, centroids=None, description='', gauges=None,
                        topo_res_as=30, node_max_dist_deg=5.5, inland_max_dist_km=50,
-                       offshore_max_dist_km=10, max_latitude=61, mod_zos=0, pool=None):
+                       offshore_max_dist_km=10, max_latitude=61, sea_level=0, pool=None):
         """Generate a TC surge hazard instance from a TCTracks object
 
         Parameters
         ----------
         tracks : TCTracks
             Tracks of tropical cyclone events.
-        zos_path : Path or str
-            Path to NetCDF file containing gridded monthly sea level data.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
         centroids : Centroids, optional
@@ -132,9 +131,13 @@ class TCSurgeGeoClaw(Hazard):
             Maximum offshore distance of the centroids in kilometers. Default: 10
         max_latitude : float, optional
             Maximum latitude of potentially affected centroids. Default: 61
-        mod_zos : float, optional
-            The scalar sea level rise is added to the base sea level that is extracted from the
-            specified zos_path. Default: 0
+        sea_level : float or function, optional
+            The sea level (above geoid) of the ocean at rest, used as a starting level for the
+            surge simulation. Instead of a constant scalar value, a function can be specified that
+            gets a `bounds` and a `period` argument and returns a scalar value. In this case, the
+            first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
+            second argument is a pair of np.datetime64 (start, end). For example, see the helper
+            function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
         pool : an object with `map` functionality, optional
             If given, landfall events for each track are processed in parallel. Note that the
             solver for a single landfall event is using OpenMP multiprocessing capabilities
@@ -160,18 +163,18 @@ class TCSurgeGeoClaw(Hazard):
         LOGGER.info('Computing TC surge of %s tracks on %s centroids.',
                     str(tracks.size), str(coastal_idx.size))
         haz = TCSurgeGeoClaw.concat(
-            [TCSurgeGeoClaw.from_xr_track(t, centroids, coastal_idx, zos_path, topo_path,
+            [TCSurgeGeoClaw.from_xr_track(t, centroids, coastal_idx, topo_path,
                                           topo_res_as=topo_res_as,
                                           node_max_dist_deg=node_max_dist_deg,
-                                          gauges=gauges, mod_zos=mod_zos, pool=pool)
+                                          gauges=gauges, sea_level=sea_level, pool=pool)
              for t in tracks.data])
         TropCyclone.frequency_from_tracks(haz, tracks.data)
         haz.tag.description = description
         return haz
 
     @staticmethod
-    def from_xr_track(track, centroids, coastal_idx, zos_path, topo_path,
-                      topo_res_as=30, node_max_dist_deg=5.5, gauges=None, mod_zos=0, pool=None):
+    def from_xr_track(track, centroids, coastal_idx, topo_path, topo_res_as=30,
+                      node_max_dist_deg=5.5, gauges=None, sea_level=0, pool=None):
         """Generate a TC surge hazard from a single xarray track dataset
 
         Parameters
@@ -182,8 +185,6 @@ class TCSurgeGeoClaw(Hazard):
             Centroids instance.
         coastal_idx : np.array
             Indices of centroids close to coast.
-        zos_path : Path or str
-            Path to NetCDF file containing gridded monthly sea level data.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
         topo_res_as : float, optional
@@ -196,9 +197,13 @@ class TCSurgeGeoClaw(Hazard):
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes. The result is stored in the `gauge_data`
             attribute.
-        mod_zos : float, optional
-            The scalar sea level rise is added to the base sea level that is extracted from the
-            specified zos_path. Default: 0
+        sea_level : float or function, optional
+            The sea level (above geoid) of the ocean at rest, used as a starting level for the
+            surge simulation. Instead of a constant scalar value, a function can be specified that
+            gets a `bounds` and a `period` argument and returns a scalar value. In this case, the
+            first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
+            second argument is a pair of np.datetime64 (start, end). For example, see the helper
+            function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
         pool : an object with `map` functionality, optional
             If given, landfall events are processed in parallel.
 
@@ -209,9 +214,8 @@ class TCSurgeGeoClaw(Hazard):
         coastal_centroids = centroids.coord[coastal_idx]
         intensity = np.zeros(centroids.coord.shape[0])
         intensity[coastal_idx], gauge_data = geoclaw_surge_from_track(
-            track, coastal_centroids, zos_path, topo_path,
-            gauges=gauges, mod_zos=mod_zos, pool=pool, topo_res_as=topo_res_as,
-            node_max_dist_deg=node_max_dist_deg)
+            track, coastal_centroids, topo_path, gauges=gauges, sea_level=sea_level, pool=pool,
+            topo_res_as=topo_res_as, node_max_dist_deg=node_max_dist_deg)
 
         new_haz = TCSurgeGeoClaw()
         new_haz.tag = TagHazard(HAZ_TYPE, 'Name: ' + track.name)
@@ -297,8 +301,8 @@ def get_coastal_centroids_idx(centroids, max_dist_coast_km, max_latitude=90):
     return coastal_msk.nonzero()[0]
 
 
-def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=30, gauges=None,
-                             mod_zos=0, pool=None, node_max_dist_deg=5.5):
+def geoclaw_surge_from_track(track, centroids, topo_path, topo_res_as=30, gauges=None,
+                             sea_level=0, pool=None, node_max_dist_deg=5.5):
     """Compute TC surge height on centroids from a single track dataset
 
     Parameters
@@ -307,8 +311,6 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=
         Single tropical cyclone track.
     centroids : 2d np.array
         Points for which to record the maximum height of inundation. Each row is a lat-lon point.
-    zos_path : Path or str
-        Path to NetCDF file containing gridded monthly sea level data.
     topo_path : Path or str
         Path to raster file containing gridded elevation data.
     topo_res_as : float, optional
@@ -317,9 +319,13 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=
     gauges : list of pairs (lat, lon), optional
         The locations of tide gauges where to measure temporal changes in sea level height.
         This is used mostly for validation purposes.
-    mod_zos : float, optional
-        The scalar sea level rise is added to the base sea level that is extracted from the
-        specified zos_path. Default: 0
+    sea_level : float or function, optional
+        The sea level (above geoid) of the ocean at rest, used as a starting level for the
+        surge simulation. Instead of a constant scalar value, a function can be specified that
+        gets a `bounds` and a `period` argument and returns a scalar value. In this case, the
+        first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
+        second argument is a pair of np.datetime64 (start, end). For example, see the helper
+        function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
     pool : an object with `map` functionality, optional
         If given, landfall events are processed in parallel.
     node_max_dist_deg : float, optional
@@ -410,9 +416,9 @@ def geoclaw_surge_from_track(track, centroids, zos_path, topo_path, topo_res_as=
         for event in events:
             runners.append(GeoclawRunner(work_dir, track.sel(time=event['time_mask_buffered']),
                                          event['period'][0], event,
-                                         track_centr[event['centroid_mask']], zos_path,
-                                         topo_path, topo_res_as=topo_res_as, gauges=gauges,
-                                         mod_zos=mod_zos))
+                                         track_centr[event['centroid_mask']], topo_path,
+                                         topo_res_as=topo_res_as, gauges=gauges,
+                                         sea_level=sea_level))
 
         if pool is not None:
             pool.map(GeoclawRunner.run, runners)
@@ -446,8 +452,8 @@ class GeoclawRunner():
         For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time` and
         `height_above_geoid` information.
     """
-    def __init__(self, base_dir, track, time_offset, areas, centroids, zos_path, topo_path,
-                 topo_res_as=30, gauges=None, mod_zos=0):
+    def __init__(self, base_dir, track, time_offset, areas, centroids, topo_path,
+                 topo_res_as=30, gauges=None, sea_level=0):
         """Initialize GeoClaw working directory with ClawPack rundata
 
         Parameters
@@ -463,8 +469,6 @@ class GeoclawRunner():
         centroids : np.array
             Points for which to record the maximum height of inundation.
             Each row is a lat-lon point.
-        zos_path : Path or str
-            Path to NetCDF file containing gridded monthly sea level data.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
         topo_res_as : float, optional
@@ -473,9 +477,13 @@ class GeoclawRunner():
         gauges : list of pairs (lat, lon), optional
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes.
-        mod_zos : float, optional
-            The scalar sea level rise is added to the base sea level that is extracted from the
-            specified zos_path. Default: 0
+        sea_level : float or function, optional
+            The sea level (above geoid) of the ocean at rest, used as a starting level for the
+            surge simulation. Instead of a constant scalar value, a function can be specified that
+            gets a `bounds` and a `period` argument and returns a scalar value. In this case, the
+            first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
+            second argument is a pair of np.datetime64 (start, end). For example, see the helper
+            function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
         """
         gauges = [] if gauges is None else gauges
 
@@ -489,12 +497,13 @@ class GeoclawRunner():
         self.centroids = centroids
         self.time_offset = time_offset
         self.time_offset_str = dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
-        self.zos_path = zos_path
         self.topo_path = topo_path
         self.gauge_data = [{'location': g, 'base_sea_level': 0, 'topo_height': -32768.0,
                             'time': [], 'height_above_geoid': [], 'in_domain': True}
                            for g in gauges]
-        self.mod_zos = mod_zos
+        self.sea_level_fun = sea_level
+        if np.isscalar(sea_level):
+            self.sea_level_fun = lambda bounds, period: sea_level
         self.surge_h = np.zeros(centroids.shape[0])
 
         # compute time horizon
@@ -732,17 +741,11 @@ include $(CLAW)/clawutil/src/Makefile.common
         geodata.manning_break = [0.0]
         geodata.dry_tolerance = 1.e-2
 
-        # get sea level information for affected months
-        pad = np.timedelta64(7, "D")
-        tr_times = self.track.time
-        tr_times_with_pad = xr.concat([tr_times - pad, tr_times, tr_times + pad], "time")
-        tr_months = np.unique(
-            np.stack((tr_times_with_pad.dt.year, tr_times_with_pad.dt.month), axis=-1),
-            axis=0)
+        # get sea level information for affected areas and time period
+        tr_period = (self.track.time.values[0], self.track.time.values[-1])
         geodata.sea_level = np.mean(
-            [mean_max_sea_level(self.zos_path, tr_months, area)
+            [self.sea_level_fun(area, tr_period)
              for area in self.areas['surge_areas']])
-        geodata.sea_level += self.mod_zos
 
         # load elevation data, resolution depending on area of refinement
         topodata.topofiles = []
@@ -969,6 +972,120 @@ def climada_xarray_to_geoclaw_storm(track, offset=None):
     return gc_storm
 
 
+def sea_level_from_nc(path, t_agg="mean", t_pad=None, mod_zos=0):
+    """Generate a function that reads centroid sea levels from a NetCDF file
+
+    The function that is generated can be used as an input for the `sea_level` parameter in
+    `TCSurgeGeoClaw.from_tc_tracks`.
+
+    The grid cell closest to the area's centroid that has valid entries is identified. Then the
+    specified aggregation method (e.g. "mean" or "max") is applied over the time period.
+
+    Parameters
+    ----------
+    path : Path or str
+        Path to NetCDF file containing gridded sea level data with time resolution.
+    t_agg : str, optional
+        Aggregation method to apply over the time period. Supported methods: "mean", "min", "max".
+        Default: "mean"
+    t_pad : np.timedelta64, optional
+        Padding to add around the time period. Default: 0.
+    mod_zos : float, optional
+        The scalar sea level rise is added to the sea level value that is extracted from the
+        specified NetCDF file. Default: 0
+
+    Returns
+    -------
+    fun : function (tuple, tuple) -> float
+        The first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max), the second
+        argument is a pair of np.datetime64 (start, end). The function returns the mean sea level
+        in the specified region and time period.
+    """
+    t_agg = t_agg.lower()
+    if t_agg not in ["mean", "min", "max"]:
+        raise ValueError(f"Aggregation method not supported: {t_agg}")
+    sea_level_nc_info(path)
+    def sea_level_fun(bounds, period, path=path, t_agg=t_agg, t_pad=t_pad, mod_zos=mod_zos):
+        t_pad = np.timedelta64(0, "D") if t_pad is None or t_pad == 0 else t_pad
+        period = (period[0] - t_pad, period[1] + t_pad)
+        centroid = (0.5 * (bounds[0] + bounds[2]), 0.5 * (bounds[1] + bounds[3]))
+        with xr.open_dataset(path) as ds:
+            ds = nc_rename_vars(ds)
+            period = [_get_closest_date_in_index(ds.time, t) for t in period]
+            ds = ds.sel(time=(ds.time >= period[0]) & (ds.time <= period[1]))
+            lon, lat = _get_closest_valid_cell(ds.zos, *centroid)
+            ds = ds.sel(lon=lon, lat=lat)
+            v_agg = getattr(ds.zos, t_agg)().item()
+        return v_agg + mod_zos
+    return sea_level_fun
+
+
+def _get_closest_valid_cell(ds_var, lon, lat, threshold_deg=10):
+    """Extract the grid cell with valid entries that is closest to the given location"""
+    # for performance reasons, restrict search to cells that are close enough
+    bounds = (lon - threshold_deg, lat - threshold_deg,
+              lon + threshold_deg, lat + threshold_deg)
+    ds_var = _select_bounds(ds_var, bounds)
+
+    finite_mask = np.isfinite(ds_var).all(dim="time")
+    if not np.any(finite_mask):
+        return None
+    coords = xr.broadcast(*[getattr(ds_var, d) for d in finite_mask.dims])
+    finite_coords = [c.values[finite_mask] for c in coords]
+    lats, lons = finite_coords if finite_mask.dims[0] == "lat" else finite_coords[::-1]
+    dist_sq = (lats - lat)**2 + (lons - lon)**2
+    idx = np.argmin(dist_sq)
+    return lons[idx], lats[idx]
+
+
+def _get_closest_date_in_index(dt_index, date):
+    """Extract the date from the given DatetimeIndex that is closest to the given date"""
+    i = dt_index.searchsorted(date, side="left")
+    if i == 0:
+        return dt_index.values[0]
+    if i == dt_index.size:
+        return dt_index.values[-1]
+    if date - dt_index.values[i - 1] > dt_index.values[i] - date:
+        return dt_index.values[i]
+    return dt_index.values[i - 1]
+
+
+def area_sea_level_from_monthly_nc(path, t_pad=None, mod_zos=0):
+    """Generate a function that reads area-aggregated sea levels from a NetCDF file
+
+    The function that is generated can be used as an input for the `sea_level` parameter in
+    `TCSurgeGeoClaw.from_tc_tracks`.
+
+    The maximum over the specified area, then the mean over all affected months is taken.
+    By specifying `t_pad`, neighboring months can also be marked as affected.
+
+    Parameters
+    ----------
+    path : Path or str
+        Path to NetCDF file containing monthly sea level data.
+    t_pad : np.timedelta64, optional
+        Padding to add around the time period. Default: 7 days.
+    mod_zos : float, optional
+        The scalar sea level rise is added to the sea level value that is extracted from the
+        specified NetCDF file. Default: 0
+
+    Returns
+    -------
+    fun : function (tuple, tuple) -> float
+        The first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max), the second
+        argument is a pair of np.datetime64 (start, end). The function returns the mean sea level
+        in the specified region and time period.
+    """
+    sea_level_nc_info(path)
+    def sea_level_fun(bounds, period, path=path, t_pad=t_pad, mod_zos=mod_zos):
+        t_pad = np.timedelta64(7, "D") if t_pad is None else t_pad
+        period = (period[0] - t_pad, period[1] + t_pad)
+        times = pd.Series([0, 0], index=list(period)).resample("12H").ffill(limit=1).index
+        months = np.unique(np.stack((times.year, times.month), axis=-1), axis=0)
+        return mean_max_sea_level(path, months, bounds) + mod_zos
+    return sea_level_fun
+
+
 def mean_max_sea_level(path, months, bounds):
     """Mean of maxima over affected area in affected months
 
@@ -986,62 +1103,78 @@ def mean_max_sea_level(path, months, bounds):
     zos : float
         Sea level height in meters
     """
-    LOGGER.info("Reading sea level data from %s", path)
-    var_names = {
-        'lon': ('coords', ["longitude", "lon", "x"]),
-        'lat': ('coords', ["latitude", "lat", "y"]),
-        'time': ('coords', ["time", "date", "datetime"]),
-        'zos': ('variables', ["zos", "sla", "ssh", "adt"]),
-    }
-    with xr.open_dataset(path) as zos_ds:
-        for new_name, (var_type, all_names) in var_names.items():
-            old_name = [c for c in getattr(zos_ds, var_type) if c.lower() in all_names][0]
-            zos_ds = zos_ds.rename({old_name: new_name})
-        ds_bounds = (zos_ds.lon.values.min(), zos_ds.lat.values.min(),
-                     zos_ds.lon.values.max(), zos_ds.lat.values.max())
-        ds_period = (zos_ds.time[0], zos_ds.time[-1])
-        LOGGER.info("Sea level data available within bounds %s", ds_bounds)
-        LOGGER.info("Sea level data available within period from %04d-%02d till %04d-%02d",
-                    ds_period[0].dt.year, ds_period[0].dt.month,
-                    ds_period[1].dt.year, ds_period[1].dt.month)
-        mask_time = np.any([(zos_ds.time.dt.year == m[0]) & (zos_ds.time.dt.month == m[1])
+    pad_deg = 0.25
+    max_pad_deg = 5
+    with xr.open_dataset(path) as ds:
+        ds = nc_rename_vars(ds)
+        mask_time = np.any([(ds.time.dt.year == m[0]) & (ds.time.dt.month == m[1])
                            for m in months], axis=0)
         if np.count_nonzero(mask_time) != months.shape[0]:
             raise IndexError("The sea level data set doesn't contain the required months: %s"
                              % ", ".join(f"{m[0]:04d}-{m[1]:02d}" for m in months))
-        zos_ds = zos_ds.sel(time=mask_time)
+        ds = ds.sel(time=mask_time)
 
         # enlarge bounds until the mean is valid or until max_pad_deg is reached
-        pad = 0.25
         i_pad = 0
-        max_pad_deg = 5
         mean = np.nan
         bounds_padded = bounds
         while np.isnan(mean):
-            if i_pad * pad > max_pad_deg:
+            if i_pad * pad_deg > max_pad_deg:
                 raise IndexError(
                     f"The sea level data set doesn't intersect the specified bounds: {bounds}")
-            mean = _temporal_mean_of_max_within_bounds(zos_ds, bounds_padded)
+            mean = _temporal_mean_of_max_within_bounds(ds, bounds_padded)
             bounds_padded = (
-                bounds_padded[0] - pad, bounds_padded[1] - pad,
-                bounds_padded[2] + pad, bounds_padded[3] + pad)
+                bounds_padded[0] - pad_deg, bounds_padded[1] - pad_deg,
+                bounds_padded[2] + pad_deg, bounds_padded[3] + pad_deg)
             i_pad += 1
     return mean
 
 
 def _temporal_mean_of_max_within_bounds(ds, bounds):
+    ds_zos = _select_bounds(ds.zos, bounds)
+    if ds_zos is None:
+        return np.nan
+    values = ds_zos.values[:]
+    if np.all(np.isnan(values)):
+        return np.nan
+    return np.nanmean(np.nanmax(values, axis=(1, 2)))
+
+
+def _select_bounds(ds, bounds):
     lon = u_coord.lon_normalize(
         ds.lon.values, center=0.5 * (bounds[0] + bounds[2]))
     mask_lat = (bounds[1] <= ds.lat) & (ds.lat <= bounds[3])
     mask_lon = (bounds[0] <= lon) & (lon <= bounds[2]) & np.isfinite(ds.lon)
     mask_bounds = (mask_lat & mask_lon)
     if not np.any(mask_bounds):
-        return np.nan
-    ds = ds.where(mask_bounds, drop=True)
-    values = ds.zos.values[:]
-    if np.all(np.isnan(values)):
-        return np.nan
-    return np.nanmean(np.nanmax(values, axis=(1, 2)))
+        return None
+    return ds.where(mask_bounds, drop=True)
+
+
+def sea_level_nc_info(path):
+    LOGGER.info("Reading sea level data from %s", path)
+    with xr.open_dataset(path) as ds:
+        ds = nc_rename_vars(ds)
+        ds_bounds = (ds.lon.values.min(), ds.lat.values.min(),
+                     ds.lon.values.max(), ds.lat.values.max())
+        ds_period = (ds.time[0], ds.time[-1])
+        LOGGER.info("Sea level data available within bounds %s", ds_bounds)
+        LOGGER.info("Sea level data available within period from %04d-%02d till %04d-%02d",
+                    ds_period[0].dt.year, ds_period[0].dt.month,
+                    ds_period[1].dt.year, ds_period[1].dt.month)
+
+
+def nc_rename_vars(ds):
+    var_names = {
+        'lon': ('coords', ["longitude", "lon", "x"]),
+        'lat': ('coords', ["latitude", "lat", "y"]),
+        'time': ('coords', ["time", "date", "datetime"]),
+        'zos': ('variables', ["zos", "sla", "ssh", "adt"]),
+    }
+    for new_name, (var_type, all_names) in var_names.items():
+        old_name = [c for c in getattr(ds, var_type) if c.lower() in all_names][0]
+        ds = ds.rename({old_name: new_name})
+    return ds
 
 
 def load_topography(path, bounds, res_as):
@@ -1253,7 +1386,7 @@ class TCSurgeEvents():
     def _set_areas(self):
         """For each event, determine areas affected by wind and surge."""
         # total area (maximum bounds to consider)
-        pad = 1 + self.total_roci_factor * self.track.radius_oci / 60
+        pad = 1 + self.total_roci_factor * self.track.radius_oci / DEG_TO_NM
         self.total_area = (
             float((self.track.lon - pad).min()),
             float((self.track.lat - pad).min()),
@@ -1273,7 +1406,7 @@ class TCSurgeEvents():
                         self.lf_rmw_factor * track.radius_max_wind.values))
 
             # wind area (maximum bounds to consider)
-            pad = self.total_roci_factor * track.radius_oci / 60
+            pad = self.total_roci_factor * track.radius_oci / DEG_TO_NM
             self.wind_area.append((
                 float((track.lon - pad).min()),
                 float((track.lat - pad).min()),
@@ -1282,7 +1415,7 @@ class TCSurgeEvents():
             ))
 
             # landfall area
-            pad = lf_radii / 60
+            pad = lf_radii / DEG_TO_NM
             self.landfall_area.append((
                 float((track.lon - pad)[mask].min()),
                 float((track.lat - pad)[mask].min()),

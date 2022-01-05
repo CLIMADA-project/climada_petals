@@ -25,7 +25,9 @@ import numpy as np
 import xarray as xr
 
 from climada import CONFIG
-from climada_petals.hazard.tc_surge_geoclaw import setup_clawpack, geoclaw_surge_from_track
+from climada_petals.hazard.tc_surge_geoclaw import (area_sea_level_from_monthly_nc,
+                                                    geoclaw_surge_from_track,
+                                                    setup_clawpack)
 
 
 DATA_DIR = CONFIG.hazard.test_data.dir()
@@ -70,9 +72,9 @@ class TestGeoclawRun(unittest.TestCase):
             (-23.37505943, -149.46882493),  # inland
         ]
         setup_clawpack()
-        intensity, gauge_data = geoclaw_surge_from_track(track, centroids,
-                                                         ZOS_PATH, TOPO_PATH,
-                                                         gauges=gauges)
+        sea_level_fun = area_sea_level_from_monthly_nc(ZOS_PATH)
+        intensity, gauge_data = geoclaw_surge_from_track(track, centroids, TOPO_PATH,
+                                                         gauges=gauges, sea_level=sea_level_fun)
 
         self.assertEqual(intensity.shape, (centroids.shape[0],))
         self.assertTrue(np.all(intensity[:7] > 0))
