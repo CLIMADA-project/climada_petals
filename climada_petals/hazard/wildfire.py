@@ -1565,5 +1565,3 @@ def get_closest(array, values):
     idxs[prev_idx_is_less] -= 1
 
     return idxs
-
-#test
