@@ -38,6 +38,7 @@ from sklearn.cluster import DBSCAN
 import numba
 import rasterio
 import shapely.geometry
+import random # added by Sam G.
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
@@ -130,7 +131,9 @@ class WildFire(Hazard):
         max_it_propa : float, default = 500000
         """
         blurr_steps: int = 4
-        prop_proba: float = 0.21
+        prop_proba_mean: float = 0.18 # Changed by Sam. G.
+        prop_proba_std: float = 0.025 # Changed by Sam. G.
+        prop_proba: float = None # Changed by Sam. G.
         max_it_propa: int = 500000
 
     def __init__(self, **kwargs):
@@ -373,11 +376,16 @@ class WildFire(Hazard):
             ign_max = n_ignitions[1]
 
         prob_fire_seasons = [] # list to save probabilistic fire seasons
+        event_proba_new = [] #added by Sam. G.
         # create probabilistic fire seasons
         for i in range(n_fire_seasons):
+            self.ProbaParams.prop_proba = float(np.random.normal(self.ProbaParams.prop_proba_mean,
+                                                           self.ProbaParams.prop_proba_std,1)) # added by Sam G.
             n_ign = np.random.randint(ign_min, ign_max)
-            LOGGER.info('Setting up probabilistic fire season with %s fires.',\
-                        str(n_ign))
+            LOGGER.info('Setting up probabilistic fire season with %s fires. Global proba = %.3f'
+                        %(n_ign,self.ProbaParams.prop_proba))  #changed by Sam. G.
+            event_proba_new.append(self.ProbaParams.prop_proba) #added by Sam. G.
+            LOGGER.info('Fire season: %i' %(i+1)) # added by Sam G.
             prob_fire_seasons.append(self._set_one_proba_fire_season(n_ign, seed=i))
 
         if keep_all_fires:
@@ -385,10 +393,12 @@ class WildFire(Hazard):
 
         # save
         # Following values are defined for each fire
+        event_proba = np.zeros(len(self.event_id), float) #added by Sam. G.
         new_event_id = np.arange(np.max(self.event_id)+1, np.max(self.event_id)+n_fire_seasons+1)
         self.event_id = np.concatenate((self.event_id, new_event_id), axis=None)
         new_event_name = list(map(str, new_event_id))
         self.event_name = np.append(self.event_name, new_event_name)
+        self.event_proba = np.append(event_proba, event_proba_new) #added by Sam. G.
         new_orig = np.zeros(len(new_event_id), bool)
         self.orig = np.concatenate((self.orig, new_orig))
         self._set_frequency()
