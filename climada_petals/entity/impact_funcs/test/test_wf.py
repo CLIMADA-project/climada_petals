@@ -50,8 +50,7 @@ class TestImpfWildfire(unittest.TestCase):
         
     def test_from_default_values_FIRMS_pass(self):
         """Compute mdr interpolating values. For the calibrated function"""
-        imp_fun = ImpfWildfire()
-        imp_fun = imp_fun.from_default_FIRMS(i_half_check)
+        imp_fun = ImpfWildfire.from_default_FIRMS(i_half_check)
         self.assertEqual(imp_fun.name, 'wildfire default 1 km')
         self.assertEqual(imp_fun.haz_type, 'WFsingle')
         self.assertEqual(imp_fun.id, 1)
