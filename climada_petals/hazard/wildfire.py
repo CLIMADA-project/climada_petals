@@ -32,11 +32,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy import sparse
+import scipy.ndimage # added by Sam G.
 from sklearn.neighbors import BallTree
 from sklearn.cluster import DBSCAN
 import numba
 import rasterio
 import shapely.geometry
+import random # added by Sam G.
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
@@ -44,7 +46,15 @@ from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
+from climada.util.constants import (DEF_CRS) # Added by Sam G.
 
+import cartopy.crs as ccrs # added by Sam G.
+import cartopy.feature as cfeature # added by Sam G.
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER # added by Sam G.
+import rasterio.crs # added by Sam G.
+import rasterio.features # added by Sam G.
+import rasterio.mask # added by Sam G.
+import rasterio.warp # added by Sam G.
 
 LOGGER = logging.getLogger(__name__)
 
@@ -121,7 +131,9 @@ class WildFire(Hazard):
         max_it_propa : float, default = 500000
         """
         blurr_steps: int = 4
-        prop_proba: float = 0.21
+        prop_proba_mean: float = 0.18 # Changed by Sam. G.
+        prop_proba_std: float = 0.025 # Changed by Sam. G.
+        prop_proba: float = None # Changed by Sam. G.
         max_it_propa: int = 500000
 
     def __init__(self, *args, **kwargs):
@@ -391,11 +403,16 @@ class WildFire(Hazard):
             ign_max = n_ignitions[1]
 
         prob_fire_seasons = [] # list to save probabilistic fire seasons
+        event_proba_new = [] #added by Sam. G.
         # create probabilistic fire seasons
         for i in range(n_fire_seasons):
+            self.ProbaParams.prop_proba = float(np.random.normal(self.ProbaParams.prop_proba_mean,
+                                                           self.ProbaParams.prop_proba_std,1)) # added by Sam G.
             n_ign = np.random.randint(ign_min, ign_max)
-            LOGGER.info('Setting up probabilistic fire season with %s fires.',\
-                        str(n_ign))
+            LOGGER.info('Setting up probabilistic fire season with %s fires. Global proba = %.3f'
+                        %(n_ign,self.ProbaParams.prop_proba))  #changed by Sam. G.
+            event_proba_new.append(self.ProbaParams.prop_proba) #added by Sam. G.
+            LOGGER.info('Fire season: %i' %(i+1)) # added by Sam G.
             prob_fire_seasons.append(self._set_one_proba_fire_season(n_ign, seed=i))
 
         if keep_all_fires:
@@ -403,10 +420,12 @@ class WildFire(Hazard):
 
         # save
         # Following values are defined for each fire
+        event_proba = np.zeros(len(self.event_id), float) #added by Sam. G.
         new_event_id = np.arange(np.max(self.event_id)+1, np.max(self.event_id)+n_fire_seasons+1)
         self.event_id = np.concatenate((self.event_id, new_event_id), axis=None)
         new_event_name = list(map(str, new_event_id))
         self.event_name = np.append(self.event_name, new_event_name)
+        self.event_proba = np.append(event_proba, event_proba_new) #added by Sam. G.
         new_orig = np.zeros(len(new_event_id), bool)
         self.orig = np.concatenate((self.orig, new_orig))
         self._set_frequency()
@@ -1072,13 +1091,23 @@ class WildFire(Hazard):
             self._set_fire_propa_matrix()
 
         # Ignation only at centroids that burned in the past
-        pos_centr = np.argwhere(self.centroids.fire_propa_matrix.reshape( \
-            len(self.centroids.lat)) == 1)[:, 1]
+        # pos_centr = np.argwhere(self.centroids.fire_propa_matrix.reshape( \
+        #     len(self.centroids.lat)) == 1)[:, 1] #changed by Sam G. 
+        
+        # both lines added by Sam G.
+        pos_centr = np.argwhere(self.centroids.ignition_weights_matrix.reshape( \
+                        len(self.centroids.lat)) > 0)[:, -1]
+        
+        # added by Sam G. only take the 1d weights where they are not zero
+        weights = self.centroids.ignition_weights_matrix.reshape(len(self.centroids.lat)) \
+        [np.argwhere(self.centroids.ignition_weights_matrix.reshape( \
+                    len(self.centroids.lat)) > 0)]
 
         LOGGER.debug('Start ignition.')
         # Random selection of ignition centroid
         for _ in range(self.centroids.size):
-            centr = np.random.choice(pos_centr)
+            # centr = np.random.choice(pos_centr) #changed by Sam G.
+            centr = random.choices(pos_centr, weights = weights)[0] # added by Sam. G.
             centr_ix = int(centr/self.centroids.shape[1])
             centr_iy = centr%self.centroids.shape[1]
             centr_ix = max(0, centr_ix)
@@ -1095,6 +1124,8 @@ class WildFire(Hazard):
         centr_burned[centr_ix, centr_iy] = 1
         # Iterate the fire according to the propagation rules
         count_it = 0
+        num_tries = 0 # added by Sam. G.
+        
         while np.any(centr_burned == 1) and count_it < self.ProbaParams.max_it_propa:
             count_it += 1
             # Select randomly one of the burning centroids
@@ -1104,7 +1135,7 @@ class WildFire(Hazard):
                 centr_ix, centr_iy = burned[np.random.randint(0, len(burned))]
             elif len(burned) == 1:
                 centr_ix, centr_iy = burned[0]
-            if not count_it % (self.ProbaParams.max_it_propa-1):
+            if not count_it % (self.ProbaParams.max_it_propa): # removed a -1 here by Sam G.
                 LOGGER.warning('Fire propagation not converging at iteration %s.',
                                count_it)
             if 1 <= centr_ix < self.centroids.shape[0]-1 and \
@@ -1113,7 +1144,15 @@ class WildFire(Hazard):
                 centr_burned = self._fire_propagation_on_matrix(self.centroids.shape, \
                     self.centroids.fire_propa_matrix, self.ProbaParams.prop_proba, \
                     centr_ix, centr_iy, centr_burned, np.random.random(500))
-
+            
+            else: # added by Sam G.
+                centr_ix, centr_iy = burned[np.random.randint(0, len(burned))] # added by Sam G.
+                num_tries += 1 # added by Sam G.
+                if num_tries == 1000: # added by Sam G.
+                    LOGGER.info('Propagation conditions are not met') # added by Sam G.
+                    num_tries = 0 # added by Sam. G.
+                    break # added by Sam G.
+                    
         return centr_burned
 
     @staticmethod
@@ -1248,13 +1287,62 @@ class WildFire(Hazard):
 
         Returns
         -------
-        contour plot : plt
-            contour plot of fire_propa_matrix
+        colormesh plot : plt
+            colormesh plot of ignition_weights_matrix
         """
 
         lon = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
         lat = np.reshape(self.centroids.lat, self.centroids.fire_propa_matrix.shape)
-        plt.contourf(lon, lat, self.centroids.fire_propa_matrix)
+
+        plt.figure(figsize = (14,14)) # added by Sam G.
+        ax = plt.axes(projection=ccrs.PlateCarree()) # added by Sam G.
+        im = plt.pcolormesh(lon, lat, self.centroids.fire_propa_matrix, 
+                     transform=ccrs.PlateCarree()) # added by Sam G.
+        ax.coastlines() # added by Sam G.
+        ax.add_feature(cfeature.BORDERS.with_scale('50m')) # added by Sam G.
+        grid = ax.gridlines(draw_labels=True, alpha=0.2, transform=ccrs.PlateCarree()) # added by Sam G.
+        grid.top_labels = grid.right_labels = False # added by Sam G.
+        grid.xformatter = LONGITUDE_FORMATTER # added by Sam G.
+        grid.yformatter = LATITUDE_FORMATTER # added by Sam G.
+        grid.xlabel_style = {'size': 15} # added by Sam G.
+        grid.ylabel_style = {'size': 15} # added by Sam G.
+        cbar = plt.colorbar(im) # added by Sam G.
+        cbar.set_label('Probability', size = 15) # added by Sam G.
+        cbar.ax.tick_params(labelsize=15) # added by Sam G.
+        
+    # added by Sam G.
+    def plot_ignition_matrix(self):
+        """ Plots fire ign probability matrix as colormesh plot.
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+
+        Returns
+        -------
+        colormesh plot : plt
+            colormesh plot of ignition_weights_matrix
+
+        """
+
+        lon = np.reshape(self.centroids.lon, self.centroids.ignition_weights_matrix.shape)
+        lat = np.reshape(self.centroids.lat, self.centroids.ignition_weights_matrix.shape)
+        
+        plt.figure(figsize = (14,14)) # added by Sam G.
+        ax = plt.axes(projection=ccrs.PlateCarree()) # added by Sam G.
+        im = plt.pcolormesh(lon, lat, self.centroids.ignition_weights_matrix, 
+                     transform=ccrs.PlateCarree()) # added by Sam G.
+        ax.coastlines() # added by Sam G.
+        ax.add_feature(cfeature.BORDERS.with_scale('50m')) # added by Sam G.
+        grid = ax.gridlines(draw_labels=True, alpha=0.2, transform=ccrs.PlateCarree()) # added by Sam G.
+        grid.top_labels = grid.right_labels = False # added by Sam G.
+        grid.xformatter = LONGITUDE_FORMATTER # added by Sam G.
+        grid.yformatter = LATITUDE_FORMATTER # added by Sam G.
+        grid.xlabel_style = {'size': 15} # added by Sam G.
+        grid.ylabel_style = {'size': 15} # added by Sam G.
+        cbar = plt.colorbar(im) # added by Sam G.
+        cbar.set_label('Weight', size = 15) # added by Sam G.
+        cbar.ax.tick_params(labelsize=15) # added by Sam G.
 
     @staticmethod
     def _select_fire_season(df_firms, year, hemisphere='SHS'):
@@ -1356,6 +1444,419 @@ class WildFire(Hazard):
         haz.check()
 
         return haz
+    
+    # Added by Sam. G.
+    def set_propagation_matrix(self, land_path, pop_path, countries, bounds, res):
+        """
+        Sets the propagation matrix. It resamples the land cover data over a 
+        certain area to account for the fraction of the specific land cover 
+        classes in this area. The population data is resampled with the method 'sum'.
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+        land_path : str
+            Path to land cover raster file to open with rasterio.
+        pop_path : str
+            Path to population raster file to open with rasterio.
+        countries : list
+            list with ISO3 names of countries, e.g ['ZWE', 'GBR', 'VNM', 'UZB']
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of propagation matrix. 
+
+        Returns
+        -------
+        self.centroids.fire_propa_matrix : np.array
+            Fire propagation matrix.
+        """
+        
+        geometry = u_coord.get_land_geometry(countries)
+        
+        if not hasattr(self.centroids, 'frac_propa_matrix'):
+            self._set_landcover_propa_mat(land_path, bounds, res, geometry)
+            
+        if not hasattr(self.centroids, 'pop_propa_matrix'):
+            self._set_population_propa_mat(pop_path, bounds, res, geometry)
+            
+        landpop_propa_matrix = self.centroids.frac_propa_matrix * self.centroids.pop_propa_matrix
+            
+        landpop_propa_matrix = np.where(((self.centroids.population == 0.) & (self.centroids.frac_propa_matrix > 0.)) , self.centroids.frac_propa_matrix, landpop_propa_matrix) 
+        # where the population is zero you get errors and the probability should actually be the landcover. Further, the landcover must also have a value larger than 0
+        # else e.g. lakes can burn as well.
+
+        self.centroids.fire_propa_matrix = landpop_propa_matrix
+        
+    # Added by Sam. G.    
+    def set_ignition_matrix(self, land_path, pop_path, countries, bounds, res):
+        """
+        Sets the ignition matrix. It resamples the land cover data over a 
+        certain area to account for the fraction of the specific land cover 
+        classes in this area. The population data is resampled with the method 'sum'.
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+        land_path : str
+            Path to land cover raster file to open with rasterio.
+        pop_path : str
+            Path to population raster file to open with rasterio.
+        countries : list
+            list with ISO3 names of countries, e.g ['ZWE', 'GBR', 'VNM', 'UZB']
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of ignition matrix. 
+
+        Returns
+        -------
+        self.centroids.ignition_weights_matrix : np.array
+            Fire ignition matrix.
+        """
+        
+        geometry = u_coord.get_land_geometry(countries)
+        
+        if not hasattr(self.centroids, 'frac_propa_matrix'):
+            self._set_landcover_propa_mat(land_path, bounds, res, geometry)
+        
+        if not hasattr(self.centroids, 'population'):
+            self._get_population(pop_path, bounds, res, geometry)
+            
+        pop_weights = self.centroids.population**0.5
+        pop_weights = np.where(pop_weights < 1., 1., pop_weights) # to only increase the chance for ignition, not decrease
+        
+        ignition_weights_matrix = pop_weights*self.centroids.frac_propa_matrix
+        
+        self.centroids.ignition_weights_matrix = ignition_weights_matrix
+        
+    # Added by Sam G.
+    def _set_landcover_propa_mat(self, land_path, bounds, res, geometry):
+        """
+        It resamples the land cover data over a certain area to account for the 
+        fraction of the specific land cover classes in this area.
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+        land_path : str
+            Path to land cover raster file to open with rasterio.
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of ignition matrix. 
+        geometry : geometry.multipolygon.Multi.Polygon
+            Shape of the country/ countries.
+
+        Returns
+        -------
+        self.centroids.frac_propa_matrix : np.array
+            Land cover fraction propagtion matrix.
+        """
+        
+        if not hasattr(self.centroids, 'population'):
+            self._get_landcover(land_path, bounds, res, geometry)
+        
+        land_propa_matrix = self._assign_prop_probas(self.centroids.landcover, forest_val = 1., vegetation_val = 1., medium_val = 0.5, incombustible_val = 0.)
+        self.centroids.frac_propa_matrix = self.downsample_raster(land_propa_matrix, res, bounds, self.transform_land, self.centroids.shape)
+    
+    # Added by Sam G.
+    def _get_landcover(self, land_path, bounds, res, geometry):
+        """
+        It loads the land cover data and corrects it. 
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+        land_path : str
+            Path to land cover raster file to open with rasterio.
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of ignition matrix. 
+        geometry : geometry.multipolygon.Multi.Polygon
+            Shape of the country/ countries.
+
+        Returns
+        -------
+        self.transform_land : rasterio.Affine
+            Affine transformation defining the land cover raster data.
+        self.centroids.landcover : np.array
+            Land cover data.
+        """
+        
+        res_land = 0.1/ONE_LAT_KM #original resolution
+        factor = res/res_land 
+        shape_land = (int(self.centroids.shape[0]*factor), int(self.centroids.shape[1]*factor)) # to get the same bounds and no spatial errors during downsampling
+        
+        landcover, transform_land = self.read_tif(land_path, bounds, res = res_land, shape = shape_land, resampling = rasterio.warp.Resampling.mode)
+        landcover = self._correct_landcover(landcover)
+        self.transform_land = transform_land
+        self.centroids.landcover = u_coord.mask_raster_with_geometry(landcover,transform_land,[geometry])
+    
+    # Added by Sam. G. 
+    def _set_population_propa_mat(self, pop_path, bounds, res, geometry):
+        """
+        Sets the population propagation matrix using the calibrated function.
+        
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+        pop_path : str
+            Path to population raster file to open with rasterio.
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of ignition matrix. 
+        geometry : geometry.multipolygon.Multi.Polygon
+            Shape of the country/ countries.
+            
+        Returns
+        -------
+        self.centroids.pop_propa_matrix : np.array
+            Population propagtion matrix.
+        """
+        
+        if not hasattr(self.centroids, 'population'):
+            self._get_population(pop_path, bounds, res, geometry)
+        
+        pop_propa_matrix = (1/((np.log(self.centroids.population)/np.log(50))+1))+0.5
+        pop_propa_matrix = np.where(pop_propa_matrix < 0., 1., pop_propa_matrix) # to remove impossible values generated by calculation
+        pop_propa_matrix = np.where(pop_propa_matrix > 1., 1., pop_propa_matrix) # to remove impossible values generated by calculation
+        
+        self.centroids.pop_propa_matrix = pop_propa_matrix
+      
+    # Added by Sam G.
+    def _get_population(self, pop_path, bounds, res, geometry):
+        """
+        It loads the population data and corrects it. 
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+        pop_path : str
+            Path to population raster file to open with rasterio.
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of ignition matrix. 
+        geometry : geometry.multipolygon.Multi.Polygon
+            Shape of the country/ countries.
+
+        Returns
+        -------
+        self.transform_pop : rasterio.Affine
+            Affine transformation defining the population raster data.
+        self.centroids.population : np.array
+            Population data.
+        """
+        
+        population, transform_pop = self.read_tif(pop_path, bounds, res, shape = self.centroids.shape, resampling = rasterio.warp.Resampling.sum)
+        
+        population = np.where(population < 0., 0., population)
+        population = scipy.ndimage.gaussian_filter(population, sigma = 10, truncate = 3)
+        self.transform_pop = transform_pop
+        self.centroids.population = u_coord.mask_raster_with_geometry(population, transform_pop,[geometry])
+    
+    # Added by Sam. G. 
+    @staticmethod
+    def _correct_landcover(landcover):
+        """
+        Corrects undefined values in the land cover data. 
+
+        Parameters
+        ----------
+        landcover : np.array
+            Land cover classes
+
+        Returns
+        -------
+        landcover : np.array
+            Corrected land cover classes
+        """
+        
+        for i in range(0,130,10):
+            cat = np.arange(i,i+10)
+            for val in cat:
+                landcover = np.where(landcover == val, i, landcover)
+        
+        landcover = np.where(landcover >= 130, 200, landcover)
+        
+        return landcover
+    
+    # Added by Sam. G. 
+    @staticmethod
+    def _assign_prop_probas(landcover, forest_val = 1., vegetation_val = 1., medium_val = 0.5, incombustible_val = 0.):
+        """
+        Assigns propagation probabilities to the land cover classes.
+        
+        Parameters
+        ----------
+        landcover : np.array
+            Land cover data with original corrected classes
+        forest_val : float, optional
+            New value for all forest classes. Default: 1
+        vegetation_val : float, optional
+            New value for all vegetaion classes. Default: 1
+        medium_val : float, optional
+            New value for all classes with medium flammability. Default: 0.5
+        incombustible_val : float, optional
+            New value for all incombustible classes. Default: 0
+            
+        Returns
+        -------
+        landcover : np.array
+            Assigned raster
+        """
+    
+        forest = [110,120]
+        vegetation = [20, 30, 100]
+        medium = [40, 90]
+        incombustible = [0, 50, 60, 70, 80, 200]
+        
+        
+        for val in forest:
+                landcover = np.where(landcover == val, forest_val, landcover)
+        for val in vegetation:
+                landcover = np.where(landcover == val, vegetation_val, landcover)
+        for val in medium:
+                landcover = np.where(landcover == val, medium_val, landcover)        
+        for val in incombustible:
+                landcover = np.where(landcover == val, incombustible_val, landcover)
+            
+        return landcover
+    
+    # Added by Sam. G. 
+    @staticmethod
+    def downsample_raster(raster_high, res_low, bounds, transform, shape_low = None):
+        """
+        Downsamples a raster to a given lower resolutin by averaging over
+        a certain area of grid cells.
+        
+        Parameters
+        ----------
+        raster_high : np.array
+            Original raster with the high resolution
+        res_low : float
+            Resolution of the downsampled raster
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        transform : rasterio.Affine
+            Affine transformation defining the input raster data.
+        shape_low : tuple, optional
+            Shape of output with the lower resolutin. Default: Shape matching 
+            the given resolution and the bounds.
+            
+        Returns
+        -------
+        raster_low : np.array
+            Output raster with the low resolution
+        """
+        
+        if not isinstance(res_low, tuple):
+                    res_low = (res_low, res_low)
+                    
+        res_high = (np.abs(transform[0]), np.abs(transform[4]))
+        if res_high[0] > res_low[0] or res_high[1] > res_low[1]:
+            raise ValueError('Low resolution is higher than high resolution: %s < %s.'
+                                 % (res_low, res_high))
+            
+        stencil_x = int(np.floor(res_low[1]/res_high[1]))
+        stencil_y = int(np.floor(res_low[0]/res_high[0]))
+        
+        width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+        
+        if shape_low: 
+                shape_low = shape_low
+        else:
+            shape_low = (int(np.ceil(height / res_low[1]) + 1),
+                     int(np.ceil(width / res_low[0]) + 1))
+        
+        raster_low = np.zeros(shape_low)
+                
+        jump_x = stencil_x
+        jump_y = stencil_y
+        
+        # to start not in the upper left conrner -> more in the middle
+        # coordinates shift is smaller like this
+        buffer_y = int(np.floor((raster_high.shape[0]-shape_low[0]*stencil_y)/2))
+        buffer_x = int(np.floor((raster_high.shape[1]-shape_low[1]*stencil_x)/2))
+        for i in range(0, shape_low[0]):
+            for j in range(0, shape_low[1]):
+                raster_low[i,j] = np.mean(raster_high[buffer_y+(i*jump_y):buffer_y+(i*jump_y)+stencil_y, 
+                                                      buffer_x+(j*jump_x):buffer_x+(j*jump_x)+stencil_x])
+        
+        return raster_low
+    
+    # Added by Sam. G. 
+    @staticmethod
+    def read_tif(path, bounds, res=None, shape = None, resampling = rasterio.warp.Resampling.bilinear):
+        """
+        Adapted from read_raster_bounds in util.coordinates.py
+        Read raster file within given bounds and refine to given resolution
+
+        Makes sure that the extent of pixel centers covers the specified regions
+
+        Parameters
+        ----------
+        path : str
+            Path to raster file to open with rasterio.
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float, optional
+            Resolution of output. Default: Resolution of input raster file.
+        shape : tuple, optional
+            Shape of output. Default: Shape matching the given resolution and 
+            the bounds.
+        resampling : rasterio.warp.Resampling, optional
+            Resampling method from rasterio package. Default: Bilinear
+
+        Returns
+        -------
+        data : 2d np.array
+            First dimension is neglected as it is only one. Second dimension 
+            is y (lat) and third dimension is x (lon).
+        transform : rasterio.Affine
+            Affine transformation defining the output raster data.
+        """
+
+        bands = [1]
+        with rasterio.open(path, 'r') as src:
+            if res:
+                if not isinstance(res, tuple):
+                    res = (res, res)
+            else:
+                res = (src.transform[0], src.transform[4])
+            res = (np.abs(res[0]), np.abs(res[1]))
+
+            width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+            if shape: # if condition icluded by Sam G. 
+                shape = shape
+            else:
+                shape = (int(np.ceil(height / res[1]) + 1),
+                         int(np.ceil(width / res[0]) + 1))
+
+            # make sure that the extent of pixel centers covers the specified regions
+            extra = (0.5 * ((shape[1] - 1) * res[0] - width),
+                     0.5 * ((shape[0] - 1) * res[1] - height))
+            bounds = (bounds[0] - extra[0] - 0.5 * res[0], bounds[1] - extra[1] - 0.5 * res[1],
+                      bounds[2] + extra[0] + 0.5 * res[0], bounds[3] + extra[1] + 0.5 * res[1])
+
+            data = np.zeros((len(bands),) + shape, dtype=src.dtypes[0])
+            res = (np.sign(src.transform[0]) * res[0], np.sign(src.transform[4]) * res[1])
+            transform = rasterio.Affine(res[0], 0, bounds[0] if res[0] > 0 else bounds[2],
+                                        0, res[1], bounds[1] if res[1] > 0 else bounds[3])
+            crs = DEF_CRS if src.crs is None else src.crs
+            for iband, band in enumerate(bands):
+                rasterio.warp.reproject(
+                    source=rasterio.band(src, band),
+                    destination=data[iband],
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=crs,
+                    resampling=resampling)
+        return data[0,:,:], transform
 
 @numba.njit
 def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
