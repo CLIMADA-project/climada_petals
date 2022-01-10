@@ -1097,6 +1097,8 @@ class WildFire(Hazard):
         centr_burned[centr_ix, centr_iy] = 1
         # Iterate the fire according to the propagation rules
         count_it = 0
+        num_tries = 0 # added by Sam. G.
+        
         while np.any(centr_burned == 1) and count_it < self.ProbaParams.max_it_propa:
             count_it += 1
             # Select randomly one of the burning centroids
@@ -1106,7 +1108,7 @@ class WildFire(Hazard):
                 centr_ix, centr_iy = burned[np.random.randint(0, len(burned))]
             elif len(burned) == 1:
                 centr_ix, centr_iy = burned[0]
-            if not count_it % (self.ProbaParams.max_it_propa-1):
+            if not count_it % (self.ProbaParams.max_it_propa): # removed a -1 here by Sam G.
                 LOGGER.warning('Fire propagation not converging at iteration %s.',
                                count_it)
             if 1 <= centr_ix < self.centroids.shape[0]-1 and \
@@ -1115,7 +1117,15 @@ class WildFire(Hazard):
                 centr_burned = self._fire_propagation_on_matrix(self.centroids.shape, \
                     self.centroids.fire_propa_matrix, self.ProbaParams.prop_proba, \
                     centr_ix, centr_iy, centr_burned, np.random.random(500))
-
+            
+            else: # added by Sam G.
+                centr_ix, centr_iy = burned[np.random.randint(0, len(burned))] # added by Sam G.
+                num_tries += 1 # added by Sam G.
+                if num_tries == 1000: # added by Sam G.
+                    LOGGER.info('Propagation conditions are not met') # added by Sam G.
+                    num_tries = 0 # added by Sam. G.
+                    break # added by Sam G.
+                    
         return centr_burned
 
     @staticmethod
