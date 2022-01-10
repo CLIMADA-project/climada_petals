@@ -1230,8 +1230,8 @@ class WildFire(Hazard):
 
         Returns
         -------
-        contour plot : plt
-            contour plot of fire_propa_matrix
+        colormesh plot : plt
+            colormesh plot of ignition_weights_matrix
         """
 
         lon = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
