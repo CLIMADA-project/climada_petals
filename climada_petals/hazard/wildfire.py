@@ -124,11 +124,11 @@ class WildFire(Hazard):
         prop_proba: float = 0.21
         max_it_propa: int = 500000
 
-    def __init__(self, **kwargs):
-        """Empty constructor."""
-        Hazard.__init__(self, HAZ_TYPE, **kwargs)
-        self.FirmsParams = self.FirmsParams()
-        self.ProbaParams = self.ProbaParams()
+    def __init__(self, *args, **kwargs):
+            """Empty constructor."""
+            Hazard.__init__(self, HAZ_TYPE, *args, **kwargs)
+            self.FirmsParams = self.FirmsParams()
+            self.ProbaParams = self.ProbaParams() 
 
     def set_hist_fire_FIRMS(self, df_firms, centr_res_factor=1.0, centroids=None):
         """ Parse FIRMS data and generate historical fires by temporal and spatial
