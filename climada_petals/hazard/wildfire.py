@@ -44,7 +44,12 @@ from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
+from climada.util.constants import (DEF_CRS) # Added by Sam G.
 
+import rasterio.crs # added by Sam G.
+import rasterio.features # added by Sam G.
+import rasterio.mask # added by Sam G.
+import rasterio.warp # added by Sam G.
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1329,6 +1334,76 @@ class WildFire(Hazard):
         haz.check()
 
         return haz
+    
+    # Added by Sam. G. 
+    @staticmethod
+    def read_tif(path, bounds, res=None, shape = None, resampling = rasterio.warp.Resampling.bilinear):
+        """
+        Adapted from read_raster_bounds in util.coordinates.py
+        Read raster file within given bounds and refine to given resolution
+
+        Makes sure that the extent of pixel centers covers the specified regions
+
+        Parameters
+        ----------
+        path : str
+            Path to raster file to open with rasterio.
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float, optional
+            Resolution of output. Default: Resolution of input raster file.
+        shape : tuple, optional
+            Shape of output. Default: Shape matching the given resolution and 
+            the bounds.
+        resampling : rasterio.warp.Resampling, optional
+            Resampling method from rasterio package. Default: Bilinear
+
+        Returns
+        -------
+        data : 2d np.array
+            First dimension is neglected as it is only one. Second dimension 
+            is y (lat) and third dimension is x (lon).
+        transform : rasterio.Affine
+            Affine transformation defining the output raster data.
+        """
+
+        bands = [1]
+        with rasterio.open(path, 'r') as src:
+            if res:
+                if not isinstance(res, tuple):
+                    res = (res, res)
+            else:
+                res = (src.transform[0], src.transform[4])
+            res = (np.abs(res[0]), np.abs(res[1]))
+
+            width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+            if shape: # if condition icluded by Sam G. 
+                shape = shape
+            else:
+                shape = (int(np.ceil(height / res[1]) + 1),
+                         int(np.ceil(width / res[0]) + 1))
+
+            # make sure that the extent of pixel centers covers the specified regions
+            extra = (0.5 * ((shape[1] - 1) * res[0] - width),
+                     0.5 * ((shape[0] - 1) * res[1] - height))
+            bounds = (bounds[0] - extra[0] - 0.5 * res[0], bounds[1] - extra[1] - 0.5 * res[1],
+                      bounds[2] + extra[0] + 0.5 * res[0], bounds[3] + extra[1] + 0.5 * res[1])
+
+            data = np.zeros((len(bands),) + shape, dtype=src.dtypes[0])
+            res = (np.sign(src.transform[0]) * res[0], np.sign(src.transform[4]) * res[1])
+            transform = rasterio.Affine(res[0], 0, bounds[0] if res[0] > 0 else bounds[2],
+                                        0, res[1], bounds[1] if res[1] > 0 else bounds[3])
+            crs = DEF_CRS if src.crs is None else src.crs
+            for iband, band in enumerate(bands):
+                rasterio.warp.reproject(
+                    source=rasterio.band(src, band),
+                    destination=data[iband],
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=crs,
+                    resampling=resampling)
+        return data[0,:,:], transform
 
 @numba.njit
 def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
