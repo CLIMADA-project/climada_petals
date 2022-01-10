@@ -1252,6 +1252,40 @@ class WildFire(Hazard):
         cbar = plt.colorbar(im) # added by Sam G.
         cbar.set_label('Probability', size = 15) # added by Sam G.
         cbar.ax.tick_params(labelsize=15) # added by Sam G.
+        
+    # added by Sam G.
+    def plot_ignition_matrix(self):
+        """ Plots fire ign probability matrix as colormesh plot.
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+
+        Returns
+        -------
+        colormesh plot : plt
+            colormesh plot of ignition_weights_matrix
+
+        """
+
+        lon = np.reshape(self.centroids.lon, self.centroids.ignition_weights_matrix.shape)
+        lat = np.reshape(self.centroids.lat, self.centroids.ignition_weights_matrix.shape)
+        
+        plt.figure(figsize = (14,14)) # added by Sam G.
+        ax = plt.axes(projection=ccrs.PlateCarree()) # added by Sam G.
+        im = plt.pcolormesh(lon, lat, self.centroids.ignition_weights_matrix, 
+                     transform=ccrs.PlateCarree()) # added by Sam G.
+        ax.coastlines() # added by Sam G.
+        ax.add_feature(cfeature.BORDERS.with_scale('50m')) # added by Sam G.
+        grid = ax.gridlines(draw_labels=True, alpha=0.2, transform=ccrs.PlateCarree()) # added by Sam G.
+        grid.top_labels = grid.right_labels = False # added by Sam G.
+        grid.xformatter = LONGITUDE_FORMATTER # added by Sam G.
+        grid.yformatter = LATITUDE_FORMATTER # added by Sam G.
+        grid.xlabel_style = {'size': 15} # added by Sam G.
+        grid.ylabel_style = {'size': 15} # added by Sam G.
+        cbar = plt.colorbar(im) # added by Sam G.
+        cbar.set_label('Weight', size = 15) # added by Sam G.
+        cbar.ax.tick_params(labelsize=15) # added by Sam G.
 
     @staticmethod
     def _select_fire_season(df_firms, year, hemisphere='SHS'):
