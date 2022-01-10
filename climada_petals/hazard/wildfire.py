@@ -47,6 +47,9 @@ import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
 from climada.util.constants import (DEF_CRS) # Added by Sam G.
 
+import cartopy.crs as ccrs # added by Sam G.
+import cartopy.feature as cfeature # added by Sam G.
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER # added by Sam G.
 import rasterio.crs # added by Sam G.
 import rasterio.features # added by Sam G.
 import rasterio.mask # added by Sam G.
@@ -1233,7 +1236,22 @@ class WildFire(Hazard):
 
         lon = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
         lat = np.reshape(self.centroids.lat, self.centroids.fire_propa_matrix.shape)
-        plt.contourf(lon, lat, self.centroids.fire_propa_matrix)
+
+        plt.figure(figsize = (14,14)) # added by Sam G.
+        ax = plt.axes(projection=ccrs.PlateCarree()) # added by Sam G.
+        im = plt.pcolormesh(lon, lat, self.centroids.fire_propa_matrix, 
+                     transform=ccrs.PlateCarree()) # added by Sam G.
+        ax.coastlines() # added by Sam G.
+        ax.add_feature(cfeature.BORDERS.with_scale('50m')) # added by Sam G.
+        grid = ax.gridlines(draw_labels=True, alpha=0.2, transform=ccrs.PlateCarree()) # added by Sam G.
+        grid.top_labels = grid.right_labels = False # added by Sam G.
+        grid.xformatter = LONGITUDE_FORMATTER # added by Sam G.
+        grid.yformatter = LATITUDE_FORMATTER # added by Sam G.
+        grid.xlabel_style = {'size': 15} # added by Sam G.
+        grid.ylabel_style = {'size': 15} # added by Sam G.
+        cbar = plt.colorbar(im) # added by Sam G.
+        cbar.set_label('Probability', size = 15) # added by Sam G.
+        cbar.ax.tick_params(labelsize=15) # added by Sam G.
 
     @staticmethod
     def _select_fire_season(df_firms, year, hemisphere='SHS'):
