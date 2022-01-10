@@ -162,7 +162,7 @@ class TestWildFire(unittest.TestCase):
     def test_summarize_fires_to_seasons_pass(self):
         """ Test probabilistic set_probabilistic_event_year_set """
         wf = WildFire()
-        wf = wf.from_hist_fire_FIRMS(TEST_FIRMS)
+        wf = WildFire.from_hist_fire_FIRMS(TEST_FIRMS)
         wf.summarize_fires_to_seasons()
 
         self.assertEqual(wf.tag.haz_type, 'WFseason')
