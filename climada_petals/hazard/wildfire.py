@@ -1379,6 +1379,48 @@ class WildFire(Hazard):
 
         self.centroids.fire_propa_matrix = landpop_propa_matrix
         
+    # Added by Sam. G.    
+    def set_ignition_matrix(self, land_path, pop_path, countries, bounds, res):
+        """
+        Sets the ignition matrix. It resamples the land cover data over a 
+        certain area to account for the fraction of the specific land cover 
+        classes in this area. The population data is resampled with the method 'sum'.
+
+        Parameters
+        ----------
+        self : climada.hazard.WildFire instance
+        land_path : str
+            Path to land cover raster file to open with rasterio.
+        pop_path : str
+            Path to population raster file to open with rasterio.
+        countries : list
+            list with ISO3 names of countries, e.g ['ZWE', 'GBR', 'VNM', 'UZB']
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of ignition matrix. 
+
+        Returns
+        -------
+        self.centroids.ignition_weights_matrix : np.array
+            Fire ignition matrix.
+        """
+        
+        geometry = u_coord.get_land_geometry(countries)
+        
+        if not hasattr(self.centroids, 'frac_propa_matrix'):
+            self._set_landcover_propa_mat(land_path, bounds, res, geometry)
+        
+        if not hasattr(self.centroids, 'population'):
+            self._get_population(pop_path, bounds, res, geometry)
+            
+        pop_weights = self.centroids.population**0.5
+        pop_weights = np.where(pop_weights < 1., 1., pop_weights) # to only increase the chance for ignition, not decrease
+        
+        ignition_weights_matrix = pop_weights*self.centroids.frac_propa_matrix
+        
+        self.centroids.ignition_weights_matrix = ignition_weights_matrix
+        
     # Added by Sam G.
     def _set_landcover_propa_mat(self, land_path, bounds, res, geometry):
         """
