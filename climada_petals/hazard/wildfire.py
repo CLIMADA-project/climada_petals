@@ -1497,8 +1497,9 @@ def calc_burnt_area(haz_fraction):
 
 
 def match_burnt_areas(ba_fm, ba_prob_sum):
-    """Return absolute burnt area [km2]
-
+    """Find probabilistic wildfire hazard that best matches the total burnt area 
+    for each FireMIP event and return their indeces (computations are performed per pixel)
+    
     Parameters
     ----------
     ba_fm : csr.matrix
