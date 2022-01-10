@@ -662,8 +662,7 @@ class WildFire(Hazard):
         -------
         centroids : Centroids
         """
-        centroids = Centroids()
-        centroids.set_raster_from_pnt_bounds((df_firms['longitude'].min(), \
+        centroids = Centroids.from_pnt_bounds((df_firms['longitude'].min(), \
             df_firms['latitude'].min(), df_firms['longitude'].max(), \
             df_firms['latitude'].max()), res=res_data/centr_res_factor)
         centroids.set_meta_to_lat_lon()
