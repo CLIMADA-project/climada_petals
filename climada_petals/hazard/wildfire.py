@@ -1064,13 +1064,23 @@ class WildFire(Hazard):
             self._set_fire_propa_matrix()
 
         # Ignation only at centroids that burned in the past
-        pos_centr = np.argwhere(self.centroids.fire_propa_matrix.reshape( \
-            len(self.centroids.lat)) == 1)[:, 1]
+        # pos_centr = np.argwhere(self.centroids.fire_propa_matrix.reshape( \
+        #     len(self.centroids.lat)) == 1)[:, 1] #changed by Sam G. 
+        
+        # both lines added by Sam G.
+        pos_centr = np.argwhere(self.centroids.ignition_weights_matrix.reshape( \
+                        len(self.centroids.lat)) > 0)[:, -1]
+        
+        # added by Sam G. only take the 1d weights where they are not zero
+        weights = self.centroids.ignition_weights_matrix.reshape(len(self.centroids.lat)) \
+        [np.argwhere(self.centroids.ignition_weights_matrix.reshape( \
+                    len(self.centroids.lat)) > 0)]
 
         LOGGER.debug('Start ignition.')
         # Random selection of ignition centroid
         for _ in range(self.centroids.size):
-            centr = np.random.choice(pos_centr)
+            # centr = np.random.choice(pos_centr) #changed by Sam G.
+            centr = random.choices(pos_centr, weights = weights)[0] # added by Sam. G.
             centr_ix = int(centr/self.centroids.shape[1])
             centr_iy = centr%self.centroids.shape[1]
             centr_ix = max(0, centr_ix)
