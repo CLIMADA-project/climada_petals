@@ -140,7 +140,7 @@ class TestWildFire(unittest.TestCase):
     def test_proba_fire_season_pass(self):
         """ Test probabilistic set_probabilistic_event_year_set """
         wf = WildFire()
-        wf = wf.from_hist_fire_seasons_FIRMS(TEST_FIRMS)
+        wf = WildFire.from_hist_fire_seasons_FIRMS(TEST_FIRMS)
         wf.set_proba_fire_seasons(1,[3,4])
 
         self.assertEqual(wf.size, 2)
