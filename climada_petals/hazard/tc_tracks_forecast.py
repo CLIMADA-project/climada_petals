@@ -95,7 +95,7 @@ class TCForecast(TCTracks):
                                deterministic run)
     """
 
-    def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None, read_det=False):
+    def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None):
         """
         Fetch and read latest ECMWF TC track predictions from the FTP
         dissemination server into instance. Use path or files argument
