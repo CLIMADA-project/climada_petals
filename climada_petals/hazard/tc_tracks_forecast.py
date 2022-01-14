@@ -101,6 +101,10 @@ class TCForecast(TCTracks):
         dissemination server into instance. Use path or files argument
         to use local files instead.
 
+        Assumes file naming conventions consistent with ECMWF: all files
+        are assumed to have 'tropical_cyclone' and 'ECEP' in their name,
+        denoting tropical cyclone ensemble forecast files.
+
         Parameters
         ----------
         path : str, list(str), optional
@@ -119,17 +123,9 @@ class TCForecast(TCTracks):
             If set, search the ECMWF FTP folder for forecast files in the
             directory; otherwise defaults to the latest. Format:
             yyyymmddhhmmss, e.g. 20200730120000
-        read_det : boolean, default False
-            For named storm, ECMWF provides an extra bufr file that only contains
-            the high resolution deterministic forecast track, which is duplicated in
-            the ensemble forecast bufr file. 
-            Set default False to filter out the duplicated track, otherwise reads 
-            all bufr files in the ECMWF FTP folder.
-            This argument works only for reading tracks from ECMWF FTP folder.
-            (I.e. path=None and files=None)
         """
         if path is None and files is None:
-            files = self.fetch_bufr_ftp(target_dir, remote_dir, read_det)
+            files = self.fetch_bufr_ftp(target_dir, remote_dir)
         elif files is None:
             files = get_file_names(path)
         elif not isinstance(files, list):
@@ -150,7 +146,7 @@ class TCForecast(TCTracks):
             file.close()  # discards if tempfile
 
     @staticmethod
-    def fetch_bufr_ftp(target_dir=None, remote_dir=None, read_det=False):
+    def fetch_bufr_ftp(target_dir=None, remote_dir=None):
         """
         Fetch and read latest ECMWF TC track predictions from the FTP
         dissemination server. If target_dir is set, the files get downloaded
@@ -187,12 +183,9 @@ class TCForecast(TCTracks):
             con.cwd(remote_dir)
 
             # Filter to files with 'tropical_cyclone' in the name: each file is a forecast ensemble for one event
-            # If read_det=False, reads only the ensemble set of tracks (name pattern: *ECEP*), else reads all the bufr files
-            if read_det:
-                remotefiles = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
-            else:
-                remotefiles_temp = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
-                remotefiles = fnmatch.filter(remotefiles_temp, '*ECEP*')
+            remotefiles_temp = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
+            # Filter to forecast ensemble files only
+            remotefiles = fnmatch.filter(remotefiles_temp, '*ECEP*')
 
             if len(remotefiles) == 0:
                 msg = 'No tracks found at ftp://{}/{}'
