@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from climada_petals.hazard.wildfire import WildFire
+from climada_petals.hazard.wildfire import WildFire, get_closest
 from climada.hazard.centroids.centr import Centroids
 from climada.util.constants import ONE_LAT_KM
 
@@ -298,6 +298,15 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertAlmostEqual(wf._firms_resolution(firms), 0.375/ONE_LAT_KM)
         firms['instrument'][0] = 'MODIS'
         self.assertAlmostEqual(wf._firms_resolution(firms), 1.0/ONE_LAT_KM)
+    
+    def test_get_closest(self):
+        """ Test get_closest function finding value in an array nearest to the input values"""
+        array = np.arange(2000,1, -50)
+        values = np.array([500, 760, 220, 1650])
+        idxs = get_closest(array, values)
+        
+        self.assertAlmostEqual(array[idxs[1]], 750)
+        self.assertAlmostEqual(len(idxs), len(values))
 
 # Execute Tests
 if __name__ == "__main__":
