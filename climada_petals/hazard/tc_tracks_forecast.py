@@ -101,6 +101,10 @@ class TCForecast(TCTracks):
         dissemination server into instance. Use path or files argument
         to use local files instead.
 
+        Assumes file naming conventions consistent with ECMWF: all files
+        are assumed to have 'tropical_cyclone' and 'ECEP' in their name,
+        denoting tropical cyclone ensemble forecast files.
+
         Parameters
         ----------
         path : str, list(str), optional
@@ -179,7 +183,10 @@ class TCForecast(TCTracks):
             con.cwd(remote_dir)
 
             # Filter to files with 'tropical_cyclone' in the name: each file is a forecast ensemble for one event
-            remotefiles = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
+            remotefiles_temp = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
+            # Filter to forecast ensemble files only
+            remotefiles = fnmatch.filter(remotefiles_temp, '*ECEP*')
+
             if len(remotefiles) == 0:
                 msg = 'No tracks found at ftp://{}/{}'
                 msg.format(ECMWF_FTP, remote_dir)
