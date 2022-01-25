@@ -25,8 +25,12 @@ import unittest
 import numpy as np
 import pandas as pd
 from scipy import sparse
+import copy
 
-from climada_petals.hazard.wildfire import WildFire, get_closest
+from climada_petals.hazard.wildfire import (WildFire, calc_burnt_area,
+                                            get_closest, create_downscaled_haz,
+                                            cut_prob_set, upscale_prob_haz,
+                                            match_burnt_areas)
 from climada.hazard.centroids.centr import Centroids
 from climada.util.constants import ONE_LAT_KM
 
@@ -35,6 +39,23 @@ TEST_FIRMS = pd.read_csv(Path.joinpath(DATA_DIR, "California_firms_Soberanes_201
 
 
 description = ''
+
+
+INTENSITY_PROB = sparse.dok_matrix((5, 9))
+INTENSITY_PROB[0,1] = 1
+INTENSITY_PROB[0,3] = 3
+INTENSITY_PROB[0,5] = 5
+INTENSITY_PROB[0,7] = 7
+INTENSITY_PROB[1,2] = 2
+INTENSITY_PROB[1,4] = 4
+INTENSITY_PROB[2,3] = 3
+INTENSITY_PROB[2,6] = 6
+INTENSITY_PROB[2,8] = 8
+INTENSITY_PROB[3,3] = 3
+INTENSITY_PROB[3,4] = 4
+INTENSITY_PROB[3,5] = 5
+INTENSITY_PROB[4,1] = 1
+INTENSITY_PROB[4,5] = 5
 
 def def_ori_centroids(firms, centr_res_factor):
     # res_data in km
@@ -298,15 +319,88 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertAlmostEqual(wf._firms_resolution(firms), 0.375/ONE_LAT_KM)
         firms['instrument'][0] = 'MODIS'
         self.assertAlmostEqual(wf._firms_resolution(firms), 1.0/ONE_LAT_KM)
-    
+
+    def test_calc_burnt_area(self):
+        """ Test calculation of burnt area"""
+        latitude_prob = np.arange(42,33,-1)
+        fraction_prob = copy.deepcopy(INTENSITY_PROB)
+        fraction_prob[fraction_prob!=0] = 1
+        ba_prob = calc_burnt_area(fraction_prob, latitude_prob)
+
+        self.assertAlmostEqual(fraction_prob.sum(), 14.0)
+        self.assertAlmostEqual(ba_prob.sum(), 3406729.0039883372)
+        self.assertAlmostEqual(ba_prob.shape, (5,9))
+        self.assertAlmostEqual(ba_prob[1,2], 236471.30096684003)
+
+    def test_upscale_prob_haz(self):
+        """ Test upscaling of probabilistic hazard"""
+        nr_centroids_fm = 3
+        idx_ups_coord = np.array([0,0,0, 1, 1, 1, 2, 2, 2])
+        latitude_prob = np.arange(42,33,-1)
+        fraction_prob = copy.deepcopy(INTENSITY_PROB)
+        fraction_prob[fraction_prob!=0] = 1
+        ba_prob = calc_burnt_area(fraction_prob, latitude_prob)
+
+        ba_prob_sum = upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord)
+
+        self.assertAlmostEqual(ba_prob.sum(), ba_prob_sum.sum())
+        self.assertAlmostEqual(ba_prob_sum.shape, (5,nr_centroids_fm))
+        self.assertAlmostEqual(ba_prob_sum[0,0], ba_prob[0,1])
+        self.assertAlmostEqual(ba_prob_sum[3,1], ba_prob[3,3:6].sum())
+
+    def test_match_ba(self):
+        "Test match_burnt_areas function"
+        ba_prob = sparse.dok_matrix((5, 3))
+        ba_prob[0,1] = 6
+        ba_prob[1,0] = 11
+        ba_prob[1,2] = 12
+        ba_prob[2,0] = 7
+        ba_prob[2,1] = 4
+        ba_prob[3,1] = 1
+        ba_prob[3,2] = 8
+        ba_prob[4,0] = 6
+        ba_prob[4,1] = 3
+        ba_prob[4,2] = 7
+
+        ba_fm = sparse.dok_matrix((2, 3))
+        ba_fm[0,0] = 10
+        ba_fm[0,1] = 7
+        ba_fm[1,0] = 5
+        ba_fm[1,1] = 3
+        ba_fm[1,2] = 11
+
+        idx_matching = match_burnt_areas(ba_fm, ba_prob)
+        self.assertAlmostEqual(idx_matching.sum(), 10)
+        self.assertAlmostEqual(idx_matching.shape, (2,3))
+        self.assertAlmostEqual(idx_matching[1,1], 4.0)
+
     def test_get_closest(self):
         """ Test get_closest function finding value in an array nearest to the input values"""
         array = np.arange(2000,1, -50)
         values = np.array([500, 760, 220, 1650])
         idxs = get_closest(array, values)
-        
+
         self.assertAlmostEqual(array[idxs[1]], 750)
         self.assertAlmostEqual(len(idxs), len(values))
+
+    def test_create_downscaled_haz(self):
+        """ Test creating downscaled hazard"""
+        idx_matching = np.array([[0,1,0], [1, 3, 2]])
+        idx_ups_coord = np.array([0,0,0, 1, 1, 1, 2, 2, 2])
+
+        new_intensity = create_downscaled_haz(INTENSITY_PROB, idx_matching, idx_ups_coord)
+        self.assertAlmostEqual(new_intensity.sum(), 40.0)
+        self.assertAlmostEqual(new_intensity.shape, (2,9))
+        self.assertAlmostEqual(new_intensity[0,4], 4.0)
+
+    def test_cut_prob_set(self):
+        "Test cut_prob_set function"
+        centroids_prob = np.array([3,4,5])
+        events_match = np.array([1, 3])
+        intensity_centroid = cut_prob_set(INTENSITY_PROB, events_match, centroids_prob)
+        self.assertAlmostEqual(intensity_centroid.sum(), 16.0)
+        self.assertAlmostEqual(intensity_centroid.shape, (2,3))
+        self.assertAlmostEqual(intensity_centroid[1,1], 4.0)
 
 # Execute Tests
 if __name__ == "__main__":
