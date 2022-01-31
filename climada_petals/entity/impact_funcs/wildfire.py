@@ -81,9 +81,9 @@ class ImpfWildfire(ImpactFunc):
         Impf : climada.entity.impact_funcs.ImpfWildfire instance
 
         """
-        
+
         Impf = cls()
-        
+
         Impf.id = impf_id
         Impf.name = "wildfire default 1 km"
         Impf.intensity_unit = "K"
@@ -92,39 +92,11 @@ class ImpfWildfire(ImpactFunc):
         i_n = (Impf.intensity-i_thresh)/(i_half-i_thresh)
         Impf.paa = i_n**3 / (1 + i_n**3)
         Impf.mdd = np.ones(len(Impf.intensity))
-        
+
         return Impf
-        
+
     def set_default_FIRMS(self, *args, **kwargs):
         """This function is deprecated, use ImpfWildfire.from_default_FIRMS instead."""
         LOGGER.warning("The use of ImpfWildfire.set_default_FIRMS is deprecated."
                                "Use ImpfWildfire.from_default_FIRMS .")
         self.__dict__ = ImpfWildfire.from_default_FIRMS(*args, **kwargs).__dict__
-
-    @classmethod
-    def hit_or_miss(cls, impf_id=2):
-
-        """ This function defines a hit-or-miss impact function meaning
-        that the impact is set to 0% for intensity = 0 (miss) and to
-        100% for intensity = 1 (hit).
-
-        Parameters
-        ----------
-        impf_id : int, optional, default = 1
-            impact function id
-
-        Returns
-        -------
-        impf : climada.entity.impact_funcs.ImpfWildfire instance
-
-        """
-        
-        impf = cls()
-        impf.id = impf_id
-        impf.name = "wildfire hit or miss 1 km"
-        impf.intensity_unit = " "
-        impf.intensity = np.arange(0, 2)
-        impf.paa = np.arange(0, 1)
-        impf.mdd = np.ones(len(impf.intensity))
-        
-        return impf
