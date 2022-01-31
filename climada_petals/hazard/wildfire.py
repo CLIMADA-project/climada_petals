@@ -2070,14 +2070,14 @@ def upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord):
 
     Returns
     -------
-    ba_prob_sum: csr.matrix
+    ba_prob_upscaled: csr.matrix
         burnt area per centroid and event [km2] on the lower resolution
     """
 
     #Initiation - if a FireMIP centroid is not covered by the probabilistic hazard,
     #the intensity is 0
     nr_years, _ = ba_prob.shape
-    ba_prob_sum = np.zeros([nr_years, nr_centroids_fm])
+    ba_prob_upscaled = np.zeros([nr_years, nr_centroids_fm])
 
     #Get unique FireMIP centroid entries
     unique_idx = np.unique(idx_ups_coord)
@@ -2088,9 +2088,9 @@ def upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord):
 
     for centroid in firemip_c:
         prob_c = np.where(idx_ups_coord == centroid)[0]
-        ba_prob_sum[:, centroid] = np.sum(ba_prob[:, prob_c],1).flatten()
+        ba_prob_upscaled[:, centroid] = np.sum(ba_prob[:, prob_c],1).flatten()
 
-    return sparse.csr_matrix(ba_prob_sum)
+    return sparse.csr_matrix(ba_prob_upscaled)
 
 
 def match_events(ba_fm, ba_prob_sum):

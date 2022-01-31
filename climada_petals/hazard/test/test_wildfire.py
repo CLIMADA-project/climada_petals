@@ -341,12 +341,12 @@ class TestMethodsFirms(unittest.TestCase):
         fraction_prob[fraction_prob!=0] = 1
         ba_prob = calc_burnt_area(fraction_prob, latitude_prob)
 
-        ba_prob_sum = upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord)
+        ba_prob_upscaled = upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord)
 
-        self.assertAlmostEqual(ba_prob.sum(), ba_prob_sum.sum())
-        self.assertAlmostEqual(ba_prob_sum.shape, (5,nr_centroids_fm))
-        self.assertAlmostEqual(ba_prob_sum[0,0], ba_prob[0,1])
-        self.assertAlmostEqual(ba_prob_sum[3,1], ba_prob[3,3:6].sum())
+        self.assertAlmostEqual(ba_prob.sum(), ba_prob_upscaled.sum())
+        self.assertAlmostEqual(ba_prob_upscaled.shape, (5,nr_centroids_fm))
+        self.assertAlmostEqual(ba_prob_upscaled[0,0], ba_prob[0,1])
+        self.assertAlmostEqual(ba_prob_upscaled[3,1], ba_prob[3,3:6].sum())
 
     def test_match_ba(self):
         "Test match_events function"
