@@ -1894,10 +1894,8 @@ def from_sentinel(filename):
 
     Parameters
     ----------
-    input_dir : Path or str
-        path to input data directory,
     filename : string
-        name of netcdf file in input_dir.
+        name of Sentinel netcdf file
 
     Returns
     ----------
@@ -1917,15 +1915,13 @@ def from_sentinel(filename):
 
     return id_bands, event_list
 
-def from_firemip(input_dir, filename):
+def from_firemip(filename):
     """Read ids of contained bands and month covered by Firemip data
 
     Parameters
     ----------
-    input_dir : Path or str
-        path to input data directory,
     filename : string
-        name of netcdf file in input_dir
+        name of FireMIP netcdf file
 
     Returns
     ----------
@@ -1936,14 +1932,12 @@ def from_firemip(input_dir, filename):
 
     """
 
-    # read indixes of bands to be extracted
-    raster = rasterio.open(str(Path(input_dir, filename)))
-    nr_bands = raster.count
-    id_bands = np.arange(1, nr_bands+1).tolist()
     (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
     endyear, _ = endyearnc.split('.')
     event_names = [str(n) for n in range(int(startyear), int(endyear) + 1)]
     event_list = [event_ + '-01-01' for event_ in event_names]
+    nr_bands = len(event_list)
+    id_bands = np.arange(1, nr_bands+1).tolist()
 
     return id_bands, event_list
 
