@@ -1948,8 +1948,9 @@ def from_firemip(input_dir, filename):
     return id_bands, event_list
 
 def firemip_dowscaling(haz_firemip, haz_prob):
-    """Return wildfire hazard consisting of wildfire seasons that were assigned to
-    FireMIP pixel with a similar value of burnt area per year / fire season
+    """Wrapper function returning wildfire hazard consisting of probabilistic
+    wildfire seasons that were assigned to FireMIP pixel with a similar value
+    of burnt area per year / fire season
 
     Parameters
     ----------
@@ -1965,29 +1966,29 @@ def firemip_dowscaling(haz_firemip, haz_prob):
     """
 
     "Calculate burnt area for FireMIP and probabilistic hazard"
-    # FireMIP hazard
+    # Burnt area of FireMIP hazard
     ba_fm = calc_burnt_area(haz_firemip.intensity, haz_firemip.centroids.lat)
-    # set fraction of prob hazard !=0 to 1 (assumption: everything burns in affected centroids)
+    # Set fraction of prob hazard !=0 to 1 (assumption: everything burns in affected centroids)
     fraction_prob = copy.deepcopy(haz_prob.intensity)
     fraction_prob[fraction_prob!=0] = 1
     ba_prob = calc_burnt_area(fraction_prob, haz_prob.centroids.lat)
 
-    # match probabilistic centroids to firemip centroids
+    "Upscale probabilistic hazard to the FireMIP resolution"
+    # Match probabilistic centroids to FireMIP centroids
     idx_ups_coord = match_centroids(haz_prob.centroids.coord, haz_firemip.centroids.coord)
-    # include warning if some firemip centroids don't have corresponding centroid
-    #(idx_ups_coord contains -1)
-
-    # sum up centroids of higher resolution
+    #to do: include warning if some FireMIP centroids don't have corresponding centroid
+    #(idx_ups_coord contains -1 - remove -1 from array?)
+    #sum up centroids of higher resolution
     nr_centroids_fm = ba_fm.shape[1]
-    ba_prob_sum = upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord)
+    ba_prob_upscaled = upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord)
 
-    # match indices of summed up probabilistic fires to best fitting FireMIP data point
-    idx_matching = match_burnt_areas(ba_fm, ba_prob_sum)
+    "Match FireMIP events to best fitting probabilistic events"
+    matched_events = match_events(ba_fm, ba_prob_upscaled)
 
-    # create new intensity
-    new_intensity = create_downscaled_haz(haz_prob.intensity, idx_matching, idx_ups_coord)
+    "Create new intensity by applying event matching and downscaling on the resolution of the prob haz"
+    new_intensity = create_downscaled_haz(haz_prob.intensity, matched_events, idx_ups_coord)
 
-    # set attributes - there's still an error
+    "Set attributes of the new hazard (to do: there's an error when checking the hazard)"
     haz_new = WildFire()
     haz_new.intensity = new_intensity
     haz_new.event_id = haz_firemip.event_id
@@ -2030,8 +2031,8 @@ def calc_burnt_area(area_fraction, latitudes):
 
 
 def match_centroids(high_res_coord, low_res_coord):
-    """Search nearest neighbour for high resolution coordinates in low resolution
-    coordinate array (default distance threshold 100 km - see u_coord)
+    """Search nearest neighbour in high resolution coordinates for each entry in the
+    the low resolution coordinate array (default distance threshold 100 km - see u_coord)
 
     Parameters
     ----------
@@ -2043,8 +2044,8 @@ def match_centroids(high_res_coord, low_res_coord):
     Returns
     -------
     idx_ups_coord: np.array
-        index of pixel of lower resolution that correspond to each centroids of
-        higher resolution
+        Array contraining index of pixel of lower resolution that correspond to each
+        centroids of higher resolution (len(idx_ups_coord) = len(high_res_coord))
     """
 
     idx_ups_coord = u_coord.assign_coordinates(high_res_coord, low_res_coord)
@@ -2053,7 +2054,9 @@ def match_centroids(high_res_coord, low_res_coord):
 
 
 def upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord):
-    """Sum up burnt area in centroids wiht the same idx_ups_coord
+    """Sum up burnt pixel of probabilistic set on the firemip raster by summing up
+    the burnt area in centroids with the same idx_ups_coord. The burnt area in
+    FireMIP centroids not covered by the probabilistic hazard are set to zero.
 
     Parameters
     ----------
@@ -2071,13 +2074,17 @@ def upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord):
         burnt area per centroid and event [km2] on the lower resolution
     """
 
-    # sum up burnt pixel of probabilistic set on the firemip raster
+    #Initiation - if a FireMIP centroid is not covered by the probabilistic hazard,
+    #the intensity is 0
     nr_years, _ = ba_prob.shape
     ba_prob_sum = np.zeros([nr_years, nr_centroids_fm])
 
-    # if a firemip centroid is not covered by the probabilistic set, the intensity is set to 0
-    # to do: remove -1 from this array (if it is contained)
-    firemip_c = np.unique(idx_ups_coord)
+    #Get unique FireMIP centroid entries
+    unique_idx = np.unique(idx_ups_coord)
+    #Remove -1 from the unique_idx array (if it is contained) - this happens if a
+    #centroid in the probabilistic set is further away for the closest FireMIP centroid
+    #than the specified threshold
+    firemip_c = np.delete(unique_idx, np.where(unique_idx == -1)[0])
 
     for centroid in firemip_c:
         prob_c = np.where(idx_ups_coord == centroid)[0]
@@ -2086,7 +2093,7 @@ def upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord):
     return sparse.csr_matrix(ba_prob_sum)
 
 
-def match_burnt_areas(ba_fm, ba_prob_sum):
+def match_events(ba_fm, ba_prob_sum):
     """Find probabilistic wildfire hazard that best matches the total burnt area
     for each FireMIP event and return their indeces (computations are performed per pixel)
 
@@ -2100,28 +2107,31 @@ def match_burnt_areas(ba_fm, ba_prob_sum):
 
     Returns
     -------
-    idx_matching: matrix
-        Array of indices of events in the probabilistic wildfires that best match the
-        FireMIP input data
+    matched_events: matrix
+        Matrix of indices of events in the probabilistic hazard that best match the
+        FireMIP events
     """
 
-    years, centroids = ba_fm.shape
-    idx_matching = np.empty([years, centroids])
-    idx_matching[:] = np.NaN
+    # to do: what happens if a FireMIP event doesn't have a corresponding event in the
+    # probabilistic set? (the difference exceeds a certain threshold)
 
-    #get idx of prob fires per centroid
+    years, centroids = ba_fm.shape
+    matched_events = np.empty([years, centroids])
+    matched_events[:] = np.NaN
+
+    #Get idx of probabilistic fires seasons per centroid
     for centroid in range(centroids):
 
         # extract array for respective centroid
         ba_fm_c = np.squeeze(np.asarray(ba_fm[:, centroid].todense()))
         ba_prob_c = np.squeeze(np.asarray(ba_prob_sum[:,centroid].todense()))
 
-        idx_matching[:, centroid] = get_closest(ba_prob_c, ba_fm_c)
+        matched_events[:, centroid] = get_closest(ba_prob_c, ba_fm_c)
 
-    return idx_matching.astype(int)
+    return matched_events.astype(int)
 
 def get_closest(array, values):
-    """Return index of values contained in array that best match values
+    """Return index of entries contained in array that best match values
 
     Parameters
     ----------
@@ -2156,51 +2166,56 @@ def get_closest(array, values):
 
     return idx_sorted[idxs]
 
-def create_downscaled_haz(intensity_prob, idx_matching, idx_ups_coord):
-    """Create a hazard containing the intensity of
+def create_downscaled_haz(intensity_prob, matched_events, idx_ups_coord):
+    """Create a hazard containing the intensity of the probabilistic events that
+    were matched to the FireMIP events on the original scale
 
     Parameters
     ----------
     intensity_prob : WildFire
         Probabilistic WildFire hazard
-    idx_matching : matrix
+    matched_events : matrix
         Indeces of probabilistic events that match the FireMIP events
     idx_ups_coord: np.array
         index of pixel of lower resolution that correspond to each centroids of
-        higher resolution
+        higher resolution (len(idx_ups_coord) = nr centroids prob hazard)
 
     Returns
     -------
     new_intensity: csr.matrix
-        Intensity of the probabilistic event that have been matched to the FireMIP events
+        Intensity of the probabilistic events that have been matched to the FireMIP events
+        on the downscaled resolution
     """
 
-    # copy corresponding values from intensity_prob to right location in firemip
-    new_intensity = sparse.dok_matrix((idx_matching.shape[0], len(idx_ups_coord)))
-    # downscale per firemip centroid
-    for centroid_fm in range(idx_matching.shape[1]):
+    #initiate new intensity: nr events as the FireMIP hazard (matched_events)
+    #nr of centroids as the probabilistic set (idx_ups_coord)
+    new_intensity = sparse.dok_matrix((matched_events.shape[0], len(idx_ups_coord)))
+
+    # downscale per FireMIP centroid
+    for centroid_fm in range(matched_events.shape[1]):
+
         # index of the centroid in the probabilistic set
         centroids_prob = np.where(idx_ups_coord == centroid_fm)[0]
+
         # event index
-        events_match = idx_matching[:, centroid_fm]
+        events_match = matched_events[:, centroid_fm]
 
         # cut out intensity for all events for respective FireMIP centroid from
-        # probabilistic event set and save it to new intensity
-        new_intensity[:, centroids_prob] = cut_prob_set(intensity_prob, events_match, 
+        # probabilistic event set and save it to new intensity for the respective events
+        new_intensity[:, centroids_prob] = extract_from_probhaz(intensity_prob, events_match,
                                                         centroids_prob)
 
-    #evtl. muss man die matrix nochmal sparse machen
     return new_intensity.tocsr()
 
-def cut_prob_set(intensity_prob, events_match, centroids_prob):
-    """Cut out events from probabilistic set for one firemip centroid for all events
-    (the firemip centroid corresponds to the centroids centroids_prob from the probabilistic
+def extract_from_probhaz(intensity_prob, events_match, centroids_prob):
+    """Extracts events from probabilistic hazard for one FireMIP centroid for all events
+    (the FireMIP centroid corresponds to the centroids centroids_prob from the probabilistic
      set)
 
     Parameters
     ----------
-    intensity_prob : WildFire
-        Probabilistic WildFire hazard
+    intensity_prob : csr.matrix
+        Intensity of the probabilistic WildFire hazard
     events_match : np.array
         Indeces of probabilistic events that match the FireMIP events
     centroids_prob: np.array

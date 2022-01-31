@@ -29,8 +29,8 @@ import copy
 
 from climada_petals.hazard.wildfire import (WildFire, calc_burnt_area,
                                             get_closest, create_downscaled_haz,
-                                            cut_prob_set, upscale_prob_haz,
-                                            match_burnt_areas)
+                                            extract_from_probhaz, upscale_prob_haz,
+                                            match_events)
 from climada.hazard.centroids.centr import Centroids
 from climada.util.constants import ONE_LAT_KM
 
@@ -349,7 +349,7 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertAlmostEqual(ba_prob_sum[3,1], ba_prob[3,3:6].sum())
 
     def test_match_ba(self):
-        "Test match_burnt_areas function"
+        "Test match_events function"
         ba_prob = sparse.dok_matrix((5, 3))
         ba_prob[0,1] = 6
         ba_prob[1,0] = 11
@@ -369,10 +369,10 @@ class TestMethodsFirms(unittest.TestCase):
         ba_fm[1,1] = 3
         ba_fm[1,2] = 11
 
-        idx_matching = match_burnt_areas(ba_fm, ba_prob)
-        self.assertAlmostEqual(idx_matching.sum(), 10)
-        self.assertAlmostEqual(idx_matching.shape, (2,3))
-        self.assertAlmostEqual(idx_matching[1,1], 4.0)
+        matched_events = match_events(ba_fm, ba_prob)
+        self.assertAlmostEqual(matched_events.sum(), 10)
+        self.assertAlmostEqual(matched_events.shape, (2,3))
+        self.assertAlmostEqual(matched_events[1,1], 4.0)
 
     def test_get_closest(self):
         """ Test get_closest function finding value in an array nearest to the input values"""
@@ -393,11 +393,11 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertAlmostEqual(new_intensity.shape, (2,9))
         self.assertAlmostEqual(new_intensity[0,4], 4.0)
 
-    def test_cut_prob_set(self):
-        "Test cut_prob_set function"
+    def test_cextract_from_probhaz(self):
+        "Test extract_from_probhaz function"
         centroids_prob = np.array([3,4,5])
         events_match = np.array([1, 3])
-        intensity_centroid = cut_prob_set(INTENSITY_PROB, events_match, centroids_prob)
+        intensity_centroid = extract_from_probhaz(INTENSITY_PROB, events_match, centroids_prob)
         self.assertAlmostEqual(intensity_centroid.sum(), 16.0)
         self.assertAlmostEqual(intensity_centroid.shape, (2,3))
         self.assertAlmostEqual(intensity_centroid[1,1], 4.0)
