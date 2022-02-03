@@ -111,7 +111,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         # check individual known pixel values
         self.assertAlmostEqual(fraction[24, 10], 0.0)
         self.assertAlmostEqual(fraction[22, 11], 0.21)
-        self.assertAlmostEqual(fraction[22, 12], 0.93)
+        self.assertAlmostEqual(fraction[22, 12], 0.94)
         self.assertAlmostEqual(fraction[21, 14], 1.0)
 
 

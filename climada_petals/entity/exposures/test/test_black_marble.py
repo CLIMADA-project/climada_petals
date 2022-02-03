@@ -123,7 +123,7 @@ class TestProvinces(unittest.TestCase):
         self.assertEqual(cntry_admin1, {'CHE': []})
         self.assertIsInstance(countries, list)
 
-        countries = {'Switzerland': ['ZÃ¼rich']}
+        countries = {'Switzerland': ['Zürich']}
         _, cntry_admin1 = country_iso_geom(countries, SHP_FILE)
         self.assertEqual(len(cntry_admin1['CHE']), 1)
         self.assertIsInstance(cntry_admin1['CHE'][0], shapely.geometry.polygon.Polygon)

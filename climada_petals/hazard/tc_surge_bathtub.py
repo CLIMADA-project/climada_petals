@@ -175,7 +175,7 @@ def _fraction_on_land(centroids, topo_path):
 
     read_raster_buffer = 0.5 * max(np.abs(cen_trans[0]), np.abs(cen_trans[4]))
     bounds += read_raster_buffer * np.array([-1., -1., 1., 1.])
-    on_land, dem_trans = u_coord.read_raster_bounds(topo_path, bounds)
+    on_land, dem_trans = u_coord.read_raster_bounds(topo_path, bounds, resampling="bilinear")
     on_land = (on_land > 0).astype(np.float64)
 
     with rasterio.open(topo_path, 'r') as src:
