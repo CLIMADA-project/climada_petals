@@ -42,7 +42,7 @@ class TestSupplyChain(unittest.TestCase):
         tf = 'WIOTtest_Nov16_ROW'
         if not WIOD_DIRECTORY.joinpath(tf).is_file():
             client = Client()
-            dsf = client.get_dataset(name=tf).files[0]
+            dsf = client.get_dataset_info(name=tf).files[0]
             download_file(dsf.url, WIOD_DIRECTORY)
 
     """Testing the SupplyChain class."""
