@@ -45,7 +45,6 @@ class TestSupplyChain(unittest.TestCase):
         atl_prob_ds = client.get_dataset_info(name='atl_prob_no_name', status='test_dataset')
         _, [self.HAZ_TEST_MAT] = client.download_dataset(atl_prob_ds)
 
-
     """Testing the SupplyChain class."""
     def test_read_wiot(self):
         """Test reading of wiod table."""

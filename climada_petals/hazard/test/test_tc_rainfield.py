@@ -29,6 +29,7 @@ from climada import CONFIG
 from climada.hazard.tc_tracks import TCTracks
 from climada_petals.hazard.tc_rainfield import TCRain, rainfield_from_track
 from climada.hazard.centroids.centr import Centroids
+from climada.util.api_client import Client
 import climada.hazard.test as hazard_test
 
 
@@ -37,8 +38,16 @@ HAZ_TEST_MAT = DATA_DIR.joinpath('TCrain_brb_test.mat')
 TEST_TRACK = Path(hazard_test.__file__).parent.joinpath('data', 'trac_brb_test.csv')
 TEST_TRACK_SHORT = Path(hazard_test.__file__).parent.joinpath('data', 'trac_short_test.csv')
 
-centr_test_mat = Path(hazard_test.__file__).parent.joinpath('data', 'centr_brb_test.mat')
-CENTR_TEST_BRB = Centroids.from_mat(centr_test_mat)
+
+def getTestData():
+    client = Client()
+    centr_ds = client.get_dataset_info(name='centr_brb_test', status='test_dataset')
+    _, [centr_test_mat] = client.download_dataset(centr_ds)
+    return Centroids.from_mat(centr_test_mat)
+
+
+CENTR_TEST_BRB = getTestData()
+
 
 class TestReader(unittest.TestCase):
     """Test loading funcions from the TCRain class"""
