@@ -31,19 +31,20 @@ from climada_petals.engine.supplychain import SupplyChain, WIOD_DIRECTORY
 from climada.util.constants import EXP_DEMO_H5
 from climada.util.api_client import Client
 from climada.util.files_handler import download_file
-import climada.hazard.test as hazard_test
-
-
-HAZ_TEST_MAT = Path(hazard_test.__file__).parent.joinpath('data', 'atl_prob_no_name.mat')
 
 
 class TestSupplyChain(unittest.TestCase):
     def setUp(self) -> None:
+        client = Client()
+        
         tf = 'WIOTtest_Nov16_ROW'
         if not WIOD_DIRECTORY.joinpath(tf).is_file():
-            client = Client()
             dsf = client.get_dataset_info(name=tf, status='test_dataset').files[0]
             download_file(dsf.url, WIOD_DIRECTORY)
+
+        atl_prob_ds = client.get_dataset_info(name='atl_prob_no_name', status='test_dataset')
+        _, [self.HAZ_TEST_MAT] = client.download_dataset(atl_prob_ds)
+
 
     """Testing the SupplyChain class."""
     def test_read_wiot(self):
@@ -80,7 +81,7 @@ class TestSupplyChain(unittest.TestCase):
                         col_iso3=2, col_sectors=1)
 
         # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard.from_mat(HAZ_TEST_MAT)
+        hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
 
         # Read demo entity values
         # Set the entity default file to the demo one
@@ -191,7 +192,7 @@ class TestSupplyChain(unittest.TestCase):
                         col_iso3=2, col_sectors=1)
 
         # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard.from_mat(HAZ_TEST_MAT)
+        hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
 
         # Read demo entity values
         # Set the entity default file to the demo one
@@ -245,7 +246,7 @@ class TestSupplyChain(unittest.TestCase):
                         col_iso3=2, col_sectors=1)
 
         # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard.from_mat(HAZ_TEST_MAT)
+        hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
 
         # Read demo entity values
         # Set the entity default file to the demo one
