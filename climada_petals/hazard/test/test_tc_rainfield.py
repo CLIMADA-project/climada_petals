@@ -33,20 +33,14 @@ from climada.util.api_client import Client
 import climada.hazard.test as hazard_test
 
 
-DATA_DIR = CONFIG.hazard.test_data.dir()
-HAZ_TEST_MAT = DATA_DIR.joinpath('TCrain_brb_test.mat')
-TEST_TRACK = Path(hazard_test.__file__).parent.joinpath('data', 'trac_brb_test.csv')
-TEST_TRACK_SHORT = Path(hazard_test.__file__).parent.joinpath('data', 'trac_short_test.csv')
-
-
 def getTestData():
     client = Client()
-    centr_ds = client.get_dataset_info(name='centr_brb_test', status='test_dataset')
-    _, [centr_test_mat] = client.download_dataset(centr_ds)
-    return Centroids.from_mat(centr_test_mat)
+    centr_ds = client.get_dataset_info(name='test_tc_rainfield', status='test_dataset')
+    _, [centr_test_mat, track, track_short, haz_mat] = client.download_dataset(centr_ds)
+    return Centroids.from_mat(centr_test_mat), track, track_short, haz_mat
 
 
-CENTR_TEST_BRB = getTestData()
+CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_MAT = getTestData()
 
 
 class TestReader(unittest.TestCase):
