@@ -38,7 +38,6 @@ class ImpfWildfire(ImpactFunc):
 
     @classmethod
     def from_default_FIRMS(cls, i_half=295.01, impf_id=1):
-
         """ This function sets the impact curve to a sigmoid type shape, as
         common in impact modelling. We adapted the function as proposed by
         Emanuel et al. (2011) which hinges on two parameters (intercept (i_thresh)
