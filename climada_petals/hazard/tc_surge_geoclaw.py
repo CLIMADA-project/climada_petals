@@ -766,7 +766,9 @@ include $(CLAW)/clawutil/src/Makefile.common
             topo.write(tt3_fname)
             topodata.topofiles.append([3, tt3_fname])
             dems_for_plot.append((bounds, topo.Z))
-        plot_dems(dems_for_plot, track=self.track, centroids=self.centroids,
+        plot_dems(dems_for_plot, track=self.track,
+                  # for debugging purposes, also plot the centroids as scatter:
+                  # centroids=self.centroids,
                   path=self.work_dir.joinpath("dems.pdf"))
 
 
@@ -1455,7 +1457,7 @@ class TCSurgeEvents():
             self.centroid_mask.append(centroids_mask)
 
 
-    def plot_areas(self, path=None):
+    def plot_areas(self, path=None, pad_deg=5.5):
         """Plot areas associated with this track's landfall events
 
         Parameters
@@ -1463,10 +1465,10 @@ class TCSurgeEvents():
         path : Path or str, optional
             If given, save the plots to the given location. Default: None
         """
-        total_bounds = (min(self.centroids[:, 1].min(), self.track.lon.min()) - 0.1,
-                        min(self.centroids[:, 0].min(), self.track.lat.min()) - 0.1,
-                        max(self.centroids[:, 1].max(), self.track.lon.max()) + 0.1,
-                        max(self.centroids[:, 0].max(), self.track.lat.max()) + 0.1)
+        total_bounds = (min(self.centroids[:, 1].min(), self.track.lon.min()) - pad_deg,
+                        min(self.centroids[:, 0].min(), self.track.lat.min()) - pad_deg,
+                        max(self.centroids[:, 1].max(), self.track.lon.max()) + pad_deg,
+                        max(self.centroids[:, 0].max(), self.track.lat.max()) + pad_deg)
         mid_lon = 0.5 * float(total_bounds[0] + total_bounds[2])
         proj_data = ccrs.PlateCarree()
         aspect_ratio = 1.124 * ((total_bounds[2] - total_bounds[0])
