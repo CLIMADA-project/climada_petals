@@ -8,7 +8,7 @@ climada\_petals\.entity\.impact\_funcs\.drought module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.entity\.impact\_funcs\.relative\_cropyield module
 ------------------------------------------------------------------
 
@@ -16,7 +16,7 @@ climada\_petals\.entity\.impact\_funcs\.relative\_cropyield module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.entity\.impact\_funcs\.river\_flood module
 -----------------------------------------------------------
 
@@ -24,7 +24,7 @@ climada\_petals\.entity\.impact\_funcs\.river\_flood module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.entity\.impact\_funcs\.wildfire module
 -------------------------------------------------------
 
@@ -32,4 +32,4 @@ climada\_petals\.entity\.impact\_funcs\.wildfire module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
