@@ -18,6 +18,7 @@ Tutorials
    tutorial/climada_hazard_entity_Crop
    tutorial/climada_hazard_Landslide
    tutorial/climada_hazard_RiverFlood
+   tutorial/climada_hazard_TCForecast
    tutorial/climada_hazard_TCSurgeBathtub
    tutorial/climada_hazard_Wildfire
 

@@ -87,12 +87,12 @@ class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
     obtained from numerical weather prediction runs.
 
-    Attributes:
-        data (list(xarray.Dataset)): Same as in parent class, adding the
-            following attributes
-                - ensemble_member (int)
-                - is_ensemble (bool; if False, the simulation is a high resolution
-                               deterministic run)
+    Attributes
+    ----------
+    data : list of xarray.Dataset
+        Same as in parent class, adding the following attributes
+        - ensemble_member (int)
+        - is_ensemble (bool; if False, the simulation is a high resolution deterministic run
     """
 
     def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None):

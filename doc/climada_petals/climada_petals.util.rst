@@ -8,7 +8,7 @@ climada\_petals\.util\.config module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.util\.constants module
 ---------------------------------------
 
@@ -16,4 +16,4 @@ climada\_petals\.util\.constants module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+

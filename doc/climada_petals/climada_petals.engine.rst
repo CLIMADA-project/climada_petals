@@ -8,4 +8,4 @@ climada\_petals\.engine\.supplychain module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
