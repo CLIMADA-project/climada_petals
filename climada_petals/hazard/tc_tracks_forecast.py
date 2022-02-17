@@ -385,7 +385,7 @@ class TCForecast(TCTracks):
             super().write_hdf5(file_name=file_name, complevel=complevel)
         finally:
             # ensure to undo the temporal change of dtype from above
-            for i, track in enumerate(self.data):
+            for track in self.data:
                 track.attrs['is_ensemble'] = bool(track.attrs['is_ensemble'])
                 track.attrs['forecast_time'] = np.datetime64(
                     track.attrs['forecast_time']
