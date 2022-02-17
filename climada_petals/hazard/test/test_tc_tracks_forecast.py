@@ -78,6 +78,27 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].environmental_pressure.size, 13)
         self.assertEqual(forecast.data[1].time_step[2], 1.)
 
+    def test_hdf5_io(self):
+        """Test writting and reading hdf5 TCTracks instances"""
+        tc_track = TCForecast()
+        tc_track.fetch_ecmwf(files=TEST_BUFR_FILES)
+        path = DATA_DIR.joinpath("tc_tracks_forecast.h5")
+        tc_track.write_hdf5(path)
+        tc_read = TCForecast.from_hdf5(path)
+        path.unlink()
+
+        self.assertEqual(len(tc_track.data), len(tc_read.data))
+        for tr, tr_read in zip(tc_track.data, tc_read.data):
+            self.assertEqual(set(tr.attrs.keys()), set(tr_read.attrs.keys()))
+            self.assertEqual(set(tr.variables), set(tr_read.variables))
+            self.assertEqual(set(tr.coords), set(tr_read.coords))
+            for key in tr.attrs.keys():
+                self.assertEqual(tr.attrs[key], tr_read.attrs[key])
+            for v in tr.variables:
+                self.assertEqual(tr[v].dtype, tr_read[v].dtype)
+                np.testing.assert_array_equal(tr[v].values, tr_read[v].values)
+            self.assertEqual(tr.sid, tr_read.sid)
+
 # Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestECMWF)
