@@ -92,7 +92,11 @@ class TCForecast(TCTracks):
     data : list of xarray.Dataset
         Same as in parent class, adding the following attributes
         - ensemble_member (int)
-        - is_ensemble (bool; if False, the simulation is a high resolution deterministic run
+        - is_ensemble (bool; if False, the simulation is a high resolution
+                       deterministic run)
+        - forecast_time (numpy.datetime64): timepoint of the initialisation of
+            the numerical weather prediction run
+
     """
 
     def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None):
