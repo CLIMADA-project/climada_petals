@@ -378,7 +378,7 @@ class TCForecast(TCTracks):
             A value of 0 or None disables compression. Default: 5
         """
         # change dtype from bool to int to be NetCDF4-compliant, this is undone later
-        for i, track in enumerate(self.data):
+        for track in self.data:
             track.attrs['is_ensemble'] = int(track.attrs['is_ensemble'])
             track.attrs['forecast_time'] = str(track.attrs['forecast_time'])
         try:
@@ -407,7 +407,7 @@ class TCForecast(TCTracks):
         temp = super().from_hdf5(file_name = file_name)
         tracks = TCForecast()
         tracks.data = temp.data
-        for i, track in enumerate(tracks.data):
+        for track in tracks.data:
             track.attrs['is_ensemble'] = bool(track.attrs['is_ensemble'])
             track.attrs['forecast_time'] = np.datetime64(
                 track.attrs['forecast_time']
