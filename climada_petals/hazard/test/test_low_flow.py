@@ -31,7 +31,7 @@ from climada_petals.hazard.low_flow import LowFlow, unique_clusters, \
 
 client = Client()
 FN_STR_DEMO = 'co2_dis_global_daily_DEMO_FR'
-INPUT_DIR, _ = client.download_dataset(client.get_dataset(name='ISIMIP_low_flow_historical'))
+INPUT_DIR, _ = client.download_dataset(client.get_dataset_info(name='ISIMIP_low_flow_historical', status='test_dataset'))
 
 
 def init_test_data_unique_clusters():
