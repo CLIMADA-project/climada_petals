@@ -87,12 +87,12 @@ class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
     obtained from numerical weather prediction runs.
 
-    Attributes:
-        data (list(xarray.Dataset)): Same as in parent class, adding the
-            following attributes
-                - ensemble_member (int)
-                - is_ensemble (bool; if False, the simulation is a high resolution
-                               deterministic run)
+    Attributes
+    ----------
+    data : list of xarray.Dataset
+        Same as in parent class, adding the following attributes
+        - ensemble_member (int)
+        - is_ensemble (bool; if False, the simulation is a high resolution deterministic run
     """
 
     def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None):
@@ -100,6 +100,10 @@ class TCForecast(TCTracks):
         Fetch and read latest ECMWF TC track predictions from the FTP
         dissemination server into instance. Use path or files argument
         to use local files instead.
+
+        Assumes file naming conventions consistent with ECMWF: all files
+        are assumed to have 'tropical_cyclone' and 'ECEP' in their name,
+        denoting tropical cyclone ensemble forecast files.
 
         Parameters
         ----------
@@ -179,7 +183,10 @@ class TCForecast(TCTracks):
             con.cwd(remote_dir)
 
             # Filter to files with 'tropical_cyclone' in the name: each file is a forecast ensemble for one event
-            remotefiles = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
+            remotefiles_temp = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
+            # Filter to forecast ensemble files only
+            remotefiles = fnmatch.filter(remotefiles_temp, '*ECEP*')
+
             if len(remotefiles) == 0:
                 msg = 'No tracks found at ftp://{}/{}'
                 msg.format(ECMWF_FTP, remote_dir)

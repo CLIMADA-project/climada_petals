@@ -8,4 +8,4 @@ climada\_petals\.entity\.exposures\.openstreetmap\.osm\_dataloader module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
