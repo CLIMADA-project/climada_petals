@@ -12,7 +12,7 @@ climada\_petals\.hazard\.drought module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.landslide module
 -----------------------------------------
 
@@ -20,7 +20,7 @@ climada\_petals\.hazard\.landslide module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.low\_flow module
 -----------------------------------------
 
@@ -28,7 +28,7 @@ climada\_petals\.hazard\.low\_flow module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.relative\_cropyield module
 ---------------------------------------------------
 
@@ -36,7 +36,7 @@ climada\_petals\.hazard\.relative\_cropyield module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.river\_flood module
 --------------------------------------------
 
@@ -44,7 +44,7 @@ climada\_petals\.hazard\.river\_flood module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.tc\_rainfield module
 ---------------------------------------------
 
@@ -52,7 +52,7 @@ climada\_petals\.hazard\.tc\_rainfield module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.tc\_surge\_bathtub module
 --------------------------------------------------
 
@@ -60,7 +60,7 @@ climada\_petals\.hazard\.tc\_surge\_bathtub module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.tc\_tracks\_forecast module
 ----------------------------------------------------
 
@@ -68,7 +68,7 @@ climada\_petals\.hazard\.tc\_tracks\_forecast module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.wildfire module
 ----------------------------------------
 
@@ -76,4 +76,4 @@ climada\_petals\.hazard\.wildfire module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+

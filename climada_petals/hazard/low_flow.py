@@ -152,7 +152,7 @@ class LowFlow(Hazard):
                     yearchunks='default', mask_threshold=('mean', 1)):
         """Wrapper to fill hazard from NetCDF file containing variable dis (daily),
         e.g. as provided from from ISIMIP Water Sectior (Global):
-            https://esg.pik-potsdam.de/search/isimip/
+        https://esg.pik-potsdam.de/search/isimip/
 
         Parameters
         ----------

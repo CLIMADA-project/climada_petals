@@ -38,18 +38,18 @@ class ImpfWildfire(ImpactFunc):
 
     @classmethod
     def from_default_FIRMS(cls, i_half=295.01, impf_id=1):
-
         """ This function sets the impact curve to a sigmoid type shape, as
         common in impact modelling. We adapted the function as proposed by
         Emanuel et al. (2011) which hinges on two parameters (intercept (i_thresh)
         and steepness (i_half) of the sigmoid).
 
         .. math::
-            f = \frac{i_{n}^{3}}{1+i_{n}^{3}}
+            f = \\frac{i^{3}}{1+i^{3}}
+
         with
 
         .. math::
-            i_n = \frac{MAX[(I_{lat, lon}-I_{thresh}), 0]}{I_{half}-I_{thresh}}
+            i = \\frac{MAX[(i_{lat, lon}-i_{thresh}), 0]}{i_{half}-i_{thresh}}
 
         The intercept is defined at the minimum intensity of a FIRMS value
         (295K) which leaves the steepness (i_half) the only parameter that
