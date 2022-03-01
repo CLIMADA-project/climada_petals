@@ -96,9 +96,7 @@ class TestOSMFileQuery(unittest.TestCase):
         
     def test_retrieve(self):
         OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
-        constraint_dict = {'osm_keys' : ['highway'],
-                           'osm_query' : """highway"""}
-        gdf = OSM_FQ.retrieve('lines', constraint_dict)
+        gdf = OSM_FQ.retrieve('lines', ['highway'], 'highway')
         
         self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'geometry'])
         
@@ -106,7 +104,7 @@ class TestOSMFileQuery(unittest.TestCase):
     def test_retrieve_cis(self):
         OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
         gdf = OSM_FQ.retrieve_cis('road')
-        self.assertTrue(len(gdf)==22)
+        self.assertEqual(len(gdf),191)
         self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'man_made', 'public_transport', 'bus', 'name',
        'geometry'])
 

@@ -8,7 +8,7 @@ climada\_petals\.hazard\.emulator\.const module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.emulator\.emulator module
 --------------------------------------------------
 
@@ -16,7 +16,7 @@ climada\_petals\.hazard\.emulator\.emulator module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.emulator\.geo module
 ---------------------------------------------
 
@@ -24,7 +24,7 @@ climada\_petals\.hazard\.emulator\.geo module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.emulator\.random module
 ------------------------------------------------
 
@@ -32,7 +32,7 @@ climada\_petals\.hazard\.emulator\.random module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.hazard\.emulator\.stats module
 -----------------------------------------------
 
@@ -40,4 +40,4 @@ climada\_petals\.hazard\.emulator\.stats module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+

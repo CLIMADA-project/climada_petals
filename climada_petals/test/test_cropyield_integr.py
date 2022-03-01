@@ -25,9 +25,9 @@ from climada.engine import Impact
 from climada.entity import ImpactFuncSet
 from climada.util.constants import DEMO_DIR as INPUT_DIR
 from climada_petals.entity import ImpfRelativeCropyield
-from climada_petals.entity.exposures.crop_production import CropProduction
+from climada_petals.entity.exposures.crop_production import CropProduction, value_to_usd
 from climada_petals.hazard.relative_cropyield import (RelativeCropyield, init_hazard_sets_isimip,
-                                                      calc_his_haz_isimip)
+                                                      calc_his_haz_isimip, rel_yield_to_int)
 
 FN_STR_DEMO = 'annual_FR_DE_DEMO'
 FILENAME_LU = 'histsoc_landuse-15crops_annual_FR_DE_DEMO_2001_2005.nc'
@@ -39,77 +39,70 @@ class TestIntegr(unittest.TestCase):
     def test_EU(self):
         """test with demo data containing France and Germany"""
         bbox = [-5, 42, 16, 55]
-        haz = RelativeCropyield()
-        haz.set_from_isimip_netcdf(input_dir=INPUT_DIR, yearrange=(2001, 2005), bbox=bbox,
-                                   ag_model='lpjml', cl_model='ipsl-cm5a-lr', scenario='historical',
-                                   soc='2005soc', co2='co2', crop='whe', irr='noirr',
-                                   fn_str_var=FN_STR_DEMO)
+        haz = RelativeCropyield.from_isimip_netcdf(input_dir=INPUT_DIR, yearrange=(2001, 2005), bbox=bbox,
+                                                   ag_model='lpjml', cl_model='ipsl-cm5a-lr', scenario='historical',
+                                                   soc='2005soc', co2='co2', crop='whe', irr='noirr',
+                                                   fn_str_var=FN_STR_DEMO)
         hist_mean = haz.calc_mean(yearrange_mean=(2001, 2005))
-        haz.set_rel_yield_to_int(hist_mean)
-        haz.centroids.set_region_id()
+        haz_new = rel_yield_to_int(haz, hist_mean)
+        haz_new.centroids.set_region_id()
 
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
-                                   bbox=bbox, yearrange=(2001, 2005),
-                                   scenario='flexible', unit='t/y', crop='whe', irr='firr')
-        exp.set_value_to_usd(INPUT_DIR, yearrange=(2000, 2018))
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
+                                                bbox=bbox, yearrange=(2001, 2005), scenario='flexible', unit='t/y', 
+                                                crop='whe', irr='firr')
+        exp = value_to_usd(exp, INPUT_DIR, yearrange=(2000, 2018))
         exp.assign_centroids(haz, threshold=20)
 
         impf_cp = ImpactFuncSet()
-        impf_def = ImpfRelativeCropyield()
-        impf_def.set_relativeyield()
+        impf_def = ImpfRelativeCropyield.impf_relativeyield()
         impf_cp.append(impf_def)
         impf_cp.check()
 
         impact = Impact()
         reg_sel = exp.copy()
         reg_sel.gdf = reg_sel.gdf[reg_sel.gdf.region_id == 276]
-        impact.calc(reg_sel, impf_cp, haz.select(['2002']), save_mat=True)
+        impact.calc(reg_sel, impf_cp, haz_new.select(['2002']), save_mat=True)
 
         exp_manual = reg_sel.gdf.value
-        impact_manual = haz.select(event_names=['2002'], reg_id=276).intensity.multiply(exp_manual)
+        impact_manual = haz_new.select(event_names=['2002'], reg_id=276).intensity.multiply(exp_manual)
         dif = (impact_manual - impact.imp_mat).data
 
-        self.assertEqual(haz.tag.haz_type, 'RC')
-        self.assertEqual(haz.size, 5)
-        self.assertEqual(haz.centroids.size, 1092)
-        self.assertAlmostEqual(haz.intensity.mean(), -2.0489097e-08)
-        self.assertAlmostEqual(exp.gdf.value.max(), 53074789.755290434)
+        self.assertEqual(haz_new.tag.haz_type, 'RC')
+        self.assertEqual(haz_new.size, 5)
+        self.assertEqual(haz_new.centroids.size, 1092)
+        self.assertAlmostEqual(haz_new.intensity.mean(), -2.0489097e-08, places=0)
+        self.assertAlmostEqual(exp.gdf.value.max(), 52278210.72839116, places=0)
         self.assertEqual(exp.gdf.latitude.values.size, 1092)
         self.assertAlmostEqual(exp.gdf.value[3], 0.0)
-        self.assertAlmostEqual(exp.gdf.value[1077], 405026.6857207429)
-        self.assertAlmostEqual(impact.imp_mat.data[3], -176102.5359452465 )
+        self.assertAlmostEqual(exp.gdf.value[1077], 398947.79657832277, places=0)
+        self.assertAlmostEqual(impact.imp_mat.data[3], -178745.59091285995, places=0)
         self.assertEqual(len(dif), 0)
 
     def test_EU_nan(self):
         """Test whether setting the zeros in exp.value to NaN changes the impact"""
         bbox=[0, 42, 10, 52]
-        haz = RelativeCropyield()
-        haz.set_from_isimip_netcdf(input_dir=INPUT_DIR, yearrange=(2001, 2005), bbox=bbox,
-                                ag_model='lpjml', cl_model='ipsl-cm5a-lr', scenario='historical',
-                                soc='2005soc', co2='co2', crop='whe', irr='noirr',
-                                fn_str_var=FN_STR_DEMO)
+        haz = RelativeCropyield.from_isimip_netcdf(input_dir=INPUT_DIR, yearrange=(2001, 2005), bbox=bbox,
+                                                       ag_model='lpjml', cl_model='ipsl-cm5a-lr', scenario='historical',
+                                                       soc='2005soc', co2='co2', crop='whe', irr='noirr',
+                                                       fn_str_var=FN_STR_DEMO)
         hist_mean = haz.calc_mean(yearrange_mean=(2001, 2005))
         haz.set_rel_yield_to_int(hist_mean)
         haz.centroids.set_region_id()
 
-        exp = CropProduction()
-        exp.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
-                                              bbox=bbox, yearrange=(2001, 2005),
-                                              scenario='flexible', unit='t/y', crop='whe', irr='firr')
+        exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
+                                                bbox=bbox, yearrange=(2001, 2005),
+                                                scenario='flexible', unit='t/y', crop='whe', irr='firr')
         exp.assign_centroids(haz, threshold=20)
 
         impf_cp = ImpactFuncSet()
-        impf_def = ImpfRelativeCropyield()
-        impf_def.set_relativeyield()
+        impf_def = ImpfRelativeCropyield.impf_relativeyield()
         impf_cp.append(impf_def)
         impf_cp.check()
 
         impact = Impact()
         impact.calc(exp, impf_cp, haz, save_mat=True)
 
-        exp_nan = CropProduction()
-        exp_nan.set_from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
+        exp_nan = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
                                               bbox=[0, 42, 10, 52], yearrange=(2001, 2005),
                                               scenario='flexible', unit='t/y', crop='whe', irr='firr')
         exp_nan.gdf.value[exp_nan.gdf.value==0] = np.nan

@@ -1,6 +1,10 @@
 climada\_petals\.entity\.exposures package
 ==========================================
 
+.. toctree::
+
+    climada_petals.entity.exposures.openstreetmap
+
 climada\_petals\.entity\.exposures\.black\_marble module
 --------------------------------------------------------
 
@@ -8,7 +12,7 @@ climada\_petals\.entity\.exposures\.black\_marble module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.entity\.exposures\.crop\_production module
 -----------------------------------------------------------
 
@@ -16,7 +20,7 @@ climada\_petals\.entity\.exposures\.crop\_production module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+
 climada\_petals\.entity\.exposures\.gdp\_asset module
 -----------------------------------------------------
 
@@ -24,15 +28,7 @@ climada\_petals\.entity\.exposures\.gdp\_asset module
     :members:
     :undoc-members:
     :show-inheritance:
-    
-climada\_petals\.entity\.exposures\.open\_street\_map module
-------------------------------------------------------------
 
-.. automodule:: climada_petals.entity.exposures.open_street_map
-    :members:
-    :undoc-members:
-    :show-inheritance:
-    
 climada\_petals\.entity\.exposures\.spam\_agrar module
 ------------------------------------------------------
 
@@ -40,4 +36,4 @@ climada\_petals\.entity\.exposures\.spam\_agrar module
     :members:
     :undoc-members:
     :show-inheritance:
-    
+

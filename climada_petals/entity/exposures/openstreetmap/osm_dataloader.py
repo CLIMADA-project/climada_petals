@@ -18,33 +18,28 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Define functions to download openstreetmap data
 """
-import geopandas as gpd
 import itertools
 import logging
+from pathlib import Path
+import subprocess
+import time
+import urllib.request
+
+import geopandas as gpd
 import numpy as np
 from osgeo import ogr, gdal
 import overpy
-from pathlib import Path
 import shapely
-import subprocess
-import time
 from tqdm import tqdm
-import urllib.request
-
 
 from climada import CONFIG
 from climada_petals.util.constants import DICT_GEOFABRIK, DICT_CIS_OSM
 
+
 LOGGER = logging.getLogger(__name__)
 DATA_DIR = CONFIG.exposures.openstreetmap.local_data.dir()
-OSM_CONFIG_FILE = CONFIG.exposures.openstreetmap.osm_confdir.dir(
-    ).joinpath('osmconf.ini')
-
+OSM_CONFIG_FILE = Path(__file__).parent.joinpath('osmconf.ini')
 gdal.SetConfigOption("OSM_CONFIG_FILE", str(OSM_CONFIG_FILE))
-
-# =============================================================================
-# Define constants
-# =============================================================================
 
 
 class OSMRaw:
@@ -153,7 +148,7 @@ class OSMRaw:
         shape, from the osm planet file, unless file already exists.
 
         If your device doesn't have osmosis yet, see installation instructions:
-         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
+        https://wiki.openstreetmap.org/wiki/Osmosis/Installation
 
         Parameters
         -----------
@@ -218,7 +213,6 @@ class OSMRaw:
             indicated, if doesn`t yet exist.
             Default is DATA_DIR/planet-latest.osm.pbf
 
-
         Note
         ----
         For more info on what .poly files are (incl. several tools for
@@ -261,7 +255,7 @@ class OSMRaw:
             file path (incl. name & ending) under which extract will be stored
         path_parentfile : str or pathlib.Path
             file path to parentfile.osm.pbf from which the shape will be cut out
-         overwrite : bool
+        overwrite : bool
             default is False. Whether to overwrite files if they already exist.
 
         Note
@@ -285,7 +279,14 @@ class OSMFileQuery:
         ----------
         osm_path : str or pathlib.Path
             file path to the .osm.pbf file to extract info from.
+
+        Raises
+        ------
+        ValueError
+            if the given path is not a file
         """
+        if not Path(osm_path).is_file():
+            raise ValueError(f"the given path is not a file: {osm_path}")
         self.osm_path = str(osm_path)
 
     def _query_builder(self, geo_type, constraint_dict):
@@ -315,7 +316,7 @@ class OSMFileQuery:
 
         return query
 
-    def retrieve(self, geo_type, constraint_dict):
+    def retrieve(self, geo_type, osm_keys, osm_query):
         """
         Function to extract geometries and tag info for entires in the OSM file
         matching certain OSM key-value constraints.
@@ -323,16 +324,15 @@ class OSMFileQuery:
         adapted from BenDickens/trails repo
         (https://github.com/BenDickens/trails.git, see extract.py)
 
-
         Parameters
         ----------
         geo_type : str
             Type of geometry to retrieve. One of [points, lines, multipolygons]
-        constraint_dict :  dict
-            A dict with the keys "osm_keys" and "osm_query". osm_keys contains
+        osm_keys : list
             a list with all the osm keys that should be reported as columns in
             the output gdf.
-            osm_query contains an osm query string of the syntax
+        osm_query : str
+            query string of the syntax
             "key(='value') (and/or further queries)".
             See examples in DICT_CIS_OSM in case of doubt.
 
@@ -352,7 +352,7 @@ class OSMFileQuery:
         the [multipolygons] section of the file. You can find it in the same
         folder as the osm_dataloader.py module is located.
         2) OSM keys that have : in their name must be changed to _ in the
-                search dict, but not in the osmconf.ini
+        search dict, but not in the osmconf.ini
         E.g. tower:type is called tower_type, since it would interfere with the
         SQL syntax otherwise, but still tower:type in the osmconf.ini
 
@@ -364,9 +364,14 @@ class OSMFileQuery:
         and to quickly check the validity. The wizard can help you find the
         correct keys / values you are looking for.
         """
+        constraint_dict = {
+            'osm_keys' : osm_keys,
+            'osm_query' : osm_query}
+        
         driver = ogr.GetDriverByName('OSM')
         data = driver.Open(self.osm_path)
         query = self._query_builder(geo_type, constraint_dict)
+        LOGGER.debug("query: %s", query)
         sql_lyr = data.ExecuteSQL(query)
         features = []
         if data is not None:
@@ -375,12 +380,14 @@ class OSMFileQuery:
                 try:
                     fields = [feature.GetField(key) for key in
                               ['osm_id', *constraint_dict['osm_keys']]]
-                    geom = shapely.wkb.loads(feature.geometry().ExportToWkb())
+                    wkb = feature.geometry().ExportToWkb()
+                    geom = shapely.wkb.loads(bytes(wkb))
                     if geom is None:
                         continue
                     fields.append(geom)
                     features.append(fields)
-                except:
+                except Exception as exc:
+                    LOGGER.info('%s - %s', exc.__class__, exc)
                     LOGGER.warning("skipped OSM feature")
         else:
             LOGGER.error("""Nonetype error when requesting SQL. Check the
@@ -410,22 +417,28 @@ class OSMFileQuery:
         """
         # features consisting in points and multipolygon results:
         if ci_type in ['healthcare','education','food']:
-            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type])
+            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(
-                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]))
+                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
+                              DICT_CIS_OSM[ci_type]['osm_query']))
 
         # features consisting in multipolygon results:
         elif ci_type in ['air']:
-            gdf = self.retrieve('multipolygons', DICT_CIS_OSM[ci_type])
+            gdf = self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query'])
 
         # features consisting in points, multipolygons and lines:
         elif ci_type in ['gas','oil','telecom','water','wastewater','power',
                          'rail','road']:
-            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type])
+            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(
-                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]))
+                self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query']))
             gdf = gdf.append(
-                self.retrieve('lines', DICT_CIS_OSM[ci_type]))
+                self.retrieve('lines', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query']))
         else:
             LOGGER.warning('feature not in DICT_CIS_OSM. Returning empty gdf')
             gdf = gpd.GeoDataFrame()
@@ -570,9 +583,8 @@ class OSMApiQuery:
             if multipoly.area == 0:
                 LOGGER.info('Empty geometry encountered.')
 
-        gdf_rels = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+        gdf_rels =  gpd.GeoDataFrame(
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         # list of lists into list:
         nodes_taken = list(itertools.chain.from_iterable(nodes_taken))
@@ -628,8 +640,7 @@ class OSMApiQuery:
                              else way for way in data_geom]
 
         gdf_ways = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         return nodes_taken, gdf_ways
 
@@ -662,8 +673,7 @@ class OSMApiQuery:
                 data_tags.append(node.tags)
 
         gdf_nodes = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         return gdf_nodes
 

@@ -54,10 +54,23 @@ class TCRain(Hazard):
         else:
             self.pool = None
 
-    def set_from_tracks(self, tracks, centroids=None, dist_degree=3,
-                        description=''):
+    def set_from_tracks(self, *args, **kwargs):
+        """This function is deprecated, use TCRain.from_tracks instead."""
+        LOGGER.warning("The use of TCRain.set_from_tracks is deprecated."
+                       "Use TCRain.from_tracks instead.")
+        if "intensity_thres" not in kwargs:
+            # some users modify the threshold attribute before calling `set_from_tracks`
+            kwargs["intensity_thres"] = self.intensity_thres
+        if self.pool is not None and 'pool' not in kwargs:
+            kwargs['pool'] = self.pool
+        self.__dict__ = TCRain.from_tracks(*args, **kwargs).__dict__
+
+    @classmethod
+    def from_tracks(cls, tracks, centroids=None, dist_degree=3, description='', pool=None,
+                    intensity_thres=None):
         """Computes rainfield from tracks based on the RCLIPER model.
         Parallel process.
+
         Parameters
         ----------
         tracks : TCTracks
@@ -70,7 +83,17 @@ class TCRain(Hazard):
             the rainfield is processed (default 3 deg,~300km)
         description : str, optional
             description of the events
+        pool : pathos.pool, optional
+            Pool that will be used for parallel computation of wind fields. Default: None
+        intensity_thres : float, optional
+            Wind speeds (in mm) below this threshold are stored as 0. Default: .1
+
+        Returns
+        -------
+        haz : TCRain
+            New TCRain object with data from tracks.
         """
+        intensity_thres = cls.intensity_thres if intensity_thres is None else intensity_thres
         num_tracks = tracks.size
         if centroids is None:
             centroids = Centroids.from_base_grid(res_as=360, land=True)
@@ -80,27 +103,29 @@ class TCRain(Hazard):
 
         LOGGER.info('Mapping %s tracks to %s centroids.', str(tracks.size),
                     str(centroids.size))
-        if self.pool:
-            chunksize = min(num_tracks // self.pool.ncpus, 1000)
-            tc_haz = self.pool.map(self._set_from_track, tracks.data,
-                                   itertools.repeat(centroids, num_tracks),
-                                   itertools.repeat(dist_degree, num_tracks),
-                                   itertools.repeat(self.intensity_thres, num_tracks),
-                                   chunksize=chunksize)
+        if pool:
+            chunksize = min(num_tracks // pool.ncpus, 1000)
+            tc_haz = pool.map(cls._from_track, tracks.data,
+                              itertools.repeat(centroids, num_tracks),
+                              itertools.repeat(dist_degree, num_tracks),
+                              itertools.repeat(intensity_thres, num_tracks),
+                              chunksize=chunksize)
         else:
-            tc_haz = [self._set_from_track(track, centroids, dist_degree=dist_degree,
-                                           intensity=self.intensity_thres)
+            tc_haz = [cls._from_track(track, centroids, dist_degree=dist_degree,
+                                      intensity_thres=intensity_thres)
                       for track in tracks.data]
         LOGGER.debug('Append events.')
-        self.__dict__ = TCRain.concat([self] + tc_haz).__dict__
+        haz = cls.concat(tc_haz)
         LOGGER.debug('Compute frequency.')
-        TropCyclone.frequency_from_tracks(self, tracks.data)
-        self.tag.description = description
+        TropCyclone.frequency_from_tracks(haz, tracks.data)
+        haz.tag.description = description
+        return haz
 
     @staticmethod
     @numba.jit(forceobj=True)
-    def _set_from_track(track, centroids, dist_degree=3, intensity=0.1):
+    def _from_track(track, centroids, dist_degree=3, intensity_thres=0.1):
         """Set hazard from track and centroids.
+
         Parameters
         ----------
         track : xr.Dataset
@@ -110,18 +135,17 @@ class TCRain(Hazard):
         disr_degree : int
             distance (in degrees) from node within which
             the rainfield is processed (default 3 deg,~300km)
-        intensity : int
-            min intensity threshold below which values are not
-            considered
+        intensity_thres : float
+            min intensity threshold below which values are not considered
 
         Returns
         -------
-        TCRain
+        haz : TCRain
+            New TCRain object with data from track.
         """
         new_haz = TCRain()
         new_haz.tag = TagHazard(HAZ_TYPE, 'IBTrACS: ' + track.name)
-        new_haz.intensity = rainfield_from_track(track, centroids,
-                                                 dist_degree, intensity)
+        new_haz.intensity = rainfield_from_track(track, centroids, dist_degree, intensity_thres)
         new_haz.units = 'mm'
         new_haz.centroids = centroids
         new_haz.event_id = np.array([1])
