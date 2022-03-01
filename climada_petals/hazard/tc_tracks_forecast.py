@@ -94,7 +94,7 @@ class TCForecast(TCTracks):
         - ensemble_member (int)
         - is_ensemble (bool; if False, the simulation is a high resolution
                        deterministic run)
-        - forecast_time (numpy.datetime64): timepoint of the initialisation of
+        - run_datetime (numpy.datetime64): timepoint of the initialisation of
             the numerical weather prediction run
 
     """
@@ -380,15 +380,15 @@ class TCForecast(TCTracks):
         # change dtype from bool to int to be NetCDF4-compliant, this is undone later
         for track in self.data:
             track.attrs['is_ensemble'] = int(track.attrs['is_ensemble'])
-            track.attrs['forecast_time'] = str(track.attrs['forecast_time'])
+            track.attrs['run_datetime'] = str(track.attrs['run_datetime'])
         try:
             super().write_hdf5(file_name=file_name, complevel=complevel)
         finally:
             # ensure to undo the temporal change of dtype from above
             for track in self.data:
                 track.attrs['is_ensemble'] = bool(track.attrs['is_ensemble'])
-                track.attrs['forecast_time'] = np.datetime64(
-                    track.attrs['forecast_time']
+                track.attrs['run_datetime'] = np.datetime64(
+                    track.attrs['run_datetime']
                     )
 
 
@@ -409,8 +409,8 @@ class TCForecast(TCTracks):
         tracks.data = temp.data
         for track in tracks.data:
             track.attrs['is_ensemble'] = bool(track.attrs['is_ensemble'])
-            track.attrs['forecast_time'] = np.datetime64(
-                track.attrs['forecast_time']
+            track.attrs['run_datetime'] = np.datetime64(
+                track.attrs['run_datetime']
                 )
         return tracks
 
@@ -468,7 +468,7 @@ class TCForecast(TCTracks):
                     'id_no': (int(id_no) + index / 100),
                     'ensemble_number': msg['ens_number'][index],
                     'is_ensemble': ens_bool,
-                    'forecast_time': timestamp_origin,
+                    'run_datetime': timestamp_origin,
                 }
             )
         except ValueError as err:
