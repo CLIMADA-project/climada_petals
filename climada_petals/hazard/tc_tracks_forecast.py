@@ -452,11 +452,11 @@ class TCForecast(TCTracks):
                     'max_sustained_wind': ('time', np.squeeze(wnd)),
                     'central_pressure': ('time', np.squeeze(pre)/100),
                     'ts_int': ('time', timestep_int),
-                    'lat': ('time', lat),
-                    'lon': ('time', lon),
                 },
                 coords={
                     'time': timestamp,
+                    'lat': ('time', lat),
+                    'lon': ('time', lon),
                 },
                 attrs={
                     'max_sustained_wind_unit': 'm/s',
