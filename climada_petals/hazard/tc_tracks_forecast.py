@@ -92,7 +92,11 @@ class TCForecast(TCTracks):
     data : list of xarray.Dataset
         Same as in parent class, adding the following attributes
         - ensemble_member (int)
-        - is_ensemble (bool; if False, the simulation is a high resolution deterministic run
+        - is_ensemble (bool; if False, the simulation is a high resolution
+                       deterministic run)
+        - run_datetime (numpy.datetime64): timepoint of the initialisation of
+            the numerical weather prediction run
+
     """
 
     def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None):
@@ -362,6 +366,53 @@ class TCForecast(TCTracks):
             else:
                 LOGGER.debug('Dropping empty track %s, subset %d', name, i)
 
+    def write_hdf5(self, file_name, complevel=5):
+        """Write TC tracks in NetCDF4-compliant HDF5 format. This method
+        overrides the method of the base class.
+        Parameters
+        ----------
+        file_name: str or Path
+            Path to a new HDF5 file. If it exists already, the file is overwritten.
+        complevel : int
+            Specifies a compression level (0-9) for the zlib compression of the data.
+            A value of 0 or None disables compression. Default: 5
+        """
+        # change dtype from bool to int to be NetCDF4-compliant, this is undone later
+        for track in self.data:
+            track.attrs['is_ensemble'] = int(track.attrs['is_ensemble'])
+            track.attrs['run_datetime'] = str(track.attrs['run_datetime'])
+        try:
+            super().write_hdf5(file_name=file_name, complevel=complevel)
+        finally:
+            # ensure to undo the temporal change of dtype from above
+            for track in self.data:
+                track.attrs['is_ensemble'] = bool(track.attrs['is_ensemble'])
+                track.attrs['run_datetime'] = np.datetime64(
+                    track.attrs['run_datetime']
+                    )
+
+
+    @classmethod
+    def from_hdf5(cls, file_name):
+        """Create new TCTracks object from a NetCDF4-compliant HDF5 file
+        Parameters. This method overrides the method of the base class.
+        ----------
+        file_name : str or Path
+            Path to a file that has been generated with `TCForecast.write_hdf`.
+        Returns
+        -------
+        tracks : TCForecast
+            TCTracks with data from the given HDF5 file.
+        """
+        temp = super().from_hdf5(file_name = file_name)
+        tracks = TCForecast()
+        tracks.data = temp.data
+        for track in tracks.data:
+            track.attrs['is_ensemble'] = bool(track.attrs['is_ensemble'])
+            track.attrs['run_datetime'] = np.datetime64(
+                track.attrs['run_datetime']
+                )
+        return tracks
 
     @staticmethod
     def get_value_from_bufr_array(var):
@@ -401,11 +452,11 @@ class TCForecast(TCTracks):
                     'max_sustained_wind': ('time', np.squeeze(wnd)),
                     'central_pressure': ('time', np.squeeze(pre)/100),
                     'ts_int': ('time', timestep_int),
-                    'lat': ('time', lat),
-                    'lon': ('time', lon),
                 },
                 coords={
                     'time': timestamp,
+                    'lat': ('time', lat),
+                    'lon': ('time', lon),
                 },
                 attrs={
                     'max_sustained_wind_unit': 'm/s',
@@ -417,7 +468,7 @@ class TCForecast(TCTracks):
                     'id_no': (int(id_no) + index / 100),
                     'ensemble_number': msg['ens_number'][index],
                     'is_ensemble': ens_bool,
-                    'forecast_time': timestamp_origin,
+                    'run_datetime': timestamp_origin,
                 }
             )
         except ValueError as err:
@@ -447,7 +498,7 @@ class TCForecast(TCTracks):
         )
 
         # according to specs always num-num-letter
-        track['basin'] = ('time', np.full_like(track.time, BASINS[sid[2]], dtype=object))
+        track['basin'] = ('time', np.full_like(track.time, sid[2], dtype='<U2'))
 
         if sid[2] == 'X':
             LOGGER.info(
