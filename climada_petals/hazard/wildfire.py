@@ -2018,7 +2018,7 @@ def calc_burnt_area(area_fraction, latitudes):
         burnt area per centroid and event [km2]
     """
 
-    grid_area = u_coord.get_gridcellarea(latitudes)
+    grid_area = u_coord.get_gridcellarea(latitudes)/100
     burnt_area = area_fraction.multiply(grid_area).tocsr()
 
     return burnt_area
