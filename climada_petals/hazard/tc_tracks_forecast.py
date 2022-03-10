@@ -29,7 +29,6 @@ import ftplib
 import logging
 import tempfile
 from pathlib import Path
-import collections
 
 # additional libraries
 import numpy as np
@@ -83,6 +82,7 @@ MISSING_DOUBLE = ec.CODES_MISSING_DOUBLE
 MISSING_LONG = ec.CODES_MISSING_LONG
 """Missing double and integers in ecCodes """
 
+
 class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
     obtained from numerical weather prediction runs.
@@ -131,7 +131,6 @@ class TCForecast(TCTracks):
         elif not isinstance(files, list):
             files = [files]
 
-
         for i, file in tqdm.tqdm(enumerate(files, 1), desc='Processing',
                                  unit=' files', total=len(files)):
             # Open the bufr file if not already
@@ -139,7 +138,7 @@ class TCForecast(TCTracks):
                 file = open(file, 'rb')
 
             if os.name == 'nt' and hasattr(file, 'file'):
-                file = file.file # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
+                file = file.file  # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
 
             self.read_one_bufr_tc(file, id_no=i)
 
@@ -325,7 +324,6 @@ class TCForecast(TCTracks):
                 pressure[ind_ens] = np.append(pressure[ind_ens], pre[ind_ens])
                 max_wind[ind_ens] = np.append(max_wind[ind_ens], wnd[ind_ens])
 
-
         # storing information into a dictionary
         msg = {
             # subset forecast data
@@ -362,7 +360,6 @@ class TCForecast(TCTracks):
             else:
                 LOGGER.debug('Dropping empty track %s, subset %d', name, i)
 
-
     @staticmethod
     def get_value_from_bufr_array(var):
         if len(var) == 1:
@@ -375,7 +372,6 @@ class TCForecast(TCTracks):
                     return var
                     break
             raise ValueError("Did not find a non-missing value in the array")
-
 
     @staticmethod
     def _subset_to_track(msg, index, provider, timestamp_origin, name, id_no):
@@ -461,7 +457,6 @@ class TCForecast(TCTracks):
         )]
         track.attrs['category'] = cat_name
         return track
-
 
     @staticmethod
     def _check_variable(var, n_ens, varname=None):
