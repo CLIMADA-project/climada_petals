@@ -56,6 +56,29 @@
 
   <xsl:template match="fix[@source='model']">
     <xsl:param name="disturbance_no" />
+    
+    <xsl:variable name="latitude">
+      <xsl:choose>
+        <xsl:when test="latitude/@units = 'deg S'">
+          <xsl:value-of select="concat('-', latitude)" />
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:value-of select="latitude" />
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+    
+    <xsl:variable name="longitude">
+      <xsl:choose>
+        <xsl:when test="longitude/@units = 'deg W'">
+          <xsl:value-of select="concat('-', longitude)" />
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:value-of select="longitude" />
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+
     <xsl:value-of select="concat(
       $disturbance_no, ',',
       ancestor::cxml/header/baseTime, ',',
@@ -68,13 +91,13 @@
       ancestor::disturbance/cycloneNumber, ',',
       ancestor::disturbance/basin, ',',
       @hour, ',',
-      descendant::validTime, ',',
-      descendant::latitude, ',',
-      descendant::longitude, ',',
-      descendant::cycloneData/minimumPressure/pressure, ',',
-      descendant::cycloneData/lastClosedIsobar/pressure, ',',
-      descendant::cycloneData/maximumWind/speed, ',',
-      descendant::cycloneData/maximumWind/radius,
+      validTime, ',',
+      $latitude, ',',
+      $longitude, ',',
+      cycloneData/minimumPressure/pressure, ',',
+      cycloneData/lastClosedIsobar/pressure, ',',
+      cycloneData/maximumWind/speed, ',',
+      cycloneData/maximumWind/radius,
       $newline
       )" />
   </xsl:template>
