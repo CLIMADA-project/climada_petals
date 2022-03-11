@@ -82,6 +82,9 @@ MISSING_DOUBLE = ec.CODES_MISSING_DOUBLE
 MISSING_LONG = ec.CODES_MISSING_LONG
 """Missing double and integers in ecCodes """
 
+CXML2CSV_XSL = Path(__file__).parent / "tc_tracks_foreast_cxml2csv.xsl"
+"""Path at which an xsl is found for transforming CXML to CSV format."""
+
 
 class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
@@ -473,3 +476,101 @@ class TCForecast(TCTracks):
 
         else:
             raise ValueError
+
+    @classmethod
+    def read_cxml(cls, cxml_path: str):
+        """Reads a cxml (cyclone xml) file and returns a class instance."""
+        df = cls._cxml_to_df(cxml_path)
+        df_groupby = df.groupby(
+            ["disturbance_no", "baseTime", "basin", "cycloneNumber", "member"],
+            sort=False,
+            dropna=False,
+        )
+        instance = cls()
+        instance.data = [cls._fcastdf_to_ds(subdf) for _, subdf in df_groupby]
+
+        return instance
+
+    @staticmethod
+    def _cxml_to_df(cxml_path: str):
+        """Read a cxml v1.1 file; may not work on newer specs."""
+        # TODO wrap in try catch with nice error if lxml not available
+        import lxml.etree as et
+        import io
+
+        xsl = et.parse(CXML2CSV_XSL)
+        xml = et.parse(cxml_path)
+        transformer = et.XSLT(xsl)
+        csv_string = str(transformer(xml))
+
+        all_storms_df = pd.read_csv(
+            io.StringIO(csv_string),
+            dtype={
+                "member": "Int64",
+                "cycloneNumber": "Int64",
+                "hour": "Int64",
+            },
+            parse_dates=["baseTime", "validTime"],
+            infer_datetime_format=True,
+        )
+
+        all_storms_df.dropna(
+            subset=["validTime", "latitude", "longitude"], how="any", inplace=True
+        )
+
+        default_env_pressure = all_storms_df.basin.replace(
+            {
+                "Southwest Pacific": 1000,
+                "North Indian": 1000,
+                "Northeast Pacific": 1000,
+                "Northwest Pacific": 1000,
+                "North Atlantic": 1000,
+            }
+        )
+
+        all_storms_df["is_named_storm"] = -all_storms_df["cycloneName"].isna()
+        default_name = (
+            all_storms_df["cycloneNumber"].astype(str) + " - " + all_storms_df["basin"]
+        )
+
+        all_storms_df.fillna(
+            {"cycloneName": default_name, "lastClosedIsobar": default_env_pressure},
+            inplace=True,
+        )
+
+        return all_storms_df
+
+    @staticmethod
+    def _fcastdf_to_ds(track_as_df: pd.DataFrame):
+        """Convert a given subdataframe into an xr.Dataset"""
+        return xr.Dataset(
+            data_vars={
+                "max_sustained_wind": ("time", track_as_df["maximumWind"].values),
+                "central_pressure": ("time", track_as_df["minimumPressure"].values),
+                "hour": ("time", track_as_df["hour"].values),
+                "radius_max_wind": ("time", track_as_df["maximumWindRadius"].values),
+                "environmental_pressure": (
+                    "time",
+                    track_as_df["minimumPressure"].values,
+                ),
+                "basin": ("time", track_as_df["basin"].values),
+            },
+            coords={
+                "time": track_as_df["validTime"].values,
+                "lat": ("time", track_as_df["latitude"].values),
+                "lon": ("time", track_as_df["longitude"].values),
+            },
+            attrs={
+                "max_sustained_wind_unit": "m/s",
+                "central_pressure_unit": "mb",
+                "name": track_as_df["cycloneName"].iloc[0],
+                "sid": track_as_df["id"].iloc[0],
+                "orig_event_flag": False,
+                "data_provider": track_as_df["origin"].iloc[0],
+                "id_no": track_as_df["cycloneNumber"].iloc[0],
+                "ensemble_number": track_as_df["member"].iloc[0],
+                "is_ensemble": not pd.isna(track_as_df["member"].iloc[0]),
+                "forecast_time": track_as_df["baseTime"].iloc[0],
+                "is_named_storm": track_as_df["is_named_storm"].iloc[0],
+            },
+        )
