@@ -404,7 +404,7 @@ class TCForecast(TCTracks):
         tracks : TCForecast
             TCTracks with data from the given HDF5 file.
         """
-        temp = super().from_hdf5(file_name = file_name)
+        temp = super().from_hdf5(file_name=file_name)
         tracks = TCForecast()
         tracks.data = temp.data
         for track in tracks.data:
@@ -543,13 +543,16 @@ class TCForecast(TCTracks):
         return instance
 
     @staticmethod
-    def _cxml_to_df(cxml_path: str):
+    def _cxml_to_df(cxml_path: str, xsl_path: str = None):
         """Read a cxml v1.1 file; may not work on newer specs."""
         # TODO wrap in try catch with nice error if lxml not available
         import lxml.etree as et
         import io
 
-        xsl = et.parse(CXML2CSV_XSL)
+        if xsl_path is None:
+            xsl_path = CXML2CSV_XSL
+
+        xsl = et.parse(xsl_path)
         xml = et.parse(cxml_path)
         transformer = et.XSLT(xsl)
         csv_string = str(transformer(xml))
