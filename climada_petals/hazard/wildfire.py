@@ -58,7 +58,8 @@ import rasterio.warp # added by Sam G.
 
 LOGGER = logging.getLogger(__name__)
 
-BBOX = (-180, -85, 180, 85)  # [Lon min, lat min, lon max, lat max]
+BBOX = list([shapely.geometry.box(-180, -85, 180, 85)])
+# [Lon min, lat min, lon max, lat max]
 """"Default geographical bounding box of the land extent covered by ISIMIP"""
 
 HAZ_TYPE = 'WF'
@@ -1396,7 +1397,7 @@ class WildFire(Hazard):
         self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
 
     @classmethod
-    def from_netcdf(cls, input_dir, filename, id_bands, event_list, bbox=BBOX):
+    def from_netcdf(cls, input_dir, filename, id_bands, event_list, geometry=BBOX):
 
         """Wrapper to fill hazard from NetCDF file.
         Build and tested for output from ISIMIP2 and Sentinel data.
@@ -1415,17 +1416,14 @@ class WildFire(Hazard):
             list containing events in the format 'yyyy-mm-dd'
             can be generated with function 'from_firemip' and 'from_sentinel' for
             specific data
-        bbox : list of four floats
-            bounding box:
-            [lon min, lat min, lon max, lat max]
-
+        geometry : shapely.geometry
+            geometry of which to extract the data
+            default sets extents to (-180, -85, 180, 85) [Lonmin, latmin, lonmax, latmax]
 
         """
 
         # hazard setup: set attributes
-        [lonmin, latmin, lonmax, latmax] = bbox
-        haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands,
-                              geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
+        haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands, geometry=geometry)
 
         haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
         haz.intensity.todense()
@@ -1442,6 +1440,47 @@ class WildFire(Hazard):
         haz.centroids.region_id = (
             u_coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
         haz.check()
+
+        return haz
+
+    @classmethod
+    def from_firemip_netcdf(cls, input_dir, filename, id_bands, event_list, extent=False,
+                            countries=False):
+
+        """Wrapper to fill hazard from NetCDF file.
+        Build and tested for output from ISIMIP2 and Sentinel data.
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+        filename : string
+            name of netcdf file in input_dir.
+        id_bands: list
+            list of indices of the bands to be extracted from the input file
+            can be generated with function 'from_firemip'
+        event_list:list
+            list containing events in the format 'yyyy-mm-dd'
+            can be generated with function 'from_firemip' and 'from_sentinel' for
+            specific data
+        extent : tuple of four floats
+            bounding box:
+            (lon min, lat min, lon max, lat max)
+        countries: list
+            list of ISO3-alpha countries to be extracted from the FireMIP file,
+            e.g ['ZWE', 'GBR', 'VNM', 'UZB']
+        """
+
+        if extent:
+            [lonmin, latmin, lonmax, latmax] = extent
+            geometry = list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)])
+        elif countries:
+            geometry = u_coord.get_land_geometry(country_names=countries)
+        else:
+            geometry = BBOX
+
+        haz = cls.from_netcdf(input_dir, filename, id_bands, event_list, geometry=geometry)
+        haz.intensity = haz.intensity/100
 
         return haz
 
@@ -1961,11 +2000,13 @@ def firemip_dowscaling(haz_firemip, haz_prob):
 
     "Calculate burnt area for FireMIP and probabilistic hazard"
     # Burnt area of FireMIP hazard
-    ba_fm = calc_burnt_area(haz_firemip.intensity, haz_firemip.centroids.lat)
+    resolution_fm = 0.5
+    ba_fm = calc_burnt_area(haz_firemip.intensity, haz_firemip.centroids.lat, resolution_fm)
     # Set fraction of prob hazard !=0 to 1 (assumption: everything burns in affected centroids)
     fraction_prob = copy.deepcopy(haz_prob.intensity)
     fraction_prob[fraction_prob!=0] = 1
-    ba_prob = calc_burnt_area(fraction_prob, haz_prob.centroids.lat)
+    resolution_prob = 1./ONE_LAT_KM
+    ba_prob = calc_burnt_area(fraction_prob, haz_prob.centroids.lat, resolution_prob)
 
     "Upscale probabilistic hazard to the FireMIP resolution"
     # Match probabilistic centroids to FireMIP centroids
@@ -2002,7 +2043,7 @@ def firemip_dowscaling(haz_firemip, haz_prob):
 
     return haz_new
 
-def calc_burnt_area(area_fraction, latitudes):
+def calc_burnt_area(area_fraction, latitudes, resolution):
     """Return absolute burnt area [km2]
 
     Parameters
@@ -2018,7 +2059,7 @@ def calc_burnt_area(area_fraction, latitudes):
         burnt area per centroid and event [km2]
     """
 
-    grid_area = u_coord.get_gridcellarea(latitudes)/100
+    grid_area = u_coord.get_gridcellarea(latitudes, resolution, unit='km2')
     burnt_area = area_fraction.multiply(grid_area).tocsr()
 
     return burnt_area

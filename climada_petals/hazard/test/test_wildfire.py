@@ -343,12 +343,13 @@ class TestMethodsFirms(unittest.TestCase):
         latitude_prob = np.arange(42,33,-1)
         fraction_prob = copy.deepcopy(INTENSITY_PROB)
         fraction_prob[fraction_prob!=0] = 1
-        ba_prob = calc_burnt_area(fraction_prob, latitude_prob)
+        resolution_prob = 1./ONE_LAT_KM
+        ba_prob = calc_burnt_area(fraction_prob, latitude_prob, resolution_prob)
 
         self.assertAlmostEqual(fraction_prob.sum(), 14.0)
-        self.assertAlmostEqual(ba_prob.sum(), 3406729.0039883372)
+        self.assertAlmostEqual(ba_prob.sum(), 11.03603613650974)
         self.assertAlmostEqual(ba_prob.shape, (5,9))
-        self.assertAlmostEqual(ba_prob[1,2], 236471.30096684003)
+        self.assertAlmostEqual(ba_prob[1,2], 0.7660444431189781)
 
     def test_upscale_prob_haz(self):
         """ Test upscaling of probabilistic hazard"""
@@ -357,7 +358,8 @@ class TestMethodsFirms(unittest.TestCase):
         latitude_prob = np.arange(42,33,-1)
         fraction_prob = copy.deepcopy(INTENSITY_PROB)
         fraction_prob[fraction_prob!=0] = 1
-        ba_prob = calc_burnt_area(fraction_prob, latitude_prob)
+        resolution_prob = 1./ONE_LAT_KM
+        ba_prob = calc_burnt_area(fraction_prob, latitude_prob, resolution_prob)
 
         ba_prob_upscaled = upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord)
 
