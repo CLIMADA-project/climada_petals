@@ -148,7 +148,7 @@ class OSMRaw:
         shape, from the osm planet file, unless file already exists.
 
         If your device doesn't have osmosis yet, see installation instructions:
-         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
+        https://wiki.openstreetmap.org/wiki/Osmosis/Installation
 
         Parameters
         -----------
@@ -213,7 +213,6 @@ class OSMRaw:
             indicated, if doesn`t yet exist.
             Default is DATA_DIR/planet-latest.osm.pbf
 
-
         Note
         ----
         For more info on what .poly files are (incl. several tools for
@@ -256,7 +255,7 @@ class OSMRaw:
             file path (incl. name & ending) under which extract will be stored
         path_parentfile : str or pathlib.Path
             file path to parentfile.osm.pbf from which the shape will be cut out
-         overwrite : bool
+        overwrite : bool
             default is False. Whether to overwrite files if they already exist.
 
         Note
@@ -325,7 +324,6 @@ class OSMFileQuery:
         adapted from BenDickens/trails repo
         (https://github.com/BenDickens/trails.git, see extract.py)
 
-
         Parameters
         ----------
         geo_type : str
@@ -354,7 +352,7 @@ class OSMFileQuery:
         the [multipolygons] section of the file. You can find it in the same
         folder as the osm_dataloader.py module is located.
         2) OSM keys that have : in their name must be changed to _ in the
-                search dict, but not in the osmconf.ini
+        search dict, but not in the osmconf.ini
         E.g. tower:type is called tower_type, since it would interfere with the
         SQL syntax otherwise, but still tower:type in the osmconf.ini
 
@@ -585,9 +583,8 @@ class OSMApiQuery:
             if multipoly.area == 0:
                 LOGGER.info('Empty geometry encountered.')
 
-        gdf_rels = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+        gdf_rels =  gpd.GeoDataFrame(
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         # list of lists into list:
         nodes_taken = list(itertools.chain.from_iterable(nodes_taken))
@@ -643,8 +640,7 @@ class OSMApiQuery:
                              else way for way in data_geom]
 
         gdf_ways = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         return nodes_taken, gdf_ways
 
@@ -677,8 +673,7 @@ class OSMApiQuery:
                 data_tags.append(node.tags)
 
         gdf_nodes = gpd.GeoDataFrame(
-            data=np.array([data_id,data_geom,data_tags]).T,
-            columns=['osm_id','geometry','tags'])
+            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
 
         return gdf_nodes
 
