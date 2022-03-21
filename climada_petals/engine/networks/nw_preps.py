@@ -201,7 +201,7 @@ class RoadPreprocess(NetworkPreprocess):
         else:
             self.shapely_to_pygeos(self, nodes)
         network = simplify.Network(edges=edges, nodes=nodes)
-        network = simplify.clean_roundabouts(network)
+        #network = simplify.clean_roundabouts(network)
         network = simplify.add_endpoints(network)
         network = simplify.split_edges_at_nodes(network)
         network = simplify.add_ids(network)
@@ -228,7 +228,7 @@ class PowerlinePreprocess(NetworkPreprocess):
         if nodes.empty:
             nodes = None #simplify cannot handle empty df for nodes, only None
         else:
-            self.shapely_to_pygeos(self, nodes)
+            nodes = self.shapely_to_pygeos(self, nodes)
     
         network = simplify.Network(edges=edges, nodes=nodes)
         network = simplify.add_endpoints(network)

@@ -47,26 +47,26 @@ class GraphCalcs():
     
     def link_clusters(self):
         """
-        recursively link cluster to giant component of graph
+        recursively link clusters to giant component of graph, by closest nodes
         """
-        while len(self.graph.clusters().subgraphs()) > 1:
+        while len(self.graph.clusters()) > 1:
             
-            giant = self.graph.clusters().subgraphs()[0]
+            giant = self.graph.clusters().giant()
             next_cluster = self.graph.clusters().subgraphs()[1]
             
             gdf_vs_source = giant.get_vertex_dataframe()
             gdf_vs_assign = next_cluster.get_vertex_dataframe()
             dists, ix_match = self._ckdnearest(gdf_vs_assign, gdf_vs_source)
-            source = gdf_vs_assign.geometry.iloc[np.where(dists==min(dists))[0]].values[0]
-            target = gdf_vs_source.geometry.iloc[ix_match[np.where(dists==min(dists))[0]]].values[0]
+            
+            source = gdf_vs_assign.iloc[np.where(dists==min(dists))[0]]
+            target = gdf_vs_source.iloc[ix_match[np.where(dists==min(dists))[0]]]
 
-            edge_geom = self.make_edge_geometries([source],[target])[0]
+            edge_geom = self.make_edge_geometries([source.geometry.values[0]],[target.geometry.values[0]])[0]
             
             dist = pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
-            self.graph.add_edge(gdf_vs_assign.orig_id.iloc[np.where(dists==min(dists))[0]].values[0], 
-                                gdf_vs_source.orig_id.iloc[ix_match[np.where(dists==min(dists))[0]]].values[0], 
+            self.graph.add_edge(target.orig_id.values[0], source.orig_id.values[0], 
                                 geometry=edge_geom, ci_type=gdf_vs_assign.ci_type.iloc[0],
-                                distance = dist)
+                                distance=dist)
             
     def link_vertices_closest_k(self, from_ci, to_ci, 
                                 link_name=None, dist_thresh=None,

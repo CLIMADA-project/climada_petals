@@ -326,14 +326,11 @@ DICT_CIS_OSM =  {
                              telecom='line' or communication='line' or
                              utility='telecom'"""},
         'road' :  {
-            'osm_keys' : ['highway','man_made','public_transport','bus','name'],
+            'osm_keys' : ['highway','man_made','name'],
             'osm_query' : """highway in ('motorway', 'motorway_link', 'trunk', 'trunk_link',
                             'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary',
-                            'tertiary_link', 'residential', 'road', 'service', 'unclassified',
-                            'traffic_signals')
-                             or (public_transport='*' and bus='yes')
-                             or (bridge='*' and highway='*')
-                             or (tunnel='*' and highway='*')"""},
+                            'tertiary_link', 'residential', 'road', 'unclassified')
+                             """},
         'main_road' :  {
             'osm_keys' : ['highway','man_made','name'],
             'osm_query' : """highway='primary' or

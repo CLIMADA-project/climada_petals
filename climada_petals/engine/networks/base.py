@@ -102,6 +102,7 @@ class Network:
     def _update_ci_types(cls, edges, nodes):
         return np.unique(np.unique(edges.ci_type).tolist().append(
                          np.unique(nodes.ci_type).tolist()))
+
     @classmethod
     def _add_orig_id(cls, gdf):
         return range(len(gdf))
