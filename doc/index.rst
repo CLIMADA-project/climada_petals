@@ -1,7 +1,13 @@
 
-This is the documentation for version v\ |version|. In `CLIMADA-project <https://github.com/CLIMADA-project>`_ you will find CLIMADA's contributors, repository and scientific publications.
+This is the documentation for version v\ |version|. In `CLIMADA-project <https://github.com/CLIMADA-project>`_ you will find CLIMADA's contributors, repository and scientific publications. The documentation for CLIMADA-python (the core) <https://github.com/CLIMADA-project/climada_python> can be found here: https://climada-python.readthedocs.io/en/latest/index.html
 
 ------------
+
+---------
+Installation
+---------
+
+The details for the installation can be found here: https://climada-python.readthedocs.io/en/stable/guide/Guide_Installation.html#Install-CLIMADA-petals-(optional) (Please copy and paste the whole link, also with the part "(optional)")
 
 ---------
 Tutorials
