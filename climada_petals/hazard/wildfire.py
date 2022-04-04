@@ -1429,17 +1429,17 @@ class WildFire(Hazard):
         haz.intensity.todense()
 
         haz.event_name = event_list
-        #self.event_id = np.arange(1, len(event_list)+1)
+        #self.event_id = np.arange(1, len(event_list))
         haz.frequency = np.ones(len(haz.event_name)) * (1 / len(haz.event_name))
         haz.date = np.array(u_dt.str_to_date(event_list))
 
         haz.fraction = haz.intensity.copy()
         haz.fraction.data.fill(1.0)
-        #self.units = ' ' franction of burnt area
+        #self.units = ' ' fraction of burnt area
         haz.centroids.set_meta_to_lat_lon()
         haz.centroids.region_id = (
             u_coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
-        haz.check()
+        #haz.check()
 
         return haz
 
@@ -1481,8 +1481,70 @@ class WildFire(Hazard):
 
         haz = cls.from_netcdf(input_dir, filename, id_bands, event_list, geometry=geometry)
         haz.intensity = haz.intensity/100
-
+        
         return haz
+    
+    @classmethod
+    def from_firemip_netcdf_season(cls, input_dir, filename, id_bands, event_list, 
+                                   month=7, extent=False, countries=False):
+
+        """Wrapper to fill hazard from NetCDF file.
+        Build and tested for output from ISIMIP2 and Sentinel data.
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+        filename : string
+            name of netcdf file in input_dir.
+        id_bands: list
+            list of indices of the bands to be extracted from the input file
+            can be generated with function 'from_firemip'
+        event_list:list
+            list containing events in the format 'yyyy-mm-dd'
+            can be generated with function 'from_firemip' and 'from_sentinel' for
+            specific data
+        extent : tuple of four floats
+            bounding box:
+            (lon min, lat min, lon max, lat max)
+        countries: list
+            list of ISO3-alpha countries to be extracted from the FireMIP file,
+            e.g ['ZWE', 'GBR', 'VNM', 'UZB']
+        """
+
+        if extent:
+            [lonmin, latmin, lonmax, latmax] = extent
+            geometry = list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)])
+        elif countries:
+            geometry = u_coord.get_land_geometry(country_names=countries)
+        else:
+            geometry = BBOX
+
+        haz_monthly = cls.from_netcdf(input_dir, filename, id_bands, event_list, 
+                                      geometry=geometry)
+        haz_monthly.intensity = haz_monthly.intensity/100
+        
+        (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
+        endyear,_ = endyearnc.split('.')
+        years = int(endyear)-int(startyear)
+        idx_months = np.arange(month-1,years*12+month-1)
+        chunks = np.array_split(idx_months, years)
+        
+        season_intensity = np.zeros((years, haz_monthly.centroids.size))
+        for idx in range(years):
+            season_intensity[idx] = np.sum(haz_monthly.intensity[chunks[idx],:], axis=0)
+        
+        haz_season = copy.deepcopy(haz_monthly)
+        haz_season.intensity = sparse.csr_matrix(season_intensity)
+        haz_season.event_id = np.arange(0,years)
+        haz_season.event_name = sorted(list(set(haz_monthly.event_name)))[1:]
+        haz_season.frequency = np.ones(years)
+        haz_season.fraction = haz_season.intensity.copy()
+        haz_season.fraction.data.fill(1.0)
+        haz_season.date = np.array(u_dt.str_to_date(haz_season.event_name))
+        haz_season.orig = np.ones(years, dtype=bool)
+        
+        return haz_season
 
     # Added by Sam. G.
     def set_propagation_matrix(self, land_path, pop_path, countries, bounds, res):
@@ -1970,13 +2032,30 @@ def from_firemip(filename):
         list of events contained in the input file in the format 'yyyy-mm-dd'
 
     """
-
+    
     (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
     endyear, _ = endyearnc.split('.')
-    event_names = [str(n) for n in range(int(startyear), int(endyear) + 1)]
-    event_list = [event_ + '-01-01' for event_ in event_names]
-    nr_bands = len(event_list)
-    id_bands = np.arange(1, nr_bands+1).tolist()
+    
+    
+    if 'annual' in filename:
+        event_names = [str(n) for n in range(int(startyear), int(endyear) + 1)]
+        event_list = [event_ + '-01-01' for event_ in event_names]
+        nr_bands = len(event_list)
+        id_bands = np.arange(1, nr_bands+1).tolist()
+    elif 'monthly' in filename:
+        event_names = list()
+        months_long_list = list()
+        year_list = np.arange(int(startyear), int(endyear) + 1)
+        for year in year_list:
+            event_names.extend([year]*12)
+        month_list = np.arange(1,13)
+        months_long_list.extend(month_list*145)
+        #months
+        event_list = [str(event_)+ '-01-01' for event_ in event_names]
+        nr_bands = len(event_list)
+        id_bands = np.arange(1, nr_bands+1).tolist()
+        #event_list = np.arange(0, len(event_names)).tolist()
+        
 
     return id_bands, event_list
 
