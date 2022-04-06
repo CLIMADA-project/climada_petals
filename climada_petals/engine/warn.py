@@ -1,4 +1,5 @@
 import logging
+
 import numpy as np
 import skimage
 import copy
@@ -21,17 +22,52 @@ class FilteringOrder:
 
 
 class Warn:
+    """Warn class.
+
+    The Warn class generates from given data contiguous areas.
+
+    Attributes
+    ----------
+    filter_data : dataclass
+        dataclass consisting of thresholds, whether the regions should be expanded or not,
+        the operations and their sizes to be applied during filtering
+    nr_thresholds : int
+        Number of thresholds defined
+    warning : np.array
+        Warn level for every point
+    """
     """Explanation of defaults (also maybe transfer to config, talk to Emanuel)"""
     operations = ['DILATION', 'EROSION', 'DILATION', 'MEDIANFILTERING']
     sizes = [2, 3, 7, 15]
 
     def __init__(self, filter_data, data):
+        """Initialize Warn."""
         self.filter_data = filter_data
         self.nr_thresholds = len(self.filter_data.thresholds) - 1
         self.warning = np.zeros_like(data)
 
     @classmethod
-    def from_np_array(cls, data, thresholds, expand=True, operations=operations, sizes=sizes):  # pass defaults
+    def from_np_array(cls, data, thresholds, expand=True, operations=operations, sizes=sizes):
+        """Generate Warn object from np.array.
+
+        Parameters
+        ----------
+        data : np.array
+            2d np.array containing data to generate warning of.
+        thresholds : np.array
+            Thresholds where data can be binned.
+        expand : Bool
+            Information whether regions of higher level should be expanded with lower levels in filtering algorithm.
+        operations : np.array
+            Type of operations to be applied in filtering algorithm.
+        sizes : np.array
+            Size of kernel of every operation given.
+
+        Returns
+        ----------
+        warn : Warn
+            Generated Warn object including warning
+        """
         filter_data = FilteringOrder(thresholds, expand, operations, sizes)
         warn = cls(filter_data, data)
         data_thrs = warn.threshold_data(data)
@@ -39,6 +75,18 @@ class Warn:
         return warn
 
     def threshold_data(self, data):
+        """Threshold data into given thresholds.
+
+        Parameters
+        ----------
+        data : np.array
+            Array containing data to generate warning of.
+
+        Returns
+        ----------
+        m_thrs : np.array
+            Array of thresholded data
+        """
         if np.max(data) > np.max(self.filter_data.thresholds) or np.min(data) < np.min(self.filter_data.thresholds):
             LOGGER.warning('Values of data array are smaller/larger than defined thresholds. '
                            'Please redefine thresholds.')
@@ -48,6 +96,13 @@ class Warn:
         return m_thrs.astype(int)
 
     def filter_algorithm(self, d_thrs):
+        """Generate contiguous regions of thresholded data.
+
+        Parameters
+        ----------
+        d_thrs : np.array
+            Thresholded data to generate contiguous regions of.
+        """
         def filtering(d, warn_reg, curr_lvl):
             if self.filter_data.expand:  # select points where level is >= level under observation -> expands regions
                 pts_curr_lvl = np.bitwise_or(warn_reg, d >= curr_lvl)
@@ -86,6 +141,20 @@ class Warn:
 
     @staticmethod
     def remove_small_regions(warning, size_thr):
+        """Remove regions smaller than defined threshold from warning.
+
+        Parameters
+        ----------
+        warning : np.array
+            Warning where regions should be removed from.
+        size_thr : int
+            Threshold defining too small regions (number of grid points).
+
+        Returns
+        ----------
+        warning : np.array
+            Warning without too small regions.
+        """
 
         def increase_levels(warn, size):
             # increase levels of too small regions to max level of this warning
