@@ -1,5 +1,6 @@
 
-This is the documentation for version v\ |version|. In `CLIMADA-project <https://github.com/CLIMADA-project>`_ you will find CLIMADA's contributors, repository and scientific publications. The documentation for CLIMADA-python (the core) <https://github.com/CLIMADA-project/climada_python> can be found here: https://climada-python.readthedocs.io/en/latest/index.html
+This is the documentation for version v\ |version|. In `CLIMADA-project <https://github.com/CLIMADA-project>`_ you will find CLIMADA's contributors, repository and scientific publications.
+The documentation for CLIMADA-python (the core) <https://github.com/CLIMADA-project/climada_python> can be found here: https://climada-python.readthedocs.io/en/latest/index.html
 
 ------------
 
