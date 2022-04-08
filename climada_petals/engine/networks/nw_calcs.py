@@ -50,9 +50,11 @@ class GraphCalcs():
         recursively link clusters to giant component of graph, by closest nodes
         """
         while len(self.graph.clusters()) > 1:
-            
             giant = self.graph.clusters().giant()
-            next_cluster = self.graph.clusters().subgraphs()[1]
+            ix = 0
+            if (len(self.graph.clusters().subgraphs()[ix].vs) == len(giant.vs)):
+                ix=1
+            next_cluster = self.graph.clusters().subgraphs()[ix]
             
             gdf_vs_source = giant.get_vertex_dataframe()
             gdf_vs_assign = next_cluster.get_vertex_dataframe()
@@ -488,7 +490,9 @@ class GraphCalcs():
         enduser dependency updates
         """
         delta = -1
+        cycles = 0
         while delta != 0:
+            cycles+=1
             func_state_tot_vs, func_state_tot_es = self._funcstates_sum()
             self._update_cis_internally(df_dependencies, p_source=p_source,
                                         p_sink=p_sink, per_cap_cons=per_cap_cons,
@@ -501,8 +505,9 @@ class GraphCalcs():
             delta_es = func_state_tot_es-func_state_tot_es2
             delta = max(abs(delta_vs), abs(delta_es))
             LOGGER.info(f' Current delta after: {delta}')
-
-        self._update_enduser_dependencies(df_dependencies)
+        
+        if cycles > 1:
+            self._update_enduser_dependencies(df_dependencies)
 
     def get_path_distance(self, epath):
         return sum(self.graph.es[epath]['distance'])
@@ -581,7 +586,7 @@ class GraphCalcs():
     
     def return_network(self):
         return Network.from_graphs([self.graph])
-    
+        
 
 class Graph(GraphCalcs):
     """
@@ -610,3 +615,75 @@ class Graph(GraphCalcs):
         return ig.Graph(
             n=len(gdf_nodes),vertex_attrs=vertex_attrs, directed=directed)
 
+
+def service_dict():
+    return {'power':'actual_supply_power line_people',
+                    'healthcare': 'actual_supply_health_people',
+                    'education':'actual_supply_education_people',
+                    'telecom' : 'actual_supply_celltower_people',
+                    'mobility' : 'actual_supply_road_people',
+                    'water' : 'actual_supply_wastewater_people'}
+
+
+def number_noservice(service, graph):
+        
+    no_service = (1-np.array(graph.graph.vs.select(
+        ci_type='people')[service_dict()[service]]))
+    pop = np.array(graph.graph.vs.select(
+        ci_type='people')['counts'])
+    
+    return (no_service*pop).sum()
+
+def number_noservices(graph, 
+                         services=['power', 'healthcare', 'education', 'telecom', 'mobility', 'water']):
+    
+    servstats_dict = {}
+    for service in services:
+        servstats_dict[service] = number_noservice(service, graph) 
+    return servstats_dict
+
+
+def disaster_impact_service_geoseries(service, pre_graph, post_graph):
+        
+    no_service_post = (1-np.array(post_graph.graph.vs.select(
+        ci_type='people')[service_dict()[service]]))
+    no_service_pre = (1-np.array(pre_graph.graph.vs.select(
+        ci_type='people')[service_dict()[service]]))
+    
+    geom = np.array(post_graph.graph.vs.select(
+        ci_type='people')['geom_wkt'])
+    
+    return gpd.GeoSeries.from_wkt(
+        geom[np.where((no_service_post-no_service_pre)>0)])
+    
+def disaster_impact_service(service, pre_graph, post_graph):
+        
+    no_service_post = (1-np.array(post_graph.graph.vs.select(
+        ci_type='people')[service_dict()[service]]))
+    no_service_pre = (1-np.array(pre_graph.graph.vs.select(
+        ci_type='people')[service_dict()[service]]))
+    pop = np.array(pre_graph.graph.vs.select(
+        ci_type='people')['counts'])
+    
+    return ((no_service_post-no_service_pre)*pop).sum()
+
+def disaster_impact_allservices(pre_graph, post_graph, 
+                services=['power', 'healthcare', 'education', 'telecom', 'mobility', 'water']):
+    
+    imp_dict = {}
+    
+    for service in services:
+        imp_dict[service] = disaster_impact_service(
+            service, pre_graph, post_graph)
+    
+    return imp_dict
+
+
+def get_graphstats(graph):
+    from collections import Counter
+    stats_dict = {}
+    stats_dict['no_edges'] = len(graph.graph.es)
+    stats_dict['no_nodes'] = len(graph.graph.vs)
+    stats_dict['edge_types'] = Counter(graph.graph.es['ci_type'])
+    stats_dict['node_types'] = Counter(graph.graph.vs['ci_type'])
+    return stats_dict
