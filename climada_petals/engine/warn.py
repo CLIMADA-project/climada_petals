@@ -9,9 +9,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
-class FilteringOrder:
+class FilterData:
+    """FilterData data class.
+
+    The FilterData data class stores the relevant information needed during filtering.
+
+    Attributes
+    ----------
+    see @classmethod's attributes
+    """
 
     def __init__(self, thresholds, expand, operations, sizes):
+        """Initialize FilteringOrder."""
         self.thresholds = thresholds
         self.expand = expand
         if len(operations) != len(sizes):
@@ -24,7 +33,7 @@ class FilteringOrder:
 class Warn:
     """Warn class.
 
-    The Warn class generates from given data contiguous areas.
+    The Warn class generates from given data contiguous areas and reduces heterogeneity.
 
     Attributes
     ----------
@@ -36,7 +45,7 @@ class Warn:
     warning : np.array
         Warn level for every point
     """
-    """Explanation of defaults (also maybe transfer to config, talk to Emanuel)"""
+    # Explanation of defaults (also maybe transfer to config, talk to Emanuel)
     operations = ['DILATION', 'EROSION', 'DILATION', 'MEDIANFILTERING']
     sizes = [2, 3, 7, 15]
 
@@ -68,7 +77,7 @@ class Warn:
         warn : Warn
             Generated Warn object including warning
         """
-        filter_data = FilteringOrder(thresholds, expand, operations, sizes)
+        filter_data = FilterData(thresholds, expand, operations, sizes)
         warn = cls(filter_data, data)
         data_thrs = warn.threshold_data(data)
         warn.filter_algorithm(data_thrs)
@@ -130,13 +139,11 @@ class Warn:
             return np.zeros(d_thrs.shape)
 
         warn_regions = 0
-        cnt = 0
         # iterate from highest level to lowest (0 not necessary, because rest is level 0)
         for j in range(max_warn_level, 0, -1):
             w_l = filtering(d_thrs, warn_regions, j)
             # keep warn regions of higher levels by taking maximum
             warn_regions = np.maximum(warn_regions, w_l)
-            cnt += 4
         self.warning = warn_regions
 
     @staticmethod

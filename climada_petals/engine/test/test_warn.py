@@ -1,11 +1,11 @@
 import unittest
 import numpy as np
 
-from climada_petals.engine.warn import Warn, FilteringOrder
+from climada_petals.engine.warn import Warn, FilterData
 
 
 class TestWarn(unittest.TestCase):
-    def test_thresholding(self):
+    def test_threshol_data(self):
         thresholds = np.array([0.0, 20, 50])
         wind_matrix = np.zeros((10, 10))
         wind_matrix[2, 2] = -2
@@ -23,7 +23,7 @@ class TestWarn(unittest.TestCase):
         self.assertEqual(warn.warning[6, 6], 2)
         self.assertEqual(np.sum(warn.warning), 4)
 
-    def test_filtering_functionality(self):
+    def test_filter_algorithm_functionality(self):
         thresholds = np.array([0.0, 20, 50])
         wind_matrix = np.zeros((10, 10))
         wind_matrix[4, 4] = 40
@@ -38,7 +38,7 @@ class TestWarn(unittest.TestCase):
         warn = Warn.from_np_array(wind_matrix, thresholds, operations=['MEDIANFILTERING'], sizes=[2])
         self.assertEqual(np.max(warn.warning), 0)  # 5, because of round filter shape
 
-    def test_filtering_multiple_levels(self):
+    def test_filter_algorithm_multiple_levels(self):
         thresholds = np.array([0.0, 20, 50, 80, 90])
         wind_matrix = np.zeros((10, 10))
         wind_matrix[4, 4] = 40
@@ -51,7 +51,7 @@ class TestWarn(unittest.TestCase):
         warn = Warn.from_np_array(wind_matrix, thresholds, operations=['EROSION'], sizes=[1])
         self.assertEqual(np.max(warn.warning), 0)  # single points reduced to level 0
 
-    def test_filtering_expand(self):
+    def test_filter_algorithm_expand(self):
         thresholds = np.array([0.0, 20, 50, 80])
         wind_matrix = np.zeros((10, 10))
         wind_matrix[6, 6] = 40
@@ -68,7 +68,7 @@ class TestWarn(unittest.TestCase):
         # therefore, less in level 0 for expansion
         self.assertLess(np.count_nonzero(warn_exp.warning == 0), np.count_nonzero(warn.warning == 0))
 
-    def test_filtering_combination(self):
+    def test_filter_algorithm_combination(self):
         thresholds = np.array([0.0, 20, 50])
         wind_matrix = np.zeros((10, 10))
         wind_matrix[4, 4] = 40
@@ -83,7 +83,7 @@ class TestWarn(unittest.TestCase):
                                   operations=['DILATION', 'EROSION', 'MEDIANFILTERING'], sizes=[1, 1, 1])
         self.assertEqual(np.sum(warn.warning), 1)
 
-    def test_small_regions(self):
+    def test_remove_small_regions(self):
         thresholds = np.array([0.0, 20, 50])
         wind_matrix = np.zeros((10, 10))
         wind_matrix[4, 4] = 40
