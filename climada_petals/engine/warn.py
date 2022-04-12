@@ -50,11 +50,12 @@ class Warn:
     SIZES = [2, 3, 7, 15]
     EXPAND = True
 
-    def __init__(self, filter_data, data):
+    def __init__(self, filter_data, warning, coord):
         """Initialize Warn."""
         self.filter_data = filter_data
         self.nr_thresholds = len(self.filter_data.thresholds) - 1
-        self.warning = np.zeros_like(data)
+        self.warning = warning
+        self.coord = coord
 
     @classmethod
     def from_map(cls, data, thresholds, expand=EXPAND, operations=OPERATIONS, sizes=SIZES):
