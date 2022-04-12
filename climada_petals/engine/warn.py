@@ -1,9 +1,9 @@
 import logging
+import copy
+from dataclasses import dataclass
 
 import numpy as np
 import skimage
-import copy
-from dataclasses import dataclass
 
 LOGGER = logging.getLogger(__name__)
 
