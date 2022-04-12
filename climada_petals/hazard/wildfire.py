@@ -1685,7 +1685,7 @@ class WildFire(Hazard):
             Shape of the country / countries.
         """
 
-        if not hasattr(self.centroids, 'population'):
+        if not hasattr(self.centroids, 'landcover'):
             self._get_landcover(land_path, bounds, res, geometry)
 
         land_propa_matrix = self._assign_prop_probas(self.centroids.landcover)
