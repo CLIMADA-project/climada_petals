@@ -393,7 +393,10 @@ class WildFire(Hazard):
         # Following values are defined for each fire and centroid
         haz.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
         for idx, wf in enumerate(hist_fire_seasons):
-            haz.intensity[idx] = wf.intensity.max(axis=0)
+            if n_fires[idx] > 0:
+                haz.intensity[idx] = wf.intensity.max(axis=0)
+            else:
+                haz.intensity[idx] = 0
         haz.intensity = haz.intensity.tocsr()
         haz.fraction = haz.intensity.copy()
         haz.fraction.data.fill(1.0)
@@ -1475,14 +1478,17 @@ class WildFire(Hazard):
         -------
         self.frequency : np.array
         """
-        delta_time = date.fromordinal(int(np.max(self.date))).year - \
-            date.fromordinal(int(np.min(self.date))).year + 1
-        num_orig = self.orig.nonzero()[0].size
-        if num_orig > 0:
-            ens_size = self.event_id.size / num_orig
+        if self.event_id.size > 0:
+            delta_time = date.fromordinal(int(np.max(self.date))).year - \
+                date.fromordinal(int(np.min(self.date))).year + 1
+            num_orig = self.orig.nonzero()[0].size
+            if num_orig > 0:
+                ens_size = self.event_id.size / num_orig
+            else:
+                ens_size = 1
+            self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
         else:
-            ens_size = 1
-        self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
+            self.frequency = 0.
 
     @classmethod
     def from_netcdf(cls, input_dir, filename, id_bands, event_list, geometry=BBOX):
