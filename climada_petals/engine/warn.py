@@ -58,7 +58,7 @@ class Warn:
         self.coord = coord
 
     @classmethod
-    def from_map(cls, data, thresholds, expand=EXPAND, operations=OPERATIONS, sizes=SIZES):
+    def from_map(cls, data, thresholds, coord, expand=EXPAND, operations=OPERATIONS, sizes=SIZES):
         """Generate Warn object from np.array.
 
         Parameters
@@ -80,12 +80,13 @@ class Warn:
             Generated Warn object including warning
         """
         filter_data = FilterData(thresholds, expand, operations, sizes)
-        warn = cls(filter_data, data)
-        data_thrs = warn.threshold_data(data)
-        warn.filter_algorithm(data_thrs)
+        data_thrs = cls.threshold_data(data, filter_data)
+        warning = cls.filter_algorithm(data_thrs, filter_data)
+        warn = cls(filter_data, warning, coord)
         return warn
 
-    def threshold_data(self, data):
+    @staticmethod
+    def threshold_data(data, filter_data):
         """Threshold data into given thresholds.
 
         Parameters
@@ -98,15 +99,14 @@ class Warn:
         m_thrs : np.array
             Array of thresholded data
         """
-        if np.max(data) > np.max(self.filter_data.thresholds) or np.min(data) < np.min(self.filter_data.thresholds):
+        if np.max(data) > np.max(filter_data.thresholds) or np.min(data) < np.min(self.filter_data.thresholds):
             LOGGER.warning('Values of data array are smaller/larger than defined thresholds. '
                            'Please redefine thresholds.')
-        m_thrs = np.zeros_like(data)
-        for i in range(1, len(self.filter_data.thresholds)):
-            m_thrs[data > self.filter_data.thresholds[i]] = i
-        return m_thrs.astype(int)
+        m_thrs = np.digitize(data, filter_data.thresholds) - 1  # digitize lowest bin is 1
+        return m_thrs
 
-    def filter_algorithm(self, d_thrs):
+    @staticmethod
+    def filter_algorithm(d_thrs, filter_data):
         """Generate contiguous regions of thresholded data.
 
         Parameters
@@ -115,21 +115,21 @@ class Warn:
             Thresholded data to generate contiguous regions of.
         """
         def filtering(d, warn_reg, curr_lvl):
-            if self.filter_data.expand:  # select points where level is >= level under observation -> expands regions
+            if filter_data.expand:  # select points where level is >= level under observation -> expands regions
                 pts_curr_lvl = np.bitwise_or(warn_reg, d >= curr_lvl)
             else:  # select points where level is == level under observation -> not expanding regions
                 pts_curr_lvl = d == curr_lvl
             reg_curr_lvl = np.where(pts_curr_lvl, curr_lvl, 0)  # set everything but pts of current level to 0
 
-            for i in range(len(self.filter_data.operations)):
-                if self.filter_data.operations[i] == 'DILATION':
+            for i in range(len(filter_data.operations)):
+                if filter_data.operations[i] == 'DILATION':
                     reg_curr_lvl = skimage.morphology.dilation(reg_curr_lvl,
-                                                               skimage.morphology.disk(self.filter_data.sizes[i]))
-                elif self.filter_data.operations[i] == 'EROSION':
+                                                               skimage.morphology.disk(filter_data.sizes[i]))
+                elif filter_data.operations[i] == 'EROSION':
                     reg_curr_lvl = skimage.morphology.erosion(reg_curr_lvl,
-                                                              skimage.morphology.disk(self.filter_data.sizes[i]))
-                elif self.filter_data.operations[i] == 'MEDIANFILTERING':
-                    filter_med = np.ones((self.filter_data.sizes[i], self.filter_data.sizes[i]))
+                                                              skimage.morphology.disk(filter_data.sizes[i]))
+                elif filter_data.operations[i] == 'MEDIANFILTERING':
+                    filter_med = np.ones((filter_data.sizes[i], filter_data.sizes[i]))
                     reg_curr_lvl = skimage.filters.median(reg_curr_lvl, filter_med)
                 else:
                     LOGGER.warning("The operation is not defined. "
@@ -146,7 +146,7 @@ class Warn:
             w_l = filtering(d_thrs, warn_regions, j)
             # keep warn regions of higher levels by taking maximum
             warn_regions = np.maximum(warn_regions, w_l)
-        self.warning = warn_regions
+        return warn_regions
 
     @staticmethod
     def remove_small_regions(warning, size_thr):
