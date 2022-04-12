@@ -20,7 +20,7 @@ class FilterData:
     """
 
     def __init__(self, thresholds, expand, operations, sizes):
-        """Initialize FilteringOrder."""
+        """Initialize FilterData."""
         self.thresholds = thresholds
         self.expand = expand
         if len(operations) != len(sizes):
@@ -46,8 +46,9 @@ class Warn:
         Warn level for every point
     """
     # Explanation of defaults (also maybe transfer to config, talk to Emanuel)
-    operations = ['DILATION', 'EROSION', 'DILATION', 'MEDIANFILTERING']
-    sizes = [2, 3, 7, 15]
+    OPERATIONS = ['DILATION', 'EROSION', 'DILATION', 'MEDIANFILTERING']
+    SIZES = [2, 3, 7, 15]
+    EXPAND = True
 
     def __init__(self, filter_data, data):
         """Initialize Warn."""
@@ -56,7 +57,7 @@ class Warn:
         self.warning = np.zeros_like(data)
 
     @classmethod
-    def from_np_array(cls, data, thresholds, expand=True, operations=operations, sizes=sizes):
+    def from_map(cls, data, thresholds, expand=EXPAND, operations=OPERATIONS, sizes=SIZES):
         """Generate Warn object from np.array.
 
         Parameters
@@ -64,9 +65,9 @@ class Warn:
         data : np.array
             2d np.array containing data to generate warning of.
         thresholds : np.array
-            Thresholds where data can be binned.
+            Thresholds where data is binned.
         expand : Bool
-            Information whether regions of higher level should be expanded with lower levels in filtering algorithm.
+            If true, regions of higher warning levels expand gradually into lower levels.
         operations : np.array
             Type of operations to be applied in filtering algorithm.
         sizes : np.array
