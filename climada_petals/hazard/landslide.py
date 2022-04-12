@@ -37,43 +37,48 @@ from climada.util.constants import DEF_CRS
 LOGGER = logging.getLogger(__name__)
 HAZ_TYPE = 'LS'
 
-def sample_events_from_probs(prob_matrix, n_years, dist='binom'):
-    """sample an event set for a specified representative time span from
-    a matrix with annual occurrence probabilities
-    Draws events from chosen distribution.
+
+def sample_events(prob_matrix, n_years, dist='binom'):
+    """Repeatedly sample events"""
+    events = []
+    for i in range(n_years):
+        events.append(sample_event_from_probs(prob_matrix, n_years=1, dist=dist))
+    return sparse.csr_matrix(events)
+    
+    
+def sample_event_from_probs(prob_matrix, n_years=1, dist='binom'):
+    """sample an event  for a specified representative time span from
+    a matrix with occurrence probabilities. Draws events from chosen 
+    distribution.
 
     Parameters
     ----------
-    prob_matrix : scipy.sparse.csr matrix
-        matrix where each entry has an annual probability [0,1] of occurrence of
+    prob_matrix : np.array()
+        matrix where each entry has a probability [0,1] of occurrence of
         an event
     n_years : int
-        the timespan of the probabilistic simulation in years
+        the timespan of the probabilistic simulation in years. default is 1.
     dist : str
         distribution to sample from. currently 'binom' (default) and 'poisson'
 
     Returns
     -------
-    ev_matrix : scipy.sparse.csr matrix
-        csr matrix with number of success (events) from sampling process per
-        grid cell
+    ev_matrix : np.array()
+        array of same shape as prob_matrix with number of 'hits' from sampling
+        per entry
 
     See also
     --------
     set_ls_prob(), scipy.stats.binom.rvs(), scipy.stats.poisson.rvs()
 
     """
-    LOGGER.info('Sampling landslide events for a %i year period', n_years)
-
-    ev_matrix = prob_matrix.copy()
-
     if dist == 'binom':
-        ev_matrix.data = binom.rvs(n=n_years, p=prob_matrix.data)
+        ev_matrix = binom.rvs(n=n_years, p=prob_matrix)
 
     elif dist == 'poisson':
         # λ (or μ in scipy)
-        mu = prob_matrix.data * n_years
-        ev_matrix.data = poisson.rvs(mu)
+        mu = prob_matrix * n_years
+        ev_matrix = poisson.rvs(mu)
 
     return ev_matrix
 
@@ -157,7 +162,6 @@ class Landslide(Hazard):
             (np.ones(n_ev), (np.arange(n_ev), gdf_cropped.flat_ix)),
             shape=(n_ev, haz.centroids.size))
         haz.fraction = haz.intensity.copy()
-        haz.frequency = haz.intensity.copy()
 
         if hasattr(gdf_cropped, 'ev_date'):
             haz.date = pd.to_datetime(gdf_cropped.ev_date, yearfirst=True)
@@ -168,7 +172,9 @@ class Landslide(Hazard):
             haz.frequency = np.ones(n_ev)/(
                 (haz.date.max()-haz.date.min()).value/3.154e+16)
         else:
-            LOGGER.warning('no event dates to derive proxy frequency from')
+            LOGGER.warning('no event dates to derive proxy frequency from,'+ 
+                           'setting arbitrarily to once per year.')
+            haz.frequency = np.ones(n_ev)
 
         haz.units = ''
         haz.event_id = np.arange(n_ev, dtype=int) + 1
@@ -200,7 +206,7 @@ class Landslide(Hazard):
         for precipitation-triggered landslide and from
         https://preview.grid.unep.ch/index.php?preview=data&events=landslides&evcat=1&lang=eng
         for earthquake-triggered landslides.
-        It works of course with any similar raster file.
+        It works with any similar raster file.
         Original data is given in expected annual probability and percentage
         of pixel of occurrence of a potentially destructive landslide event
         x 1000000 (so be sure to adjust this by setting the correction factor).
@@ -208,10 +214,11 @@ class Landslide(Hazard):
         mentioned links.
 
         Events are sampled from annual occurrence probabilites via binomial or
-        poisson distribution; intensity takes a binary value (0 - no
-        ls occurrence; 1 - ls occurrence) and
-        fraction stores the actual the occurrence count (0 to n) per grid cell.
-        Frequency is occurrence count / n_years.
+        poisson distribution. An event therefore includes all landslides
+        sampled to occur within a year for the given area.
+        intensity takes a binary value (occurrence or no occurrene of a LS);
+        frequency is set to 1 / n_years.
+        
 
         Impact functions, since they act on the intensity, should hence be in
         the form of a step function,
@@ -229,45 +236,43 @@ class Landslide(Hazard):
         n_years : int
             sampling period
         dist : str
-        distribution to sample from. 'poisson' (default) and 'binom'
+            distribution to sample from. 'poisson' (default) and 'binom'
 
         Returns
         -------
-        Landslide : climada.hazard.Landslide instance
+        haz : climada.hazard.Landslide instance
             probabilistic LS hazard
 
         See also
         --------
-        sample_events_from_probs()
+        sample_events()
+        sample_event_from_probs()
         """
         
         haz = cls()
         # raster with occurrence probs
         haz.centroids.meta, prob_matrix = \
             u_coord.read_raster(path_sourcefile, geometry=[shapely.geometry.box(*bbox, ccw=True)])
-        prob_matrix = sparse.csr_matrix(prob_matrix.squeeze()/corr_fact)
+        prob_matrix = prob_matrix.squeeze()/corr_fact
 
         # sample events from probabilities
-        haz.fraction = sample_events_from_probs(prob_matrix, n_years, dist)
-
-        # set frequ. to no. of occurrences per cell / timespan:
-        haz.frequency = haz.fraction/n_years
-
-        # set intensity to 1 wherever an occurrence:
-        haz.intensity = haz.fraction.copy()
-        haz.intensity[haz.intensity.nonzero()]=1
+        haz.intensity = sample_events(prob_matrix, n_years, dist)
+        haz.fraction = haz.intensity.copy()
+        haz.fraction[haz.intensity.nonzero()]=1
+        haz.frequency = np.ones(n_years)/n_years
 
         # meaningless, such that check() method passes:
         haz.date = np.array([])
-        haz.event_name = []
-        haz.event_id = np.array([1])
+        haz.event_name = np.array(range(n_years))
+        haz.event_id = np.array(range(n_years))
 
-        # check for
         if not haz.centroids.meta['crs'].is_epsg_code:
             haz.centroids.meta['crs'] = haz.centroids.meta['crs'
                                ].from_user_input(DEF_CRS)
         haz.centroids.set_geometry_points()
+        
         haz.check()
+        
         return haz
         
     def set_ls_prob(self, *args, **kwargs):
