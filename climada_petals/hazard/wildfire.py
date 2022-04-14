@@ -133,6 +133,8 @@ class WildFire(Hazard):
             mean global propagation probability
         prop_proba_std : float, default = 0.025
             standard deviation of global propagation probability 
+        prop_proba : list, default = None
+            stores the global propagation probabilities for each season
         max_it_propa : float, default = 500000
         forest_val : float, default = 1
             fire spread probability of forest land cover classes
@@ -160,6 +162,7 @@ class WildFire(Hazard):
         blurr_steps: int = 4
         prop_proba_mean: float = 0.175
         prop_proba_std: float = 0.025
+        prop_proba: list = None
         max_it_propa: int = 500000
         forest_val: float = 1.
         vegetation_val: float = 1.
@@ -469,20 +472,20 @@ class WildFire(Hazard):
             ign_max = n_ignitions[1]
 
         prob_fire_seasons = [] # list to save probabilistic fire seasons
-        event_proba_new = []
         n_fires_new = []
+        if self.ProbaParams.prop_proba is None:
+            self.ProbaParams.prop_proba = []
         # create probabilistic fire seasons
         for i in range(n_fire_seasons):
             # prop_proba is restricted to be smaller than 0.25
-            self.ProbaParams.prop_proba = min(0.25, float(np.random.normal(self.ProbaParams.prop_proba_mean,
-                                                            self.ProbaParams.prop_proba_std, 1)))
+            self.ProbaParams.prop_proba.append(min(0.25, float(np.random.normal(self.ProbaParams.prop_proba_mean,
+                                                            self.ProbaParams.prop_proba_std, 1))))
             n_ign = max(int(ign_min), int(np.around(np.random.gamma(shape_est, scale_est, 1))))
             if n_ignitions is not None:
                 n_ign = min(int(ign_max), int(n_ign))
             
             LOGGER.info('Setting up probabilistic fire season with %s fires. Global proba = %.3f'
-                        %(n_ign, self.ProbaParams.prop_proba))
-            event_proba_new.append(self.ProbaParams.prop_proba)
+                        %(n_ign, self.ProbaParams.prop_proba[-1]))
             n_fires_new.append(n_ign)
             LOGGER.info('Fire season: %i' %(i+1))
             if n_ign > 0:
@@ -493,12 +496,10 @@ class WildFire(Hazard):
 
         # save
         # Following values are defined for each fire
-        event_proba = np.zeros(len(self.event_id), float)
         new_event_id = np.arange(np.max(self.event_id)+1, np.max(self.event_id)+n_fire_seasons+1)
         self.event_id = np.concatenate((self.event_id, new_event_id), axis=None)
         new_event_name = list(map(str, new_event_id))
         self.event_name = np.append(self.event_name, new_event_name)
-        self.event_proba = np.append(event_proba, event_proba_new)
         self.n_fires = np.append(self.n_fires, n_fires_new)
         new_orig = np.zeros(len(new_event_id), bool)
         self.orig = np.concatenate((self.orig, new_orig))
@@ -1210,7 +1211,7 @@ class WildFire(Hazard):
             1 <= centr_iy < self.centroids.shape[1]-1 and \
             self.centroids.on_land[(centr_ix*self.centroids.shape[1] + centr_iy)]:
                 centr_burned = self._fire_propagation_on_matrix(self.centroids.shape, \
-                    self.centroids.fire_propa_matrix, self.ProbaParams.prop_proba, \
+                    self.centroids.fire_propa_matrix, self.ProbaParams.prop_proba[-1], \
                     centr_ix, centr_iy, centr_burned, np.random.random(500))
 
             else:
