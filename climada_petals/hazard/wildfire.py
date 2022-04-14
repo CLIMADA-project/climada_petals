@@ -1685,10 +1685,10 @@ class WildFire(Hazard):
         """
 
         if not hasattr(self.centroids, 'landcover'):
-            self._get_landcover(land_path, bounds, res, geometry)
+            transform_land = self._get_landcover(land_path, bounds, res, geometry)
 
         land_propa_matrix = self._assign_prop_probas(self.centroids.landcover)
-        self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res, bounds, self.transform_land, self.centroids.shape)
+        self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res, bounds, transform_land, self.centroids.shape)
 
     def _set_population_propa_mat(self, pop_path, bounds, res, geometry):
         """
@@ -1726,8 +1726,12 @@ class WildFire(Hazard):
 
     def _get_landcover(self, land_path, bounds, res, geometry):
         """
-        It loads the land cover data. The land cover data are corrected by
+        Loads the land cover data. The land cover data are corrected by
         assigning subclasses to their corresponding main class. 
+        
+        This method modifies self (climada.hazard.WildFire instance) by
+        loading the land cover data and storing it on
+        self.centroids.landcover as np.array
 
         Parameters
         ----------
@@ -1739,6 +1743,11 @@ class WildFire(Hazard):
             Resolution of propagation probability / ignition matrix. 
         geometry : geometry.multipolygon.Multi.Polygon
             Shape of the country / countries.
+            
+        Returns
+        -------
+        transform_land : rasterio.Affine
+            Affine transformation defining the land cover raster data.
         """
         
         res_land = 0.1/ONE_LAT_KM # original resolution
@@ -1748,14 +1757,19 @@ class WildFire(Hazard):
         landcover, transform_land = self.read_tif(land_path, bounds, res = res_land, shape = shape_land, resampling = rasterio.warp.Resampling.mode)
         landcover = self._correct_landcover(landcover)
         
-        self.transform_land = transform_land
         self.centroids.landcover = landcover
+        
+        return transform_land
 
     def _get_population(self, pop_path, bounds, res, geometry):
         """
-        It loads the population data. The data are corrected (negative values
+        Loads the population data. The data are corrected (negative values
         are removed) and a Gaussian image filter is applied (sigma = 10, 
         truncated at 3 sigmas). 
+                                                             
+        This method modifies self (climada.hazard.WildFire instance) by
+        loading the population data and storing it on
+        self.centroids.population as np.array
         
         Parameters
         ----------
@@ -1769,11 +1783,10 @@ class WildFire(Hazard):
             Shape of the country / countries.
         """
         
-        population, transform_pop = self.read_tif(pop_path, bounds, res, shape = self.centroids.shape, resampling = rasterio.warp.Resampling.sum)
+        population, _ = self.read_tif(pop_path, bounds, res, shape = self.centroids.shape, resampling = rasterio.warp.Resampling.sum)
 
         population = np.where(population < 0., 0., population)
         population = ndimage.gaussian_filter(population, sigma = 10, truncate = 3)
-        self.transform_pop = transform_pop
         mask = (u_coord.coord_on_land(self.centroids.lat-res/2, self.centroids.lon+res/2, land_geom = geometry).astype(float)).reshape(self.centroids.shape)
         mask[mask == 0] = np.nan
         self.centroids.population = population * mask
