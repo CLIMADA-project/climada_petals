@@ -88,6 +88,10 @@ class Warn:
         self.warning = warning
         self.coord = coord
         self.warn_levels = filter_data.warn_levels
+        self.metadata_generation_storm = {
+            'gradual decrease': filter_data.gradual_decr,
+            'change small regions': filter_data.change_sm
+        }
 
     @classmethod
     def from_map(cls, input_map, coord, filter_data):
@@ -132,7 +136,7 @@ class Warn:
         if np.min(input_map) < np.min(warn_levels):
             LOGGER.warning('Values of input map are smaller than defined warn levels. '
                            'Please set the warn levels lower or check input map.')
-        if np.min(input_map) > np.min(warn_levels):
+        if np.max(input_map) > np.max(warn_levels):
             LOGGER.warning('Values of input map are larger than defined warn levels. '
                            'Please set the warn levels higher or check input map.')
         return np.digitize(input_map, warn_levels) - 1  # digitize lowest bin is 1

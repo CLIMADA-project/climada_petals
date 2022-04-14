@@ -5,7 +5,7 @@ from climada_petals.engine.warn import Warn, FilterData
 
 
 class TestWarn(unittest.TestCase):
-    def test_threshol_data(self):
+    def test_threshold_data(self):
         thresholds = np.array([0.0, 20, 50])
         wind_matrix = np.zeros((10, 10))
         wind_matrix[2, 2] = -2
