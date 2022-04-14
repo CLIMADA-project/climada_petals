@@ -355,8 +355,7 @@ class WildFire(Hazard):
             LOGGER.info('Setting up historical fire seasons %s.', str(year))
             firms_temp = haz._select_fire_season(df_firms, year, hemisphere=hemisphere)
             # calculate historic fire seasons
-            wf_year = WildFire()
-            wf_year.from_hist_fire_FIRMS(firms_temp, centroids=centroids)
+            wf_year = WildFire.from_hist_fire_FIRMS(firms_temp, centroids=centroids)
             hist_fire_seasons.append(wf_year)
 
         # fires season (used to define distribution of n fire for the
