@@ -265,7 +265,7 @@ class WildFire(Hazard):
         """ Parse FIRMS data and generate historical fire seasons.
 
         Individual fires are created using temporal and spatial clustering
-        according to the 'set_hist_fire_FIRMS' method. single fires are then
+        according to the 'from_hist_fire_FIRMS' method. single fires are then
         summarized to seasons using max intensity at each centroid for each year.
 
         This method sets the attributes self.n_fires, self.date_end, in
@@ -356,7 +356,7 @@ class WildFire(Hazard):
             firms_temp = haz._select_fire_season(df_firms, year, hemisphere=hemisphere)
             # calculate historic fire seasons
             wf_year = WildFire()
-            wf_year.set_hist_fire_FIRMS(firms_temp, centroids=centroids)
+            wf_year.from_hist_fire_FIRMS(firms_temp, centroids=centroids)
             hist_fire_seasons.append(wf_year)
 
         # fires season (used to define distribution of n fire for the
