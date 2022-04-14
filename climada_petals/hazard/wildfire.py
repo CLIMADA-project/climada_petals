@@ -116,6 +116,7 @@ class WildFire(Hazard):
         remove_minor_fires_firms: bool = True
         minor_fire_thres_firms: int = 3
         crop_fires: bool = False
+        countries: list = None
 
     @dataclass
     class ProbaParams():
@@ -310,10 +311,11 @@ class WildFire(Hazard):
         LOGGER.info('Setting up historical fires for year set.')
         haz = cls()
         
-        if not hasattr(haz.FirmsParams, 'country'):
-            haz.FirmsParams.country = u_coord.country_to_iso(np.unique(
-                u_coord.get_country_code(df_firms.latitude, df_firms.longitude, 
-                                      gridded=False)))
+        if haz.FirmsParams.countries is None:
+            haz.FirmsParams.countries = [] 
+            haz.FirmsParams.countries += (u_coord.country_to_iso(np.unique(
+                    u_coord.get_country_code(df_firms.latitude, df_firms.longitude, 
+                                          gridded=False))))
 
         # read and initialize data
         df_firms = haz._clean_firms_df(df_firms)
@@ -1598,7 +1600,7 @@ class WildFire(Hazard):
         pop_path : pathlib.Path
             Path to population raster file
         """
-        geometry = u_coord.get_land_geometry(self.FirmsParams.country)
+        geometry = u_coord.get_land_geometry(self.FirmsParams.countries)
 
         if not hasattr(self.centroids, 'frac_propa_matrix'):
             self._set_landcover_propa_mat(land_path, bounds, res, geometry)
@@ -1635,7 +1637,7 @@ class WildFire(Hazard):
         pop_path : pathlib.Path
             Path to population raster file
         """
-        geometry = u_coord.get_land_geometry(self.FirmsParams.country)
+        geometry = u_coord.get_land_geometry(self.FirmsParams.countries)
 
         if not hasattr(self.centroids, 'frac_propa_matrix'):
             self._set_landcover_propa_mat(land_path, bounds, res, geometry)
