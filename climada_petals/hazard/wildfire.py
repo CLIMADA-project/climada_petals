@@ -130,8 +130,9 @@ class WildFire(Hazard):
 
         Attributes
         ----------
-        blurr_steps : int, default = 4
-            steps with exponential decay for fire propagation matrix
+        blurr_steps : int, default = 4, deprecated
+            steps with exponential decay for fire propagation matrix.
+            Only used for deprecated method WildFire._set_fire_propa_matrix.
         prop_proba_mean : float, default = 0.175
             mean global propagation probability
         prop_proba_std : float, default = 0.025
@@ -1173,10 +1174,6 @@ class WildFire(Hazard):
         centr_burned : np.array
             array indicating which centroids burned
         """
-        # set fire propagation matrix if not already defined
-        if not hasattr(self.centroids, 'fire_propa_matrix'):
-            self._set_fire_propa_matrix()
-
         pos_centr = np.argwhere(self.centroids.ignition_weights_matrix.reshape( \
                         len(self.centroids.lat)) > 0)[:, -1]
 
