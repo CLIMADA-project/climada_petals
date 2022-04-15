@@ -109,6 +109,9 @@ class WildFire(Hazard):
         crop_fires : bool, default = False
             If false, crop fires are removed from firms data frame by
             comparing to the land cover data
+        countries : list, default = None
+            List containing the iso3 codes from FIRMS data. Is used to 
+            generate the propagation probability and ignition matrix. 
         """
         clean_thresh: int = 30
         days_thres_firms: int = 2
@@ -136,6 +139,7 @@ class WildFire(Hazard):
         prop_proba : list, default = None
             stores the global propagation probabilities for each season
         max_it_propa : float, default = 500000
+            stops fire spread after defined number of iterations
         forest_val : float, default = 1
             fire spread probability of forest land cover classes
         vegetation_val : float, default = 1
@@ -156,8 +160,8 @@ class WildFire(Hazard):
             compared to the population ignition.
         pop_weights_opt : int, default = 1
             Influence of population on the ignition matrix. 
-            Option 1: square root of population
-            Option 2: ln of population
+            Option 1: square root of population (stronger influence)
+            Option 2: ln of population (weaker influence)
         """
         blurr_steps: int = 4
         prop_proba_mean: float = 0.175
@@ -425,12 +429,19 @@ class WildFire(Hazard):
         Probabilistic fires are created using the logic described in the
         method '_run_one_bushfire'.
 
-        The fire propagation matrix can be assigned separately, if that is not
-        done it will be generated on the available historic fire (seasons).
+        The fire propagation matrix is assigned automatically based on the
+        chosen ProbaParams.
 
         Intensities are drawn randomly from historic events. Thus, this method
         requires at least one fire to draw from.
-
+        
+        The global propagation probabilities are randomly drawn from a normal
+        distribution defined by the ProbaPrams prop_proba_mean and 
+        prop_proba_std.
+        
+        The number of fire ignitions is randomly drawn from a gamma
+        distribution estimated from the historical fire seasons.
+        
         This method modifies self (climada.hazard.WildFire instance)
         by adding probabilistic wildfire seasons.
 
@@ -441,9 +452,9 @@ class WildFire(Hazard):
         n_fire_seasons : int, optional
             number of fire seasons to be generated
         n_ignitions : array, optional
-            [min, max]: min/max of uniform distribution to sample from,
-            in order to determin n_fire per probabilistic year set.
-            If none, min/max is taken from hist.
+            [min, max]: min/max truncation of gamma distribution to sample from,
+            in order to determine n_fire per probabilistic year set.
+            If none, gamma distribution is not truncated.
         keep_all_fires : bool, optional
             keep detailed list of all fires; default is False to save
             memory.
@@ -1121,13 +1132,14 @@ class WildFire(Hazard):
 
     def _run_one_fire(self):
         """ Run one bushfire on a fire propagation probability matrix.
-            If the matrix is not defined, it is constructed using past fire
-            experience -> a fire can only propagate on centroids that burned
-            in the past including a exponentially blurred range around the
-            historic fires.
-            The ignition point of a fire can be on any centroid, on which
-            the propagation probability equals 1. The fire is then propagated
-            with a cellular automat.
+            The propagation probability matrix is constructed using land cover
+            and population data. -> a fire can only propagate on centroids
+            that have a propagation probability larger than 0.
+            The ignition point of a fire can be on any centroid where the 
+            land cover allows for it. The probability of fire ignition is,
+            according to the ignition matrix, higher near cities and where
+            historical occurred frequently. The fire is then propagated
+            with a cellular automaton.
             If the fire has not stopped burning after a defined number of
             iterations (self.ProbaParams.max_it_propa, default=500'000),
             the propagation is interrupted.
@@ -1174,7 +1186,7 @@ class WildFire(Hazard):
                     len(self.centroids.lat)) > 0)]
 
         LOGGER.debug('Start ignition.')
-        # Random selection of ignition centroid
+        # Random selection of ignition centroid according to ignition matrix
         for _ in range(self.centroids.size):
             centr = random.choices(pos_centr, weights = weights)[0]
             centr_ix = int(centr/self.centroids.shape[1])
@@ -1300,8 +1312,9 @@ class WildFire(Hazard):
         return proba_intensity
 
     def _set_fire_propa_matrix(self):
-
-        """ sets fire propagation matrix which is used to propagate
+        """This function is deprecated, use WildFire._set_propagation_matrix 
+        instead. 
+        Sets fire propagation matrix which is used to propagate
         probabilistic fires. The matrix is set so that burn probability on
         centroids which burned historically is set to 1. A blurr with
         exponential decay of burn probabilities is set around these
@@ -1318,6 +1331,9 @@ class WildFire(Hazard):
         ----------
         self : climada.hazard.WildFire instance
         """
+        LOGGER.warning("The use of WildFire._set_fire_propa_matrix is deprecated."
+                       "Use WildFire._set_propagation_matrix.")
+        
         # historically burned centroids
         hist_burned = np.zeros(self.centroids.lat.shape, dtype=bool)
         hist_burned = self.intensity.sum(0) > 0.
@@ -1582,9 +1598,13 @@ class WildFire(Hazard):
 
     def _set_propagation_matrix(self, bounds, res, land_path, pop_path):
         """
-        Sets the propagation matrix. It resamples the land cover data over a
+        Sets the propagation matrix. It aggregates the land cover data over a
         certain area to account for the fraction of the specific land cover
-        classes in this area. The population data is resampled with the method 'sum'.
+        classes in this area. The population data is aggregated with the 
+        method 'sum'. Before aggregating the population data, a Gaussian 
+        image filter is applied to the data to account for different 
+        administrative input units and for simulating the active fire
+        suppression beginning in some distance away from the cities.
         
         This method modifies self (climada.hazard.WildFire instance) by
         creating the propagation probability matrix 
@@ -1619,9 +1639,16 @@ class WildFire(Hazard):
 
     def _set_ignition_matrix(self, bounds, res, land_path, pop_path):
         """
-        Sets the ignition matrix. It resamples the land cover data over a
-        certain area to account for the fraction of the specific land cover
-        classes in this area. The population data is resampled with the method 'sum'.
+        Sets the ignition matrix. The ignition weights are calculated as the
+        average between population and historical weights. The population
+        weights are derived from the Gaussian filtered population by using 
+        the function defined in WildFire.PropaParams.pop_weights_opt. The 
+        historical weights are derived from the number of seasons with at
+        least one fire occurrence per grid cell. A Gaussian image filter 
+        was also applied to this number of seasons to account for 
+        uncertainties and spread in the exact fire location. In the end, this
+        derived weights are multiplied with the propagation probability matrix
+        to only allow fire ignitions where the land cover class allows it.
         
         This method modifies self (climada.hazard.WildFire instance) by
         creating the ignition weights matrix 
@@ -1730,7 +1757,7 @@ class WildFire(Hazard):
     def _get_landcover(self, land_path, bounds, res, geometry):
         """
         Loads the land cover data. The land cover data are corrected by
-        assigning subclasses to their corresponding main class. 
+        aggregating the subclasses to their corresponding main classes. 
         
         This method modifies self (climada.hazard.WildFire instance) by
         loading the land cover data and storing it on
@@ -1797,8 +1824,9 @@ class WildFire(Hazard):
     @staticmethod
     def _correct_landcover(landcover):
         """
-        Corrects undefined values in the land cover data. The land cover data
-        are corrected by assigning subclasses to their corresponding main class.
+        Corrects undefined values in the land cover data. The land cover data 
+        are corrected by aggregating the subclasses to their corresponding 
+        main classes.
         
         Parameters
         ----------
@@ -1859,8 +1887,8 @@ class WildFire(Hazard):
     @staticmethod
     def remap_raster(raster_high, res_low, bounds, transform, shape_low = None):
         """
-        Remaps a raster to a given lower resolution by aggregating
-        a certain number of grid cells by using an average function.
+        Remaps a raster to a given lower resolution by aggregating a certain 
+        number of grid cells by using an average function.
 
         Parameters
         ----------
@@ -1873,7 +1901,7 @@ class WildFire(Hazard):
         transform : rasterio.Affine
             Affine transformation defining the input raster data.
         shape_low : tuple, optional
-            Shape of output with the lower resolutin. Default: Shape matching
+            Shape of output with the lower resolution. Default: Shape matching
             the given resolution and the bounds.
 
         Returns
@@ -2059,9 +2087,11 @@ class WildFire(Hazard):
                               )
 
     def _remove_crop_fires_df(self, df_firms, land_path, centroids):
-        """Removes crop fires from the firms data frame by checking the
-        nearest land cover class using the haversine distance. If the nearest
-        land cover class is crop land, the fire is removed from the data frame.
+        """Removes crop fires from the FIRMS data frame by checking the
+        nearest land cover class using the haversine distance. The land cover 
+        data is first aggregated to a grid with 1km resolution by taking the
+        most frequent class in this area. If the nearest land cover class is 
+        cropland, the fire is removed from the data frame.
 
         Parameters
         ----------
