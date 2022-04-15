@@ -516,6 +516,9 @@ class WildFire(Hazard):
         new_orig = np.zeros(len(new_event_id), bool)
         self.orig = np.concatenate((self.orig, new_orig))
         self._set_frequency()
+        # There is no date for probabilistic seasons, therefore using event_id
+        self.date = np.concatenate((self.date, new_event_id), axis=None)
+        self.date_end = np.concatenate((self.date_end, new_event_id), axis=None)
 
         # Following values are defined for each event and centroid
         new_intensity = sparse.lil_matrix((np.zeros([n_fire_seasons, len(self.centroids.lat)])))
