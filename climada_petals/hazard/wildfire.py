@@ -28,6 +28,7 @@ from datetime import date
 from pathlib import Path
 import copy
 
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -37,7 +38,11 @@ from sklearn.cluster import DBSCAN
 import numba
 import rasterio
 import shapely.geometry
-import random
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.colors import from_levels_and_colors
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
@@ -46,12 +51,6 @@ from climada.util.constants import ONE_LAT_KM, DEF_CRS, SYSTEM_DIR
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
 import climada.util.interpolation as u_int
-
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from matplotlib.colors import from_levels_and_colors
 
 LOGGER = logging.getLogger(__name__)
 
@@ -110,8 +109,8 @@ class WildFire(Hazard):
             If false, crop fires are removed from firms data frame by
             comparing to the land cover data
         countries : list, default = None
-            List containing the iso3 codes from FIRMS data. Is used to 
-            generate the propagation probability and ignition matrix. 
+            List containing the iso3 codes from FIRMS data. Is used to
+            generate the propagation probability and ignition matrix.
         """
         clean_thresh: int = 30
         days_thres_firms: int = 2
@@ -136,7 +135,7 @@ class WildFire(Hazard):
         prop_proba_mean : float, default = 0.175
             mean global propagation probability
         prop_proba_std : float, default = 0.025
-            standard deviation of global propagation probability 
+            standard deviation of global propagation probability
         prop_proba : list, default = None
             stores the global propagation probabilities for each season
         max_it_propa : float, default = 500000
@@ -146,12 +145,12 @@ class WildFire(Hazard):
         vegetation_val : float, default = 1
             fire spread probability of vegetation land cover classes
         medium_val : float, default = 0.85
-            fire spread probability of herbaceous wetland and 
+            fire spread probability of herbaceous wetland and
             crop land (if explicitly simulated)
         incombustible_val : float, default = 0
             fire spread probability of incombustible land cover classes
         pop_suppression : float, default = 50
-            Influence of the population on the fire spread suppression. 
+            Influence of the population on the fire spread suppression.
             The larger the value, the weaker the suppression.
         hist_igniton : bool, default = True
             includes a historical component in the ignition matrix
@@ -160,7 +159,7 @@ class WildFire(Hazard):
             larger the value, the more imporatant are the historical fires
             compared to the population ignition.
         pop_weights_opt : int, default = 1
-            Influence of population on the ignition matrix. 
+            Influence of population on the ignition matrix.
             Option 1: square root of population (stronger influence)
             Option 2: ln of population (weaker influence)
         """
@@ -269,7 +268,7 @@ class WildFire(Hazard):
     def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
                                     centroids=None, hemisphere=None,
                                     year_start=None, year_end=None,
-                                    keep_all_fires=False, land_path = None):
+                                    keep_all_fires=False, land_path=None):
 
         """ Parse FIRMS data and generate historical fire seasons.
 
@@ -308,7 +307,7 @@ class WildFire(Hazard):
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
         land_path : str, optional
-            Path to land cover raster file. Is used if crop fires should be 
+            Path to land cover raster file. Is used if crop fires should be
             removed.
 
         Returns
@@ -318,11 +317,11 @@ class WildFire(Hazard):
 
         LOGGER.info('Setting up historical fires for year set.')
         haz = cls()
-        
+
         if haz.FirmsParams.countries is None:
-            haz.FirmsParams.countries = [] 
+            haz.FirmsParams.countries = []
             haz.FirmsParams.countries += (u_coord.country_to_iso(np.unique(
-                    u_coord.get_country_code(df_firms.latitude, df_firms.longitude, 
+                    u_coord.get_country_code(df_firms.latitude, df_firms.longitude,
                                           gridded=False))))
 
         # read and initialize data
@@ -334,7 +333,7 @@ class WildFire(Hazard):
         else:
             if not centroids.coord.size:
                 centroids.set_meta_to_lat_lon()
-        
+
         if not haz.FirmsParams.crop_fires:
             LOGGER.info('Removing crop fires.')
             land_path = haz._get_landcover_file_path(land_path)
@@ -419,8 +418,8 @@ class WildFire(Hazard):
         self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
-                               keep_all_fires=False, land_path = None, 
-                               pop_path = None):
+                               keep_all_fires=False, land_path=None,
+                               pop_path=None):
         """ Generate probabilistic fire seasons.
 
         Fire seasons are created by running n probabilistic fires per year
@@ -435,14 +434,14 @@ class WildFire(Hazard):
 
         Intensities are drawn randomly from historic events. Thus, this method
         requires at least one fire to draw from.
-        
+
         The global propagation probabilities are randomly drawn from a normal
-        distribution defined by the ProbaPrams prop_proba_mean and 
+        distribution defined by the ProbaPrams prop_proba_mean and
         prop_proba_std.
-        
+
         The number of fire ignitions is randomly drawn from a gamma
         distribution estimated from the historical fire seasons.
-        
+
         This method modifies self (climada.hazard.WildFire instance)
         by adding probabilistic wildfire seasons.
 
@@ -468,13 +467,15 @@ class WildFire(Hazard):
         res = self.centroids.meta['transform'][0]
         land_path = self._get_landcover_file_path(land_path)
         pop_path = self._get_pop_file_path(pop_path)
-        
-        self._set_propagation_matrix(bounds = bounds, res = res, land_path = land_path, pop_path = pop_path)
-        self._set_ignition_matrix(bounds = bounds, res = res, land_path = land_path, pop_path = pop_path)
 
-        shape_est = np.mean(self.n_fires)**2/np.std(self.n_fires)**2
-        scale_est = np.std(self.n_fires)**2/np.mean(self.n_fires)
-        
+        self._set_propagation_matrix(bounds = bounds, res = res,
+                                     land_path = land_path, pop_path = pop_path)
+        self._set_ignition_matrix(bounds = bounds, res = res,
+                                  land_path = land_path, pop_path = pop_path)
+
+        shape_est = np.mean(self.n_fires) ** 2 / np.std(self.n_fires) ** 2
+        scale_est = np.std(self.n_fires) ** 2 / np.mean(self.n_fires)
+
         # min/max for uniform distribtion to sample for n_fires per year
         if n_ignitions is None:
             ign_min = np.min(self.n_fires)
@@ -490,13 +491,14 @@ class WildFire(Hazard):
         # create probabilistic fire seasons
         for i in range(n_fire_seasons):
             # prop_proba is restricted to be smaller than 0.25
-            self.ProbaParams.prop_proba.append(min(0.25, float(np.random.normal(self.ProbaParams.prop_proba_mean,
-                                                            self.ProbaParams.prop_proba_std, 1))))
+            self.ProbaParams.prop_proba.append(min(0.25, float(np.random.normal(
+                self.ProbaParams.prop_proba_mean,
+                self.ProbaParams.prop_proba_std, 1))))
             n_ign = max(int(ign_min), int(np.around(np.random.gamma(shape_est, scale_est, 1))))
             if n_ignitions is not None:
                 n_ign = min(int(ign_max), int(n_ign))
-                
-            LOGGER.info('Fire season: %i', (i+1))
+
+            LOGGER.info('Fire season: %i', (i + 1))
             LOGGER.info('Setting up probabilistic fire season with %s fires.',
                         n_ign)
             n_fires_new.append(n_ign)
@@ -1139,7 +1141,7 @@ class WildFire(Hazard):
             The propagation probability matrix is constructed using land cover
             and population data. -> a fire can only propagate on centroids
             that have a propagation probability larger than 0.
-            The ignition point of a fire can be on any centroid where the 
+            The ignition point of a fire can be on any centroid where the
             land cover allows for it. The probability of fire ignition is,
             according to the ignition matrix, higher near cities and where
             historical occurred frequently. The fire is then propagated
@@ -1312,8 +1314,8 @@ class WildFire(Hazard):
         return proba_intensity
 
     def _set_fire_propa_matrix(self):
-        """This function is deprecated, use WildFire._set_propagation_matrix 
-        instead. 
+        """This function is deprecated, use WildFire._set_propagation_matrix
+        instead.
         Sets fire propagation matrix which is used to propagate
         probabilistic fires. The matrix is set so that burn probability on
         centroids which burned historically is set to 1. A blurr with
@@ -1333,7 +1335,7 @@ class WildFire(Hazard):
         """
         LOGGER.warning("The use of WildFire._set_fire_propa_matrix is deprecated."
                        "Use WildFire._set_propagation_matrix.")
-        
+
         # historically burned centroids
         hist_burned = np.zeros(self.centroids.lat.shape, dtype=bool)
         hist_burned = self.intensity.sum(0) > 0.
@@ -1370,17 +1372,18 @@ class WildFire(Hazard):
             colormesh plot of fire_propa_matrix
         """
 
-        lon = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
-        lat = np.reshape(self.centroids.lat, self.centroids.fire_propa_matrix.shape)
+        lon_grid = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
+        lat_grid = np.reshape(self.centroids.lat, self.centroids.fire_propa_matrix.shape)
 
         plt.figure(figsize = (14,14))
         ax = plt.axes(projection=ccrs.PlateCarree())
-        im = plt.pcolormesh(lon, lat, self.centroids.fire_propa_matrix,
-                     transform=ccrs.PlateCarree(), cmap = 'gist_earth_r', 
+        im = plt.pcolormesh(lon_grid, lat_grid, self.centroids.fire_propa_matrix,
+                     transform=ccrs.PlateCarree(), cmap = 'gist_earth_r',
                      shading='auto')
         ax.coastlines()
         ax.add_feature(cfeature.BORDERS.with_scale('50m'))
-        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(), linewidth = 1.5, alpha = 0.3)
+        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(),
+                            linewidth = 1.5, alpha = 0.3)
         grid.top_labels = grid.right_labels = False
         grid.xformatter = LONGITUDE_FORMATTER
         grid.yformatter = LATITUDE_FORMATTER
@@ -1401,30 +1404,31 @@ class WildFire(Hazard):
             colormesh plot of ignition_weights_matrix
         """
 
-        lon = np.reshape(self.centroids.lon, self.centroids.ignition_weights_matrix.shape)
-        lat = np.reshape(self.centroids.lat, self.centroids.ignition_weights_matrix.shape)
+        lon_grid = np.reshape(self.centroids.lon, self.centroids.ignition_weights_matrix.shape)
+        lat_grid = np.reshape(self.centroids.lat, self.centroids.ignition_weights_matrix.shape)
 
         plt.figure(figsize = (14,14))
         ax = plt.axes(projection=ccrs.PlateCarree())
-        im = plt.pcolormesh(lon, lat, self.centroids.ignition_weights_matrix,
-                     transform=ccrs.PlateCarree(), cmap = 'cubehelix_r', 
+        im = plt.pcolormesh(lon_grid, lat_grid, self.centroids.ignition_weights_matrix,
+                     transform=ccrs.PlateCarree(), cmap = 'cubehelix_r',
                      shading='auto')
         ax.coastlines()
         ax.add_feature(cfeature.BORDERS.with_scale('50m'))
-        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(), linewidth = 1.5, alpha = 0.3)
-        grid.top_labels = grid.right_labels = False 
-        grid.xformatter = LONGITUDE_FORMATTER 
-        grid.yformatter = LATITUDE_FORMATTER 
-        grid.xlabel_style = {'size': 20} 
-        grid.ylabel_style = {'size': 20} 
+        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(),
+                            linewidth = 1.5, alpha = 0.3)
+        grid.top_labels = grid.right_labels = False
+        grid.xformatter = LONGITUDE_FORMATTER
+        grid.yformatter = LATITUDE_FORMATTER
+        grid.xlabel_style = {'size': 20}
+        grid.ylabel_style = {'size': 20}
         cbax = make_axes_locatable(ax).append_axes(
-            'right', size="6.5%", pad=0.1, axes_class=plt.Axes) 
-        cbar = plt.colorbar(im, cax = cbax) 
-        cbar.set_label('Weight', size = 24) 
-        cbar.ax.tick_params(labelsize=20) 
-        
+            'right', size="6.5%", pad=0.1, axes_class=plt.Axes)
+        cbar = plt.colorbar(im, cax = cbax)
+        cbar.set_label('Weight', size = 24)
+        cbar.ax.tick_params(labelsize=20)
+
     def plot_landcover(self):
-        """ Plots land cover classes as derived from Openlandmap as colormesh 
+        """ Plots land cover classes as derived from Openlandmap as colormesh
         plot with a resolution of 100m.
 
         Returns
@@ -1433,26 +1437,27 @@ class WildFire(Hazard):
             colormesh plot of Land cover data
         """
         bounds = tuple(np.round(self.centroids.total_bounds, 2))
-        
-        X = np.linspace(bounds[0], bounds[2], self.centroids.landcover.shape[1])
-        Y = np.linspace(bounds[3], bounds[1], self.centroids.landcover.shape[0])
-        lon, lat = np.meshgrid(X, Y)
-        
+
+        ax_x = np.linspace(bounds[0], bounds[2], self.centroids.landcover.shape[1])
+        ax_y = np.linspace(bounds[3], bounds[1], self.centroids.landcover.shape[0])
+        lon_grid, lat_grid = np.meshgrid(ax_x, ax_y)
+
         cmap, norm = self._land_cmap()
-        
-        plt.figure(figsize = (14,14)) 
-        ax = plt.axes(projection=ccrs.PlateCarree()) 
-        plt.pcolormesh(lon, lat, self.centroids.landcover,
-                     transform=ccrs.PlateCarree(), cmap = cmap, 
-                     norm = norm, shading = 'auto') 
-        ax.coastlines() 
-        ax.add_feature(cfeature.BORDERS.with_scale('50m')) 
-        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(), linewidth = 1.5, alpha = 0.3) 
-        grid.top_labels = grid.right_labels = False 
-        grid.xformatter = LONGITUDE_FORMATTER 
-        grid.yformatter = LATITUDE_FORMATTER 
-        grid.xlabel_style = {'size': 20} 
-        grid.ylabel_style = {'size': 20} 
+
+        plt.figure(figsize = (14,14))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        plt.pcolormesh(lon_grid, lat_grid, self.centroids.landcover,
+                     transform=ccrs.PlateCarree(), cmap = cmap,
+                     norm = norm, shading = 'auto')
+        ax.coastlines()
+        ax.add_feature(cfeature.BORDERS.with_scale('50m'))
+        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(),
+                            linewidth = 1.5, alpha = 0.3)
+        grid.top_labels = grid.right_labels = False
+        grid.xformatter = LONGITUDE_FORMATTER
+        grid.yformatter = LATITUDE_FORMATTER
+        grid.xlabel_style = {'size': 20}
+        grid.ylabel_style = {'size': 20}
 
     @staticmethod
     def _select_fire_season(df_firms, year, hemisphere='SHS'):
@@ -1600,14 +1605,14 @@ class WildFire(Hazard):
         """
         Sets the propagation matrix. It aggregates the land cover data over a
         certain area to account for the fraction of the specific land cover
-        classes in this area. The population data is aggregated with the 
-        method 'sum'. Before aggregating the population data, a Gaussian 
-        image filter is applied to the data to account for different 
+        classes in this area. The population data is aggregated with the
+        method 'sum'. Before aggregating the population data, a Gaussian
+        image filter is applied to the data to account for different
         administrative input units and for simulating the active fire
         suppression beginning in some distance away from the cities.
-        
+
         This method modifies self (climada.hazard.WildFire instance) by
-        creating the propagation probability matrix 
+        creating the propagation probability matrix
         self.centroids.fire_propa_matrix as np.array
 
         Parameters
@@ -1629,9 +1634,13 @@ class WildFire(Hazard):
 
         landpop_propa_matrix = self.centroids.frac_propa_matrix * self.centroids.pop_propa_matrix
 
-        landpop_propa_matrix = np.where(((self.centroids.population == 0.) & (self.centroids.frac_propa_matrix > 0.)) , self.centroids.frac_propa_matrix, landpop_propa_matrix)
-        # where the population is zero you get errors and the probability should actually be the landcover. Further, the landcover must also have a value larger than 0
-        # else e.g. lakes can burn as well.
+        landpop_propa_matrix = np.where(((self.centroids.population == 0.) &
+                                         (self.centroids.frac_propa_matrix > 0.)),
+                                        self.centroids.frac_propa_matrix,
+                                        landpop_propa_matrix)
+        # where the population is zero you get errors and the probability
+        # should actually be the landcover. Further, the landcover must also
+        # have a value larger than 0. Else e.g. lakes can burn as well.
 
         self.centroids.fire_propa_matrix = landpop_propa_matrix
 
@@ -1639,17 +1648,17 @@ class WildFire(Hazard):
         """
         Sets the ignition matrix. The ignition weights are calculated as the
         average between population and historical weights. The population
-        weights are derived from the Gaussian filtered population by using 
-        the function defined in WildFire.PropaParams.pop_weights_opt. The 
+        weights are derived from the Gaussian filtered population by using
+        the function defined in WildFire.PropaParams.pop_weights_opt. The
         historical weights are derived from the number of seasons with at
-        least one fire occurrence per grid cell. A Gaussian image filter 
-        was also applied to this number of seasons to account for 
+        least one fire occurrence per grid cell. A Gaussian image filter
+        was also applied to this number of seasons to account for
         uncertainties and spread in the exact fire location. In the end, this
         derived weights are multiplied with the propagation probability matrix
         to only allow fire ignitions where the land cover class allows it.
-        
+
         This method modifies self (climada.hazard.WildFire instance) by
-        creating the ignition weights matrix 
+        creating the ignition weights matrix
         self.centroids.ignition_weights_matrix as np.array
 
         Parameters
@@ -1673,17 +1682,20 @@ class WildFire(Hazard):
             pop_weights = np.sqrt(self.centroids.population)
         elif self.ProbaParams.pop_weights_opt == 2:
             pop_weights = np.log(self.centroids.population)
-            
-        pop_weights = np.where(pop_weights < 1., 1., pop_weights) # to only increase the chance for ignition, not decrease
 
-        if self.ProbaParams.hist_ignition:  
-            intensities = self.select(orig = True).intensity.toarray() 
-            fire_loc_hist = np.where(intensities != 0., 1., 0.) 
-            fire_loc_hist = np.sum(fire_loc_hist, axis = 0).reshape(self.centroids.shape) 
-            ignition_weights_matrix = (pop_weights + self.ProbaParams.hist_weight*ndimage.gaussian_filter(fire_loc_hist, sigma = 10, truncate = 3))/2 
+        # to only increase the chance for ignition, not decrease
+        pop_weights = np.where(pop_weights < 1., 1., pop_weights)
+
+        if self.ProbaParams.hist_ignition:
+            intensities = self.select(orig = True).intensity.toarray()
+            fire_loc_hist = np.where(intensities != 0., 1., 0.)
+            fire_loc_hist = np.sum(fire_loc_hist, axis = 0).reshape(self.centroids.shape)
+            ignition_weights_matrix = (pop_weights + self.ProbaParams.hist_weight *\
+                                       ndimage.gaussian_filter(fire_loc_hist, sigma = 10,
+                                                               truncate = 3)) / 2
         else:
             ignition_weights_matrix = pop_weights
-            
+
         ignition_weights_matrix = ignition_weights_matrix * self.centroids.frac_propa_matrix
 
         self.centroids.ignition_weights_matrix = ignition_weights_matrix
@@ -1692,10 +1704,10 @@ class WildFire(Hazard):
         """
         Aggregates the land cover data over a certain area to account for the
         fraction of the specific land cover classes in this area.
-        
+
         This method modifies self (climada.hazard.WildFire instance) by
-        creating the propagation probabilities 
-        self.centroids.frac_propa_matrix as np.array derived from the 
+        creating the propagation probabilities
+        self.centroids.frac_propa_matrix as np.array derived from the
         land cover classes by aggregating over a certain area.
 
         Parameters
@@ -1712,18 +1724,20 @@ class WildFire(Hazard):
             transform_land = self._get_landcover(land_path, bounds, res)
 
         land_propa_matrix = self._assign_prop_probas(self.centroids.landcover)
-        self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res, bounds, transform_land, self.centroids.shape)
+        self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res,
+                                                             bounds, transform_land,
+                                                             self.centroids.shape)
 
     def _set_population_propa_mat(self, pop_path, bounds, res):
         """
-        Sets the population propagation matrix using the estimated population 
+        Sets the population propagation matrix using the estimated population
         suppression function.
-        
+
         This method modifies self (climada.hazard.WildFire instance) by
-        creating the propagation probabilities 
-        self.centroids.pop_propa_matrix as np.array derived from the 
+        creating the propagation probabilities
+        self.centroids.pop_propa_matrix as np.array derived from the
         population by decreasing the probabilities in highly populated areas.
-        
+
         Parameters
         ----------
         pop_path : pathlib.Path
@@ -1733,24 +1747,27 @@ class WildFire(Hazard):
         res : float
             Resolution of propagation probability / ignition matrix.
         """
-        
+
         if not hasattr(self.centroids, 'population'):
             self._get_population(pop_path, bounds, res)
-        
+
         pop = self.centroids.population
         pop_propa_matrix = np.zeros(pop.shape)
-        pop_propa_matrix[pop > 0] = (1/((np.log(pop[pop > 0])/np.log(self.ProbaParams.pop_suppression))+1))+0.5
+        pop_propa_matrix[pop > 0] = (1 / ((np.log(pop[pop > 0]) / \
+                                           np.log(self.ProbaParams.pop_suppression)) + 1)) + 0.5
         pop_propa_matrix[pop == 0] = 1
-        pop_propa_matrix = np.where(pop_propa_matrix < 0., 1., pop_propa_matrix) # to remove impossible values generated by calculation
-        pop_propa_matrix = np.where(pop_propa_matrix > 1., 1., pop_propa_matrix) # to remove impossible values generated by calculation
-        
+
+        # to remove impossible values generated by calculation
+        pop_propa_matrix = np.where(pop_propa_matrix < 0., 1., pop_propa_matrix)
+        pop_propa_matrix = np.where(pop_propa_matrix > 1., 1., pop_propa_matrix)
+
         self.centroids.pop_propa_matrix = pop_propa_matrix
 
     def _get_landcover(self, land_path, bounds, res):
         """
         Loads the land cover data. The land cover data are corrected by
-        aggregating the subclasses to their corresponding main classes. 
-        
+        aggregating the subclasses to their corresponding main classes.
+
         This method modifies self (climada.hazard.WildFire instance) by
         loading the land cover data and storing it on
         self.centroids.landcover as np.array
@@ -1762,35 +1779,40 @@ class WildFire(Hazard):
         bounds : tuple
             (xmin, ymin, xmax, ymax)
         res : float
-            Resolution of propagation probability / ignition matrix. 
-            
+            Resolution of propagation probability / ignition matrix.
+
         Returns
         -------
         transform_land : rasterio.Affine
             Affine transformation defining the land cover raster data.
         """
-        
-        res_land = 0.1/ONE_LAT_KM # original resolution
-        factor = res/res_land 
-        shape_land = (int(self.centroids.shape[0]*factor), int(self.centroids.shape[1]*factor)) # to get the same bounds and no spatial errors during remapping
-        
-        landcover, transform_land = self.read_tif(land_path, bounds, res = res_land, shape = shape_land, resampling = rasterio.warp.Resampling.mode)
+
+        res_land = 0.1 / ONE_LAT_KM # original resolution
+        factor = res / res_land
+
+        # to get the same bounds and no spatial errors during remapping
+        shape_land = (int(self.centroids.shape[0]*  factor), int(self.centroids.shape[1] * factor))
+
+        landcover, transform_land = self.read_tif(land_path, bounds,
+                                                  res = res_land,
+                                                  shape = shape_land,
+                                                  resampling = rasterio.warp.Resampling.mode)
         landcover = self._correct_landcover(landcover)
-        
+
         self.centroids.landcover = landcover
-        
+
         return transform_land
 
     def _get_population(self, pop_path, bounds, res):
         """
         Loads the population data. The data are corrected (negative values
-        are removed) and a Gaussian image filter is applied (sigma = 10, 
-        truncated at 3 sigmas). 
-                                                             
+        are removed) and a Gaussian image filter is applied (sigma = 10,
+        truncated at 3 sigmas).
+
         This method modifies self (climada.hazard.WildFire instance) by
         loading the population data and storing it on
         self.centroids.population as np.array
-        
+
         Parameters
         ----------
         pop_path : pathlib.Path
@@ -1798,24 +1820,29 @@ class WildFire(Hazard):
         bounds : tuple
             (xmin, ymin, xmax, ymax)
         res : float
-            Resolution of propagation probability / ignition matrix. 
+            Resolution of propagation probability / ignition matrix.
         """
         geometry = u_coord.get_land_geometry(self.FirmsParams.countries)
-        population, _ = self.read_tif(pop_path, bounds, res, shape = self.centroids.shape, resampling = rasterio.warp.Resampling.sum)
+        population, _ = self.read_tif(pop_path, bounds, res,
+                                      shape = self.centroids.shape,
+                                      resampling = rasterio.warp.Resampling.sum)
 
         population = np.where(population < 0., 0., population)
         population = ndimage.gaussian_filter(population, sigma = 10, truncate = 3)
-        mask = (u_coord.coord_on_land(self.centroids.lat-res/2, self.centroids.lon+res/2, land_geom = geometry).astype(float)).reshape(self.centroids.shape)
+        mask = (u_coord.coord_on_land(self.centroids.lat - res / 2,
+                                      self.centroids.lon + res / 2,
+                                      land_geom = geometry).astype(float))\
+            .reshape(self.centroids.shape)
         mask[mask == 0] = np.nan
         self.centroids.population = population * mask
 
     @staticmethod
     def _correct_landcover(landcover):
         """
-        Corrects undefined values in the land cover data. The land cover data 
-        are corrected by aggregating the subclasses to their corresponding 
+        Corrects undefined values in the land cover data. The land cover data
+        are corrected by aggregating the subclasses to their corresponding
         main classes.
-        
+
         Parameters
         ----------
         landcover : np.array
@@ -1826,33 +1853,33 @@ class WildFire(Hazard):
         landcover : np.array
             Corrected land cover classes
         """
-        
-        for i in range(0,130,10):
-            cat = np.arange(i,i+10)
+
+        for i in range(0, 130, 10):
+            cat = np.arange(i, i + 10)
             for val in cat:
                 landcover = np.where(landcover == val, i, landcover)
-        
+
         landcover = np.where(landcover >= 130, 200, landcover)
-        
+
         return landcover
 
     def _assign_prop_probas(self, landcover):
         """
-        Assigns propagation probabilities to the land cover classes using the 
-        defined values in ProbaParams. 
-        
+        Assigns propagation probabilities to the land cover classes using the
+        defined values in ProbaParams.
+
         Parameters
         ----------
         landcover : np.array
             Land cover data with original corrected classes
-            
+
         Returns
         -------
         landcover : np.array
             Raster with assigned propagation probabilities
         """
-    
-        forest = [110,120]
+
+        forest = [110, 120]
         vegetation = [20, 30, 100]
         if self.FirmsParams.crop_fires:
             medium = [40, 90]
@@ -1860,22 +1887,22 @@ class WildFire(Hazard):
         else:
             medium = [90]
             incombustible = [40, 50, 60, 70, 80, 200]
-        
+
         for val in forest:
             landcover = np.where(landcover == val, self.ProbaParams.forest_val, landcover)
         for val in vegetation:
             landcover = np.where(landcover == val, self.ProbaParams.vegetation_val, landcover)
         for val in medium:
-            landcover = np.where(landcover == val, self.ProbaParams.medium_val, landcover)        
+            landcover = np.where(landcover == val, self.ProbaParams.medium_val, landcover)
         for val in incombustible:
             landcover = np.where(landcover == val, self.ProbaParams.incombustible_val, landcover)
-            
+
         return landcover
 
     @staticmethod
-    def remap_raster(raster_high, res_low, bounds, transform, shape_low = None):
+    def remap_raster(raster_high, res_low, bounds, transform, shape_low=None):
         """
-        Remaps a raster to a given lower resolution by aggregating a certain 
+        Remaps a raster to a given lower resolution by aggregating a certain
         number of grid cells by using an average function.
 
         Parameters
@@ -1906,8 +1933,8 @@ class WildFire(Hazard):
             raise ValueError('Low resolution is higher than high resolution: %s < %s.'
                                  % (res_low, res_high))
 
-        window_x = int(np.floor(res_low[1]/res_high[1]))
-        window_y = int(np.floor(res_low[0]/res_high[0]))
+        window_x = int(np.floor(res_low[1] / res_high[1]))
+        window_y = int(np.floor(res_low[0] / res_high[0]))
 
         width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
 
@@ -1919,13 +1946,13 @@ class WildFire(Hazard):
 
         for i in range(0, shape_low[0]):
             for j in range(0, shape_low[1]):
-                raster_low[i,j] = np.mean(raster_high[(i*window_y):(i+1)*window_y,
-                                                      (j*window_x):(j+1)*window_x])
+                raster_low[i,j] = np.mean(raster_high[(i*window_y):(i + 1)*window_y,
+                                                      (j*window_x):(j + 1)*window_x])
 
         return raster_low
 
     @staticmethod
-    def read_tif(path, bounds, res=None, shape = None, resampling = rasterio.warp.Resampling.bilinear):
+    def read_tif(path, bounds, res=None, shape=None, resampling=rasterio.warp.Resampling.bilinear):
         """
         Adapted from read_raster_bounds in util.coordinates.py
         Read raster file within given bounds and refine to given resolution
@@ -1965,7 +1992,7 @@ class WildFire(Hazard):
             res = (np.abs(res[0]), np.abs(res[1]))
 
             width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
-            
+
             if shape is None:
                 shape = (int(np.ceil(height / res[1]) + 1),
                          int(np.ceil(width / res[0]) + 1))
@@ -1996,8 +2023,8 @@ class WildFire(Hazard):
     def _get_landcover_file_path(file_path):
         """Adapted from gpw_population.py.
         Checks if the land cover data is downloaded at the default directory.
-        Else the function reminds the user to either download it or to provide 
-        the actual file location. 
+        Else the function reminds the user to either download it or to provide
+        the actual file location.
 
         Parameters
         ----------
@@ -2012,7 +2039,7 @@ class WildFire(Hazard):
         -------
         pathlib.Path : path to input file with population data
         """
-        
+
         if file_path is None:
             file_name = "PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
             file_path = SYSTEM_DIR / file_name
@@ -2031,8 +2058,8 @@ class WildFire(Hazard):
     def _get_pop_file_path(file_path):
         """Adapted from gpw_population.py.
         Checks if the population data is downloaded at the default directory.
-        Else the function reminds the user to either download it or to provide 
-        the actual file location. 
+        Else the function reminds the user to either download it or to provide
+        the actual file location.
 
         Parameters
         ----------
@@ -2058,7 +2085,7 @@ class WildFire(Hazard):
             file_path = Path(file_path)
         if file_path.is_file():
             return file_path
-        
+
         raise FileExistsError(f'The file {file_path} could not '
                               + 'be found. Please download the file '
                               + 'first or choose a different folder. '
@@ -2073,9 +2100,9 @@ class WildFire(Hazard):
 
     def _remove_crop_fires_df(self, df_firms, land_path, centroids):
         """Removes crop fires from the FIRMS data frame by checking the
-        nearest land cover class using the haversine distance. The land cover 
+        nearest land cover class using the haversine distance. The land cover
         data is first aggregated to a grid with 1km resolution by taking the
-        most frequent class in this area. If the nearest land cover class is 
+        most frequent class in this area. If the nearest land cover class is
         cropland, the fire is removed from the data frame.
 
         Parameters
@@ -2093,18 +2120,20 @@ class WildFire(Hazard):
         """
         df_firms.reset_index(drop = True, inplace = True)
         bounds = tuple(np.round(centroids.total_bounds, 2))
-        
-        landcover, _ = self.read_tif(land_path, bounds, centroids.meta['transform'][0], shape = centroids.shape, resampling = rasterio.warp.Resampling.mode)
+
+        landcover, _ = self.read_tif(land_path, bounds, centroids.meta['transform'][0],
+                                     shape = centroids.shape,
+                                     resampling = rasterio.warp.Resampling.mode)
         landcover = self._correct_landcover(landcover)
-        
+
         lat_lon_centr = np.vstack((centroids.lat, centroids.lon)).T
         lat_lon_firms = np.vstack((df_firms.latitude.to_numpy(), df_firms.longitude.to_numpy())).T
-        idx = u_int.index_nn_haversine(lat_lon_centr, lat_lon_firms, threshold=100)
-        
+        idx = u_int.index_nn_haversine(lat_lon_centr, lat_lon_firms, threshold = 100)
+
         landcover = landcover.reshape(-1,)
-        crop_idx = np.where(landcover[idx]==40)[0]
+        crop_idx = np.where(landcover[idx] == 40)[0]
         df_firms.drop(index=crop_idx, inplace = True)
-        
+
         return df_firms
 
     @staticmethod
@@ -2132,7 +2161,7 @@ class WildFire(Hazard):
         [250, 230, 160],# moss
         [88, 72, 31],   # forest
         [0, 0, 128]]    # sea
-        
+
         levels = [0, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 200]
         colors = np.array(colors)/255.
         cmap, norm = from_levels_and_colors(levels, colors, extend='max')
