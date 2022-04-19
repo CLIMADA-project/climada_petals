@@ -2075,7 +2075,7 @@ class WildFire(Hazard):
                     dst_crs=crs,
                     resampling=resampling)
         return data[0,:,:], transform
-    
+
     @classmethod
     def from_netcdf(cls, input_dir, filename, id_bands, event_list, geometry=BBOX):
 
@@ -2430,7 +2430,7 @@ def firemip_dowscaling(haz_firemip, haz_prob):
     "Match FireMIP events to best fitting probabilistic events"
     matched_events = match_events(ba_fm, ba_prob_upscaled)
 
-    "Create new intensity by applying event matching and downscaling on the resolution of the" 
+    "Create new intensity by applying event matching and downscaling on the resolution of the"
     "prob haz"
     new_intensity = create_downscaled_haz(haz_prob.intensity, matched_events, idx_ups_coord)
 
