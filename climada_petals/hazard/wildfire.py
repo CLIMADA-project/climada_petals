@@ -51,7 +51,6 @@ from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM, DEF_CRS, SYSTEM_DIR
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
-import climada.util.interpolation as u_int
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1854,8 +1853,11 @@ class WildFire(Hazard):
 
         lat_lon_centr = np.vstack((centroids.lat, centroids.lon)).T
         lat_lon_firms = np.vstack((df_firms.latitude.to_numpy(), df_firms.longitude.to_numpy())).T
-        idx = u_int.index_nn_haversine(lat_lon_centr, lat_lon_firms, threshold = 100)
 
+        # To make it C_contiguous. Else problem with assign_coordinates() arises.
+        lat_lon_firms = np.ascontiguousarray(lat_lon_firms, dtype = np.float64)
+
+        idx = u_coord.assign_coordinates(lat_lon_firms, lat_lon_centr, distance = "haversine")
         landcover = landcover.reshape(-1,)
         crop_idx = np.where(landcover[idx] == 40)[0]
         df_firms.drop(index=crop_idx, inplace = True)
