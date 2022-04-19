@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 import copy
+import random # added by Sam G.
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -38,7 +39,7 @@ from sklearn.cluster import DBSCAN
 import numba
 import rasterio
 import shapely.geometry
-import random # added by Sam G.
+import xarray as xr
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
@@ -1396,156 +1397,6 @@ class WildFire(Hazard):
             ens_size = 1
         self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
 
-    @classmethod
-    def from_netcdf(cls, input_dir, filename, id_bands, event_list, geometry=BBOX):
-
-        """Wrapper to fill hazard from NetCDF file.
-        Build and tested for output from ISIMIP2 and Sentinel data.
-
-        Parameters
-        ----------
-        input_dir : Path or str
-            path to input data directory,
-        filename : string
-            name of netcdf file in input_dir.
-        id_bands: list
-            list of indices of the bands to be extracted from the input file
-            can be generated with function 'from_firemip' and 'from_sentinel' for
-            specific data
-        event_list:list
-            list containing events in the format 'yyyy-mm-dd'
-            can be generated with function 'from_firemip' and 'from_sentinel' for
-            specific data
-        geometry : shapely.geometry
-            geometry of which to extract the data
-            default sets extents to (-180, -85, 180, 85) [Lonmin, latmin, lonmax, latmax]
-
-        """
-
-        # hazard setup: set attributes
-        haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands, geometry=geometry)
-
-        haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
-        haz.intensity.todense()
-
-        haz.event_name = event_list
-        #self.event_id = np.arange(1, len(event_list))
-        haz.frequency = np.ones(len(haz.event_name)) * (1 / len(haz.event_name))
-        haz.date = np.array(u_dt.str_to_date(event_list))
-
-        haz.fraction = haz.intensity.copy()
-        haz.fraction.data.fill(1.0)
-        #self.units = ' ' fraction of burnt area
-        haz.centroids.set_meta_to_lat_lon()
-        haz.centroids.region_id = (
-            u_coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
-        #haz.check()
-
-        return haz
-
-    @classmethod
-    def from_firemip_netcdf(cls, input_dir, filename, id_bands, event_list, extent=False,
-                            countries=False):
-
-        """Wrapper to fill hazard from NetCDF file.
-        Build and tested for output from ISIMIP2 and Sentinel data.
-
-        Parameters
-        ----------
-        input_dir : Path or str
-            path to input data directory,
-        filename : string
-            name of netcdf file in input_dir.
-        id_bands: list
-            list of indices of the bands to be extracted from the input file
-            can be generated with function 'from_firemip'
-        event_list:list
-            list containing events in the format 'yyyy-mm-dd'
-            can be generated with function 'from_firemip' and 'from_sentinel' for
-            specific data
-        extent : tuple of four floats
-            bounding box:
-            (lon min, lat min, lon max, lat max)
-        countries: list
-            list of ISO3-alpha countries to be extracted from the FireMIP file,
-            e.g ['ZWE', 'GBR', 'VNM', 'UZB']
-        """
-
-        if extent:
-            [lonmin, latmin, lonmax, latmax] = extent
-            geometry = list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)])
-        elif countries:
-            geometry = u_coord.get_land_geometry(country_names=countries)
-        else:
-            geometry = BBOX
-
-        haz = cls.from_netcdf(input_dir, filename, id_bands, event_list, geometry=geometry)
-        haz.intensity = haz.intensity/100
-        
-        return haz
-    
-    @classmethod
-    def from_firemip_netcdf_season(cls, input_dir, filename, id_bands, event_list, 
-                                   month=7, extent=False, countries=False):
-
-        """Wrapper to fill hazard from NetCDF file.
-        Build and tested for output from ISIMIP2 and Sentinel data.
-
-        Parameters
-        ----------
-        input_dir : Path or str
-            path to input data directory,
-        filename : string
-            name of netcdf file in input_dir.
-        id_bands: list
-            list of indices of the bands to be extracted from the input file
-            can be generated with function 'from_firemip'
-        event_list:list
-            list containing events in the format 'yyyy-mm-dd'
-            can be generated with function 'from_firemip' and 'from_sentinel' for
-            specific data
-        extent : tuple of four floats
-            bounding box:
-            (lon min, lat min, lon max, lat max)
-        countries: list
-            list of ISO3-alpha countries to be extracted from the FireMIP file,
-            e.g ['ZWE', 'GBR', 'VNM', 'UZB']
-        """
-
-        if extent:
-            [lonmin, latmin, lonmax, latmax] = extent
-            geometry = list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)])
-        elif countries:
-            geometry = u_coord.get_land_geometry(country_names=countries)
-        else:
-            geometry = BBOX
-
-        haz_monthly = cls.from_netcdf(input_dir, filename, id_bands, event_list, 
-                                      geometry=geometry)
-        haz_monthly.intensity = haz_monthly.intensity/100
-        
-        (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
-        endyear,_ = endyearnc.split('.')
-        years = int(endyear)-int(startyear)
-        idx_months = np.arange(month-1,years*12+month-1)
-        chunks = np.array_split(idx_months, years)
-        
-        season_intensity = np.zeros((years, haz_monthly.centroids.size))
-        for idx in range(years):
-            season_intensity[idx] = np.sum(haz_monthly.intensity[chunks[idx],:], axis=0)
-        
-        haz_season = copy.deepcopy(haz_monthly)
-        haz_season.intensity = sparse.csr_matrix(season_intensity)
-        haz_season.event_id = np.arange(0,years)
-        haz_season.event_name = sorted(list(set(haz_monthly.event_name)))[1:]
-        haz_season.frequency = np.ones(years)
-        haz_season.fraction = haz_season.intensity.copy()
-        haz_season.fraction.data.fill(1.0)
-        haz_season.date = np.array(u_dt.str_to_date(haz_season.event_name))
-        haz_season.orig = np.ones(years, dtype=bool)
-        
-        return haz_season
-
     # Added by Sam. G.
     def set_propagation_matrix(self, land_path, pop_path, countries, bounds, res):
         """
@@ -1959,6 +1810,151 @@ class WildFire(Hazard):
                     resampling=resampling)
         return data[0,:,:], transform
 
+    @classmethod
+    def from_netcdf(cls, input_dir, filename, id_bands, event_list, geometry=BBOX):
+
+        """Wrapper to fill hazard from NetCDF file.
+        Build and tested for output from ISIMIP2 and Sentinel data.
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+        filename : string
+            name of netcdf file in input_dir.
+        id_bands: list
+            list of indices of the bands to be extracted from the input file
+            can be generated with function 'from_isimip' and 'from_sentinel' for
+            specific data
+        event_list:list
+            list containing events in the format 'yyyy-mm-dd'
+            can be generated with function 'from_isimip' and 'from_sentinel' for
+            specific data
+        geometry : shapely.geometry
+            geometry of which to extract the data
+            default sets extents to (-180, -85, 180, 85) [Lonmin, latmin, lonmax, latmax]
+
+        """
+
+        # hazard setup: set attributes
+        haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands, geometry=geometry)
+
+        haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
+        haz.intensity.todense()
+
+        haz.event_name = event_list
+        #self.event_id = np.arange(1, len(event_list))
+        haz.frequency = np.ones(len(haz.event_name)) * (1 / len(haz.event_name))
+        haz.date = np.array(u_dt.str_to_date(event_list))
+
+        haz.fraction = haz.intensity.copy()
+        haz.fraction.data.fill(1.0)
+        #self.units = ' ' fraction of burnt area
+        haz.centroids.set_meta_to_lat_lon()
+        haz.centroids.region_id = (
+            u_coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
+        #haz.check()
+
+        return haz
+
+    @classmethod
+    def from_isimip_netcdf(cls, input_dir, filename, id_bands, event_list, extent=False,
+                            countries=False):
+
+        """Wrapper to fill hazard from NetCDF file.
+        Build and tested for output from ISIMIP2 and Sentinel data.
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+        filename : string
+            name of netcdf file in input_dir.
+        id_bands: list
+            list of indices of the bands to be extracted from the input file
+            can be generated with function 'from_firemip'
+        event_list:list
+            list containing events in the format 'yyyy-mm-dd'
+            can be generated with function 'from_firemip' and 'from_sentinel' for
+            specific data
+        extent : tuple of four floats
+            bounding box:
+            (lon min, lat min, lon max, lat max)
+        countries: list
+            list of ISO3-alpha countries to be extracted from the FireMIP file,
+            e.g ['ZWE', 'GBR', 'VNM', 'UZB']
+        """
+
+        if extent:
+            [lonmin, latmin, lonmax, latmax] = extent
+            geometry = list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)])
+        elif countries:
+            geometry = u_coord.get_land_geometry(country_names=countries)
+        else:
+            geometry = BBOX
+
+        haz = cls.from_netcdf(input_dir, filename, id_bands, event_list, geometry=geometry)
+        haz.intensity = haz.intensity/100
+
+        return haz
+
+    @classmethod
+    def from_firemip_netcdf(cls, model_path):
+        """Wrapper to fill hazard with FireMIP output data and read FireMIP grid
+        cell area file.
+
+
+        Parameters
+        ----------
+        model_path : str
+            Path to data directory and name of FireMIP model to be read.
+            E.g. "path/CLM"
+
+        Returns
+        -------
+        wf : WildFire
+            WildFire hazard instance with fraction of burnt area as intensity.
+        gridcell_area : csr.matrix
+            Area per grid cell [km2]
+
+        """
+        file_bf = model_path+'_burnedFrac.nc4'
+        file_area = model_path + '_gridcellArea.nc4'
+
+        haz = xr.open_dataset(file_bf)
+
+        intensity = haz['burnedFrac'].values
+        intensity[np.isnan(intensity)] = 0
+        intensity_flat = sparse.csr_matrix(np.flip(intensity, axis=1).reshape(
+            (intensity.shape[0]*intensity.shape[1], intensity.shape[2]), order='F'))
+        wf_haz = cls()
+        wf_haz.intensity = intensity_flat.T / 100
+
+        latitude = haz['lat'].values
+        longitude = haz['lon'].values
+        lon, lat = np.meshgrid(longitude, latitude)
+        wf_haz.centroids.lat = np.flip(lat.flatten())
+        wf_haz.centroids.lon = lon.flatten()
+        wf_haz.centroids.set_lat_lon_to_meta()
+
+        time = haz['time'].values
+        wf_haz.event_name = u_dt.date_to_str(u_dt.datetime64_to_ordinal(time))
+        wf_haz.event_id = np.arange(len(time))
+        wf_haz.date = u_dt.datetime64_to_ordinal(time)
+
+        wf_haz.fraction = wf_haz.intensity.copy()
+        wf_haz.fraction.data.fill(1.0)
+        wf_haz.centroids.set_region_id()
+
+        # FireMIP area unit is in m2
+        area = xr.open_dataset(file_area)
+        gridcellarea_fm = area['gridcellArea'].values
+        gridcell_area = sparse.csr_matrix(np.flip(gridcellarea_fm/1000000, axis=1).reshape(
+            (intensity.shape[0]*intensity.shape[1]), order='F'))
+
+        return wf_haz, gridcell_area
+
+
 @numba.njit
 def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
     """ Assigns maximum intensity value for each centroid. This is required
@@ -1990,6 +1986,73 @@ def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
                          np.max(fir_bright[lat_lon_cpy == index_uni[idx]]))
     return brightness_ev
 
+def intensity_to_burntarea(wf_haz, gridcell_area):
+    """Converts wildfire hazard intensity from fraction of burnt area to burnt area.
+
+
+    Parameters
+    ----------
+    wf_haz : WildFire
+        WildFire hazard instance with fraction of burnt area as intensity.
+    gridcell_area : csr.matrix
+        Area per grid cell [km2]
+
+    Returns
+    -------
+    wf_ba : WildFire
+        WildFire hazard instance with burnt area as intensity.
+
+    """
+    wf_ba = copy.deepcopy(wf_haz)
+    wf_ba.intensity =  wf_haz.intensity.multiply(gridcell_area)
+
+    return wf_ba
+
+def monthly_to_seasonal(wf_haz, starting_month=7):
+    """Converts wildfire hazard intensity from monthly values to seasonal values.
+    The default season starts in July (starting_month 7) of one year and last till
+    June of the following year. The date is set to the 1st of January marking the
+    middle of the season.
+
+
+    Parameters
+    ----------
+    wf_haz : WildFire
+        WildFire hazard instance with mothly intensity.
+    starting_month : TYPE, optional
+        Month marking the start of the season. The default is July (7).
+
+
+    Returns
+    -------
+    wf_haz_season : WildFire
+        WildFire hazard instance with seasonal intensity.
+
+    """
+    startyear = u_dt.first_year(wf_haz.date)
+    endyear = u_dt.last_year(wf_haz.date)
+    years = int(endyear)-int(startyear)
+    idx_months = np.arange(starting_month-1,years*12+starting_month-1)
+    chunks = np.array_split(idx_months, years)
+
+    season_intensity = np.zeros((years, wf_haz.centroids.lat.size))
+    for idx in range(years):
+        season_intensity[idx] = np.sum(wf_haz.intensity[chunks[idx],:], axis=0)
+
+    wf_haz_season = copy.deepcopy(wf_haz)
+    wf_haz_season.intensity = sparse.csr_matrix(season_intensity)
+    wf_haz_season.event_id = np.arange(0,years)
+    event_list = [str(event_) + '-01-01' for event_ in np.arange(startyear+1, endyear+1)]
+    wf_haz_season.event_name = event_list
+    wf_haz_season.date = np.array(u_dt.str_to_date(wf_haz_season.event_name))
+    wf_haz_season.frequency = np.ones(years)
+    wf_haz_season.fraction = wf_haz_season.intensity.copy()
+    wf_haz_season.fraction.data.fill(1.0)
+    wf_haz_season.orig = np.ones(years, dtype=bool)
+
+    return wf_haz_season
+
+
 def from_sentinel(filename):
     """Read ids of contained bands and month covered by Sentinel data
 
@@ -2016,7 +2079,7 @@ def from_sentinel(filename):
 
     return id_bands, event_list
 
-def from_firemip(filename):
+def from_isimip(filename):
     """Read ids of contained bands and month covered by Firemip data
 
     Parameters
@@ -2032,11 +2095,11 @@ def from_firemip(filename):
         list of events contained in the input file in the format 'yyyy-mm-dd'
 
     """
-    
+
     (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
     endyear, _ = endyearnc.split('.')
-    
-    
+
+
     if 'annual' in filename:
         event_names = [str(n) for n in range(int(startyear), int(endyear) + 1)]
         event_list = [event_ + '-01-01' for event_ in event_names]
@@ -2050,12 +2113,14 @@ def from_firemip(filename):
             event_names.extend([year]*12)
         month_list = np.arange(1,13)
         months_long_list.extend(month_list*145)
-        #months
+        #different months need to be added - maybe a better solution to use xarray in general
+        #for rasters (would that drop the necessity to use the filename to identify e.g. the
+        #dates? --> this could then also be used in the crop production risk module)
         event_list = [str(event_)+ '-01-01' for event_ in event_names]
         nr_bands = len(event_list)
         id_bands = np.arange(1, nr_bands+1).tolist()
         #event_list = np.arange(0, len(event_names)).tolist()
-        
+
 
     return id_bands, event_list
 
@@ -2099,7 +2164,8 @@ def firemip_dowscaling(haz_firemip, haz_prob):
     "Match FireMIP events to best fitting probabilistic events"
     matched_events = match_events(ba_fm, ba_prob_upscaled)
 
-    "Create new intensity by applying event matching and downscaling on the resolution of the prob haz"
+    "Create new intensity by applying event matching and downscaling on the resolution of the" 
+    "prob haz"
     new_intensity = create_downscaled_haz(haz_prob.intensity, matched_events, idx_ups_coord)
 
     "Set attributes of the new hazard (to do: there's an error when checking the hazard)"

@@ -27,7 +27,7 @@ import pandas as pd
 from scipy import sparse
 import copy
 
-from climada_petals.hazard.wildfire import (WildFire, from_firemip, from_sentinel, calc_burnt_area,
+from climada_petals.hazard.wildfire import (WildFire, from_isimip, from_sentinel, calc_burnt_area,
                                             get_closest, create_downscaled_haz,
                                             extract_from_probhaz, upscale_prob_haz,
                                             match_events)
@@ -320,10 +320,10 @@ class TestMethodsFirms(unittest.TestCase):
         firms['instrument'][0] = 'MODIS'
         self.assertAlmostEqual(wf._firms_resolution(firms), 1.0/ONE_LAT_KM)
 
-    def test_from_firemip(self):
+    def test_from_isimip(self):
         """ Test calculation of burnt area"""
         filename = "lpjml_gfdl-esm2m_ewembi_picontrol_2005soc_co2_burntarea_global_annual_2006_2099.nc"
-        id_bands, event_list = from_firemip(filename)
+        id_bands, event_list = from_isimip(filename)
 
         self.assertAlmostEqual(len(id_bands), 94)
         self.assertAlmostEqual(len(event_list), 94)
