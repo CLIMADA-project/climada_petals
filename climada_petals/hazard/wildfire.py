@@ -51,7 +51,7 @@ from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM, DEF_CRS, SYSTEM_DIR
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
-#import climada.util.interpolation as u_int
+import climada.util.interpolation as u_int
 
 LOGGER = logging.getLogger(__name__)
 
@@ -474,16 +474,9 @@ class WildFire(Hazard):
         self._set_ignition_matrix(bounds = bounds, res = res,
                                   land_path = land_path, pop_path = pop_path)
 
-        shape_est = np.mean(self.n_fires) ** 2 / np.std(self.n_fires) ** 2
-        scale_est = np.std(self.n_fires) ** 2 / np.mean(self.n_fires)
-
-        # min/max for uniform distribtion to sample for n_fires per year
-        if n_ignitions is None:
-            ign_min = np.min(self.n_fires)
-            ign_max = np.max(self.n_fires)
-        else:
-            ign_min = n_ignitions[0]
-            ign_max = n_ignitions[1]
+        n_fires_hist = self.select(orig = True).n_fires
+        shape_est = np.mean(n_fires_hist) ** 2 / np.std(n_fires_hist) ** 2
+        scale_est = np.std(n_fires_hist) ** 2 / np.mean(n_fires_hist)
 
         prob_fire_seasons = [] # list to save probabilistic fire seasons
         n_fires_new = []
@@ -495,16 +488,17 @@ class WildFire(Hazard):
             self.ProbaParams.prop_proba.append(min(0.25, float(np.random.normal(
                 self.ProbaParams.prop_proba_mean,
                 self.ProbaParams.prop_proba_std, 1))))
-            n_ign = max(int(ign_min), int(np.around(np.random.gamma(shape_est, scale_est, 1))))
+            n_proba_ign = int(np.around(np.random.gamma(shape_est, scale_est, 1)))
             if n_ignitions is not None:
-                n_ign = min(int(ign_max), int(n_ign))
+                n_proba_ign = max(n_proba_ign, int(n_ignitions[0]))
+                n_proba_ign = min(int(n_ignitions[1]), n_proba_ign)
 
             LOGGER.info('Fire season: %i', (i + 1))
             LOGGER.info('Setting up probabilistic fire season with %s fires.',
-                        n_ign)
-            n_fires_new.append(n_ign)
-            if n_ign > 0:
-                prob_fire_seasons.append(self._set_one_proba_fire_season(n_ign, seed=i))
+                        n_proba_ign)
+            n_fires_new.append(n_proba_ign)
+            if n_proba_ign > 0:
+                prob_fire_seasons.append(self._set_one_proba_fire_season(n_proba_ign, seed=i))
 
         if keep_all_fires:
             self.prob_fire_seasons = prob_fire_seasons
