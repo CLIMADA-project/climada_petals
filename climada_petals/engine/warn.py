@@ -5,7 +5,70 @@ from dataclasses import dataclass
 import numpy as np
 import skimage
 
+from climada.util.plot import geo_scatter_categorical
+
 LOGGER = logging.getLogger(__name__)
+
+
+def dilation(bin_map, size):
+    """Dilate binary input map. Enlarges and connects regions of interests. Larger sizes - more area of interest.
+
+    Parameters
+    ----------
+    bin_map : np.ndarray
+        Rectangle 2d map of values which are used to generate the warning.
+    size : int
+        Size of kernel.
+
+    Returns
+    ----------
+    np.ndarray
+        Generated binary map with enlarged regions of interest.
+    """
+    return skimage.morphology.dilation(bin_map, skimage.morphology.disk(size))
+
+
+def erosion(bin_map, size):
+    """Erode binary input map. Reduces region of interest and heterogeneity in map. Larger sizes - more reduction.
+
+    Parameters
+    ----------
+    bin_map : np.ndarray
+        Rectangle 2d map of values which are used to generate the warning.
+    size : int
+        Size of kernel.
+
+    Returns
+    ----------
+    np.ndarray
+        Generated binary map with reduced regions of interest.
+    """
+    return skimage.morphology.erosion(bin_map, skimage.morphology.disk(size))
+
+
+def median_filtering(bin_map, size):
+    """Smooth out binary map. Larger sizes - smoother regions and more reduction of heterogeneity.
+
+    Parameters
+    ----------
+    bin_map : np.ndarray
+        Rectangle 2d map of values which are used to generate the warning.
+    size : int
+        Size of kernel.
+
+    Returns
+    ----------
+    np.ndarray
+        Generated binary map with smoothed regions of interest.
+    """
+    return skimage.filters.median(bin_map, np.ones((size, size)))
+
+
+ALLOWED_OPERATIONS = {
+    'DILATION': dilation,
+    'EROSION': erosion,
+    'MEDIANFILTERING': median_filtering
+}
 
 
 @dataclass
@@ -16,7 +79,7 @@ class FilterData:
 
     Attributes
     ----------
-    warn_levels : np.array
+    warn_levels : list
         Warn levels that define the bins in which the input_map will be classified in.
     operations : list
         Operations to be applied in filtering algorithm.
@@ -24,7 +87,7 @@ class FilterData:
     sizes : list
         Size of kernel of every operation given.
     gradual_decr : bool
-        Used to define whether the highest warn levels should be gradually decreased (if True)
+        Defines whether the highest warn levels should be gradually decreased by its neighboring regions (if True)
         to the lowest level (e.g., level 3, 2, 1, 0)
         or larger steps are allowed (e.g., from warn level 5 directly to 1).
     change_sm : bool
@@ -39,38 +102,53 @@ class FilterData:
     CHANGE_SMALL_REGIONS = True
     SIZE_TOO_SMALL = 150
 
-    def __init__(self, warn_levels, operations=OPERATIONS, sizes=SIZES,
-                 gradual_decr=GRADUAL_DECREASE, change_sm=CHANGE_SMALL_REGIONS, size_sm=SIZE_TOO_SMALL):
+    def __init__(self, warn_levels, operations, sizes, gradual_decr, change_sm, size_sm):
         """Initialize FilterData."""
         self.warn_levels = warn_levels
         self.gradual_decr = gradual_decr
+        self.allowed_operations = ALLOWED_OPERATIONS
+
         if len(operations) != len(sizes):
             LOGGER.warning('For every operation a filter size is needed and the other way around. '
                            'Please input the same number of operations and filter sizes.')
-        if not all(item in ['DILATION', 'EROSION', 'MEDIANFILTERING'] for item in operations):
-            raise ValueError("The operation is not defined. "
-                             "Please select 'EROSION', 'DILATION', or 'MEDIANFILTERING'.")
-
+        if not all(item in self.allowed_operations.keys() for item in operations):
+            raise ValueError("An input operation is not defined. "
+                             "Please select one of %s", self.allowed_operations.keys())
         self.operations = operations
         self.sizes = sizes
         self.change_sm = change_sm
         self.size_sm = size_sm
 
+    @classmethod
+    def wind_mch_default(cls, warn_levels, operations=OPERATIONS, sizes=SIZES, gradual_decr=GRADUAL_DECREASE,
+                         change_sm=CHANGE_SMALL_REGIONS, size_sm=SIZE_TOO_SMALL):
+        """Generate FilterData dataclass with defaults of MCH.
+
+        Returns
+        ----------
+        warn : Warn
+            Generated Warn object including warning, coordinates, warn levels, and metadata.
+        """
+        return cls(warn_levels, operations, sizes, gradual_decr, change_sm, size_sm)
+
 
 class Warn:
-    """Warn definition. Generate a warning, i.e., 2D map of points with assigned warn levels. Operations, their order,
-    and their influence (kernel sizes) can be selected to fit the users purpose. Further properties can be chosen which
-    define the warning generation. The functionality of reducing heterogeneity in a map can be applied to different
-    inputs, e.g. MeteoSwiss windstorms, TCs, impacts, etc.
+    """Warn definition. Generate a warning, i.e., 2D map of coordinates with assigned warn levels. Operations,
+    their order, and their influence (kernel sizes) can be selected to generate the warning. Further properties can
+    be chosen which define the warning generation. The functionality of reducing heterogeneity in a map can be
+    applied to different inputs, e.g. MeteoSwiss windstorm data (COSMO data), TCs, impacts, etc.
 
     Attributes
     ----------
-    warning : np.array
-        Warning generated by class. Warn level for every point of input map.
-    coord : np.array
+    warning : np.ndarray
+        Warning generated by warning generation algorithm. Warn level for every coordinate of input map.
+    coord : np.ndarray
         Coordinates of warning map.
     warn_levels : list
         Warn levels that define the bins in which the input_map will be classified in.
+        E.g., for windspeeds: [0, 10, 40, 80, 150, 200.0]
+    metadata_generation_storm : dict
+        Storing metadata on how the warning has been generated and which properties it has.
     """
 
     def __init__(self, warning, coord, filter_data):
@@ -78,12 +156,12 @@ class Warn:
 
         Parameters
         ----------
-        warning : np.array
-            Warn level for every point of input map.
-        coord : np.array
+        warning : np.ndarray
+            Warn level for every coordinate of input map.
+        coord : np.ndarray
             Coordinates of warning map.
-        warn_levels : list
-            Warn levels that define the bins in which the input_map will be classified in.
+        filter_data : dataclass
+            Dataclass consisting information on how to generate the warning (operations and details).
         """
         self.warning = warning
         self.coord = coord
@@ -95,13 +173,13 @@ class Warn:
 
     @classmethod
     def from_map(cls, input_map, coord, filter_data):
-        """Generate Warn object from np.array.
+        """Generate Warn object from map (value (e.g., windspeeds at coordinates).
 
         Parameters
         ----------
-        input_map : np.array
-            2d map of values which are used to generate the warning.
-        coord : np.array
+        input_map : np.ndarray
+            Rectangle 2d map of values which are used to generate the warning.
+        coord : np.ndarray
             Coordinates of warning map.
         filter_data : dataclass
             Dataclass consisting information on how to generate the warning (operations and details).
@@ -109,10 +187,10 @@ class Warn:
         Returns
         ----------
         warn : Warn
-            Generated Warn object including warning, coordinates, and warn levels.
+            Generated Warn object including warning, coordinates, warn levels, and metadata.
         """
         binned_map = cls.bin_map(input_map, filter_data.warn_levels)
-        warning = cls.filter_algorithm(binned_map, filter_data)
+        warning = cls.generate_warn_map(binned_map, filter_data)
         if filter_data.change_sm:
             warning = cls.change_small_regions(warning, filter_data.size_sm)
         return cls(warning, coord, filter_data)
@@ -123,14 +201,14 @@ class Warn:
 
         Parameters
         ----------
-        input_map : np.array
+        input_map : np.ndarray
             Array containing data to generate warning of.
-        warn_levels : np.array
+        warn_levels : list
             Array containing data to generate warning of.
 
         Returns
         ----------
-        binned_map : np.array
+        binned_map : np.ndarray
             Map of binned values in warn levels, same shape as input map.
         """
         if np.min(input_map) < np.min(warn_levels):
@@ -142,80 +220,60 @@ class Warn:
         return np.digitize(input_map, warn_levels) - 1  # digitize lowest bin is 1
 
     @staticmethod
-    def dilation(bin_m, size):
-        return skimage.morphology.dilation(bin_m, skimage.morphology.disk(size))
-
-    @staticmethod
-    def erosion(bin_m, size):
-        return skimage.morphology.erosion(bin_m, skimage.morphology.disk(size))
-
-    @staticmethod
-    def median_filtering(bin_m, size):
-        return skimage.filters.median(bin_m, np.ones((size, size)))
-
-    @staticmethod
-    def filtering(binary_curr_lvl, filter_data):
-        """For the current warn level, apply defined operations in filter data on the input map.
+    def filtering(binary_map, filter_data):
+        """For the current warn level, apply defined operations in filter data on the input binary map.
 
         Parameters
         ----------
-        binary_curr_lvl : np.array
-            Binary array, where 1 corresponds to current (and higher if grad_decrease) warn level and 0 else.
+        binary_map : np.ndarray
+            Binary 2D array, where 1 corresponds to current (and higher if grad_decrease) warn level and 0 else.
         filter_data : dataclass
             Dataclass consisting information on how to generate the warning (operations and details).
 
         Returns
         ----------
-        binary_curr_lvl : np.array
+        binary_curr_lvl : np.ndarray
             Warning map consisting formed warning regions of current warn level, same shape as input map.
         """
-        allowed_operations = {
-            'DILATION': Warn.dilation,
-            'EROSION': Warn.erosion,
-            'MEDIANFILTERING': Warn.median_filtering
-        }
-        # apply defined operations
-        for i, op in enumerate(filter_data.operations):
-            binary_curr_lvl = allowed_operations.get(op)(binary_curr_lvl, filter_data.sizes[i])
+        for fl_size, op in zip(filter_data.sizes, filter_data.operations):
+            binary_map = filter_data.allowed_operations[op](binary_map, fl_size)
 
-        return binary_curr_lvl
+        return binary_map
 
     @staticmethod
-    def filter_algorithm(bin_map, filter_data):
+    def generate_warn_map(bin_map, filter_data):
         """Generate warning map of binned map. The filter algorithm reduces heterogeneity in the map (erosion) and
         makes sure warn regions of higher warn levels warn regions large enough (dilation). With the median
         filtering the generated warning is smoothed out without blurring.
 
         Parameters
         ----------
-        bin_map : np.array
+        bin_map : np.ndarray
             Map of binned values in warn levels. Hereof a warning with contiguous regions is formed.
         filter_data : dataclass
             Dataclass consisting information on how to generate the warning (operations and details).
 
         Returns
         ----------
-        warn_regions : np.array
+        warn_regions : np.ndarray
             Warning map consisting formed warning regions, same shape as input map.
         """
+        unq = np.unique(bin_map)
+        if len(unq) == 1:
+            return np.zeros_like(bin_map) + unq[0]
         max_warn_level = np.max(bin_map)
-        if max_warn_level == 0:
-            return np.zeros_like(bin_map)
+        min_warn_level = np.min(bin_map)
 
-        warn_map = 0
-        # iterate from highest level to lowest (0 not necessary, because rest is level 0)
-        for curr_lvl in range(max_warn_level, 0, -1):
-
-            # select only the current warn level (no gradual decrease in warn map) or select current and higher warn
-            # levels for a gradual decrease. Binary map allows to apply binary filtering operations
+        warn_map = np.zeros_like(bin_map) + min_warn_level
+        for curr_lvl in range(max_warn_level, min_warn_level, -1):
             if filter_data.gradual_decr:
-                pts_curr_lvl = np.bitwise_or(warn_map, bin_map >= curr_lvl)
+                pts_curr_lvl = np.bitwise_or(warn_map > curr_lvl, bin_map >= curr_lvl)
             else:
                 pts_curr_lvl = bin_map == curr_lvl
-            binary_curr_lvl = np.where(pts_curr_lvl, curr_lvl, 0)  # set everything but selected points to 0
+            binary_curr_lvl = np.where(pts_curr_lvl, curr_lvl, 0)  # set bool np.ndarray to curr_lvl (if True) or 0
 
-            w_l = Warn.filtering(binary_curr_lvl, filter_data)
-            warn_map = np.maximum(warn_map, w_l)  # keep warn regions of higher levels by taking maximum
+            warn_reg = Warn.filtering(binary_curr_lvl, filter_data)
+            warn_map = np.maximum(warn_map, warn_reg)  # keep warn regions of higher levels by taking maximum
 
         return warn_map
 
@@ -225,68 +283,72 @@ class Warn:
 
         Parameters
         ----------
-        warn : np.array
+        warn : np.ndarray
             Warning map of which too small regions are changed to surrounding. Warn levels are all +1.
         size : int
-            Threshold defining too small regions (number of grid points).
+            Threshold defining too small regions (number of coordinates).
 
         Returns
         ----------
-        warn : np.array
+        warn : np.ndarray
             Warning map where too small regions are of the higher level occurring. Warn levels are all +1.
         """
         labels = skimage.measure.label(warn)
-        for i in range(np.max(labels)):
-            cnt = np.count_nonzero(labels == i)
+        for l in np.unique(labels):
+            cnt = np.count_nonzero(labels == l)
             if cnt <= size:
-                warn[labels == i] = np.max(warn, axis=(0, 1))
+                warn[labels == l] = np.max(warn, axis=(0, 1))
         return warn
 
     @staticmethod
-    def set_new_levels(warn, size):
+    def reset_levels(warn, size):
         """Set warn levels of too small regions to highest surrounding warn level. Therefore, decrease warn levels of
         too small regions, until no too small regions can be detected.
 
         Parameters
         ----------
-        warn : np.array
+        warn : np.ndarray
             Warning map of which too small regions are changed to surrounding. Warn levels are all +1.
         size : int
-            Threshold defining too small regions (number of grid points).
+            Threshold defining too small regions (number of coordinates).
 
         Returns
         ----------
-        warn : np.array
+        warn : np.ndarray
             Warning map where too small regions are changed to neighborhood. Warn levels are all +1.
         """
         for i in range(np.max(warn), np.min(warn), -1):
             level = copy.deepcopy(warn)
             level[warn != i] = 0
             labels = skimage.measure.label(warn)
-            for j in range(len(np.unique(labels)) + 1):
-                cnt = np.count_nonzero(labels == j)
+            for l in np.unique(labels):
+                cnt = np.count_nonzero(labels == l)
                 if cnt <= size:
-                    warn[labels == j] = i - 1
+                    warn[labels == l] = i - 1
         return warn
 
     @staticmethod
     def change_small_regions(warning, size):
-        """Change regions smaller than defined threshold from warning to surrounding warn level.
+        """Change formed warning regions smaller than defined threshold from current warn level to surrounding warn
+        level.
 
         Parameters
         ----------
-        warning : np.array
+        warning : np.ndarray
             Warning map of which too small regions are changed to surrounding.
         size : int
-            Threshold defining too small regions (number of grid points).
+            Threshold defining too small regions (number of coordinates).
 
         Returns
         ----------
-        warning : np.array
-            Warning without too small regions.
+        warning : np.ndarray
+            Warning without too small regions, same shape as input map.
         """
         warning = warning + 1  # 0 is regarded as background in labelling, + 1 prevents this
         warning = Warn.increase_levels(warning, size)
-        warning = Warn.set_new_levels(warning, size)
+        warning = Warn.reset_levels(warning, size)
         warning = warning - 1
         return warning
+
+    def plot_warning(self, title='Categorical Warning Map'):
+        geo_scatter_categorical(self.warning.flatten(), self.coord, 'Wind', title=title, cmap='Wistia')
