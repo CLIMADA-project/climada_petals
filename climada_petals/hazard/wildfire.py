@@ -184,7 +184,8 @@ class WildFire(Hazard):
         self.ProbaParams = self.ProbaParams()
 
     @classmethod
-    def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None):
+    def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None,
+                            seasons=False, land_path=None):
         """ Parse FIRMS data and generate historical fires by temporal and spatial
         clustering. Single fire events are defined as a set of data points
         that are geographically close and/or have consecutive dates. The
@@ -216,6 +217,12 @@ class WildFire(Hazard):
         centroids : Centroids, optional
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
+        land_path : str, optional
+            Path to land cover raster file. Is used if crop fires should be
+            removed.
+        seasons : bool, optional, default = False
+            If from_hist_fire_seasons_FIRMS() method is used, crop fires are
+            only removed once and not every season.
 
         Returns
         ----------
@@ -234,6 +241,11 @@ class WildFire(Hazard):
             if not centroids.lat.any():
                 centroids.set_meta_to_lat_lon()
         res_centr = haz._centroids_resolution(centroids)
+
+        if not haz.FirmsParams.crop_fires and not seasons:
+            LOGGER.info('Removing crop fires.')
+            land_path = haz._get_landcover_file_path(land_path)
+            df_firms = haz._remove_crop_fires_df(df_firms, land_path, centroids)
 
         # fire identification
         while df_firms.iter_ev.any():
@@ -364,7 +376,7 @@ class WildFire(Hazard):
             LOGGER.info('Setting up historical fire seasons %s.', str(year))
             firms_temp = haz._select_fire_season(df_firms, year, hemisphere=hemisphere)
             # calculate historic fire seasons
-            wf_year = WildFire.from_hist_fire_FIRMS(firms_temp, centroids=centroids)
+            wf_year = WildFire.from_hist_fire_FIRMS(firms_temp, centroids=centroids, seasons=True)
             hist_fire_seasons.append(wf_year)
 
         # fires season (used to define distribution of n fire for the
@@ -494,7 +506,6 @@ class WildFire(Hazard):
             if n_ignitions is not None:
                 n_proba_ign = max(n_proba_ign, int(n_ignitions[0]))
                 n_proba_ign = min(int(n_ignitions[1]), n_proba_ign)
-            
 
             LOGGER.info('Fire season: %i', (i + 1))
             LOGGER.info('Setting up probabilistic fire season with %s fires.',
