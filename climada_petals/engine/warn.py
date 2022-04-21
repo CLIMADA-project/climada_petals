@@ -100,7 +100,7 @@ class FilterData:
     SIZES = [2, 3, 7, 15]
     GRADUAL_DECREASE = True
     CHANGE_SMALL_REGIONS = True
-    SIZE_TOO_SMALL = 150
+    SIZE_TOO_SMALL = 250
 
     def __init__(self, warn_levels, operations, sizes, gradual_decr, change_sm, size_sm):
         """Initialize FilterData."""
@@ -196,28 +196,28 @@ class Warn:
         return cls(warning, coord, filter_data)
 
     @staticmethod
-    def bin_map(input_map, warn_levels):
-        """Bin every value of input map into given warn levels.
+    def bin_map(input_map, levels):
+        """Bin every value of input map into given levels.
 
         Parameters
         ----------
         input_map : np.ndarray
-            Array containing data to generate warning of.
-        warn_levels : list
-            Array containing data to generate warning of.
+            Array containing data to generate binned map of.
+        levels : list
+            List with levels to bin input map.
 
         Returns
         ----------
         binned_map : np.ndarray
-            Map of binned values in warn levels, same shape as input map.
+            Map of binned values in levels, same shape as input map.
         """
-        if np.min(input_map) < np.min(warn_levels):
-            LOGGER.warning('Values of input map are smaller than defined warn levels. '
-                           'Please set the warn levels lower or check input map.')
-        if np.max(input_map) > np.max(warn_levels):
-            LOGGER.warning('Values of input map are larger than defined warn levels. '
-                           'Please set the warn levels higher or check input map.')
-        return np.digitize(input_map, warn_levels) - 1  # digitize lowest bin is 1
+        if np.min(input_map) < np.min(levels):
+            LOGGER.warning('Values of input map are smaller than defined levels. '
+                           'Please set the levels lower or check input map.')
+        if np.max(input_map) > np.max(levels):
+            LOGGER.warning('Values of input map are larger than defined levels. '
+                           'Please set the levels higher or check input map.')
+        return np.digitize(input_map, levels) - 1  # digitize lowest bin is 1
 
     @staticmethod
     def filtering(binary_map, filter_data):
@@ -350,5 +350,6 @@ class Warn:
         warning = warning - 1
         return warning
 
-    def plot_warning(self, title='Categorical Warning Map'):
-        geo_scatter_categorical(self.warning.flatten(), self.coord, 'Wind', title=title, cmap='Wistia')
+    def plot_warning(self, var_name='Warn Levels', title='Categorical Warning Map', cat_name=None, adapt_fontsize=True, **kwargs):
+        return geo_scatter_categorical(self.warning.flatten(), self.coord, var_name, title, cat_name, adapt_fontsize,
+                                       **kwargs)
