@@ -431,7 +431,7 @@ class WildFire(Hazard):
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False, land_path=None,
-                               pop_path=None):
+                               pop_path=None, reproduce=False):
         """ Generate probabilistic fire seasons.
 
         Fire seasons are created by running n probabilistic fires per year
@@ -474,6 +474,9 @@ class WildFire(Hazard):
             Path to land cover raster file
         pop_path : str, optional
             Path to population raster file
+        reproduce : bool, optional
+            Sets seeds to make the probabilistic seasons reproducible. Default
+            is False to ensure fully probabilistic seasons.
         """
         bounds = tuple(np.round(self.centroids.total_bounds, 2))
         res = self.centroids.meta['transform'][0]
@@ -493,6 +496,9 @@ class WildFire(Hazard):
             self.ProbaParams.prop_proba = []
         # create probabilistic fire seasons
         for i in range(n_fire_seasons):
+            if reproduce:
+                np.random.seed(i)
+                random.seed(i)
             # prop_proba is restricted to be smaller than 0.25
             self.ProbaParams.prop_proba.append(min(0.25, float(np.random.normal(
                 self.ProbaParams.prop_proba_mean,
@@ -512,7 +518,7 @@ class WildFire(Hazard):
                         n_proba_ign)
             n_fires_new.append(n_proba_ign)
             if n_proba_ign > 0:
-                prob_fire_seasons.append(self._set_one_proba_fire_season(n_proba_ign, seed=i))
+                prob_fire_seasons.append(self._set_one_proba_fire_season(n_proba_ign))
 
         if keep_all_fires:
             self.prob_fire_seasons = prob_fire_seasons
@@ -1121,21 +1127,19 @@ class WildFire(Hazard):
 
         return bright_list_nonzero, df_firms
 
-    def _set_one_proba_fire_season(self, n_ignitions, seed=8):
+    def _set_one_proba_fire_season(self, n_ignitions):
         """ Generate a probabilistic fire season.
 
         Parameters
         ----------
         n_ignitions : int
             number of wild fires for the season
-        seed : int
 
         Returns
         -------
         proba_fires : lil_matrix
             probablistic hazard
         """
-        np.random.seed(seed)
         proba_fires = sparse.lil_matrix(np.zeros((n_ignitions, self.centroids.size)))
         for i in range(n_ignitions):
             if np.mod(i, 10) == 0:
