@@ -136,6 +136,12 @@ class WildFire(Hazard):
             mean global propagation probability
         prop_proba_std : float, default = 0.025
             standard deviation of global propagation probability
+        min_prop_proba : float, default = 0.
+            Lower bound for global propagation probability.
+        max_prop_proba : float, default = 0.25
+            Upper bound for global propagation probability. Caps the global
+            propagation probability. Above the default upper limit, fires
+            spread almost inexorable.
         prop_proba : list, default = None
             stores the global propagation probabilities for each season
         max_it_propa : float, default = 500000
@@ -166,6 +172,8 @@ class WildFire(Hazard):
         blurr_steps: int = 4
         prop_proba_mean: float = 0.175
         prop_proba_std: float = 0.025
+        min_prop_proba: float = 0.
+        max_prop_proba: float = 0.25
         prop_proba: list = None
         max_it_propa: int = 500000
         forest_val: float = 1.
@@ -431,7 +439,7 @@ class WildFire(Hazard):
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False, land_path=None,
-                               pop_path=None, reproduce=False):
+                               pop_path=None, reproduce=False, uniform=False):
         """ Generate probabilistic fire seasons.
 
         Fire seasons are created by running n probabilistic fires per year
@@ -477,6 +485,9 @@ class WildFire(Hazard):
         reproduce : bool, optional
             Sets seeds to make the probabilistic seasons reproducible. Default
             is False to ensure fully probabilistic seasons.
+        uniform : bool, optional
+            Draws global propagation probability from an uniform instead of
+            a normal distribution. Default is False.
         """
         bounds = tuple(np.round(self.centroids.total_bounds, 2))
         res = self.centroids.meta['transform'][0]
@@ -503,11 +514,17 @@ class WildFire(Hazard):
             if reproduce:
                 np.random.seed(i)
                 random.seed(i)
-            prop_proba = np.random.normal(
-                self.ProbaParams.prop_proba_mean,
-                self.ProbaParams.prop_proba_std)
-            # prop_proba is restricted to be smaller than 0.25 by default
-            prop_proba = min(prop_proba, 0.25)
+            if not uniform:
+                prop_proba = np.random.normal(
+                    self.ProbaParams.prop_proba_mean,
+                    self.ProbaParams.prop_proba_std)
+                # prop_proba is restricted to be smaller than 0.25 by default
+                prop_proba = min(prop_proba, self.ProbaParams.max_prop_proba)
+                prop_proba = max(prop_proba, self.ProbaParams.min_prop_proba)
+            else:
+                prop_proba = np.random.uniform(
+                    self.ProbaParams.min_prop_proba,
+                    self.ProbaParams.max_prop_proba)
             self.ProbaParams.prop_proba.append(prop_proba)
             if len(n_fires_hist) > 1:
                 n_proba_ign = int(np.around(np.random.gamma(shape_est, scale_est)))
