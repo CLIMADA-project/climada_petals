@@ -490,6 +490,10 @@ class WildFire(Hazard):
 
         n_fires_hist = self.select(orig = True).n_fires
 
+        if len(n_fires_hist) > 1:
+            shape_est = np.mean(n_fires_hist) ** 2 / np.std(n_fires_hist) ** 2
+            scale_est = np.std(n_fires_hist) ** 2 / np.mean(n_fires_hist)
+
         prob_fire_seasons = [] # list to save probabilistic fire seasons
         n_fires_new = []
         if self.ProbaParams.prop_proba is None:
@@ -499,19 +503,19 @@ class WildFire(Hazard):
             if reproduce:
                 np.random.seed(i)
                 random.seed(i)
-            # prop_proba is restricted to be smaller than 0.25
-            self.ProbaParams.prop_proba.append(min(0.25, float(np.random.normal(
+            prop_proba = np.random.normal(
                 self.ProbaParams.prop_proba_mean,
-                self.ProbaParams.prop_proba_std, 1))))
+                self.ProbaParams.prop_proba_std)
+            # prop_proba is restricted to be smaller than 0.25 by default
+            prop_proba = min(prop_proba, 0.25)
+            self.ProbaParams.prop_proba.append(prop_proba)
             if len(n_fires_hist) > 1:
-                shape_est = np.mean(n_fires_hist) ** 2 / np.std(n_fires_hist) ** 2
-                scale_est = np.std(n_fires_hist) ** 2 / np.mean(n_fires_hist)
-                n_proba_ign = int(np.around(np.random.gamma(shape_est, scale_est, 1)))
+                n_proba_ign = int(np.around(np.random.gamma(shape_est, scale_est)))
             else:
                 n_proba_ign = int(n_fires_hist)
             if n_ignitions is not None:
                 n_proba_ign = max(n_proba_ign, int(n_ignitions[0]))
-                n_proba_ign = min(int(n_ignitions[1]), n_proba_ign)
+                n_proba_ign = min(n_proba_ign, int(n_ignitions[1]))
 
             LOGGER.info('Fire season: %i', (i + 1))
             LOGGER.info('Setting up probabilistic fire season with %s fires.',
