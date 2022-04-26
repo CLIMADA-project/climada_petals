@@ -45,6 +45,7 @@ from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import from_levels_and_colors
 
+from climada import CONFIG
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
 from climada.hazard.tag import Tag as TagHazard
@@ -1793,8 +1794,8 @@ class WildFire(Hazard):
 
         Parameters
         ----------
-        file_path : str
-            Absolute path where files are stored. Default: SYSTEM_DIR
+        file_path : str, optional
+            Absolute path where files are stored.
 
         Raises
         ------
@@ -1828,8 +1829,8 @@ class WildFire(Hazard):
 
         Parameters
         ----------
-        file_path : str
-            Absolute path where files are stored. Default: SYSTEM_DIR
+        file_path : str, optional
+            Absolute path where files are stored.
 
         Raises
         ------
@@ -1841,25 +1842,28 @@ class WildFire(Hazard):
         """
 
         if file_path is None:
-            file_name = "gpw_v4_population_count_rev11_2020_30_sec.tif"
+            file_name = CONFIG.exposures.litpop.gpw_population.filename_gpw.str() % (11, 2020)
             file_path = SYSTEM_DIR / file_name
             if file_path.is_file():
                 return file_path
-            file_path = SYSTEM_DIR / file_name[:-4] / file_name
+            file_path = SYSTEM_DIR / \
+                (CONFIG.exposures.litpop.gpw_population.dirname_gpw.str() % (11, 2020)) / \
+                (CONFIG.exposures.litpop.gpw_population.filename_gpw.str() % (11, 2020))
+            if file_path.is_file():
+                return file_path
         else:
             file_path = Path(file_path)
-        if file_path.is_file():
-            return file_path
+            if file_path.is_file():
+                return file_path
 
         raise FileExistsError(f'The file {file_path} could not '
                               + 'be found. Please download the file '
                               + 'first or choose a different folder. '
                               + 'The data can be downloaded from '
-                              + '(http://sedac.ciesin.columbia.edu/'
-                              + 'data/collection/gpw-v4/sets/browse), '
-                              + 'e.g., (https://sedac.ciesin.columbia.edu/data/'
+                              + '(https://sedac.ciesin.columbia.edu/data/'
                               + 'set/gpw-v4-population-count-rev11/'
-                              + 'data-download) '
+                              + 'data-download)'
+                              + 'Download 30 arcsec from the year 2020.'
                               + '(Free NASA Earthdata login required). '
                               )
 
