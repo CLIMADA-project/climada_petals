@@ -554,10 +554,10 @@ class WildFire(Hazard):
         self.n_fires = np.append(self.n_fires, n_fires_new)
         new_orig = np.zeros(len(new_event_id), bool)
         self.orig = np.concatenate((self.orig, new_orig))
-        self._set_frequency()
         # There is no date for probabilistic seasons, therefore using event_id
-        self.date = np.concatenate((self.date, new_event_id), axis=None)
-        self.date_end = np.concatenate((self.date_end, new_event_id), axis=None)
+        self.date = np.concatenate((self.date, new_event_id))
+        self.date_end = np.concatenate((self.date_end, new_event_id))
+        self._set_frequency()
 
         # Following values are defined for each event and centroid
         new_intensity = sparse.lil_matrix((np.zeros([n_fire_seasons, len(self.centroids.lat)])))
@@ -1537,8 +1537,8 @@ class WildFire(Hazard):
         self.frequency : np.array
         """
         if self.event_id.size > 0:
-            delta_time = date.fromordinal(int(np.max(self.date))).year - \
-                date.fromordinal(int(np.min(self.date))).year + 1
+            delta_time = date.fromordinal(int(np.max(self.date[self.orig.nonzero()[0]]))).year - \
+                date.fromordinal(int(np.min(self.date[self.orig.nonzero()[0]]))).year + 1
             num_orig = self.orig.nonzero()[0].size
             if num_orig > 0:
                 ens_size = self.event_id.size / num_orig
