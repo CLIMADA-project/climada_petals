@@ -21,6 +21,8 @@ Define the Warn class.
 import logging
 import copy
 from dataclasses import dataclass, field
+from enum import Enum
+
 
 import numpy as np
 import skimage
@@ -85,16 +87,13 @@ def median_filtering(bin_map, size):
     return skimage.filters.median(bin_map, np.ones((size, size)))
 
 
-from enum import Enum
-
 class Operation(Enum):
     dilation = dilation
     erosion = erosion
     median_filtering = median_filtering
     
-    def __call__(*args, **kwargs):  # this is not strictly necessary but with this one can do `Operation['dilation'](map, size)`
+    def __call__(self, *args, **kwargs):
         return self.value(*args, **kwargs)
-}
 
 
 class Warn:
@@ -127,44 +126,30 @@ class Warn:
         warn_levels : list
             Warn levels that define the bins in which the input_map will be classified in.
         operations : list
-            Operations to be applied in filtering algorithm.
-        op_sizes : list
-            Size of kernel of every operation given.
+            Tuples saving operations and their filter sizes to be applied in filtering algorithm.
         gradual_decr : bool
             Defines whether the highest warn levels should be gradually decreased by its neighboring regions (if True)
             to the lowest level (e.g., level 3, 2, 1, 0)
             or larger steps are allowed (e.g., from warn level 5 directly to 1).
-        change_sm : bool
-            If True, the levels of too small regions are changed to its surrounding levels.
-        size_sm : int
-            Defining what too small regions are. Number of coordinates.
-        allowed_operations : dict
-            Allowed operations to be applied in filtering algorithm.
-            Possible values: 'DILATION', 'EROSION', 'MEDIANFILTERING'.
+        change_sm : int
+            If strictly larger than 1, the levels of too small regions are changed to its surrounding levels.
+            If 0 or None, the levels are not changed.
         """
         # default values for warning generation
-        OPERATIONS = ['DILATION', 'EROSION', 'DILATION', 'MEDIANFILTERING']
-        OPERATIONS_SIZES = [2, 3, 7, 15]
+        OPERATIONS = [('dilation', 2)]
         GRADUAL_DECREASE = True
-        CHANGE_SMALL_REGIONS = True
-        SIZE_TOO_SMALL = 250
+        CHANGE_SMALL_REGIONS = None
 
         warn_levels: List
         operations: List[str] = field(default_factory=lambda op=OPERATIONS: op)
-        op_sizes: List[int] = field(default_factory=lambda sz=OPERATIONS_SIZES: sz)
-        gradual_decr: int = GRADUAL_DECREASE
+        gradual_decr: bool = GRADUAL_DECREASE
         change_sm: bool = CHANGE_SMALL_REGIONS
-        size_sm: int = SIZE_TOO_SMALL
-        allowed_operations: Dict[str, list] = field(default_factory=lambda ao=ALLOWED_OPERATIONS: ao)
-
+        """
         def __post_init__(self):
-            if len(self.operations) != len(self.op_sizes):
-                LOGGER.warning('For every operation a filter size is needed and the other way around. '
-                               'Please input the same number of operations and filter sizes.')
             if not all(item in self.allowed_operations.keys() for item in self.operations):
                 raise ValueError("An input operation is not defined. "
                                  "Please select one of %s", self.allowed_operations.keys())
-
+"""
     def __init__(self, warning, coord, warn_params):
         """Initialize Warn.
 
@@ -179,11 +164,7 @@ class Warn:
         """
         self.warning = warning
         self.coord = coord
-        self.warn_levels = warn_params.warn_levels
-        self.metadata_generation_storm = {
-            'gradual decrease': warn_params.gradual_decr,
-            'change small regions': warn_params.change_sm
-        }
+        self.warn_params = warn_params
 
     @classmethod
     def from_map(cls, input_map, coord, warn_params):
@@ -194,7 +175,7 @@ class Warn:
         input_map : np.ndarray
             Rectangle 2d map of values which are used to generate the warning.
         coord : np.ndarray
-            Coordinates of warning map.
+            Coordinates of warning map. For every value of the input map exactly one coordinate is needed.
         warn_params : dataclass
             Dataclass consisting information on how to generate the warning (operations and details).
 
@@ -203,10 +184,13 @@ class Warn:
         warn : Warn
             Generated Warn object including warning, coordinates, warn levels, and metadata.
         """
+        if len(input_map.flatten()) != coord.shape[0]:
+            raise Exception('For every coordinate a value in the map, and vice versa, is needed.')
+
         binned_map = cls.bin_map(input_map, warn_params.warn_levels)
         warning = cls.generate_warn_map(binned_map, warn_params)
         if warn_params.change_sm:
-            warning = cls.change_small_regions(warning, warn_params.size_sm)
+            warning = cls.change_small_regions(warning, warn_params.change_sm)
         return cls(warning, coord, warn_params)
 
     @staticmethod
@@ -227,10 +211,10 @@ class Warn:
         """
         if np.min(input_map) < np.min(levels):
             LOGGER.warning('Values of input map are smaller than defined levels. '
-                           'Please set the levels lower or check input map.')
+                           'The smaller levels are set to the minimum level.')
         if np.max(input_map) > np.max(levels):
             LOGGER.warning('Values of input map are larger than defined levels. '
-                           'Please set the levels higher or check input map.')
+                           'The larger values are set to a new and higher warn level.')
         return np.digitize(input_map, levels) - 1  # digitize lowest bin is 1
 
     @staticmethod
@@ -249,8 +233,8 @@ class Warn:
         binary_curr_lvl : np.ndarray
             Warning map consisting formed warning regions of current warn level, same shape as input map.
         """
-        for fl_size, op in zip(warn_params.op_sizes, warn_params.operations):
-            binary_map = warn_params.allowed_operations[op](binary_map, fl_size)
+        for op, sz in warn_params.operations:
+            binary_map = Operation.dilation(binary_map, sz)  # TODO change implementation
 
         return binary_map
 
