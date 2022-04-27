@@ -85,10 +85,15 @@ def median_filtering(bin_map, size):
     return skimage.filters.median(bin_map, np.ones((size, size)))
 
 
-ALLOWED_OPERATIONS = {
-    'DILATION': dilation,
-    'EROSION': erosion,
-    'MEDIANFILTERING': median_filtering
+from enum import Enum
+
+class Operation(Enum):
+    dilation = dilation
+    erosion = erosion
+    median_filtering = median_filtering
+    
+    def __call__(*args, **kwargs):  # this is not strictly necessary but with this one can do `Operation['dilation'](map, size)`
+        return self.value(*args, **kwargs)
 }
 
 
@@ -252,7 +257,7 @@ class Warn:
     @staticmethod
     def generate_warn_map(bin_map, warn_params):
         """Generate warning map of binned map. The filter algorithm reduces heterogeneity in the map (erosion) and
-        makes sure warn regions of higher warn levels warn regions large enough (dilation). With the median
+        makes sure warn regions of higher warn levels are large enough (dilation). With the median
         filtering the generated warning is smoothed out without blurring.
 
         Parameters
@@ -267,9 +272,6 @@ class Warn:
         warn_regions : np.ndarray
             Warning map consisting formed warning regions, same shape as input map.
         """
-        unq = np.unique(bin_map)
-        if len(unq) == 1:
-            return np.zeros_like(bin_map) + unq[0]
         max_warn_level = np.max(bin_map)
         min_warn_level = np.min(bin_map)
 
