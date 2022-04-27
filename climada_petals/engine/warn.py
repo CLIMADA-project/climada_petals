@@ -188,9 +188,9 @@ class Warn:
             raise Exception('For every coordinate a value in the map, and vice versa, is needed.')
 
         binned_map = cls.bin_map(input_map, warn_params.warn_levels)
-        warning = cls.generate_warn_map(binned_map, warn_params)
+        warning = cls.__generate_warn_map(binned_map, warn_params)
         if warn_params.change_sm:
-            warning = cls.change_small_regions(warning, warn_params.change_sm)
+            warning = cls.__change_small_regions(warning, warn_params.change_sm)
         return cls(warning, coord, warn_params)
 
     @staticmethod
@@ -218,7 +218,7 @@ class Warn:
         return np.digitize(input_map, levels) - 1  # digitize lowest bin is 1
 
     @staticmethod
-    def filtering(binary_map, warn_params):
+    def __filtering(binary_map, warn_params):
         """For the current warn level, apply defined operations in warn parameters on the input binary map.
 
         Parameters
@@ -239,7 +239,7 @@ class Warn:
         return binary_map
 
     @staticmethod
-    def generate_warn_map(bin_map, warn_params):
+    def __generate_warn_map(bin_map, warn_params):
         """Generate warning map of binned map. The filter algorithm reduces heterogeneity in the map (erosion) and
         makes sure warn regions of higher warn levels are large enough (dilation). With the median
         filtering the generated warning is smoothed out without blurring.
@@ -267,13 +267,13 @@ class Warn:
                 pts_curr_lvl = bin_map == curr_lvl
             binary_curr_lvl = np.where(pts_curr_lvl, curr_lvl, 0)  # set bool np.ndarray to curr_lvl (if True) or 0
 
-            warn_reg = Warn.filtering(binary_curr_lvl, warn_params)
+            warn_reg = Warn.__filtering(binary_curr_lvl, warn_params)
             warn_map = np.maximum(warn_map, warn_reg)  # keep warn regions of higher levels by taking maximum
 
         return warn_map
 
     @staticmethod
-    def increase_levels(warn, size):
+    def __increase_levels(warn, size):
         """Increase warn levels of too small regions to max warn level of this warning.
 
         Parameters
@@ -296,7 +296,7 @@ class Warn:
         return warn
 
     @staticmethod
-    def reset_levels(warn, size):
+    def __reset_levels(warn, size):
         """Set warn levels of too small regions to highest surrounding warn level. Therefore, decrease warn levels of
         too small regions, until no too small regions can be detected.
 
@@ -323,7 +323,7 @@ class Warn:
         return warn
 
     @staticmethod
-    def change_small_regions(warning, size):
+    def __change_small_regions(warning, size):
         """Change formed warning regions smaller than defined threshold from current warn level to surrounding warn
         level.
 
@@ -340,8 +340,8 @@ class Warn:
             Warning without too small regions, same shape as input map.
         """
         warning = warning + 1  # 0 is regarded as background in labelling, + 1 prevents this
-        warning = Warn.increase_levels(warning, size)
-        warning = Warn.reset_levels(warning, size)
+        warning = Warn.__increase_levels(warning, size)
+        warning = Warn.__reset_levels(warning, size)
         warning = warning - 1
         return warning
 
