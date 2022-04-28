@@ -626,7 +626,7 @@ class TCForecast(TCTracks):
                 "id_no": track_as_df["cycloneNumber"].iloc[0],
                 "ensemble_number": track_as_df["member"].iloc[0],
                 "is_ensemble": not pd.isna(track_as_df["member"].iloc[0]),
-                "forecast_time": track_as_df["baseTime"].iloc[0],
+                "run_datetime": track_as_df["baseTime"].iloc[0],
                 "is_named_storm": track_as_df["is_named_storm"].iloc[0],
             },
         )
