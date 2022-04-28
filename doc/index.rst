@@ -8,7 +8,7 @@ The documentation for CLIMADA-python (`the core <https://github.com/CLIMADA-proj
 Installation
 ---------
 
-The details for the installation can be found here: https://climada-python.readthedocs.io/en/stable/guide/Guide_Installation.html#Install-CLIMADA-petals-(optional) (Please copy and paste the whole link, also with the part "(optional)")
+The details for the installation can be found `here <https://climada-python.readthedocs.io/en/stable/guide/Guide_Installation.html#Install-CLIMADA-petals-(optional)>`_.
 
 ---------
 Tutorials
