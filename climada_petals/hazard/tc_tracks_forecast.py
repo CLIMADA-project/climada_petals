@@ -529,9 +529,9 @@ class TCForecast(TCTracks):
             raise ValueError
 
     @classmethod
-    def read_cxml(cls, cxml_path: str):
+    def read_cxml(cls, cxml_path: str, xsl_path: str = None):
         """Reads a cxml (cyclone xml) file and returns a class instance."""
-        df = cls._cxml_to_df(cxml_path)
+        df = cls._cxml_to_df(cxml_path=cxml_path, xsl_path=xsl_path)
         df_groupby = df.groupby(
             ["disturbance_no", "baseTime", "basin", "cycloneNumber", "member"],
             sort=False,
