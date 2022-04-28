@@ -1,7 +1,8 @@
 import unittest
 import numpy as np
+import matplotlib.pyplot as plt
 
-from climada_petals.engine.warn import Warn, FilterData
+from climada_petals.engine.warn import Warn
 
 
 class TestWarn(unittest.TestCase):
@@ -72,6 +73,14 @@ class TestWarn(unittest.TestCase):
         self.assertEqual(np.sum(warn), 1 * 40)
         self.assertEqual(warn.shape, wind_matrix.shape)
 
+        # test not allowed operation
+        filter_data = FilterData(warn_levels, operations=['BLA'], sizes=[1], gradual_decr=False,
+                                 change_sm=False, size_sm=0)
+        warn = Warn.filtering(warn, filter_data)
+        self.assertEqual(np.sum(warn), 1 * 40)
+        self.assertEqual(warn.shape, wind_matrix.shape)
+        self.assertRaises(TypeError, Warn.reset_levels, wind_matrix, 2)
+
     def test_generate_warn_map_functionality(self):
         wind_matrix = np.zeros((10, 10))
         wind_matrix[4, 4] = 40
@@ -137,6 +146,20 @@ class TestWarn(unittest.TestCase):
         warn_levels = np.array([0.0, 20, 50])
 
         filter_data = FilterData(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'], sizes=[1, 1, 1],
+                                 gradual_decr=False, change_sm=False, size_sm=0)
+        warn = Warn.from_map(wind_matrix, coords, filter_data)
+        self.assertEqual(np.sum(warn.warning), 1)
+        self.assertEqual(warn.warning.shape, wind_matrix.shape)
+
+    def test_generate_warn_map_single_level(self):
+        wind_matrix = np.zeros((10, 10))
+        wind_matrix[4, 4] = 40
+        coords = np.random.randint(0, 100, wind_matrix.shape)
+
+        warn_levels = np.array([0.0, 50])
+
+        filter_data = FilterData(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'],
+                                 sizes=[1, 1, 1],
                                  gradual_decr=False, change_sm=False, size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 1)
@@ -233,6 +256,54 @@ class TestWarn(unittest.TestCase):
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 5)
         self.assertEqual(warn.warning.shape, wind_matrix.shape)
+
+    def test_geo_scatter_categorical(self):
+        """Plots ones with geo_scatteR_categorical"""
+        # test default with one plot
+        values = np.array([[1, 20, 40, 45]])
+        coord = np.array([[26, 0], [26, 1], [28, 0], [29, 1]])
+        warn_levels = np.array([0.0, 20, 50])
+        warn_params = Warn.WarnParameters(warn_levels, operations=[], gradual_decr=False, change_sm=False)
+        warn = Warn.from_map(values, coord, warn_params)
+
+        warn.plot_warning('value', 'test plot',
+                        pop_name=True)
+        plt.close()
+
+        #test multiple plots with non default kwargs
+        values = np.array([[1, 20, 40, 45]])
+        coord = np.array([[26, 0], [26, 1], [28, 0], [29, 1]])
+        warn_levels = np.array([0.0, 20, 50])
+        warn_params = Warn.WarnParameters(warn_levels, operations=[], gradual_decr=False, change_sm=False)
+        warn = Warn.from_map(values, coord, warn_params)
+        warn.plot_warning('value', 'test plot',
+                        cat_name={0: 'zero',
+                                  1: 'int',
+                                  2.0: 'float',
+                                  'a': 'string'},
+                        pop_name=False, cmap=plt.get_cmap('Set1'))
+        plt.close()
+
+        #test colormap warning
+        values = np.array([[1, 20, 40, 45]])
+        coord = np.array([[26, 0], [26, 1], [28, 0], [29, 1]])
+        warn_levels = np.array([0.0, 20, 50])
+        warn_params = Warn.WarnParameters(warn_levels, operations=[], gradual_decr=False, change_sm=False)
+        warn = Warn.from_map(values, coord, warn_params)
+        warn.plot_warning('value', 'test plot',
+                        pop_name=False, cmap='viridis')
+
+        plt.close()
+
+        #test colormap warning with 256 colors
+        values = np.array([[1, 20, 40, 45]])
+        coord = np.array([[26, 0], [26, 1], [28, 0], [29, 1]])
+        warn_levels = np.array([0.0, 20, 50])
+        warn_params = Warn.WarnParameters(warn_levels, operations=[], gradual_decr=False, change_sm=False)
+        warn = Warn.from_map(values, coord, warn_params)
+        warn.plot_warning('value', 'test plot',
+                        pop_name=False, cmap='tab20c')
+        plt.close()
 
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestWarn)

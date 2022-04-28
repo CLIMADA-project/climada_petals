@@ -34,14 +34,16 @@ LOGGER = logging.getLogger(__name__)
 
 
 def dilation(bin_map, size):
-    """Dilate binary input map. Enlarges and connects regions of interests. Larger sizes - more area of interest.
+    """Dilate binary input map. The operation is based on a convolution. During translation of the filter,
+    a point is included to the region (changed or kept to 1), if one or more elements correspond with the filter.
+    Else, it is 0. This results in more and larger regions of interest. Larger filter sizes - more area of interest.
 
     Parameters
     ----------
     bin_map : np.ndarray
         Rectangle 2d map of values which are used to generate the warning.
     size : int
-        Size of kernel.
+        Size of filter.
 
     Returns
     ----------
@@ -52,14 +54,16 @@ def dilation(bin_map, size):
 
 
 def erosion(bin_map, size):
-    """Erode binary input map. Reduces region of interest and heterogeneity in map. Larger sizes - more reduction.
+    """Erode binary input map. The operation is based on a convolution. During translation of the filter, a point is
+    included to the region (changed or kept to 1), if all elements correspond with the filter. Else, it is 0. This
+    results in less and smaller regions of interest and reduces heterogeneity in map. Larger sizes - more reduction.
 
     Parameters
     ----------
     bin_map : np.ndarray
         Rectangle 2d map of values which are used to generate the warning.
     size : int
-        Size of kernel.
+        Size of filter.
 
     Returns
     ----------
@@ -70,14 +74,16 @@ def erosion(bin_map, size):
 
 
 def median_filtering(bin_map, size):
-    """Smooth out binary map. Larger sizes - smoother regions and more reduction of heterogeneity.
+    """Smooth binary input map. The operation is based on a convolution. During translation of the filter,
+    a point is included to the region (changed or kept to 1), if the median of the filter is 1. Else, it is 0. This
+    results in smoother regions of interest and reduces heterogeneity in map. Larger sizes - smoother regions.
 
     Parameters
     ----------
     bin_map : np.ndarray
         Rectangle 2d map of values which are used to generate the warning.
     size : int
-        Size of kernel.
+        Size of filter.
 
     Returns
     ----------
@@ -98,7 +104,7 @@ class Operation(Enum):
 
 class Warn:
     """Warn definition. Generate a warning, i.e., 2D map of coordinates with assigned warn levels. Operations,
-    their order, and their influence (kernel sizes) can be selected to generate the warning. Further properties can
+    their order, and their influence (filter sizes) can be selected to generate the warning. Further properties can
     be chosen which define the warning generation. The functionality of reducing heterogeneity in a map can be
     applied to different inputs, e.g. MeteoSwiss windstorm data (COSMO data), TCs, impacts, etc.
 
@@ -347,5 +353,47 @@ class Warn:
 
     def plot_warning(self, var_name='Warn Levels', title='Categorical Warning Map', cat_name=None, adapt_fontsize=True,
                      **kwargs):
+        """
+        Map plots for categorical data defined in array(s) over input
+        coordinates. The categories must be a finite set of unique values
+        as can be identified by np.unique() (mix of int, float, strings, ...).
+
+        The categories are shared among all subplots, i.e. are obtained from
+        np.unique(array_sub).
+        Eg.:
+            array_sub = [[1, 2, 1.0, 2], [1, 2, 'a', 'a']]
+            -> categories mapping is [[0, 2, 1, 2], [0, 2, 3, 3]]
+
+        Same category: 1 and '1'
+        Different categories: 1 and 1.0
+
+        This method wraps around util.geo_scatter_from_array and uses
+        all its args and kwargs.
+
+        Parameters
+        ----------
+        var_name : str or list(str)
+            label to be shown in the colorbar. If one
+            provided, the same is used for all subplots. Otherwise provide as
+            many as subplots in array_sub.
+        title : str or list(str)
+            subplot title. If one provided, the same is
+            used for all subplots. Otherwise provide as many as subplots in
+            array_sub.
+        cat_name : dict, optional
+            Categories name for the colorbar labels.
+            Keys are all the unique values in array_sub, values are their labels.
+            The default is labels = unique values.
+        adapt_fontsize : bool, optional
+            If set to true, the size of the fonts will be adapted to the size of the figure. Otherwise
+            the default matplotlib font size is used. Default is True.
+        **kwargs
+            Arbitrary keyword arguments for hexbin matplotlib function
+
+        Returns
+        -------
+        cartopy.mpl.geoaxes.GeoAxesSubplot
+
+        """
         return geo_scatter_categorical(self.warning.flatten(), self.coord, var_name, title, cat_name, adapt_fontsize,
                                        **kwargs)
