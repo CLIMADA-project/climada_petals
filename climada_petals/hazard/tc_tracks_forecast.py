@@ -563,6 +563,8 @@ class TCForecast(TCTracks):
                 "member": "Int64",
                 "cycloneNumber": "Int64",
                 "hour": "Int64",
+                "cycloneName": "object",
+                "id": "object",
             },
             parse_dates=["baseTime", "validTime"],
             infer_datetime_format=True,
