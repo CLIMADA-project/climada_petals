@@ -39,7 +39,11 @@ import eccodes as ec
 
 # climada dependencies
 from climada.hazard.tc_tracks import (
-    TCTracks, set_category, DEF_ENV_PRESSURE, CAT_NAMES
+    TCTracks,
+    set_category,
+    DEF_ENV_PRESSURE,
+    CAT_NAMES,
+    BASIN_ENV_PRESSURE,
 )
 from climada.util.files_handler import get_file_names
 
@@ -84,6 +88,14 @@ MISSING_LONG = ec.CODES_MISSING_LONG
 
 CXML2CSV_XSL = Path(__file__).parent / "tc_tracks_foreast_cxml2csv.xsl"
 """Path at which an xsl is found for transforming CXML to CSV format."""
+
+BASIN_ENV_PRESSURE_CXML = {
+    "Southwest Pacific": BASIN_ENV_PRESSURE["SP"],
+    "North Indian": BASIN_ENV_PRESSURE["NI"],
+    "Northeast Pacific": BASIN_ENV_PRESSURE["EP"],
+    "Northwest Pacific": BASIN_ENV_PRESSURE["WP"],
+    "North Atlantic": BASIN_ENV_PRESSURE["NA"],
+}
 
 
 class TCForecast(TCTracks):
@@ -543,7 +555,9 @@ class TCForecast(TCTracks):
         return instance
 
     @staticmethod
-    def _cxml_to_df(cxml_path: str, xsl_path: str = None):
+    def _cxml_to_df(
+        cxml_path: str, xsl_path: str = None, basin_env_pressures: dict = None
+    ):
         """Read a cxml v1.1 file; may not work on newer specs."""
         # TODO wrap in try catch with nice error if lxml not available
         import lxml.etree as et
@@ -574,15 +588,10 @@ class TCForecast(TCTracks):
             subset=["validTime", "latitude", "longitude"], how="any", inplace=True
         )
 
-        default_env_pressure = all_storms_df.basin.replace(
-            {
-                "Southwest Pacific": 1000,
-                "North Indian": 1000,
-                "Northeast Pacific": 1000,
-                "Northwest Pacific": 1000,
-                "North Atlantic": 1000,
-            }
-        )
+        if basin_env_pressures is None:
+            basin_env_pressures = BASIN_ENV_PRESSURE_CXML
+
+        default_env_pressure = all_storms_df.basin.replace(basin_env_pressures)
 
         all_storms_df["is_named_storm"] = -all_storms_df["cycloneName"].isna()
         default_name = (
