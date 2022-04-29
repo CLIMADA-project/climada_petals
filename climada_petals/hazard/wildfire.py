@@ -106,7 +106,7 @@ class WildFire(Hazard):
             removes FIRMS fires below defined theshold of entries
         minor_fire_thres_firms : int, default = 3
             number of FIRMS entries required to be considered a fire
-        crop_fires : bool, default = False
+        crop_fires : bool, default = True
             If false, crop fires are removed from firms data frame by
             comparing to the land cover data
         countries : list, default = None
@@ -118,7 +118,7 @@ class WildFire(Hazard):
         clus_thres_firms: int = 15
         remove_minor_fires_firms: bool = True
         minor_fire_thres_firms: int = 3
-        crop_fires: bool = False
+        crop_fires: bool = True
         countries: list = None
 
     @dataclass
