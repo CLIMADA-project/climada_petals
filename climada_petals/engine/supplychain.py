@@ -26,6 +26,8 @@ import datetime as dt
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+from pathlib import Path
+import zipfile
 
 from climada import CONFIG
 from climada.util import files_handler as u_fh
@@ -125,13 +127,23 @@ class SupplyChain():
 
         """
 
-        file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
-        file_loc = WIOD_DIRECTORY / file_name
+        wiod_dir = WIOD_DIRECTORY / 'WIOD16_tables'
 
-        if not file_loc in WIOD_DIRECTORY.iterdir():
-            download_link = WIOD_FILE_LINK + file_name
-            u_fh.download_file(download_link, download_dir=WIOD_DIRECTORY)
-            LOGGER.info('Downloading WIOD table for year %s', year)
+        if not wiod_dir.exists():
+            wiod_dir.mkdir()
+
+            LOGGER.info('Downloading folder with WIOD tables')
+
+            downloaded_file_name = u_fh.download_file(WIOD_FILE_LINK, 
+                                                      download_dir=WIOD_DIRECTORY)
+            downloaded_file_zip_path = Path(downloaded_file_name + '.zip')
+            Path(downloaded_file_name).rename(downloaded_file_zip_path)
+
+            with zipfile.ZipFile(downloaded_file_zip_path, 'r') as zip_ref:
+                 zip_ref.extractall(wiod_dir)
+
+        file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
+        file_loc = wiod_dir / file_name
         mriot = pd.read_excel(file_loc, engine='pyxlsb')
 
         start_row, end_row = range_rows
