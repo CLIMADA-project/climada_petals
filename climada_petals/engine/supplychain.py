@@ -23,11 +23,11 @@ __all__ = ['SupplyChain']
 
 import logging
 import datetime as dt
+from pathlib import Path
+import zipfile
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import zipfile
 
 from climada import CONFIG
 from climada.util import files_handler as u_fh
@@ -134,13 +134,13 @@ class SupplyChain():
 
             LOGGER.info('Downloading folder with WIOD tables')
 
-            downloaded_file_name = u_fh.download_file(WIOD_FILE_LINK, 
+            downloaded_file_name = u_fh.download_file(WIOD_FILE_LINK,
                                                       download_dir=WIOD_DIRECTORY)
             downloaded_file_zip_path = Path(downloaded_file_name + '.zip')
             Path(downloaded_file_name).rename(downloaded_file_zip_path)
 
             with zipfile.ZipFile(downloaded_file_zip_path, 'r') as zip_ref:
-                 zip_ref.extractall(wiod_dir)
+                zip_ref.extractall(wiod_dir)
 
         file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
         file_loc = wiod_dir / file_name
