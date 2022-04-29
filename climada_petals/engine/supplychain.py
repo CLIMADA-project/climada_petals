@@ -26,6 +26,8 @@ import datetime as dt
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+from pathlib import Path
+import zipfile
 
 from climada import CONFIG
 from climada.util import files_handler as u_fh
@@ -38,9 +40,8 @@ LOGGER = logging.getLogger(__name__)
 WIOD_FILE_LINK = CONFIG.engine.supplychain.resources.wiod16.str()
 """Link to the 2016 release of the WIOD tables."""
 
-# TODO: change .wiod into .iot
-IOT_DIRECTORY = CONFIG.engine.supplychain.local_data.wiod.dir()
-"""Directory where WIOD tables are downloaded into."""
+MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
+"""Directory where Multi-Regional Input-Output Tables (MRIOT) are downloaded into."""
 
 class SupplyChain():
     """SupplyChain class.
@@ -124,7 +125,7 @@ class SupplyChain():
         # TODO: automatic data download see suggestion in https://zenodo.org/record/5589597#.Ybh0A33MK3I. This is also automatized in pymrio.
 
         folder_name = 'IOT_{}_ixi'.format(year)
-        folder_loc = IOT_DIRECTORY / folder_name
+        folder_loc = MRIOT_DIRECTORY / folder_name
 
         mriot = pd.read_csv(os.path.join(folder_name, 'Z.txt'), sep='\t', skiprows=2)
         tot_prod = pd.read_csv(os.path.join(folder_name, 'X.txt'), sep='\t', usecols=[2])
@@ -168,13 +169,23 @@ class SupplyChain():
 
         """
 
-        file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
-        file_loc = IOT_DIRECTORY / file_name
+        wiod_dir = MRIOT_DIRECTORY / 'WIOD'
 
-        if not file_loc in IOT_DIRECTORY.iterdir():
-            download_link = WIOD_FILE_LINK + file_name
-            u_fh.download_file(download_link, download_dir=IOT_DIRECTORY)
-            LOGGER.info('Downloading WIOD table for year %s', year)
+        if not wiod_dir.exists():
+            wiod_dir.mkdir()
+
+            LOGGER.info('Downloading folder with WIOD tables')
+
+            downloaded_file_name = u_fh.download_file(WIOD_FILE_LINK, 
+                                                      download_dir=MRIOT_DIRECTORY)
+            downloaded_file_zip_path = Path(downloaded_file_name + '.zip')
+            Path(downloaded_file_name).rename(downloaded_file_zip_path)
+
+            with zipfile.ZipFile(downloaded_file_zip_path, 'r') as zip_ref:
+                 zip_ref.extractall(wiod_dir)
+
+        file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
+        file_loc = wiod_dir / file_name
         mriot = pd.read_excel(file_loc, engine='pyxlsb')
 
         start_row, end_row = range_rows
