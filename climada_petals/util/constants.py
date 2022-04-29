@@ -389,5 +389,12 @@ DICT_CIS_OSM =  {
              'osm_keys' : ['shop','name'],
              'osm_query' : """shop='supermarket' or shop='greengrocer' or
                               shop='grocery' or shop='general' or 
-                              shop='bakery'"""}
+                              shop='bakery'"""},
+                              
+        'buildings' : {
+            'osm_keys' : ['building','amenity','name'],
+            'osm_query' : """building='yes' or building='house' or 
+                            building='residential' or building='detached' or 
+                            building='hut' or building='industrial' or 
+                            building='shed' or building='apartments'"""}
                               }
