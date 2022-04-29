@@ -39,7 +39,42 @@ HAZ_TYPE = 'LS'
 
 
 def sample_events(prob_matrix, n_years, dist='binom'):
-    """Repeatedly sample events"""
+    """
+    Sample yearly events for a specified time span (n_years) from
+    a matrix representing annual occurrence probabilities per grid cell 
+    (prob_matrix). The matrix will usually be provided throught the
+    Landslide.from_prob() method and refer to grid-cells and their annual 
+    sliding probabilities.
+    Events are drawn from the specified distribution (binomial or 
+    poisson). 
+    Returns n_year events for the whole grid, each event being representative
+    of all slides happening in 1 year throughout the entire grid-area.
+    
+    Parameters
+    ----------
+    prob_matrix : np.array()
+        matrix where each entry has a probability [0,1] of occurrence of
+        an event. Shape of array can be any and is determined by hazard area 
+        and resolution of probability-source-file when called through 
+        Landslide.from_prob().
+    n_years : int
+        the timespan of the probabilistic simulation in years. Each year will
+        result in 1 event.
+    dist : str, 'binom' or 'poisson'
+        distribution to sample from. Default is 'binom'.
+    
+    Returns
+    -------
+    scipy.sparse.csr_matrix : 
+        shape is (shape(prob_matrix),n_years). Each non-zero entry is 1 (re-
+        ferring to a 'hit' in that year and grid cell.) 
+    
+    See also
+    --------
+    sample_event_from_probs()
+    Landslide.from_prob()
+    """
+
     events = [
         sample_event_from_probs(prob_matrix, n_years=1, dist=dist)
         for i in range(n_years)
@@ -48,31 +83,35 @@ def sample_events(prob_matrix, n_years, dist='binom'):
     
     
 def sample_event_from_probs(prob_matrix, n_years, dist):
-    """sample an event  for a specified representative time span from
-    a matrix with occurrence probabilities. Draws events from chosen 
-    distribution.
+    """sample for a specified representative time span  (n_years) from
+    a matrix with occurrence probabilities. Draws from a specified distribution.
 
     Parameters
     ----------
     prob_matrix : np.array()
         matrix where each entry has a probability [0,1] of occurrence of
-        an event
+        an event. Shape of array can be any and is determined by hazard area 
+        and resolution of probability-source-file when called through 
+        Landslide.from_prob().
     n_years : int
-        the timespan of the probabilistic simulation in years. default is 1.
-    dist : str
-        distribution to sample from. currently 'binom' (default) and 'poisson'
+        the timespan of the probabilistic simulation in years. Will be 1 if
+        called from sample_events().
+    dist : str, 'binom' or 'poisson'
+        distribution to sample from.
 
     Returns
     -------
     ev_matrix : np.array()
-        array of same shape as prob_matrix with number of 'hits' from sampling
-        per entry
+        array of same shape as prob_matrix. Each entry contains the number of
+        'hits' obtained during sampling-period n_years and will range
+        from [0,n_years]
 
     See also
     --------
-    set_ls_prob(), scipy.stats.binom.rvs(), scipy.stats.poisson.rvs()
-
+    sample_events()
+    scipy.stats.binom.rvs(), scipy.stats.poisson.rvs()
     """
+    
     if dist == 'binom':
         ev_matrix = binom.rvs(n=n_years, p=prob_matrix)
 
@@ -247,7 +286,6 @@ class Landslide(Hazard):
         See also
         --------
         sample_events()
-        sample_event_from_probs()
         """
         
         haz = cls()
