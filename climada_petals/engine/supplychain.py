@@ -127,10 +127,8 @@ class SupplyChain():
 
         """
 
-        wiod_dir = WIOD_DIRECTORY / 'WIOD16_tables'
-
-        if not wiod_dir.exists():
-            wiod_dir.mkdir()
+        if not WIOD_DIRECTORY.exists():
+            WIOD_DIRECTORY.mkdir()
 
             LOGGER.info('Downloading folder with WIOD tables')
 
@@ -140,10 +138,10 @@ class SupplyChain():
             Path(downloaded_file_name).rename(downloaded_file_zip_path)
 
             with zipfile.ZipFile(downloaded_file_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(wiod_dir)
+                zip_ref.extractall(WIOD_DIRECTORY)
 
         file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
-        file_loc = wiod_dir / file_name
+        file_loc = WIOD_DIRECTORY / file_name
         mriot = pd.read_excel(file_loc, engine='pyxlsb')
 
         start_row, end_row = range_rows
