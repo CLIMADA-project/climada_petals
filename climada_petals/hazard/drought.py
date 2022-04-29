@@ -46,14 +46,9 @@ LOGGER = logging.getLogger(__name__)
 DFL_THRESHOLD = -1
 DFL_INTENSITY_DEF = 1
 
-
-SPEI_FILE_URL = CONFIG.hazard.drought.resources.spei_file_url.str()
+SPEI_FILE_URL = CONFIG.hazard.drought.resources.spei_file.url.str()
+SPEI_FILE_NAME = CONFIG.hazard.drought.resources.spei_file.name.str()
 SPEI_FILE_DIR = SYSTEM_DIR
-SPEI_FILE_NAME = 'spei06.nc'
-
-
-
-LOGGER = logging.getLogger(__name__)
 
 LATMIN = 44.5
 LATMAX = 50
@@ -63,8 +58,6 @@ LONMAX = 12
 
 HAZ_TYPE = 'DR'
 """Hazard type acronym Drought"""
-
-
 
 
 class Drought(Hazard):
