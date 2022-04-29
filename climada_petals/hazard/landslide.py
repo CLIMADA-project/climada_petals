@@ -40,9 +40,10 @@ HAZ_TYPE = 'LS'
 
 def sample_events(prob_matrix, n_years, dist='binom'):
     """Repeatedly sample events"""
-    events = []
-    for i in range(n_years):
-        events.append(sample_event_from_probs(prob_matrix, n_years=1, dist=dist))
+    events = [
+        sample_event_from_probs(prob_matrix, n_years=1, dist=dist)
+        for i in range(n_years)
+        ]
     return sparse.csr_matrix(events)
     
     
