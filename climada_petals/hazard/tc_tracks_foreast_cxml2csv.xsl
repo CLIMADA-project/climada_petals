@@ -41,10 +41,10 @@
       $newline
       )"
     />
-    <xsl:apply-templates/>
+    <xsl:apply-templates match="data[not(@type='analysis')]"/>
   </xsl:template>
 
-  <xsl:template match="data[not(@type='analysis')]">
+  <xsl:template match="data">
     <xsl:apply-templates select="disturbance"/>
   </xsl:template>
 
@@ -54,7 +54,7 @@
     </xsl:apply-templates>
   </xsl:template>
 
-  <xsl:template match="fix[@source='model']">
+  <xsl:template match="fix">
     <xsl:param name="disturbance_no" />
     
     <xsl:variable name="latitude">
