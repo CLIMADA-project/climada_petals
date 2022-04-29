@@ -47,7 +47,7 @@ def sample_events(prob_matrix, n_years, dist='binom'):
     return sparse.csr_matrix(events)
     
     
-def sample_event_from_probs(prob_matrix, n_years=1, dist='binom'):
+def sample_event_from_probs(prob_matrix, n_years, dist):
     """sample an event  for a specified representative time span from
     a matrix with occurrence probabilities. Draws events from chosen 
     distribution.
