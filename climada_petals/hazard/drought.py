@@ -46,8 +46,8 @@ LOGGER = logging.getLogger(__name__)
 DFL_THRESHOLD = -1
 DFL_INTENSITY_DEF = 1
 
-SPEI_FILE_URL = CONFIG.hazard.drought.resources.spei_file.url.str()
-SPEI_FILE_NAME = CONFIG.hazard.drought.resources.spei_file.name.str()
+SPEI_FILE_URL = CONFIG.hazard.drought.resources.spei_file_url.str()
+SPEI_FILE_NAME = SPEI_FILE_URL.split("/")[-1]
 SPEI_FILE_DIR = SYSTEM_DIR
 
 LATMIN = 44.5
@@ -74,10 +74,6 @@ class Drought(Hazard):
     def __init__(self):
         """Empty constructor."""
         Hazard.__init__(self, HAZ_TYPE)
-#        Hazard.__init__(self)
-#        self.file_url = SPEI_FILE_URL
-#        self.file_dir = SPEI_FILE_DIR
-#        self.file_name = SPEI_FILE_NAME
 
         self.file_path = Path(SPEI_FILE_DIR, SPEI_FILE_NAME)
         self.threshold = DFL_THRESHOLD
@@ -100,18 +96,6 @@ class Drought(Hazard):
         """Set path of the SPEI data"""
         self.file_path = Path(path)
 
-#    def set_file_url(self, file_url):
-#        """Set url to download the file, if not already in the folder"""
-#        self.file_url = file_url
-
-#    def set_file_dir(self, file_dir):
-#        """Set file directory with data"""
-#        self.file_dir = file_dir
-#
-#    def set_file_name(self, file_name):
-#        """Set the file name of the data"""
-#        self.file_name = file_name
-
     def set_threshold(self, threshold):
         """Set threshold"""
         self.threshold = threshold
@@ -119,7 +103,6 @@ class Drought(Hazard):
     def set_intensity_def(self, intensity_definition):
         """Set intensity definition"""
         self.intensity_definition = intensity_definition
-
 
 
     def __read_indices_spei(self, dataset):
@@ -148,26 +131,7 @@ class Drought(Hazard):
         try:
 
             if not self.file_path.is_file():
-
-                if self.file_path == Path(SPEI_FILE_DIR, SPEI_FILE_NAME):
-
-                    try:
-                        path_dwl = download_file(SPEI_FILE_URL + '/' + SPEI_FILE_NAME)
-
-                        try:
-                            Path(path_dwl).rename(self.file_path)
-
-                        except:
-                            raise FileNotFoundError('The file ' + str(path_dwl)
-                                                    + ' could not be moved to '
-                                                    + str(self.file_path.parent))
-
-                    except:
-                        raise FileExistsError('The file ' + str(self.file_path) + ' could not '
-                                              + 'be found. Please download the file '
-                                              + 'first or choose a different folder. '
-                                              + 'The data can be downloaded from '
-                                              + SPEI_FILE_URL)
+                download_file(SPEI_FILE_URL, download_dir=SPEI_FILE_DIR)
 
             LOGGER.debug('Importing %s', str(SPEI_FILE_NAME))
             dataset = xr.open_dataset(self.file_path)
