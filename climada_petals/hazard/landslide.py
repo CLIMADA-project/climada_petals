@@ -260,7 +260,7 @@ class Landslide(Hazard):
         haz.intensity = sample_events(prob_matrix, n_years, dist)
         haz.fraction = haz.intensity.copy()
         haz.fraction[haz.intensity.nonzero()] = 1
-        haz.frequency = np.ones(n_years)/n_years
+        haz.frequency = np.ones(n_years) / n_years
 
         # meaningless, such that check() method passes:
         haz.date = np.array([])
