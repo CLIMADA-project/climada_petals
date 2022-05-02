@@ -153,7 +153,7 @@ class Warn:
             op = [i[0] for i in self.operations]
             if not all(item in Operation.__dict__ for item in op):
                 raise ValueError("An input operation is not defined. "
-                                 "Please select one of %s", self.allowed_operations.keys())
+                                 "Please select only defined operations.")
 
     def __init__(self, warning, coord, warn_params):
         """Initialize Warn.
