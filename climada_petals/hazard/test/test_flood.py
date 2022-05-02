@@ -93,7 +93,7 @@ class TestRiverFlood(unittest.TestCase):
         rf = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
                        countries=['DEU'], ISINatIDGrid=True)
         self.assertEqual(rf.date[0], 730303)
-        self.assertEqual(rf.event_id[0], 0)
+        self.assertEqual(rf.event_id[0], 1)
         self.assertEqual(rf.event_name[0], '2000')
         self.assertEqual(rf.orig[0], False)
         self.assertAlmostEqual(rf.frequency[0], 1.)
@@ -123,7 +123,7 @@ class TestRiverFlood(unittest.TestCase):
                        countries=['DEU'])
 
         self.assertEqual(rf.date[0], 730303)
-        self.assertEqual(rf.event_id[0], 0)
+        self.assertEqual(rf.event_id[0], 1)
         self.assertEqual(rf.event_name[0], '2000')
         self.assertEqual(rf.orig[0], False)
         self.assertAlmostEqual(rf.frequency[0], 1.)
@@ -149,7 +149,7 @@ class TestRiverFlood(unittest.TestCase):
                        centroids=rand_centroids, ISINatIDGrid=False)
 
         self.assertEqual(rf.date[0], 730303)
-        self.assertEqual(rf.event_id[0], 0)
+        self.assertEqual(rf.event_id[0], 1)
         self.assertEqual(rf.event_name[0], '2000')
         self.assertEqual(rf.orig[0], False)
         self.assertAlmostEqual(rf.frequency[0], 1.)
