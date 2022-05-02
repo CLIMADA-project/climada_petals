@@ -14,11 +14,14 @@ PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
 You should have received a copy of the GNU Lesser General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
+-------
+
+clean gdfs with network data and convert to a nodes & edges structure
+compatible for igraph graph calculations 
 """
 import geopandas as gpd
 import pygeos
 import pandas as pd
-import shapely
 import logging
 import sys
 import numpy as np
