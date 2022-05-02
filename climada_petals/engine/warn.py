@@ -141,7 +141,7 @@ class Warn:
         """
         # default values for warning generation
         OPERATIONS = [('dilation', 2), ('erosion', 3), ('dilation', 7), ('median_filtering', 15)]
-        GRADUAL_DECREASE = True
+        GRADUAL_DECREASE = False
         CHANGE_SMALL_REGIONS = None
 
         warn_levels: List

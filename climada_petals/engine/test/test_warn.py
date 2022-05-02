@@ -17,7 +17,7 @@ class TestWarn(unittest.TestCase):
 
         # no operations = only binning of map
         warn_levels = np.array([0.0, 20, 50])
-        filter_data = FilterData(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=False, size_sm=0)
+        filter_data = Warn.WarnParameters(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=False, size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
 
         self.assertEqual(warn.warning[2, 2], 0)
@@ -35,7 +35,7 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([-5, 20, 50])
 
-        filter_data = FilterData(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=False, size_sm=0)
+        filter_data = Warn.WarnParameters(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=False, size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 1)
 
@@ -46,7 +46,7 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([5, -20, 50])
 
-        filter_data = FilterData(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=False, size_sm=0)
+        filter_data = Warn.WarnParameters(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=False, size_sm=0)
         self.assertRaises(ValueError, Warn.from_map, wind_matrix, coords, filter_data)
 
     def test_filtering(self):
@@ -55,26 +55,26 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0, 20, 50])
 
-        filter_data = FilterData(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
                                  size_sm=0)
         warn = Warn.filtering(wind_matrix, filter_data)
         self.assertEqual(np.sum(warn), 5 * 40)
         self.assertEqual(warn.shape, wind_matrix.shape)
 
-        filter_data = FilterData(warn_levels, operations=['EROSION'], sizes=[1], gradual_decr=False, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['EROSION'], sizes=[1], gradual_decr=False, change_sm=False,
                                  size_sm=0)
         warn = Warn.filtering(warn, filter_data)
         self.assertEqual(np.sum(warn), 1 * 40)
         self.assertEqual(warn.shape, wind_matrix.shape)
 
-        filter_data = FilterData(warn_levels, operations=['MEDIANFILTERING'], sizes=[1], gradual_decr=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['MEDIANFILTERING'], sizes=[1], gradual_decr=False,
                                  change_sm=False, size_sm=0)
         warn = Warn.filtering(warn, filter_data)
         self.assertEqual(np.sum(warn), 1 * 40)
         self.assertEqual(warn.shape, wind_matrix.shape)
 
         # test not allowed operation
-        filter_data = FilterData(warn_levels, operations=['BLA'], sizes=[1], gradual_decr=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['BLA'], sizes=[1], gradual_decr=False,
                                  change_sm=False, size_sm=0)
         warn = Warn.filtering(warn, filter_data)
         self.assertEqual(np.sum(warn), 1 * 40)
@@ -88,18 +88,18 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 20, 50])
 
-        filter_data = FilterData(warn_levels,  operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels,  operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
                                  size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 5)  # 5, because of round filter shape
         self.assertEqual(np.max(warn.warning), 1)  # 5, because of round filter shape
 
-        filter_data = FilterData(warn_levels, operations=['EROSION'], sizes=[1], gradual_decr=False, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['EROSION'], sizes=[1], gradual_decr=False, change_sm=False,
                                  size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.max(warn.warning), 0)
 
-        filter_data = FilterData(warn_levels, operations=['MEDIANFILTERING'], sizes=[2], gradual_decr=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['MEDIANFILTERING'], sizes=[2], gradual_decr=False,
                                  change_sm=False, size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.max(warn.warning), 0)
@@ -113,13 +113,13 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 20, 50, 80, 90])
 
-        filter_data = FilterData(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
                                  size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.max(warn.warning), 3)  # max shouldn't be reduced
         self.assertEqual(warn.warning.shape, wind_matrix.shape)
 
-        filter_data = FilterData(warn_levels, operations=['EROSION'], sizes=[1], gradual_decr=False, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['EROSION'], sizes=[1], gradual_decr=False, change_sm=False,
                                  size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.max(warn.warning), 0)  # single points reduced to level 0
@@ -132,7 +132,7 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 20, 50])
 
-        filter_data = FilterData(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'], sizes=[0, 0, 1],
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'], sizes=[0, 0, 1],
                                  gradual_decr=False, change_sm=False, size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 1)
@@ -145,7 +145,7 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 20, 50])
 
-        filter_data = FilterData(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'], sizes=[1, 1, 1],
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'], sizes=[1, 1, 1],
                                  gradual_decr=False, change_sm=False, size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 1)
@@ -158,7 +158,7 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 50])
 
-        filter_data = FilterData(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'],
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION', 'EROSION', 'MEDIANFILTERING'],
                                  sizes=[1, 1, 1],
                                  gradual_decr=False, change_sm=False, size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
@@ -173,11 +173,11 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 20, 50, 80])
 
-        filter_data = FilterData(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=False,
                                  size_sm=0)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
 
-        filter_data = FilterData(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=True, change_sm=False,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=True, change_sm=False,
                                  size_sm=0)
         warn_exp = Warn.from_map(wind_matrix, coords, filter_data)
 
@@ -198,7 +198,7 @@ class TestWarn(unittest.TestCase):
         warn_levels = np.array([0.0, 20, 50])
 
         # check removal of to small region
-        filter_data = FilterData(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=True, size_sm=2)
+        filter_data = Warn.WarnParameters(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=True, size_sm=2)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 0)
         self.assertEqual(np.max(warn.warning), 0)
@@ -208,7 +208,7 @@ class TestWarn(unittest.TestCase):
         wind_matrix[4, 4] = 40
         wind_matrix[4, 5] = 40
         wind_matrix[4, 6] = 40
-        filter_data = FilterData(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=True, size_sm=2)
+        filter_data = Warn.WarnParameters(warn_levels, operations=[], sizes=[], gradual_decr=False, change_sm=True, size_sm=2)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 3)
         self.assertEqual(np.max(warn.warning), 1)
@@ -251,7 +251,7 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 20, 50])
 
-        filter_data = FilterData(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=True,
+        filter_data = Warn.WarnParameters(warn_levels, operations=['DILATION'], sizes=[1], gradual_decr=False, change_sm=True,
                                  size_sm=1)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 5)
