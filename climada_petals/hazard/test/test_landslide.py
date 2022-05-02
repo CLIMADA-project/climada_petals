@@ -22,7 +22,6 @@ import unittest
 import geopandas as gpd
 import numpy as np
 import shapely
-from scipy import sparse
 
 from climada import CONFIG
 from climada_petals.hazard.landslide import Landslide, sample_event_from_probs, sample_events
@@ -194,19 +193,19 @@ class TestLandslideModule(unittest.TestCase):
         
         bbox = (8,45,11,46)
         corr_fact = 10e6
-        n_years = 400
+        n_samples = 400
         
         __, prob_matrix = u_coord.read_raster(
             LS_PROB_FILE, geometry=[shapely.geometry.box(*bbox, ccw=True)])
         prob_matrix = prob_matrix.squeeze()/corr_fact
 
-        ev_matrix = sample_event_from_probs(prob_matrix, n_years, dist='binom')
-        self.assertTrue(max(ev_matrix) <= n_years)
+        ev_matrix = sample_event_from_probs(prob_matrix, n_samples, dist='binom')
+        self.assertTrue(max(ev_matrix) <= n_samples)
         self.assertEqual(min(ev_matrix), 0)
         self.assertTrue(ev_matrix.shape==prob_matrix.shape)
 
-        ev_matrix = sample_event_from_probs(prob_matrix, n_years, dist='poisson')
-        self.assertTrue(max(ev_matrix) <= n_years)
+        ev_matrix = sample_event_from_probs(prob_matrix, n_samples, dist='poisson')
+        self.assertTrue(max(ev_matrix) <= n_samples)
         self.assertEqual(min(ev_matrix), 0)
         self.assertTrue(ev_matrix.shape==prob_matrix.shape)
         
