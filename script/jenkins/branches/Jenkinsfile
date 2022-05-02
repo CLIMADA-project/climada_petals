@@ -13,7 +13,7 @@ pipeline {
             rm -f pylint.log
             pylint -ry climada_petals | tee pylint.log'''
 
-            discoverGitReferenceBuild referenceJob: 'develop'
+            discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
         }
