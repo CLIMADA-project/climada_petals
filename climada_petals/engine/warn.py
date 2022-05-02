@@ -117,8 +117,6 @@ class Warn:
     warn_levels : list
         Warn levels that define the bins in which the input_map will be classified in.
         E.g., for windspeeds: [0, 10, 40, 80, 150, 200.0]
-    metadata_generation_storm : dict
-        Storing metadata on how the warning has been generated and which properties it has.
     """
 
     @dataclass
@@ -142,7 +140,7 @@ class Warn:
             If 0 or None, the levels are not changed.
         """
         # default values for warning generation
-        OPERATIONS = [('dilation', 2)]
+        OPERATIONS = [('dilation', 2), ('erosion', 3), ('dilation', 7), ('median_filtering', 15)]
         GRADUAL_DECREASE = True
         CHANGE_SMALL_REGIONS = None
 
@@ -150,12 +148,13 @@ class Warn:
         operations: List[str] = field(default_factory=lambda op=OPERATIONS: op)
         gradual_decr: bool = GRADUAL_DECREASE
         change_sm: bool = CHANGE_SMALL_REGIONS
-        """
+
         def __post_init__(self):
-            if not all(item in self.allowed_operations.keys() for item in self.operations):
+            op = [i[0] for i in self.operations]
+            if not all(item in Operation.__dict__ for item in op):
                 raise ValueError("An input operation is not defined. "
                                  "Please select one of %s", self.allowed_operations.keys())
-"""
+
     def __init__(self, warning, coord, warn_params):
         """Initialize Warn.
 
@@ -240,7 +239,7 @@ class Warn:
             Warning map consisting formed warning regions of current warn level, same shape as input map.
         """
         for op, sz in warn_params.operations:
-            binary_map = Operation.dilation(binary_map, sz)  # TODO change implementation
+            binary_map = Operation.__dict__[op](binary_map, sz)
 
         return binary_map
 
