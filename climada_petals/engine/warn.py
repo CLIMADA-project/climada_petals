@@ -55,9 +55,10 @@ def dilation(bin_map, size):
 
 
 def erosion(bin_map, size):
-    """Erode binary input map. The operation is based on a convolution. During translation of the filter, a point is
-    included to the region (changed or kept to 1), if all elements correspond with the filter. Else, it is 0. This
-    results in less and smaller regions of interest and reduces heterogeneity in map. Larger sizes - more reduction.
+    """Erode binary input map. The operation is based on a convolution. During translation of the
+    filter, a point is included to the region (changed or kept to 1), if all elements correspond
+    with the filter. Else, it is 0. This results in less and smaller regions of interest and
+    reduces heterogeneity in map. Larger sizes - more reduction.
 
     Parameters
     ----------
@@ -75,9 +76,10 @@ def erosion(bin_map, size):
 
 
 def median_filtering(bin_map, size):
-    """Smooth binary input map. The operation is based on a convolution. During translation of the filter,
-    a point is included to the region (changed or kept to 1), if the median of the filter is 1. Else, it is 0. This
-    results in smoother regions of interest and reduces heterogeneity in map. Larger sizes - smoother regions.
+    """Smooth binary input map. The operation is based on a convolution. During translation of
+    the filter, a point is included to the region (changed or kept to 1), if the median of the
+    filter is 1. Else, it is 0. This results in smoother regions of interest and reduces
+    heterogeneity in map. Larger sizes - smoother regions.
 
     Parameters
     ----------
@@ -95,6 +97,17 @@ def median_filtering(bin_map, size):
 
 
 class Operation(Enum):
+    """Available Operations. Links operations to functions. More operations can be added.
+
+    Attributes
+    ----------
+    dilation : function
+        Links to dilation operation.
+    erosion : function
+        Links to erosion operation.
+    median_filtering : function
+        Links to median filtering operation.
+    """
     dilation = dilation
     erosion = erosion
     median_filtering = median_filtering
