@@ -34,28 +34,26 @@ class Network:
                  nodes=gpd.GeoDataFrame(), 
                  ci_type=None):
         """
-        
+        initialize network structure with edges and nodes dataframes
         """
         if edges.empty:
             edges = gpd.GeoDataFrame(
                 columns=['from_id', 'to_id', 'orig_id', 'ci_type'])
         if not hasattr(edges, 'orig_id'):
             edges['orig_id'] = self._add_orig_id(edges)
-        self.edges = edges
     
         if nodes.empty:
             nodes = gpd.GeoDataFrame(
                 columns=[['name_id', 'orig_id', 'ci_type']])    
         if not hasattr(nodes, 'orig_id'):
             nodes['orig_id'] = self._add_orig_id(nodes)
-        self.nodes = nodes
-        
+    
         if not ci_type:
             ci_type = self._update_ci_types(edges, nodes)
-        self.ci_type = ci_type
         
-        # TODO: remove
-        # self._update_func_level()
+        self.edges = edges
+        self.nodes = nodes
+        self.ci_type = ci_type
 
           
     @classmethod
@@ -76,11 +74,9 @@ class Network:
             edges = edges.append(edge_gdf)
             nodes = nodes.append(node_gdf)
     
-        network = Network(edges=edges.reset_index(drop=True), 
-                          nodes=nodes.reset_index(drop=True))
-        
-        return network
-    
+        return Network(edges=edges.reset_index(drop=True), 
+                       nodes=nodes.reset_index(drop=True))
+
     @classmethod
     def from_graphs(cls, graphs):
         
@@ -93,11 +89,9 @@ class Network:
         nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
                 ).rename({'vertex ID':'name_id'}, axis=1))           
         
-        network = Network(edges=edges, 
-                          nodes=nodes)
-        
-        return network
-    
+        return Network(edges=edges, nodes=nodes)
+
+
     @classmethod
     def _update_ci_types(cls, edges, nodes):
         return np.unique(np.unique(edges.ci_type).tolist().append(
@@ -133,10 +127,7 @@ class Network:
                 ax=ax, figsize=(15, 15), alpha=1, markersize=40, color=color, 
                 edgecolor=color, label=label)
         
-        handles, labels = ax.get_legend_handles_labels()
-        # manually define patch for airports
-        # patch = mpatches.Patch(color='pink', label='airport')
-        # handles.append(patch) 
+        handles, labels = ax.get_legend_handles_labels() 
         ax.legend(handles=handles, loc='upper left')
         ax.set_title(kwargs.get('title'), fontsize=25)
         ctx.add_basemap(ax)

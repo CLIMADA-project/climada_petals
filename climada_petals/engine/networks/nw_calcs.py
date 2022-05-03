@@ -40,92 +40,96 @@ class GraphCalcs():
     
     def __init__(self, graph):
         """
-        nw_or_graph : instance of networks.base.Network or .MultiNetwork or
-            igraph.Graph
+        graph : instance of igraph.Graph
         """
         self.graph = graph
     
+    def _edges_from_vlists(self, v_ids_source, v_ids_target, link_name):
+        """
+        add edges to graph given source and target vertex lists
+        adds geometries, edge lengths, edge names and func states as attributes
+        """
+        pairs = [(source, target) for source, target in 
+                 zip(v_ids_source, v_ids_target)]
+            
+        edge_geoms = self.make_edge_geometries(
+            self.graph.vs[v_ids_source]['geometry'], 
+            self.graph.vs[v_ids_target]['geometry'])
+        
+        e_lengths = [pyproj.Geod(ellps='WGS84').geometry_length(edge_geom) for
+                     edge_geom in edge_geoms]
+
+        self.graph.add_edges(pairs, attributes=
+                             {'geometry' : edge_geoms, 'ci_type' : [link_name],
+                              'distance' : e_lengths, 'func_internal' : 1,
+                              'func_tot' : 1, 'imp_dir' : 0})   
+    
     def link_clusters(self):
         """
-        recursively link clusters to giant component of graph, by closest nodes
+        link nodes from different clusters to their nearest nodes in other 
+        clusters to generate one connected graph.
         """
-        while len(self.graph.clusters()) > 1:
-            giant = self.graph.clusters().giant()
-            ix = 0
-            if (len(self.graph.clusters().subgraphs()[ix].vs) == len(giant.vs)):
-                ix=1
-            next_cluster = self.graph.clusters().subgraphs()[ix]
-            
-            gdf_vs_source = giant.get_vertex_dataframe()
-            gdf_vs_assign = next_cluster.get_vertex_dataframe()
-            dists, ix_match = self._ckdnearest(gdf_vs_assign, gdf_vs_source)
-            
-            source = gdf_vs_assign.iloc[np.where(dists==min(dists))[0]]
-            target = gdf_vs_source.iloc[ix_match[np.where(dists==min(dists))[0]]]
-
-            edge_geom = self.make_edge_geometries([source.geometry.values[0]],[target.geometry.values[0]])[0]
-            
-            dist = pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
-            self.graph.add_edge(target.orig_id.values[0], source.orig_id.values[0], 
-                                geometry=edge_geom, ci_type=gdf_vs_assign.ci_type.iloc[0],
-                                distance=dist)
-            
-    def link_vertices_closest_k(self, from_ci, to_ci, 
-                                link_name=None, dist_thresh=None,
-                                bidir=False, k=5):
-        """
-        match all vertices of graph_assign to closest vertices in graph_base.
-        Updated in vertex attributes (vID of graph_base, geometry & distance)
         
+        gdf_vs = self.graph.get_vertex_dataframe()
+        gdf_vs['membership'] = self.graph.clusters().membership
+        
+        source_ix = []
+        target_ix = []
+        
+        for member in range(len(self.graph.clusters())):
+            gdf_a = gdf_vs[gdf_vs['membership']==member]
+            gdf_b = gdf_vs[gdf_vs['membership']!=member]
+            dists, ix_match = self._ckdnearest(gdf_a, gdf_b)
+            
+            source_ix.append(
+                gdf_a.iloc[np.where(dists==min(dists))[0]].name.values[0])
+            target_ix.append(
+                gdf_b.loc[ix_match[np.where(dists==min(dists))[0]]].name.values[0])
+        
+        link_name = gdf_vs.ci_type[0]
+        
+        self._edges_from_vlists(source_ix, target_ix, link_name)
+    
+    
+    def link_vertices_closest_k(self, source_ci, target_ci, link_name=None, 
+                                dist_thresh=None, bidir=False, k=5):
+        """
+        find k nearest source_ci vertices for each target_ci vertex,
+        given distance constraints
         """
         gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type == to_ci]
-        gdf_vs_source = gdf_vs[gdf_vs.ci_type == from_ci]
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
+        gdf_vs_source = gdf_vs[gdf_vs.ci_type==source_ci]
 
-        # shape: (target vs, k)
+        # shape: (#target vs, k) 
         dists, ix_matches = self._ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
-        if k>1:
-            dists = dists.flatten()
-            ix_matches = ix_matches.flatten()
-        # TODO: dist_thresh condition only holds vaguely for m input & lat/lon coordinates (EPSG4326)
-        # shape: (target vs, k)
-        dists_thresh_bool = [((not dist_thresh) or np.isnan(dist_thresh) or (dist < (dist_thresh/(ONE_LAT_KM*1000))))
-                            for dist in dists]
         
-        # shape: (target vs, ..)
-        if k > 1:
-            gdf_target_old = gdf_vs_target.copy()
-            gdf_vs_target = pd.DataFrame(columns=gdf_target_old.columns)
-            for __, row in gdf_target_old.iterrows():
-                gdf_vs_target = gdf_vs_target.append([row]*k)
-           
-        edge_geoms = self.make_edge_geometries(gdf_vs_source.loc[ix_matches].geometry[dists_thresh_bool],
-                                               gdf_vs_target.geometry[dists_thresh_bool])
-        if not link_name:
-            link_name = f'dependency_{from_ci}_{to_ci}'
-
-        self.graph.add_edges(zip(ix_matches[dists_thresh_bool],
-                                 gdf_vs_target.index[dists_thresh_bool]), 
-                                         attributes =
-                                          {'geometry' : edge_geoms,
-                                           'ci_type' : [link_name],
-                                           'distance' : dists[dists_thresh_bool]*(ONE_LAT_KM*1000),
-                                           'func_internal' : 1,
-                                           'func_tot' : 1,
-                                           'imp_dir' : 0})
+        if dist_thresh is not None:
+            # conversion from degrees to m holds only vaguely
+            dists_bool = dists.flatten() < (dist_thresh/(ONE_LAT_KM*1000))
+        else:
+            dists_bool = [True]*len(dists.flatten())
+            
+        # broadcast target indices to same format, select based on distance
+        # name and vertex ids are the same. also same in gdf_vs
+        v_ids_target = list(np.broadcast_to(
+            np.array([gdf_vs_target.name]).T,
+            (len(gdf_vs_target),k)).flatten()[dists_bool])
+        v_ids_source = list(gdf_vs_source.loc[ix_matches.flatten()
+                                              ].name[dists_bool])
+   
         if bidir:
-            self.graph.add_edges(zip(gdf_vs_target.index[dists_thresh_bool],
-                                     ix_matches[dists_thresh_bool]), 
-                                         attributes =
-                                          {'geometry' : edge_geoms,
-                                           'ci_type' : [link_name],
-                                           'distance' : dists[dists_thresh_bool]*(ONE_LAT_KM*1000),
-                                           'func_internal' : 1,
-                                           'func_tot' : 1,
-                                           'imp_dir' : 0})
+            v_ids_target.extend(v_ids_source)
+            v_ids_source.extend(v_ids_target)
+    
+        if not link_name:
+            link_name = f'dependency_{source_ci}_{target_ci}'
+        
+        self._edges_from_vlists(v_ids_source, v_ids_target, link_name)
 
-    def link_vertices_shortest_paths(self, from_ci, to_ci, via_ci, 
-                                    dist_thresh=100000, criterion='distance',
+
+    def link_vertices_shortest_paths(self, source_ci, target_ci, via_ci, 
+                                    dist_thresh=10e6, criterion='distance',
                                     link_name=None, bidir=False):
         """
         make all links below certain dist_thresh along shortest paths length
@@ -134,48 +138,45 @@ class GraphCalcs():
         
         """
         
-        vs_subgraph = self.graph.vs.select(
-            ci_type_in=[from_ci, to_ci, via_ci])
-        subgraph =  vs_subgraph.subgraph()
+        subgraph = self.graph.induced_subgraph(
+            self.graph.vs.select(ci_type_in=[source_ci, target_ci, via_ci]))
         subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
-        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(
-            vs_subgraph)
-        vs_source = subgraph.vs.select(ci_type=from_ci)
-        vs_target = subgraph.vs.select(ci_type=to_ci)
         
-        # TODO: don't hardcode metres to degree conversion assumption
+        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(subgraph.vs)
+        
+        vs_source = subgraph.vs.select(ci_type=source_ci)
+        vs_target = subgraph.vs.select(ci_type=target_ci)
+        
+        # metres to degree conversion assumption is imprecise
         ix_matches = self._preselect_destinations(
-            vs_source, vs_target, dist_thresh/(ONE_LAT_KM*1000))       
+            vs_source, vs_target, dist_thresh/(ONE_LAT_KM*1000))
+        
+        v_ids_target = []
+        v_ids_source = []
+        
         for vx, indices in tqdm(zip(vs_source, ix_matches), 
-                                desc=f'paths from {from_ci}', total=len(vs_source)):
+                                desc=f'paths from {source_ci}', 
+                                total=len(vs_source)):
             paths = subgraph.get_shortest_paths(
                 vx, vs_target[indices], 
                 subgraph.es.get_attribute_values(criterion),
-                mode='out',
-                output='epath')
+                mode='out', output='epath')
+            
             for index, path in zip(indices, paths):
                 if path:
                     dist = np.array(subgraph.es.get_attribute_values(criterion))[path].sum()
                     if dist < dist_thresh:
-                        edge_geom = self.make_edge_geometries(
-                            [self.graph.vs[subgraph_graph_vsdict[vx.index]]['geometry']],
-                            [self.graph.vs[subgraph_graph_vsdict[vs_target[index].index]]['geometry']])[0]
-                        if not link_name:
-                            link_name = f'dependency_{from_ci}_{to_ci}'
-                        #TODO: collect all edges to be added and assign in one add_edges call
-                        self.graph.add_edge(self.graph.vs[subgraph_graph_vsdict[vx.index]],
-                                            self.graph.vs[subgraph_graph_vsdict[vs_target[index].index]],
-                                            geometry=edge_geom,
-                                            ci_type=link_name, 
-                                            distance=dist,func_internal=1, 
-                                            func_tot=1, imp_dir=0)  
-                        if bidir:
-                            self.graph.add_edge(self.graph.vs[subgraph_graph_vsdict[vs_target[index].index]], 
-                                                self.graph.vs[subgraph_graph_vsdict[vx.index]],
-                                                geometry=edge_geom,
-                                                ci_type=link_name, 
-                                                distance=dist,func_internal=1, 
-                                                func_tot=1, imp_dir=0)
+                        v_ids_target.append(subgraph_graph_vsdict[vx.index])
+                        v_ids_source.append(subgraph_graph_vsdict[vs_target[index].index])
+        
+        if bidir:
+            v_ids_target.extend(v_ids_source)
+            v_ids_source.extend(v_ids_target)
+    
+        if not link_name:
+            link_name = f'dependency_{source_ci}_{target_ci}'
+        
+        self._edges_from_vlists(v_ids_source, v_ids_target, link_name)
                         
                         
     def link_vertices_shortest_path(self, from_ci, to_ci, via_ci, 
