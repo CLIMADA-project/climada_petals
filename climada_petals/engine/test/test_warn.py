@@ -213,30 +213,7 @@ class TestWarn(unittest.TestCase):
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 3)
         self.assertEqual(warn.warning.shape, wind_matrix.shape)
-    """
-    def test_reset_levels(self):
-        wind_matrix = np.zeros((10, 10))
-        wind_matrix[4, 3] = 1
-        wind_matrix[4, 4] = 1
-        wind_matrix[4, 5] = 1
-        wind_matrix[4, 6] = 2
-        coords = np.random.randint(0, 100, wind_matrix.flatten().shape)
 
-        warn_levels = np.array([0.0, 1, 5])
-
-        warn = Warn.reset_levels(wind_matrix.astype(int), 2)
-        self.assertEqual(np.sum(warn), 4)
-        self.assertEqual(warn.shape, wind_matrix.shape)
-
-    def test_reset_levels_float_error(self):
-        wind_matrix = np.zeros((10, 10))
-        wind_matrix[4, 3] = 1
-        wind_matrix[4, 4] = 1
-        wind_matrix[4, 5] = 1
-        wind_matrix[4, 6] = 2
-
-        self.assertRaises(TypeError, Warn.reset_levels, wind_matrix, 2)
-    """
     def test_rectangle_shaped_map(self):
         wind_matrix = np.zeros((12, 20))
         wind_matrix[4, 4] = 40
@@ -300,3 +277,28 @@ class TestWarn(unittest.TestCase):
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestWarn)
     unittest.TextTestRunner(vaerbosity=2).run(TESTS)
+
+    """
+    def test_reset_levels(self):
+        wind_matrix = np.zeros((10, 10))
+        wind_matrix[4, 3] = 1
+        wind_matrix[4, 4] = 1
+        wind_matrix[4, 5] = 1
+        wind_matrix[4, 6] = 2
+        coords = np.random.randint(0, 100, wind_matrix.flatten().shape)
+
+        warn_levels = np.array([0.0, 1, 5])
+
+        warn = Warn.reset_levels(wind_matrix.astype(int), 2)
+        self.assertEqual(np.sum(warn), 4)
+        self.assertEqual(warn.shape, wind_matrix.shape)
+
+    def test_reset_levels_float_error(self):
+        wind_matrix = np.zeros((10, 10))
+        wind_matrix[4, 3] = 1
+        wind_matrix[4, 4] = 1
+        wind_matrix[4, 5] = 1
+        wind_matrix[4, 6] = 2
+
+        self.assertRaises(TypeError, Warn.reset_levels, wind_matrix, 2)
+    """
