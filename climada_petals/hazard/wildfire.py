@@ -1672,9 +1672,33 @@ class WildFire(Hazard):
             transform_land = self._get_landcover(land_path, bounds, res)
 
         land_propa_matrix = self._assign_prop_probas(self.centroids.landcover)
-        self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res,
-                                                             bounds, transform_land,
-                                                             self.centroids.shape)
+        # self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res,
+        #                                                       bounds, transform_land,
+        #                                                       self.centroids.shape)
+
+        #carmens alternative implementation - muss evtl effizienter gemacht werden
+        x, y = transform_land * np.meshgrid(np.arange(self.centroids.landcover.shape[1]) + 0.5, np.arange(self.centroids.landcover.shape[0]) + 0.5)
+        coord_land = np.stack((y.flatten(), x.flatten()), axis=1)
+
+        idx_ups_coord = match_centroids(coord_land, self.centroids.coord)
+        land_centr = land_propa_matrix.flatten()
+        #Get unique FireMIP centroid entries
+        unique_idx = np.unique(idx_ups_coord)
+        upscaled = np.zeros(unique_idx.shape)
+        #Remove -1 from the unique_idx array (if it is contained) - this happens if a
+        #centroid in the probabilistic set is further away for the closest FireMIP centroid
+        #than the specified threshold
+        firemip_c = np.delete(unique_idx, np.where(unique_idx == -1)[0])
+
+        for centroid in firemip_c:
+            prob_c = np.where(idx_ups_coord == centroid)[0]
+            upscaled[centroid] = np.mean(land_centr[prob_c])
+
+
+
+        self.centroids.frac_propa_matrix =  upscaled.reshape(self.centroids.shape)
+        #sparse.csr_matrix(
+
 
     def _set_population_propa_mat(self, pop_path, bounds, res):
         """
@@ -2034,7 +2058,7 @@ class WildFire(Hazard):
         res_high = (np.abs(transform[0]), np.abs(transform[4]))
         if res_high[0] > res_low[0] or res_high[1] > res_low[1]:
             raise ValueError('Low resolution is higher than high resolution: %s < %s.'
-                                 % (res_low, res_high))
+                                  % (res_low, res_high))
 
         window_x = int(np.floor(res_low[1] / res_high[1]))
         window_y = int(np.floor(res_low[0] / res_high[0]))
@@ -2043,7 +2067,7 @@ class WildFire(Hazard):
 
         if shape_low is None:
             shape_low = (int(np.ceil(height / res_low[1]) + 1),
-                     int(np.ceil(width / res_low[0]) + 1))
+                      int(np.ceil(width / res_low[0]) + 1))
 
         raster_low = np.zeros(shape_low)
 
@@ -2051,6 +2075,8 @@ class WildFire(Hazard):
             for j in range(0, shape_low[1]):
                 raster_low[i,j] = np.mean(raster_high[(i*window_y):(i + 1)*window_y,
                                                       (j*window_x):(j + 1)*window_x])
+
+
 
         return raster_low
 
@@ -2500,7 +2526,7 @@ def firemip_dowscaling(haz_firemip, haz_prob):
 
     return haz_new
 
-def calc_burnt_area(area_fraction, latitudes, resolution):
+def calc_burnt_area(area_fraction, latitudes, resolution, unit='km2'):
     """Return absolute burnt area [km2]
 
     Parameters
@@ -2516,7 +2542,7 @@ def calc_burnt_area(area_fraction, latitudes, resolution):
         burnt area per centroid and event [km2]
     """
 
-    grid_area = u_coord.get_gridcellarea(latitudes, resolution, unit='km2')
+    grid_area = u_coord.get_gridcellarea(latitudes, resolution, unit)
     burnt_area = area_fraction.multiply(grid_area).tocsr()
 
     return burnt_area
