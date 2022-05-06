@@ -17,7 +17,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 -------
 
 clean gdfs with network data and convert to a nodes & edges structure
-compatible for igraph graph calculations 
+compatible for igraph graph calculations
 """
 import geopandas as gpd
 import pygeos
@@ -42,7 +42,7 @@ class NetworkPreprocess():
     Preprocessing Baseclass
     Takes gdfs, returns pre-processed, formatted gdfs nodes, edges that
     have correct network topology.
-    
+
     Note
     ----
     This network preprocessing class is relying greatly on functionalities
@@ -52,7 +52,7 @@ class NetworkPreprocess():
     """
     def __init__(self, ci_type):
         self.ci_type = ci_type
-            
+
 
     @staticmethod
     def pygeos_to_shapely(self, df, colname='geometry'):
@@ -72,7 +72,7 @@ class NetworkPreprocess():
 
     def _ecols_to_graphorder(self, edges):
         return edges.reindex(['from_id', 'to_id'] +
-                             [x for x in list(edges) 
+                             [x for x in list(edges)
                               if x not in ['from_id', 'to_id']], axis=1)
 
     def _vcols_to_graphorder(self, nodes):
@@ -82,14 +82,14 @@ class NetworkPreprocess():
     def _add_ci_type(self, edges=None, nodes=None):
         if not edges.empty:
             edges['ci_type'] = self.ci_type
-        if not nodes.empty:            
+        if not nodes.empty:
             nodes['ci_type'] = self.ci_type
-        
+
         return edges, nodes
 
-        
+
     def _simplify_network(self, edges=None, nodes=None):
-        
+
         # trails.simplify runs in pygeos, not shapely. convert.
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
@@ -108,40 +108,40 @@ class NetworkPreprocess():
             network = simplify.reset_ids(network)
             network = simplify.add_distances(network)
             network = simplify.merge_multilinestrings(network)
-        
+
         # convert back to shapely
         if not edges.empty:
             edges = self.pygeos_to_shapely(self, network.edges)
         nodes = self.pygeos_to_shapely(self, network.nodes)
-            
+
         return edges, nodes
-        
+
     def preprocess(self, gdf_edges=None, gdf_nodes=None):
         """
         standard wrapper end-to-end. Takes edge and node dataframes,
         simplifies them, adds topology (ids), adds CI attributes
         and puts cols in correct
         order for igraph to read them in as graph.
-        
+
         Parameters
         ----------
         gdf_edges : gpd.GeoDataFrame
         gdf_nodes : gpd.GeoDataFrame
-        
+
         Returns
         -------
         edges : gpd.GeoDataFrame
         nodes : gpd.GeoDataFrame
         """
-        
+
         edges = gpd.GeoDataFrame(columns=['osm_id', 'geometry'])
         nodes = gpd.GeoDataFrame(columns=['osm_id', 'geometry'])
-        
+
         if isinstance(gdf_edges, gpd.GeoDataFrame):
             edges = gdf_edges.copy()
         if isinstance(gdf_nodes, gpd.GeoDataFrame):
             nodes = gdf_nodes.copy()
-            
+
         edges, nodes = self._simplify_network(edges, nodes)
         edges = edges.rename({'id': 'orig_id', 'source':'data_source'}, axis=1)
         nodes = nodes.rename({'id': 'orig_id'}, axis=1)
@@ -161,7 +161,7 @@ class NetworkPreprocess():
         geom = df.geometry.values.data
         coords = pygeos.get_coordinates(geom)
         indices = pygeos.get_num_coordinates(geom)
-    
+
         # generate a list of start and end coordinates and create point geometries
         edges = [0]
         i = 0
@@ -172,27 +172,27 @@ class NetworkPreprocess():
             i = ix
         edges = edges[:-1]
         points = pygeos.points(np.unique(coords[edges], axis=0))
-    
+
         buffered = pygeos.buffer(points, tolerance)
-    
+
         dissolved = pygeos.union_all(buffered)
-    
+
         exploded = [
             pygeos.get_geometry(dissolved, i)
             for i in range(pygeos.get_num_geometries(dissolved))
         ]
-    
+
         centroids = pygeos.centroid(exploded)
-    
+
         snapped = pygeos.snap(geom, pygeos.union_all(centroids), tolerance)
-    
+
         return snapped
 
 class RoadPreprocess(NetworkPreprocess):
-    
+
     def __init__(self):
         self.ci_type = 'road'
-    
+
     def _simplify_network(self, edges=None, nodes=None):
         """ overrides _simplify_network() method from parent class """
 
@@ -211,7 +211,7 @@ class RoadPreprocess(NetworkPreprocess):
         network = simplify.add_topology(network)
         network = simplify.drop_hanging_nodes(network)
         network = simplify.merge_edges(network)
-        network.edges = simplify.drop_duplicate_geometries(network.edges, keep='first') 
+        network.edges = simplify.drop_duplicate_geometries(network.edges, keep='first')
         network = simplify.reset_ids(network)
         network = simplify.add_distances(network)
         network = simplify.merge_multilinestrings(network)
@@ -219,10 +219,10 @@ class RoadPreprocess(NetworkPreprocess):
         return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
 
 class PowerlinePreprocess(NetworkPreprocess):
-   
+
     def __init__(self):
         self.ci_type = 'power line'
-    
+
     def _simplify_network(self, edges=None, nodes=None):
         """ overrides _simplify_network() method from parent class """
 
@@ -232,7 +232,7 @@ class PowerlinePreprocess(NetworkPreprocess):
             nodes = None #simplify cannot handle empty df for nodes, only None
         else:
             nodes = self.shapely_to_pygeos(self, nodes)
-    
+
         network = simplify.Network(edges=edges, nodes=nodes)
         network = simplify.add_endpoints(network)
         network = simplify.split_edges_at_nodes(network)

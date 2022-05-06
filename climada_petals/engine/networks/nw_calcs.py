@@ -19,16 +19,14 @@ import logging
 
 import igraph as ig
 import numpy as np
-import geopandas as gpd
-import pandas as pd
 import pyproj
-import shapely
-from scipy.spatial import cKDTree
 from tqdm import tqdm
 
 
-from climada_petals.engine.networks.base import Network
-from climada_petals.engine.networks.nw_flows import PowerCluster
+from climada_petals.engine.networks.nw_base import Network
+from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
+                                                     _ckdnearest,
+                                                     _preselect_destinations)
 from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
@@ -303,11 +301,46 @@ class GraphCalcs():
         # specifically check power clusters
         if {p_source, p_sink}.issubset(set(self.graph.vs['ci_type'])):
             LOGGER.info('Updating power clusters')
-            # TODO: This is poorly hard-coded and poorly assigned.
-            self = PowerCluster.set_capacity_from_sd_ratio(
-                    self, per_cap_cons=per_cap_cons, source_ci=p_source,
-                    sink_ci=p_sink, source_var=source_var)
+            # TODO: This is poorly structured. For another version using pandapower, see nw_flows.py
+            self.powercap_from_clusters(
+                per_cap_cons=per_cap_cons, p_source=p_source, p_sink=p_sink,
+                demand_ci='people', source_var=source_var)
 
+
+    def powercap_from_clusters(self, per_cap_cons, p_source='power plant',
+                                   p_sink='substation', demand_ci='people',
+                                   source_var='el_gen_mw'):
+
+        capacity_vars = [var for var in self.graph.vs.attributes()
+                         if f'capacity_{p_sink}_' in var]
+        power_vs = self.graph.vs.select(
+            ci_type_in=['power line', p_source, p_sink, demand_ci])
+        # make subgraph spanning all nodes, but only functional edges
+        # Subgraph operations do not modify original graph.
+        power_subgraph = self.graph.induced_subgraph(power_vs)
+        power_subgraph.delete_edges(func_tot_lt=0.1)
+
+        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(power_vs)
+
+        for cluster in power_subgraph.clusters(mode='weak'):
+
+            sources = power_subgraph.vs[cluster].select(ci_type=p_source)
+            sinks = power_subgraph.vs[cluster].select(ci_type=p_sink)
+            demands = power_subgraph.vs[cluster].select(ci_type=demand_ci)
+
+            psupply = sum([source[source_var]*source['func_tot']
+                           for source in sources])
+            pdemand = sum([demand['counts']*per_cap_cons for demand in demands])
+
+            try:
+                sd_ratio = min(1, psupply/pdemand)
+            except ZeroDivisionError:
+                sd_ratio = 1
+
+            for var in capacity_vars:
+                self.graph.vs[
+                    [subgraph_graph_vsdict[sink.index] for sink in sinks]
+                    ].set_attribute_values(var, sd_ratio)
 
 
     def _update_functional_dependencies(self, df_dependencies):
@@ -481,128 +514,3 @@ class Graph(GraphCalcs):
         return ig.Graph(
             n=len(gdf_nodes),vertex_attrs=vertex_attrs, directed=directed)
 
-
-# =============================================================================
-# Spatial analysis util functions
-# =============================================================================
-
-def make_edge_geometries(vs_geoms_from, vs_geoms_to):
-    """
-    create straight shapely LineString geometries between lists of
-    from and to nodes, to be added to newly created edges as attributes
-    """
-    return [shapely.geometry.LineString([geom_from, geom_to]) for
-                                         geom_from, geom_to in
-                                        zip(vs_geoms_from, vs_geoms_to)]
-
-def _preselect_destinations(vs_assign, vs_base, dist_thresh):
-    points_base = np.array([(x.x, x.y) for x in vs_base['geometry']])
-    point_tree = cKDTree(points_base)
-
-    points_assign = np.array([(x.x, x.y) for x in vs_assign['geometry']])
-    ix_matches = []
-    for assign_loc in points_assign:
-        ix_matches.append(point_tree.query_ball_point(assign_loc, dist_thresh))
-    return ix_matches
-
-
-def _ckdnearest(vs_assign, gdf_base, k=1):
-    """
-    see https://gis.stackexchange.com/a/301935
-
-    Parameters
-    ----------
-    vs_assign : gpd.GeoDataFrame or Point
-
-    gdf_base : gpd.GeoDataFrame
-
-    Returns
-    ----------
-
-    """
-    # TODO: this should be a util function
-    # TODO: this mixed input options (1 vertex vs gdf) is not nicely solved
-    if isinstance(vs_assign, (gpd.GeoDataFrame, pd.DataFrame)):
-        n_assign = np.array(list(vs_assign.geometry.apply(lambda x: (x.x, x.y))))
-    else:
-        n_assign = np.array([(vs_assign.geometry.x, vs_assign.geometry.y)])
-    n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
-    btree = cKDTree(n_base)
-    dist, idx = btree.query(n_assign, k=k)
-    return dist, np.array(gdf_base.iloc[idx.flatten()].index).reshape(dist.shape)
-
-# =============================================================================
-# General results analysis util functions
-# =============================================================================
-
-def service_dict():
-    return {'power':'actual_supply_power line_people',
-                    'healthcare': 'actual_supply_health_people',
-                    'education':'actual_supply_education_people',
-                    'telecom' : 'actual_supply_celltower_people',
-                    'mobility' : 'actual_supply_road_people',
-                    'water' : 'actual_supply_wastewater_people'}
-
-
-def number_noservice(service, graph):
-
-    no_service = (1-np.array(graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    pop = np.array(graph.graph.vs.select(
-        ci_type='people')['counts'])
-
-    return (no_service*pop).sum()
-
-def number_noservices(graph,
-                         services=['power', 'healthcare', 'education', 'telecom', 'mobility', 'water']):
-
-    servstats_dict = {}
-    for service in services:
-        servstats_dict[service] = number_noservice(service, graph)
-    return servstats_dict
-
-
-def disaster_impact_service_geoseries(service, pre_graph, post_graph):
-
-    no_service_post = (1-np.array(post_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    no_service_pre = (1-np.array(pre_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-
-    geom = np.array(post_graph.graph.vs.select(
-        ci_type='people')['geom_wkt'])
-
-    return gpd.GeoSeries.from_wkt(
-        geom[np.where((no_service_post-no_service_pre)>0)])
-
-def disaster_impact_service(service, pre_graph, post_graph):
-
-    no_service_post = (1-np.array(post_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    no_service_pre = (1-np.array(pre_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    pop = np.array(pre_graph.graph.vs.select(
-        ci_type='people')['counts'])
-
-    return ((no_service_post-no_service_pre)*pop).sum()
-
-def disaster_impact_allservices(pre_graph, post_graph,
-                services=['power', 'healthcare', 'education', 'telecom', 'mobility', 'water']):
-
-    imp_dict = {}
-
-    for service in services:
-        imp_dict[service] = disaster_impact_service(
-            service, pre_graph, post_graph)
-
-    return imp_dict
-
-
-def get_graphstats(graph):
-    from collections import Counter
-    stats_dict = {}
-    stats_dict['no_edges'] = len(graph.graph.es)
-    stats_dict['no_nodes'] = len(graph.graph.vs)
-    stats_dict['edge_types'] = Counter(graph.graph.es['ci_type'])
-    stats_dict['node_types'] = Counter(graph.graph.vs['ci_type'])
-    return stats_dict

@@ -24,9 +24,6 @@ import matplotlib.pyplot as plt
 
 LOGGER = logging.getLogger(__name__)
 
-KTOE_TO_MWH = 11630 # conversion factor MWh/ktoe (kilo ton of oil equivalents)
-HRS_PER_YEAR = 8760
-
 
 class PowerFlow():
     """
@@ -233,47 +230,6 @@ class PowerFlow():
         ax1.set_title('DC-OPF result', fontsize=20)
         fig.tight_layout()
 
-
-
-class PowerCluster():
-    
-    def set_capacity_from_sd_ratio(cis_graph, per_cap_cons, source_ci='power plant',
-                                   sink_ci='substation', demand_ci='people', source_var='el_gen_mw'):
-        
-        capacity_vars = [var for var in cis_graph.graph.vs.attributes()
-                         if f'capacity_{sink_ci}_' in var]
-        power_vs = cis_graph.graph.vs.select(
-            ci_type_in=['power line', source_ci, sink_ci, demand_ci])
-        
-        # make subgraph spanning all nodes, but only functional edges
-        power_subgraph = cis_graph.graph.subgraph(power_vs)
-        power_subgraph.delete_edges(func_tot_lt=0.1)
-        
-        # make vs-matching dict between power_vs indices and power_graph vs. indices
-        subgraph_graph_vsdict = dict((k,v) for k, v in 
-                                     zip([subvx.index for subvx in power_subgraph.vs],
-                                         [vx.index for vx in power_vs]))
-
-        for cluster in power_subgraph.clusters(mode='weak'):
-            
-            sources = power_subgraph.vs[cluster].select(ci_type=source_ci)
-            sinks = power_subgraph.vs[cluster].select(ci_type=sink_ci)
-            demands = power_subgraph.vs[cluster].select(ci_type=demand_ci)
-            
-            psupply = sum([source[source_var]*source['func_tot'] 
-                           for source in sources])
-            pdemand = sum([demand['counts']*per_cap_cons for demand in demands])
-            
-            try:
-                sd_ratio = min(1, psupply/pdemand)
-            except ZeroDivisionError:
-                sd_ratio = 1
-            
-            for var in capacity_vars:
-                cis_graph.graph.vs[[subgraph_graph_vsdict[sink.index] 
-                                    for sink in sinks]].set_attribute_values(var, sd_ratio)
-            
-        return cis_graph
 
 
         
