@@ -499,7 +499,7 @@ class WildFire(Hazard):
                                      land_path = land_path, pop_path = pop_path)
         self._set_ignition_matrix(bounds = bounds, res = res,
                                   land_path = land_path, pop_path = pop_path)
-
+        
         n_fires_hist = self.select(orig = True).n_fires
 
         if len(n_fires_hist) > 1:
@@ -1693,11 +1693,18 @@ class WildFire(Hazard):
         for centroid in firemip_c:
             prob_c = np.where(idx_ups_coord == centroid)[0]
             upscaled[centroid] = np.mean(land_centr[prob_c])
-
-
-
+        
+        #set probability to 0 in areas outside the country
+        self.centroids.set_region_id()
+        affected_countries = np.unique(self.centroids.region_id[self.intensity.indices])
+        unaffected = np.where(self.centroids.region_id != affected_countries)
+        upscaled = upscaled
+        upscaled[unaffected] = 0
         self.centroids.frac_propa_matrix =  upscaled.reshape(self.centroids.shape)
         #sparse.csr_matrix(
+        
+        # from osgeo import gdal
+        # gdal_translate -tr 10 10 land_path
 
 
     def _set_population_propa_mat(self, pop_path, bounds, res):
