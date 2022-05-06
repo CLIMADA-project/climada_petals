@@ -1696,9 +1696,8 @@ class WildFire(Hazard):
         
         #set probability to 0 in areas outside the country
         self.centroids.set_region_id()
-        affected_countries = np.unique(self.centroids.region_id[self.intensity.indices])
-        unaffected = np.where(self.centroids.region_id != affected_countries)
-        upscaled = upscaled
+        affected_countries = np.unique(self.centroids.region_id[self.intensity.nonzero()[1]])
+        unaffected = np.where(self.centroids.region_id != affected_countries)[0]
         upscaled[unaffected] = 0
         self.centroids.frac_propa_matrix =  upscaled.reshape(self.centroids.shape)
         #sparse.csr_matrix(
