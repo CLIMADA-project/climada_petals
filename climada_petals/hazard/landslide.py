@@ -83,12 +83,13 @@ def sample_events(prob_matrix, n_years, dist='binom'):
 
 
 def sample_event_from_probs(prob_matrix, n_samples, dist):
-    """draw n_samples for all grid points of a given grid
-    from a specified distribution, where occurrence (hit)
-    probabilities across grid cells are indicated in the probability matrix.
-    Options are binomial and poisson distribution.
-    Returns number of hits per grid cell (shape of prob_matrix).
-    For binomial (n choose m)
+    """
+    Samples the number of 'hits' (events) out of a given number of trials (n_samples)
+    from a specified distribution (poisson or binomial).  Different (spatial)
+    occurrence probabilities are indicated in the probability matrix,
+    representative of  cells across a grid.
+    Returns number of events / hits per grid cell (shape of prob_matrix).
+
     Parameters
     ----------
     prob_matrix : np.array()
@@ -103,6 +104,10 @@ def sample_event_from_probs(prob_matrix, n_samples, dist):
     dist : str, 'binom' or 'poisson'
         distribution to sample random number of hits from, given n_samples and
         prob_matrix.
+        For 'binom', the random variate is sampled from the binomial distribution
+        centred around expectation value μ = n_sampes*occurrence probability.
+        For 'poisson', the random variate is sampled from the poisson distribution
+        centred around expectation value λ = n_sampes*occurrence probability.
 
     Returns
     -------
@@ -233,7 +238,6 @@ class Landslide(Hazard):
         """
         This function is deprecated, use Landslide.from_hist instead.
         """
-        """"""
         LOGGER.warning("The use of Landlide.set_ls_hist is deprecated."
                        "Use Landslide.from_hist instead")
         self.__dict__ = Landslide.from_hist(*args, **kwargs).__dict__
@@ -323,7 +327,6 @@ class Landslide(Hazard):
         """
         This function is deprecated, use Landslide.from_prob instead.
         """
-        """"""
         LOGGER.warning("The use of Landlide.set_ls_prob is deprecated."
                        "Use Landslide.from_prob instead")
         self.__dict__ = Landslide.from_prob(*args, **kwargs).__dict__
