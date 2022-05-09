@@ -33,7 +33,7 @@ import shapely
 from climada.hazard import Hazard, Centroids
 import climada.util.coordinates as u_coord
 from climada.util.constants import DEF_CRS
-
+#DEF_CRS = 'EPSG:4326'
 LOGGER = logging.getLogger(__name__)
 HAZ_TYPE = 'LS'
 
