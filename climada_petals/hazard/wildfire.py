@@ -1672,38 +1672,39 @@ class WildFire(Hazard):
             transform_land = self._get_landcover(land_path, bounds, res)
 
         land_propa_matrix = self._assign_prop_probas(self.centroids.landcover)
-        # self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res,
-        #                                                       bounds, transform_land,
-        #                                                       self.centroids.shape)
+        self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res,
+                                                              bounds, transform_land,
+                                                              self.centroids.shape)
 
-        #carmens alternative implementation - muss evtl effizienter gemacht werden
-        x, y = transform_land * np.meshgrid(np.arange(self.centroids.landcover.shape[1]) + 0.5, np.arange(self.centroids.landcover.shape[0]) + 0.5)
-        coord_land = np.stack((y.flatten(), x.flatten()), axis=1)
+        # #carmens alternative implementation - muss evtl effizienter gemacht werden
+        # # from osgeo import gdal
+        # # gdal_translate -tr 10 10 land_path
+        # x, y = transform_land * np.meshgrid(np.arange(self.centroids.landcover.shape[1]) + 0.5, np.arange(self.centroids.landcover.shape[0]) + 0.5)
+        # coord_land = np.stack((y.flatten(), x.flatten()), axis=1)
 
-        idx_ups_coord = match_centroids(coord_land, self.centroids.coord)
-        land_centr = land_propa_matrix.flatten()
-        #Get unique FireMIP centroid entries
-        unique_idx = np.unique(idx_ups_coord)
-        upscaled = np.zeros(unique_idx.shape)
-        #Remove -1 from the unique_idx array (if it is contained) - this happens if a
-        #centroid in the probabilistic set is further away for the closest FireMIP centroid
-        #than the specified threshold
-        firemip_c = np.delete(unique_idx, np.where(unique_idx == -1)[0])
+        # idx_ups_coord = match_centroids(coord_land, self.centroids.coord)
+        # land_centr = land_propa_matrix.flatten()
+        # #Get unique FireMIP centroid entries
+        # unique_idx = np.unique(idx_ups_coord)
+        # upscaled = np.zeros(unique_idx.shape)
+        # #Remove -1 from the unique_idx array (if it is contained) - this happens if a
+        # #centroid in the probabilistic set is further away for the closest FireMIP centroid
+        # #than the specified threshold
+        # firemip_c = np.delete(unique_idx, np.where(unique_idx == -1)[0])
 
-        for centroid in firemip_c:
-            prob_c = np.where(idx_ups_coord == centroid)[0]
-            upscaled[centroid] = np.mean(land_centr[prob_c])
+        # for centroid in firemip_c:
+        #     prob_c = np.where(idx_ups_coord == centroid)[0]
+        #     upscaled[centroid] = np.mean(land_centr[prob_c])
         
-        #set probability to 0 in areas outside the country
-        self.centroids.set_region_id()
-        affected_countries = np.unique(self.centroids.region_id[self.intensity.nonzero()[1]])
-        unaffected = np.where(self.centroids.region_id != affected_countries)[0]
-        upscaled[unaffected] = 0
-        self.centroids.frac_propa_matrix =  upscaled.reshape(self.centroids.shape)
-        #sparse.csr_matrix(
+        # #set probability to 0 in areas outside the country
+        # self.centroids.set_region_id()
+        # affected_countries = np.unique(self.centroids.region_id[self.intensity.nonzero()[1]])
+        # unaffected = np.where(self.centroids.region_id != affected_countries)[0]
+        # upscaled[unaffected] = 0
+        # self.centroids.frac_propa_matrix =  upscaled.reshape(self.centroids.shape)
+        # #sparse.csr_matrix(
         
-        # from osgeo import gdal
-        # gdal_translate -tr 10 10 land_path
+
 
 
     def _set_population_propa_mat(self, pop_path, bounds, res):
