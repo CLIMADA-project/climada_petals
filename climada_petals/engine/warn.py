@@ -23,9 +23,10 @@ import copy
 from dataclasses import dataclass, field
 from enum import Enum
 
-
 from typing import List
+from matplotlib.colors import ListedColormap
 import numpy as np
+import xarray as xr
 import skimage
 
 from climada.util.plot import geo_scatter_categorical
@@ -209,9 +210,47 @@ class Warn:
             raise Exception('For every coordinate a value in the map, and vice versa, is needed.')
 
         binned_map = cls.bin_map(input_map, warn_params.warn_levels)
-        warning = cls.__generate_warn_map(binned_map, warn_params)
+        warning = cls._generate_warn_map(binned_map, warn_params)
         if warn_params.change_sm:
-            warning = cls.__change_small_regions(warning, warn_params.change_sm)
+            warning = cls._change_small_regions(warning, warn_params.change_sm)
+        return cls(warning, coord, warn_params)
+
+    @classmethod
+    def wind_from_cosmo(cls, path_to_cosmo, warn_params, lead_time, quant_nr=0.7):
+        """Generate Warn object from COSMO windspeed data. The warn object is computed for the
+        given date and time. The ensemble members of that date and time are grouped together to a
+        single windspeed map.
+
+        Parameters
+        ----------
+        path_to_cosmo : string
+            Path including name to cosmo file.
+        warn_params : dataclass
+            Contains information on how to generate the warning (operations and details).
+        lead_time : datetime
+            Lead time when warning should be generated.
+        quant_nr : float
+            Quantile number to group ensemble members of COSMO wind speeds.
+
+        Returns
+        ----------
+        warn : Warn
+            Generated Warn object including warning, coordinates, warn levels, and metadata.
+        """
+        ncdf = xr.open_dataset(path_to_cosmo)
+        ncdf = ncdf.sel(time=lead_time.strftime('%Y-%m-%dT%H'))
+        ncdf = ncdf.drop('grid_mapping_1')
+
+        lon = ncdf.lon_1.values
+        lat = ncdf.lat_1.values
+        coord = np.vstack((lat.flatten(), lon.flatten())).transpose()
+
+        input_map = cls._group_cosmo_ensembles(ncdf.VMAX_10M, quant_nr)
+
+        binned_map = cls.bin_map(input_map, warn_params.warn_levels)
+        warning = cls._generate_warn_map(binned_map, warn_params)
+        if warn_params.change_sm:
+            warning = cls._change_small_regions(warning, warn_params.change_sm)
         return cls(warning, coord, warn_params)
 
     @staticmethod
@@ -239,7 +278,7 @@ class Warn:
         return np.digitize(input_map, levels) - 1  # digitize lowest bin is 1
 
     @staticmethod
-    def __filtering(binary_map, warn_params):
+    def _filtering(binary_map, warn_params):
         """For the current warn level, apply defined operations on the input binary map.
 
         Parameters
@@ -260,7 +299,7 @@ class Warn:
         return binary_map
 
     @staticmethod
-    def __generate_warn_map(bin_map, warn_params):
+    def _generate_warn_map(bin_map, warn_params):
         """Generate warning map of binned map. The filter algorithm reduces heterogeneity in the map
         (erosion) and makes sure warn regions of higher warn levels are large enough (dilation).
         With the median filtering the generated warning is smoothed out without blurring.
@@ -289,14 +328,14 @@ class Warn:
             # set bool np.ndarray to curr_lvl (if True) or 0
             binary_curr_lvl = np.where(pts_curr_lvl, curr_lvl, 0)
 
-            warn_reg = Warn.__filtering(binary_curr_lvl, warn_params)
+            warn_reg = Warn._filtering(binary_curr_lvl, warn_params)
             # keep warn regions of higher levels by taking maximum
             warn_map = np.maximum(warn_map, warn_reg)
 
         return warn_map
 
     @staticmethod
-    def __increase_levels(warn, size):
+    def _increase_levels(warn, size):
         """Increase warn levels of too small regions to max warn level of this warning.
 
         Parameters
@@ -319,7 +358,7 @@ class Warn:
         return warn
 
     @staticmethod
-    def __reset_levels(warn, size):
+    def _reset_levels(warn, size):
         """Set warn levels of too small regions to highest surrounding warn level. Therefore,
         decrease warn levels of too small regions, until no too small regions can be detected.
 
@@ -346,7 +385,7 @@ class Warn:
         return warn
 
     @staticmethod
-    def __change_small_regions(warning, size):
+    def _change_small_regions(warning, size):
         """Change formed warning regions smaller than defined threshold from current warn level to
         surrounding warn level.
 
@@ -363,10 +402,31 @@ class Warn:
             Warning without too small regions, same shape as input map.
         """
         warning = warning + 1  # 0 is regarded as background in labelling, + 1 prevents this
-        warning = Warn.__increase_levels(warning, size)
-        warning = Warn.__reset_levels(warning, size)
+        warning = Warn._increase_levels(warning, size)
+        warning = Warn._reset_levels(warning, size)
         warning = warning - 1
         return warning
+
+    @staticmethod
+    def _group_cosmo_ensembles(ensembles, quant_nr):
+        """The ensemble members of the COSMO computations are grouped together by taking the
+        given quantile.
+
+        Parameters
+        ----------
+        ensembles : np.ndarray
+            Wind speed data by COSMO. Multiple possible outcomes for every grid point (ensemble
+            members).
+        quant_nr : float
+            Quantile number to group ensemble members of COSMO wind speeds.
+
+        Returns
+        ----------
+        single_map : np.ndarray
+            Map with one wind speed for every grid point (reduced dimension compared to input).
+        """
+        single_map = np.quantile(ensembles, quant_nr, axis=0)
+        return single_map
 
     def plot_warning(self, var_name='Warn Levels', title='Categorical Warning Map', cat_name=None,
                      adapt_fontsize=True,
@@ -413,6 +473,61 @@ class Warn:
         cartopy.mpl.geoaxes.GeoAxesSubplot
 
         """
+        return geo_scatter_categorical(self.warning.flatten(), self.coord, var_name, title,
+                                       cat_name, adapt_fontsize,
+                                       **kwargs)
+
+    def plot_warning_meteoswiss_style(self, var_name='Warn Levels', title='Categorical Warning '
+                                                                          'Map', cat_name=None,
+                                      adapt_fontsize=True):
+        """
+        Map plots for categorical data defined in array(s) over input
+        coordinates. The MeteoSwiss coloring scheme is used, therefore only 5 warn levels are
+        allowed.
+
+        This method wraps around util.geo_scatter_from_array and uses
+        all its args and kwargs.
+
+        Parameters
+        ----------
+        var_name : str or list(str)
+            label to be shown in the colorbar. If one
+            provided, the same is used for all subplots. Otherwise provide as
+            many as subplots in array_sub.
+        title : str or list(str)
+            subplot title. If one provided, the same is
+            used for all subplots. Otherwise provide as many as subplots in
+            array_sub.
+        cat_name : dict, optional
+            Categories name for the colorbar labels.
+            Keys are all the unique values in array_sub, values are their labels.
+            The default is labels = unique values.
+        adapt_fontsize : bool, optional
+            If set to true, the size of the fonts will be adapted to the size of the figure.
+            Otherwise the default matplotlib font size is used. Default is True.
+        **kwargs
+            Arbitrary keyword arguments for hexbin matplotlib function
+
+        Returns
+        -------
+        cartopy.mpl.geoaxes.GeoAxesSubplot
+
+        """
+        if np.max(self.warning) > 4:
+            raise ValueError("MeteoSwiss defines only 5 warn levels. You used more levels or the "
+                             "values of input map are larger than defined levels. Reduce "
+                             "the number of warn levels to 5 or use 'plot_warning() instead.")
+
+        colors_mch = np.array([[204 / 255, 255 / 255, 102 / 255, 1],  # green
+                               [255 / 255, 255 / 255, 0 / 255, 1],  # yellow
+                               [255 / 255, 153 / 255, 0 / 255, 1],  # orange
+                               [255 / 255, 0 / 255, 0 / 255, 1],  # red
+                               [128 / 255, 0 / 255, 0 / 255, 1],  # dark red
+                               ])
+        newcmp = ListedColormap(colors_mch)
+        kwargs = dict()
+        kwargs['cmap'] = newcmp
+
         return geo_scatter_categorical(self.warning.flatten(), self.coord, var_name, title,
                                        cat_name, adapt_fontsize,
                                        **kwargs)
