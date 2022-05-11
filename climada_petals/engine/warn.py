@@ -253,6 +253,37 @@ class Warn:
             warning = cls._change_small_regions(warning, warn_params.change_sm)
         return cls(warning, coord, warn_params)
 
+    @classmethod
+    def from_hazard(cls, hazard, warn_params):
+        """Generate Warn object from COSMO windspeed data. The warn object is computed for the
+        given date and time. The ensemble members of that date and time are grouped together to a
+        single windspeed map.
+
+        Parameters
+        ----------
+        path_to_cosmo : string
+            Path including name to cosmo file.
+        warn_params : dataclass
+            Contains information on how to generate the warning (operations and details).
+        lead_time : datetime
+            Lead time when warning should be generated.
+        quant_nr : float
+            Quantile number to group ensemble members of COSMO wind speeds.
+
+        Returns
+        ----------
+        warn : Warn
+            Generated Warn object including warning, coordinates, warn levels, and metadata.
+        """
+        input_map, coord = cls._zeropadding(hazard.centroids.lat, hazard.centroids.lon,
+                                            (hazard.intensity.max(axis=0)).todense())
+
+        binned_map = cls.bin_map(input_map, warn_params.warn_levels)
+        warning = cls._generate_warn_map(binned_map, warn_params)
+        if warn_params.change_sm:
+            warning = cls._change_small_regions(warning, warn_params.change_sm)
+        return cls(warning, coord, warn_params)
+
     @staticmethod
     def bin_map(input_map, levels):
         """Bin every value of input map into given levels.
@@ -427,6 +458,31 @@ class Warn:
         """
         single_map = np.quantile(ensembles, quant_nr, axis=0)
         return single_map
+
+    @staticmethod
+    def _zeropadding(lat_, lon_, val):
+        lat = np.round(lat_, decimals=12)
+        lon = np.round(lon_, decimals=12)
+
+        un_y = np.sort(np.unique(lat))
+        un_x = np.sort(np.unique(lon))
+
+        y = lat
+        y0 = min(y)
+        dy = abs(un_y[1] - un_y[0])
+        x = lon
+        x0 = min(x)
+        dx = abs(un_x[1] - un_x[0])
+
+        i = ((y - y0) / dy).astype(int)
+        j = ((x - x0) / dx).astype(int)
+        grid = np.zeros((len(np.unique(lat)), len(np.unique(lon))))
+        grid[i, j] = val
+
+        xx, yy = np.meshgrid(un_x, un_y)
+        coord_ = np.vstack((yy.flatten(), xx.flatten())).transpose()
+
+        return grid, coord_
 
     def plot_warning(self, var_name='Warn Levels', title='Categorical Warning Map', cat_name=None,
                      adapt_fontsize=True,

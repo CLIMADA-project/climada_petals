@@ -3,9 +3,47 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from climada_petals.engine.warn import Warn
+from climada.util.api_client import Client
 
 
 class TestWarn(unittest.TestCase):
+    def test_from_map(self):
+        wind_matrix = np.zeros((10, 10))
+        wind_matrix[4, 4] = 40
+        coords = np.random.randint(0, 100, wind_matrix.flatten().shape)
+
+        # no operations = only binning of map
+        warn_levels = np.array([0.0, 20, 50])
+        filter_data = Warn.WarnParameters(warn_levels, operations=[],
+                                          gradual_decr=False, change_sm=0)
+        warn = Warn.from_map(wind_matrix, coords, filter_data)
+
+        self.assertEqual(warn.warning[4, 4], 1)
+        self.assertEqual(np.sum(warn.warning), 1)
+
+    # cosmo file is 2 GB, should that be on the data api?
+    # def test_wind_from_cosmo(self):
+
+    def test_from_hazard(self):
+        client = Client()
+        tc_dataset_infos = client.list_dataset_infos(data_type='tropical_cyclone')
+        client.get_property_values(tc_dataset_infos,
+                                   known_property_values={'country_name': 'Haiti'})
+
+        # Read hazard
+        tc_haiti = client.get_hazard('tropical_cyclone', properties={'country_name': 'Haiti',
+                                                                     'climate_scenario': 'rcp45',
+                                                                     'ref_year': '2040',
+                                                                     'nb_synth_tracks': '10'})
+
+        warn_levels = [0, 20, 30, 1000]
+        filter_data = Warn.WarnParameters(warn_levels, operations=[],
+                                          gradual_decr=False, change_sm=0)
+        warn = Warn.from_hazard(tc_haiti, filter_data)
+
+        self.assertGreater(warn.warning.shape[0], 1)
+        self.assertGreater(warn.warning.shape[1], 1)
+
     def test_bin_map(self):
         wind_matrix = np.zeros((10, 10))
         wind_matrix[2, 2] = -2
