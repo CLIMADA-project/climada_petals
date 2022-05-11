@@ -1,5 +1,6 @@
 import unittest
 import numpy as np
+from scipy import sparse
 import matplotlib.pyplot as plt
 
 from climada_petals.engine.warn import Warn
@@ -43,6 +44,8 @@ class TestWarn(unittest.TestCase):
 
         self.assertGreater(warn.warning.shape[0], 1)
         self.assertGreater(warn.warning.shape[1], 1)
+        self.assertEqual(np.max(warn.warning), 2)
+        self.assertEqual(np.min(warn.warning), 0)
 
     def test_bin_map(self):
         wind_matrix = np.zeros((10, 10))
@@ -304,6 +307,29 @@ class TestWarn(unittest.TestCase):
         warn = Warn.from_map(wind_matrix, coords, filter_data)
         self.assertEqual(np.sum(warn.warning), 5)
         self.assertEqual(warn.warning.shape, wind_matrix.shape)
+
+    def test_group_cosmo_ensembles(self):
+        wind_matrix = np.zeros((2, 10, 10))
+        wind_matrix[0, 4, 4] = 2
+        wind_matrix[1, 4, 4] = 2
+
+        reduced_matrix = Warn._group_cosmo_ensembles(wind_matrix, 0.5)
+
+        self.assertEqual(reduced_matrix.shape, (10, 10))
+        self.assertEqual(reduced_matrix[4, 4], 2)
+        self.assertEqual(np.sum(reduced_matrix), 2)
+
+    def test_zeropadding(self):
+        row = np.array([0, 0, 1, 2, 2, 2])
+        col = np.array([0, 2, 2, 0, 1, 2])
+        data = np.array([1, 2, 3, 4, 5, 6])
+
+        reduced_matrix, coord = Warn.zeropadding(row, col, data)
+
+        self.assertEqual(reduced_matrix.shape, (3, 3))
+        self.assertEqual(reduced_matrix[0, 2], 2)
+        self.assertEqual(reduced_matrix[2, 2], 6)
+        self.assertEqual(np.sum(reduced_matrix), np.sum(data))
 
     def test_plot_warning(self):
         """Plots ones with geo_scatteR_categorical"""

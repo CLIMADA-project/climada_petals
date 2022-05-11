@@ -237,15 +237,15 @@ class Warn:
         warn : Warn
             Generated Warn object including warning, coordinates, warn levels, and metadata.
         """
-        ncdf = xr.open_dataset(path_to_cosmo)
-        ncdf = ncdf.sel(time=lead_time.strftime('%Y-%m-%dT%H'))
-        ncdf = ncdf.drop('grid_mapping_1')
+        cosmo = xr.open_dataset(path_to_cosmo)
+        cosmo = cosmo.sel(time=lead_time.strftime('%Y-%m-%dT%H'))
+        cosmo = cosmo.drop('grid_mapping_1')
 
-        lon = ncdf.lon_1.values
-        lat = ncdf.lat_1.values
+        lon = cosmo.lon_1.values
+        lat = cosmo.lat_1.values
         coord = np.vstack((lat.flatten(), lon.flatten())).transpose()
 
-        input_map = cls._group_cosmo_ensembles(ncdf.VMAX_10M, quant_nr)
+        input_map = cls._group_cosmo_ensembles(cosmo.VMAX_10M, quant_nr)
 
         binned_map = cls.bin_map(input_map, warn_params.warn_levels)
         warning = cls._generate_warn_map(binned_map, warn_params)
@@ -255,28 +255,23 @@ class Warn:
 
     @classmethod
     def from_hazard(cls, hazard, warn_params):
-        """Generate Warn object from COSMO windspeed data. The warn object is computed for the
-        given date and time. The ensemble members of that date and time are grouped together to a
-        single windspeed map.
+        """Generate Warn object from hazard object. The intensity map is used therefore. It needs
+        to be transferable to a dense matrix, else the computation of the warning is impossible.
 
         Parameters
         ----------
-        path_to_cosmo : string
-            Path including name to cosmo file.
+        hazard : Hazard
+            Contains the information of which to generate a warning from.
         warn_params : dataclass
             Contains information on how to generate the warning (operations and details).
-        lead_time : datetime
-            Lead time when warning should be generated.
-        quant_nr : float
-            Quantile number to group ensemble members of COSMO wind speeds.
 
         Returns
         ----------
         warn : Warn
             Generated Warn object including warning, coordinates, warn levels, and metadata.
         """
-        input_map, coord = cls._zeropadding(hazard.centroids.lat, hazard.centroids.lon,
-                                            (hazard.intensity.max(axis=0)).todense())
+        input_map, coord = cls.zeropadding(hazard.centroids.lat, hazard.centroids.lon,
+                                           (hazard.intensity.max(axis=0)).todense())
 
         binned_map = cls.bin_map(input_map, warn_params.warn_levels)
         warning = cls._generate_warn_map(binned_map, warn_params)
@@ -460,7 +455,7 @@ class Warn:
         return single_map
 
     @staticmethod
-    def _zeropadding(lat_, lon_, val):
+    def zeropadding(lat_, lon_, val):
         lat = np.round(lat_, decimals=12)
         lon = np.round(lon_, decimals=12)
 
