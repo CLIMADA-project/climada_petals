@@ -33,47 +33,102 @@ import shapely
 from climada.hazard import Hazard, Centroids
 import climada.util.coordinates as u_coord
 from climada.util.constants import DEF_CRS
-
+#DEF_CRS = 'EPSG:4326'
 LOGGER = logging.getLogger(__name__)
 HAZ_TYPE = 'LS'
 
-def sample_events_from_probs(prob_matrix, n_years, dist='binom'):
-    """sample an event set for a specified representative time span from
-    a matrix with annual occurrence probabilities
-    Draws events from chosen distribution.
+
+def sample_events(prob_matrix, n_years, dist='binom'):
+    """
+    Sample yearly events for a specified time span (n_years) from
+    a matrix representing annual occurrence probabilities per grid cell
+    (prob_matrix). The matrix will usually be provided throught the
+    Landslide.from_prob() method and refer to grid-cells and their annual
+    sliding probabilities.
+    Events are drawn from the specified distribution (binomial or
+    poisson).
+    Returns n_year events for the whole grid, each event being representative
+    of all slides happening in 1 year throughout the entire grid-area.
 
     Parameters
     ----------
-    prob_matrix : scipy.sparse.csr matrix
-        matrix where each entry has an annual probability [0,1] of occurrence of
-        an event
+    prob_matrix : np.array()
+        matrix where each entry has a probability [0,1] of occurrence of
+        an event. Shape of array can be any and is determined by hazard area
+        and resolution of probability-source-file when called through
+        Landslide.from_prob().
     n_years : int
-        the timespan of the probabilistic simulation in years
-    dist : str
-        distribution to sample from. currently 'binom' (default) and 'poisson'
+        the timespan of the probabilistic simulation in years. Each year will
+        result in 1 event.
+    dist : str, 'binom' or 'poisson'
+        distribution to sample from. Default is 'binom'.
 
     Returns
     -------
-    ev_matrix : scipy.sparse.csr matrix
-        csr matrix with number of success (events) from sampling process per
-        grid cell
+    scipy.sparse.csr_matrix :
+        shape is (shape(prob_matrix),n_years). Each non-zero entry is 1 (re-
+        ferring to a 'hit' in that year and grid cell.)
 
     See also
     --------
-    set_ls_prob(), scipy.stats.binom.rvs(), scipy.stats.poisson.rvs()
-
+    sample_event_from_probs()
+    Landslide.from_prob()
     """
-    LOGGER.info('Sampling landslide events for a %i year period', n_years)
 
-    ev_matrix = prob_matrix.copy()
+    events = [
+        sample_event_from_probs(prob_matrix, n_samples=1, dist=dist)
+        for i in range(n_years)
+        ]
+    return sparse.csr_matrix(events)
+
+
+def sample_event_from_probs(prob_matrix, n_samples, dist):
+    """
+    Samples the number of 'hits' (events) out of a given number of trials (n_samples)
+    from a specified distribution (poisson or binomial).  Different (spatial)
+    occurrence probabilities are indicated in the probability matrix,
+    representative of  cells across a grid.
+    Returns number of events / hits per grid cell (shape of prob_matrix).
+
+    Parameters
+    ----------
+    prob_matrix : np.array()
+        matrix where each entry has a probability [0,1] of occurrence
+        Shape of array can be an. Usually it refers to probailities per grid
+        cells and is determined by hazard area
+        and resolution of probability-source-file when called through
+        Landslide.from_prob().
+    n_samples : int
+        the number of samples . Will be 1 if
+        called from sample_events().
+    dist : str, 'binom' or 'poisson'
+        distribution to sample random number of hits from, given n_samples and
+        prob_matrix.
+        For 'binom', the random variate is sampled from the binomial distribution
+        centred around expectation value μ = n_sampes*occurrence probability.
+        For 'poisson', the random variate is sampled from the poisson distribution
+        centred around expectation value λ = n_sampes*occurrence probability.
+
+    Returns
+    -------
+    ev_matrix : np.array()
+        array of same shape as prob_matrix. Each entry contains the number of
+        'hits' obtained during sampling-period n_years and will range
+        from [0,n_years]
+
+    See also
+    --------
+    sample_events()
+    scipy.stats.binom.rvs(), scipy.stats.poisson.rvs()
+    """
 
     if dist == 'binom':
-        ev_matrix.data = binom.rvs(n=n_years, p=prob_matrix.data)
+        ev_matrix = binom.rvs(n=n_samples, p=prob_matrix)
 
     elif dist == 'poisson':
         # λ (or μ in scipy)
-        mu = prob_matrix.data * n_years
-        ev_matrix.data = poisson.rvs(mu)
+        mu = prob_matrix * n_samples
+        ev_matrix = poisson.rvs(mu)
 
     return ev_matrix
 
@@ -157,7 +212,6 @@ class Landslide(Hazard):
             (np.ones(n_ev), (np.arange(n_ev), gdf_cropped.flat_ix)),
             shape=(n_ev, haz.centroids.size))
         haz.fraction = haz.intensity.copy()
-        haz.frequency = haz.intensity.copy()
 
         if hasattr(gdf_cropped, 'ev_date'):
             haz.date = pd.to_datetime(gdf_cropped.ev_date, yearfirst=True)
@@ -168,21 +222,22 @@ class Landslide(Hazard):
             haz.frequency = np.ones(n_ev)/(
                 (haz.date.max()-haz.date.min()).value/3.154e+16)
         else:
-            LOGGER.warning('no event dates to derive proxy frequency from')
+            LOGGER.warning('no event dates to derive proxy frequency from,'+
+                           'setting arbitrarily to once per year.')
+            haz.frequency = np.ones(n_ev)
 
         haz.units = ''
         haz.event_id = np.arange(n_ev, dtype=int) + 1
         haz.orig = np.ones(n_ev, bool)
 
         haz.check()
-        
+
         return haz
 
     def set_ls_hist(self, *args, **kwargs):
         """
         This function is deprecated, use Landslide.from_hist instead.
         """
-        """"""
         LOGGER.warning("The use of Landlide.set_ls_hist is deprecated."
                        "Use Landslide.from_hist instead")
         self.__dict__ = Landslide.from_hist(*args, **kwargs).__dict__
@@ -200,7 +255,7 @@ class Landslide(Hazard):
         for precipitation-triggered landslide and from
         https://preview.grid.unep.ch/index.php?preview=data&events=landslides&evcat=1&lang=eng
         for earthquake-triggered landslides.
-        It works of course with any similar raster file.
+        It works with any similar raster file.
         Original data is given in expected annual probability and percentage
         of pixel of occurrence of a potentially destructive landslide event
         x 1000000 (so be sure to adjust this by setting the correction factor).
@@ -208,10 +263,11 @@ class Landslide(Hazard):
         mentioned links.
 
         Events are sampled from annual occurrence probabilites via binomial or
-        poisson distribution; intensity takes a binary value (0 - no
-        ls occurrence; 1 - ls occurrence) and
-        fraction stores the actual the occurrence count (0 to n) per grid cell.
-        Frequency is occurrence count / n_years.
+        poisson distribution. An event therefore includes all landslides
+        sampled to occur within a year for the given area.
+        intensity takes a binary value (occurrence or no occurrene of a LS);
+        frequency is set to 1 / n_years.
+
 
         Impact functions, since they act on the intensity, should hence be in
         the form of a step function,
@@ -229,53 +285,48 @@ class Landslide(Hazard):
         n_years : int
             sampling period
         dist : str
-        distribution to sample from. 'poisson' (default) and 'binom'
+            distribution to sample from. 'poisson' (default) and 'binom'
 
         Returns
         -------
-        Landslide : climada.hazard.Landslide instance
+        haz : climada.hazard.Landslide instance
             probabilistic LS hazard
 
         See also
         --------
-        sample_events_from_probs()
+        sample_events()
         """
-        
+
         haz = cls()
         # raster with occurrence probs
         haz.centroids.meta, prob_matrix = \
             u_coord.read_raster(path_sourcefile, geometry=[shapely.geometry.box(*bbox, ccw=True)])
-        prob_matrix = sparse.csr_matrix(prob_matrix.squeeze()/corr_fact)
+        prob_matrix = prob_matrix.squeeze()/corr_fact
 
         # sample events from probabilities
-        haz.fraction = sample_events_from_probs(prob_matrix, n_years, dist)
-
-        # set frequ. to no. of occurrences per cell / timespan:
-        haz.frequency = haz.fraction/n_years
-
-        # set intensity to 1 wherever an occurrence:
-        haz.intensity = haz.fraction.copy()
-        haz.intensity[haz.intensity.nonzero()]=1
+        haz.intensity = sample_events(prob_matrix, n_years, dist)
+        haz.fraction = haz.intensity.copy()
+        haz.fraction[haz.intensity.nonzero()] = 1
+        haz.frequency = np.ones(n_years) / n_years
 
         # meaningless, such that check() method passes:
         haz.date = np.array([])
-        haz.event_name = []
-        haz.event_id = np.array([1])
+        haz.event_name = np.array(range(n_years))
+        haz.event_id = np.array(range(n_years))
 
-        # check for
         if not haz.centroids.meta['crs'].is_epsg_code:
             haz.centroids.meta['crs'] = haz.centroids.meta['crs'
                                ].from_user_input(DEF_CRS)
         haz.centroids.set_geometry_points()
+
         haz.check()
+
         return haz
-        
+
     def set_ls_prob(self, *args, **kwargs):
         """
         This function is deprecated, use Landslide.from_prob instead.
         """
-        """"""
         LOGGER.warning("The use of Landlide.set_ls_prob is deprecated."
                        "Use Landslide.from_prob instead")
         self.__dict__ = Landslide.from_prob(*args, **kwargs).__dict__
-        
