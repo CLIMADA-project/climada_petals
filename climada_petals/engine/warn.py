@@ -22,8 +22,9 @@ import logging
 import copy
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import partial
 
-from typing import List
+from typing import List, Tuple
 from matplotlib.colors import ListedColormap
 import numpy as np
 import xarray as xr
@@ -109,9 +110,9 @@ class Operation(Enum):
     median_filtering : function
         Links to median filtering operation.
     """
-    dilation = dilation
-    erosion = erosion
-    median_filtering = median_filtering
+    dilation = partial(dilation)
+    erosion = partial(erosion)
+    median_filtering = partial(median_filtering)
 
     def __call__(self, *args, **kwargs):
         return self.value(*args, **kwargs)
@@ -156,21 +157,23 @@ class Warn:
             If strictly larger than 1, the levels of too small regions are changed to its
             surrounding levels. If 0 or None, the levels are not changed.
         """
-        # default values for warning generation
-        OPERATIONS = [('dilation', 2), ('erosion', 3), ('dilation', 7), ('median_filtering', 15)]
-        GRADUAL_DECREASE = False
-        CHANGE_SMALL_REGIONS = None
 
-        warn_levels: List
-        operations: List[str] = field(default_factory=lambda op=OPERATIONS: op)
-        gradual_decr: bool = GRADUAL_DECREASE
-        change_sm: bool = CHANGE_SMALL_REGIONS
+        warn_levels: List[float]
+        operations: List[Tuple[Operation, int]] = field(default_factory=lambda op: 
+            [(Operation.dilation, 2),
+             (Operation.erosion, 3),
+             (Operation.dilation, 7),
+             (Operation.median_filtering, 15)])
+        gradual_decr: bool = False
+        change_sm: bool = False
 
         def __post_init__(self):
-            op = [i[0] for i in self.operations]
-            if not all(item in Operation.__dict__ for item in op):
-                raise ValueError("An input operation is not defined. "
-                                 "Please select only defined operations.")
+            for (i, (op, sz)) in enumerate(self.operations):
+                if not isinstance(op, Operation):
+                    if op in Operation.__members__:
+                        self.operations[i] = (Operation.__members__[op], sz)
+                    else:
+                        raise ValueError(f"{op} is not a valid Operation")
 
     def __init__(self, warning, coord, warn_params):
         """Initialize Warn.
@@ -198,7 +201,7 @@ class Warn:
             Rectangle 2d map of values which are used to generate the warning.
         coord : np.ndarray
             Coordinates of warning map. For every value of the map exactly one coordinate is needed.
-        warn_params : dataclass
+        warn_params : WarnParameters
             Contains information on how to generate the warning (operations and details).
 
         Returns
@@ -320,7 +323,7 @@ class Warn:
             Warning map consisting formed warning regions of current warn level.
         """
         for op, sz in warn_params.operations:
-            binary_map = Operation.__dict__[op](binary_map, sz)
+            binary_map = op(binary_map, sz)
 
         return binary_map
 

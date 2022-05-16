@@ -3,7 +3,7 @@ import numpy as np
 from scipy import sparse
 import matplotlib.pyplot as plt
 
-from climada_petals.engine.warn import Warn
+from climada_petals.engine.warn import Warn, Operation
 from climada.util.api_client import Client
 
 
@@ -215,7 +215,7 @@ class TestWarn(unittest.TestCase):
 
         warn_levels = np.array([0.0, 20, 50, 80])
 
-        filter_data = Warn.WarnParameters(warn_levels, operations=[('dilation', 1)],
+        filter_data = Warn.WarnParameters(warn_levels, operations=[(Operation.dilation, 1)],
                                           gradual_decr=False, change_sm=False)
         warn = Warn.from_map(wind_matrix, coords, filter_data)
 
