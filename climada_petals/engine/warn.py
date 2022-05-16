@@ -157,9 +157,8 @@ class Warn:
             If strictly larger than 1, the levels of too small regions are changed to its
             surrounding levels. If 0 or None, the levels are not changed.
         """
-
         warn_levels: List[float]
-        operations: List[Tuple[Operation, int]] = field(default_factory=lambda op:
+        operations: List[Tuple[Operation, int]] = field(default_factory=lambda:
             [(Operation.dilation, 2),
              (Operation.erosion, 3),
              (Operation.dilation, 7),
