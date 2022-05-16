@@ -313,7 +313,7 @@ class TestWarn(unittest.TestCase):
         wind_matrix[0, 4, 4] = 2
         wind_matrix[1, 4, 4] = 2
 
-        reduced_matrix = Warn._group_cosmo_ensembles(wind_matrix, 0.5)
+        reduced_matrix = Warn._group_cosmo_ensembles(wind_matrix, 0.7)
 
         self.assertEqual(reduced_matrix.shape, (10, 10))
         self.assertEqual(reduced_matrix[4, 4], 2)
