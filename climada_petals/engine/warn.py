@@ -159,7 +159,7 @@ class Warn:
         """
 
         warn_levels: List[float]
-        operations: List[Tuple[Operation, int]] = field(default_factory=lambda op: 
+        operations: List[Tuple[Operation, int]] = field(default_factory=lambda op:
             [(Operation.dilation, 2),
              (Operation.erosion, 3),
              (Operation.dilation, 7),
@@ -184,7 +184,7 @@ class Warn:
             Warn level for every coordinate of input map.
         coord : np.ndarray
             Coordinates of warning map.
-        warn_params : dataclass
+        warn_params : WarnParameters
             Contains information on how to generate the warning (operations and details).
         """
         self.warning = warning
@@ -228,7 +228,7 @@ class Warn:
         ----------
         path_to_cosmo : string
             Path including name to cosmo file.
-        warn_params : dataclass
+        warn_params : WarnParameters
             Contains information on how to generate the warning (operations and details).
         lead_time : datetime
             Lead time when warning should be generated.
@@ -265,7 +265,7 @@ class Warn:
         ----------
         hazard : Hazard
             Contains the information of which to generate a warning from.
-        warn_params : dataclass
+        warn_params : WarnParameters
             Contains information on how to generate the warning (operations and details).
 
         Returns
@@ -314,7 +314,7 @@ class Warn:
         ----------
         binary_map : np.ndarray
             Binary 2D array, where 1 corresponds to current (and higher if grad_decrease) level.
-        warn_params : dataclass
+        warn_params : WarnParameters
             Contains information on how to generate the warning (operations and details).
 
         Returns
@@ -337,7 +337,7 @@ class Warn:
         ----------
         bin_map : np.ndarray
             Map of binned values in warn levels. Hereof a warning with contiguous regions is formed.
-        warn_params : dataclass
+        warn_params : WarnParameters
             Contains information on how to generate the warning (operations and details).
 
         Returns
@@ -458,29 +458,43 @@ class Warn:
         return single_map
 
     @staticmethod
-    def zeropadding(lat_, lon_, val):
-        lat = np.round(lat_, decimals=12)
-        lon = np.round(lon_, decimals=12)
+    def zeropadding(lat, lon, val):
+        """Produces a rectangle shaped map from a non-rectangular map (e.g., country). Therefore,
+        a rectangular around the countries' boundary is shaped and padded with zeros where no values
+        are defined.
+
+        Parameters
+        ----------
+        lat : list
+            Latitudes of values of map.
+        lon : list
+            Longitudes of values of map.
+        val : list
+            Values of quantity of interest at every coordinate given.
+
+        Returns
+        ----------
+        map_rec : np.ndarray
+            Rectangular map with a value for every grid point. Padded with zeros where no values in
+            input map.
+        coord_rec : np.ndarray
+            Longitudes and Latitudes of every value of the map.
+        """
+        lat = np.round(lat, decimals=12)
+        lon = np.round(lon, decimals=12)
 
         un_y = np.sort(np.unique(lat))
         un_x = np.sort(np.unique(lon))
 
-        y = lat
-        y0 = min(y)
-        dy = abs(un_y[1] - un_y[0])
-        x = lon
-        x0 = min(x)
-        dx = abs(un_x[1] - un_x[0])
-
-        i = ((y - y0) / dy).astype(int)
-        j = ((x - x0) / dx).astype(int)
-        grid = np.zeros((len(np.unique(lat)), len(np.unique(lon))))
-        grid[i, j] = val
+        i = ((lat - min(lat)) / abs(un_y[1] - un_y[0])).astype(int)
+        j = ((lon - min(lon)) / abs(un_x[1] - un_x[0])).astype(int)
+        map_rec = np.zeros((len(np.unique(lat)), len(np.unique(lon))))
+        map_rec[i, j] = val
 
         xx, yy = np.meshgrid(un_x, un_y)
-        coord_ = np.vstack((yy.flatten(), xx.flatten())).transpose()
+        coord_rec = np.vstack((yy.flatten(), xx.flatten())).transpose()
 
-        return grid, coord_
+        return map_rec, coord_rec
 
     def plot_warning(self, var_name='Warn Levels', title='Categorical Warning Map', cat_name=None,
                      adapt_fontsize=True,
