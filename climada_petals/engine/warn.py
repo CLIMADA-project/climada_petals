@@ -595,6 +595,7 @@ class Warn:
         kwargs = dict()
         kwargs['cmap'] = newcmp
 
-        return geo_scatter_categorical(self.warning.flatten(), self.coord, var_name, title,
+        # + 1, since warning at MeteoSwiss starts at 1
+        return geo_scatter_categorical(self.warning.flatten() + 1, self.coord, var_name, title,
                                        cat_name, adapt_fontsize,
                                        **kwargs)
