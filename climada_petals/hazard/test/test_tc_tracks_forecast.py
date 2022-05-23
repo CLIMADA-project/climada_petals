@@ -172,4 +172,5 @@ class TestCXML(unittest.TestCase):
 # Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestECMWF)
+    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestCXML))
     unittest.TextTestRunner(verbosity=2).run(TESTS)
