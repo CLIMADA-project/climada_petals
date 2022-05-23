@@ -25,7 +25,7 @@ pipeline {
             source activate petals_env
             rm -rf tests_xml/
             rm -rf coverage/
-            python -m coverage --omit '*/climada/*' run tests_runner.py unit
+            python -m coverage run --omit '*/climada/*' tests_runner.py unit
             python -m coverage xml -o coverage.xml
             python -m coverage html -d coverage'''
           }
