@@ -564,7 +564,7 @@ class TCForecast(TCTracks):
         import io
 
         if xsl_path is None:
-            xsl_path = CXML2CSV_XSL
+            xsl_path = str(CXML2CSV_XSL)
 
         xsl = et.parse(xsl_path)
         xml = et.parse(cxml_path)
