@@ -559,9 +559,11 @@ class TCForecast(TCTracks):
         cxml_path: str, xsl_path: str = None, basin_env_pressures: dict = None
     ):
         """Read a cxml v1.1 file; may not work on newer specs."""
-        # TODO wrap in try catch with nice error if lxml not available
-        import lxml.etree as et
-        import io
+        try:
+            import lxml.etree as et
+            import io
+        except ModuleNotFoundError:
+            LOGGER.exception("Please install the lxml module manually")
 
         if xsl_path is None:
             xsl_path = str(CXML2CSV_XSL)
