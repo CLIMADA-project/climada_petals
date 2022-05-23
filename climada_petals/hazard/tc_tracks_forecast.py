@@ -617,9 +617,7 @@ class TCForecast(TCTracks):
                 "environmental_pressure": (
                     "time",
                     track_as_df["minimumPressure"].values,
-                ),
-                "basin": ("time", track_as_df["basin"].values),
-            },
+                )},
             coords={
                 "time": track_as_df["validTime"].values,
                 "lat": ("time", track_as_df["latitude"].values),
@@ -630,6 +628,7 @@ class TCForecast(TCTracks):
                 "central_pressure_unit": "mb",
                 "name": track_as_df["cycloneName"].iloc[0],
                 "sid": track_as_df["id"].iloc[0],
+                "basin": track_as_df["basin"].iloc[0],
                 "orig_event_flag": False,
                 "data_provider": track_as_df["origin"].iloc[0],
                 "id_no": track_as_df["cycloneNumber"].iloc[0],
