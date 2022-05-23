@@ -608,6 +608,12 @@ class TCForecast(TCTracks):
     @staticmethod
     def _fcastdf_to_ds(track_as_df: pd.DataFrame):
         """Convert a given subdataframe into an xr.Dataset"""
+
+        if pd.isna(track_as_df["member"].iloc[0]):
+            sid = track_as_df["id"].iloc[0]
+        else:
+            sid = '{}_{}'.format(track_as_df["id"].iloc[0], track_as_df["member"].iloc[0])
+
         return xr.Dataset(
             data_vars={
                 "max_sustained_wind": ("time", track_as_df["maximumWind"].values),
@@ -627,7 +633,7 @@ class TCForecast(TCTracks):
                 "max_sustained_wind_unit": "m/s",
                 "central_pressure_unit": "mb",
                 "name": track_as_df["cycloneName"].iloc[0],
-                "sid": track_as_df["id"].iloc[0],
+                "sid": sid,
                 "basin": track_as_df["basin"].iloc[0],
                 "orig_event_flag": False,
                 "data_provider": track_as_df["origin"].iloc[0],
