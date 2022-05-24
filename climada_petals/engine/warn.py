@@ -167,6 +167,8 @@ class Warn:
         change_sm: bool = False
 
         def __post_init__(self):
+            # to make sure we have the proper data type any string argument is replaced with its
+            # corresponding Operation object, thus the constructor can be called by operation name
             for (i, (op, sz)) in enumerate(self.operations):
                 if not isinstance(op, Operation):
                     if op in Operation.__members__:
