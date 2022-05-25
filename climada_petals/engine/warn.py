@@ -16,7 +16,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Define the Warn class.
+Define the Warn module.
 """
 import logging
 import copy
@@ -39,7 +39,8 @@ def dilation(bin_map, size):
     """Dilate binary input map. The operation is based on a convolution. During translation of the
     filter, a point is included to the region (changed or kept to 1), if one or more elements
     correspond with the filter. Else, it is 0. This results in more and larger regions of
-    interest. Larger filter sizes - more area of interest.
+    interest. Larger filter sizes - more area of interest. For more information:
+    https://scikit-image.org/docs/stable/auto_examples/applications/plot_morphology.html
 
     Parameters
     ----------
@@ -60,7 +61,8 @@ def erosion(bin_map, size):
     """Erode binary input map. The operation is based on a convolution. During translation of the
     filter, a point is included to the region (changed or kept to 1), if all elements correspond
     with the filter. Else, it is 0. This results in less and smaller regions of interest and
-    reduces heterogeneity in map. Larger sizes - more reduction.
+    reduces heterogeneity in map. Larger sizes - more reduction. For more information:
+    https://scikit-image.org/docs/stable/auto_examples/applications/plot_morphology.html
 
     Parameters
     ----------
