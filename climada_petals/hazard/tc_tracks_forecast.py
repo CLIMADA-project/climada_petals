@@ -605,6 +605,9 @@ class TCForecast(TCTracks):
             inplace=True,
         )
 
+        all_storms_df['time_step'] = all_storms_df.hour.diff().astype(float)
+        all_storms_df.time_step[(np.isnan(all_storms_df.time_step)) | (all_storms_df.time_step < 0)] = 0
+
         return all_storms_df
 
     @staticmethod
@@ -616,11 +619,18 @@ class TCForecast(TCTracks):
         else:
             sid = '{}_{}'.format(track_as_df["id"].iloc[0], track_as_df["member"].iloc[0])
 
+        cat_name = CAT_NAMES[set_category(
+            max_sus_wind=track_as_df.maximumWind.values,
+            wind_unit="m/s",
+            saffir_scale=SAFFIR_MS_CAT
+        )]
+
         return xr.Dataset(
             data_vars={
                 "max_sustained_wind": ("time", track_as_df["maximumWind"].values),
                 "central_pressure": ("time", track_as_df["minimumPressure"].values),
-                "hour": ("time", track_as_df["hour"].values),
+                "hour": ("time", track_as_df["hour"].values.astype(float)),
+                "time_step": ("time", track_as_df["time_step"].values),
                 "radius_max_wind": ("time", track_as_df["maximumWindRadius"].values),
                 "environmental_pressure": (
                     "time",
@@ -644,5 +654,6 @@ class TCForecast(TCTracks):
                 "is_ensemble": not pd.isna(track_as_df["member"].iloc[0]),
                 "run_datetime": track_as_df["baseTime"].iloc[0],
                 "is_named_storm": track_as_df["is_named_storm"].iloc[0],
+                "category": cat_name
             },
         )
