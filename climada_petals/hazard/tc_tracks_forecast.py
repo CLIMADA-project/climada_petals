@@ -566,6 +566,7 @@ class TCForecast(TCTracks):
             LOGGER.exception("%s, Please install it manually", str(missing_module))
             raise
 
+        # TODO drop string transformation once lxml >= 4.8.0
         if xsl_path is None:
             xsl_path = str(CXML2CSV_XSL)
 
