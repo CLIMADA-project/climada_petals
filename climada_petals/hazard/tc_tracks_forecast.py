@@ -564,6 +564,7 @@ class TCForecast(TCTracks):
             import io
         except ModuleNotFoundError as missing_module:
             LOGGER.exception("%s, Please install it manually", str(missing_module))
+            raise
 
         if xsl_path is None:
             xsl_path = str(CXML2CSV_XSL)
