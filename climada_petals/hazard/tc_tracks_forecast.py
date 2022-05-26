@@ -562,8 +562,9 @@ class TCForecast(TCTracks):
         try:
             import lxml.etree as et
             import io
-        except ModuleNotFoundError:
-            LOGGER.exception("Please install the lxml module manually")
+        except ModuleNotFoundError as missing_module:
+            LOGGER.exception("%s, Please install it manually", str(missing_module))
+            raise
 
         if xsl_path is None:
             xsl_path = str(CXML2CSV_XSL)
