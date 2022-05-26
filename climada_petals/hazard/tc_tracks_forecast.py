@@ -628,26 +628,24 @@ class TCForecast(TCTracks):
 
         return xr.Dataset(
             data_vars={
-                "max_sustained_wind": ("time", track_as_df["maximumWind"].values),
+                "max_sustained_wind": ("time", track_as_df["maximumWind"].values*1.94384),
                 "central_pressure": ("time", track_as_df["minimumPressure"].values),
                 "hour": ("time", track_as_df["hour"].values.astype(float)),
                 "time_step": ("time", track_as_df["time_step"].values),
                 "radius_max_wind": ("time", track_as_df["maximumWindRadius"].values),
-                "environmental_pressure": (
-                    "time",
-                    track_as_df["minimumPressure"].values,
-                )},
+                "environmental_pressure": ("time", track_as_df["minimumPressure"].values),
+                "basin": ("time", track_as_df["basin"].values),
+            },
             coords={
                 "time": track_as_df["validTime"].values,
                 "lat": ("time", track_as_df["latitude"].values),
                 "lon": ("time", track_as_df["longitude"].values),
             },
             attrs={
-                "max_sustained_wind_unit": "m/s",
+                "max_sustained_wind_unit": "kn",
                 "central_pressure_unit": "mb",
                 "name": track_as_df["cycloneName"].iloc[0],
                 "sid": sid,
-                "basin": track_as_df["basin"].iloc[0],
                 "orig_event_flag": False,
                 "data_provider": track_as_df["origin"].iloc[0],
                 "id_no": track_as_df["cycloneNumber"].iloc[0],
