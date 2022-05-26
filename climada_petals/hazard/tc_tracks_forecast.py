@@ -628,12 +628,13 @@ class TCForecast(TCTracks):
 
         return xr.Dataset(
             data_vars={
+                # transformation in kn needed until issue https://github.com/CLIMADA-project/climada_python/issues/456 is resolved
                 "max_sustained_wind": ("time", track_as_df["maximumWind"].values*1.94384),
                 "central_pressure": ("time", track_as_df["minimumPressure"].values),
                 "hour": ("time", track_as_df["hour"].values.astype(float)),
                 "time_step": ("time", track_as_df["time_step"].values),
                 "radius_max_wind": ("time", track_as_df["maximumWindRadius"].values),
-                "environmental_pressure": ("time", track_as_df["minimumPressure"].values),
+                "environmental_pressure": ("time", track_as_df["lastClosedIsobar"].values),
                 "basin": ("time", track_as_df["basin"].values),
             },
             coords={
