@@ -650,7 +650,7 @@ class TCForecast(TCTracks):
                 "sid": sid,
                 "orig_event_flag": False,
                 "data_provider": track_as_df["origin"].iloc[0],
-                "id_no": track_as_df["cycloneNumber"].iloc[0],
+                "id_no": str(track_as_df["cycloneNumber"].iloc[0]),
                 "ensemble_number": str(track_as_df["member"].iloc[0]),
                 "is_ensemble": not pd.isna(track_as_df["member"].iloc[0]),
                 "run_datetime": track_as_df["baseTime"].iloc[0],
