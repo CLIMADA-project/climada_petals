@@ -22,28 +22,29 @@ Define TCTracks auxiliary methods: BUFR based TC predictions (from ECMWF)
 __all__ = ['TCForecast']
 
 # standard libraries
-import os
 import datetime as dt
 import fnmatch
 import ftplib
+import io
 import logging
+import os
 import tempfile
 from pathlib import Path
 
 # additional libraries
+import eccodes as ec
+import lxml.etree as et
 import numpy as np
 import pandas as pd
 import tqdm
 import xarray as xr
-import eccodes as ec
-
 # climada dependencies
 from climada.hazard.tc_tracks import (
+    BASIN_ENV_PRESSURE,
+    CAT_NAMES,
+    DEF_ENV_PRESSURE,
     TCTracks,
     set_category,
-    DEF_ENV_PRESSURE,
-    CAT_NAMES,
-    BASIN_ENV_PRESSURE,
 )
 from climada.util.files_handler import get_file_names
 
@@ -559,18 +560,12 @@ class TCForecast(TCTracks):
         cxml_path: str, xsl_path: str = None, basin_env_pressures: dict = None
     ):
         """Read a cxml v1.1 file; may not work on newer specs."""
-        try:
-            import lxml.etree as et
-            import io
-        except ModuleNotFoundError as missing_module:
-            LOGGER.exception("%s, Please install it manually", str(missing_module))
-            raise
-
         if xsl_path is None:
-            xsl_path = str(CXML2CSV_XSL)
+            xsl_path = CXML2CSV_XSL
 
-        xsl = et.parse(xsl_path)
-        xml = et.parse(cxml_path)
+        # coerce Path objects to str; coercion superfluous for lxml >= 4.8.0
+        xsl = et.parse(str(xsl_path))
+        xml = et.parse(str(cxml_path))
         transformer = et.XSLT(xsl)
         csv_string = str(transformer(xml))
 
