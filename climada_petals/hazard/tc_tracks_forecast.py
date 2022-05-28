@@ -620,7 +620,7 @@ class TCForecast(TCTracks):
                 "radius_max_wind": ("time", track_as_df["maximumWindRadius"].values),
                 "environmental_pressure": (
                     "time",
-                    track_as_df["minimumPressure"].values,
+                    track_as_df["lastClosedIsobar"].values,
                 )},
             coords={
                 "time": track_as_df["validTime"].values,
