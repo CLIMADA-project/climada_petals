@@ -26,9 +26,12 @@ import logging
 import sys
 import numpy as np
 
+# for working on cluster
+# sys.path.insert(1, '/cluster/project/climate/evelynm/trails/src/trails')
+# import simplify
+
 sys.path.insert(1, '/Users/evelynm/trails/src/trails')
 import simplify
-
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
@@ -221,7 +224,7 @@ class RoadPreprocess(NetworkPreprocess):
 class PowerlinePreprocess(NetworkPreprocess):
 
     def __init__(self):
-        self.ci_type = 'power line'
+        self.ci_type = 'power_line'
 
     def _simplify_network(self, edges=None, nodes=None):
         """ overrides _simplify_network() method from parent class """

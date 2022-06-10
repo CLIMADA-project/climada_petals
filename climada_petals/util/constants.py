@@ -333,12 +333,10 @@ DICT_CIS_OSM =  {
                              """},
         'main_road' :  {
             'osm_keys' : ['highway','man_made','name'],
-            'osm_query' : """highway='primary' or
-                             highway='primary_link' or 
-                             highway='trunk' or
-                             highway='motorway' or
-                             highway='motorway_link' or
-                             highway='trunk_link'"""},
+            'osm_query' : """highway in ('primary', 'primary_link', 'secondary',
+                             'secondary_link', 'tertiary', 'tertiary_link', 'trunk', 'trunk_link', 
+                             'motorway', 'motorway_link')
+                            """},
         'rail' : {
             'osm_keys' : ['railway','name'],
             'osm_query' : """railway='rail' or railway='tram' or

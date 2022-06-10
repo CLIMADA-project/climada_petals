@@ -23,12 +23,16 @@ from scipy.spatial import cKDTree
 import rasterio
 from rasterio.enums import Resampling
 import logging
+from pathlib import Path
+import urllib.request
 
 from climada.util import coordinates as u_coords
 
-KTOE_TO_MWH = 11630 # conversion factor MWh/ktoe (kilo ton of oil equivalents)
-TJ_TO_MWH = 277.778 # comversion factor MWh/TJ
+# Energy conversion factors
+KTOE_TO_GWH = 11.630 #(kilo ton of oil equivalents)
+TJ_TO_GWH = 0.277778 
 HRS_PER_YEAR = 8760
+MWH_TO_GWH = 0.001
 
 LOGGER = logging.getLogger(__name__)
 
@@ -116,19 +120,18 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999.):
     gdf['counts'] = gdf.counts * corr_factor
     
     return gdf
-    
-    
+        
 # =============================================================================
 # General results analysis util functions
 # =============================================================================
 
 def service_dict():
-    return {'power':'actual_supply_power line_people',
-                    'healthcare': 'actual_supply_health_people',
-                    'education':'actual_supply_education_people',
-                    'telecom' : 'actual_supply_celltower_people',
-                    'mobility' : 'actual_supply_road_people',
-                    'water' : 'actual_supply_wastewater_people'}
+    return {'power':'actual_supply_power_line_people',
+            'healthcare': 'actual_supply_health_people',
+            'education':'actual_supply_education_people',
+            'telecom' : 'actual_supply_celltower_people',
+            'mobility' : 'actual_supply_road_people',
+            'water' : 'actual_supply_wastewater_people'}
 
 
 def number_noservice(service, graph):
@@ -194,95 +197,101 @@ def get_graphstats(graph):
     return stats_dict
 
 
+# =============================================================================
+# Worldpop Data
+# =============================================================================
+def get_worldpop_data(iso3, save_path, res=1000):
+    
+    if res==1000:
+        download_url = 'https://data.worldpop.org/GIS/Population/'+ \
+        f'Global_2000_2020_1km_UNadj/2020/{iso3}/'+ \
+        f'{iso3.lower()}_ppp_2020_1km_Aggregated_UNadj.tif'
+    elif res==100:
+        download_url = 'https://data.worldpop.org/GIS/Population/'+ \
+            f'Global_2000_2020/2020/{iso3}/{iso3.lower()}_ppp_2020_UNadj.tif'
+    
+    local_filepath = Path(save_path, download_url.split('/')[-1])
+    
+    if not Path(local_filepath).is_file():
+        LOGGER.info(f'Downloading file as {local_filepath}')
+        urllib.request.urlretrieve(download_url, local_filepath)
+    else:
+        LOGGER.info(f'file already exists as {local_filepath}')
+    
+# =============================================================================
+# Power Supply & Demand Data
+# =============================================================================
+    
 class PowerFunctionalData():
     
     def assign_edemand_iea(self, gdf_people, path_elcons_iea):
-        """Assigns loads (mw) to each people cluster"""
+        """
+        Assigns annual electricity consumptions to power
+        clusters based on per capita consuption statistics
+        retrieved from IEA.org --> Heat & Electricity --> Electricity Consumption
+        per capita.
+        Returns a pd.Series with el_consumption in GWh for the last reported year 
+        (currently 2019)
+        """
         
         df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
         
-        # Country meta-data
-        pop_tot = gdf_people.counts.sum()
+        if df_el_cons.Units.iloc[0]!='MWh/capita':
+            LOGGER.warning('Units of per capita electricity consumption are'+
+                           f'different than expected. ({df_el_cons.Units.iloc[0]})')
+    
+        per_cap_cons =  df_el_cons['Electricity consumption/population'].iloc[-1]
+        LOGGER.info("Taking per capita electricity consumption value for year"+
+                    f" {df_el_cons['Unnamed: 0'].iloc[-1]}")
+        return gdf_people.counts * per_cap_cons/1000
+               
+    def assign_esupply_iea(self, gdf_pplants,  path_elgen_iea):
+        """
+        Assigns annual electricity generation (in GWh) to each power plant
+        reported in the global power plant database from the WRI.
+        Electricity generation is taken from IEA.org (expects a column
+        'estimated_generation_gwh_2017') and re-distributed upon
+        power plants proportionally to the generation values given in the
+        WRI database, and the rest distributed equally on missing values.
+        """
         
-        # convert annual cons. data to loads (MW = annual demand / hr)
-        per_cap_resid_mw = df_el_cons.iloc[-1]['Residential'] * \
-            KTOE_TO_MWH/pop_tot/HRS_PER_YEAR
-        per_cap_indust_mw = df_el_cons.iloc[-1]['Industry'] * \
-            KTOE_TO_MWH/pop_tot/HRS_PER_YEAR
-        per_cap_pubser_mw = df_el_cons.iloc[-1]['Commercial and public services'] * \
-            KTOE_TO_MWH/pop_tot/HRS_PER_YEAR
-        per_cap_mw = per_cap_resid_mw + per_cap_indust_mw + per_cap_pubser_mw
+        df_el_gen = pd.read_csv(path_elgen_iea, skiprows=4)
         
-        for var, var_per_cap in zip(
-                ['el_load_mw', 'el_load_resid_mw','el_load_indust_mw', 
-                 'el_load_pubser_mw'],
-                [per_cap_mw, per_cap_resid_mw, per_cap_indust_mw, 
-                 per_cap_pubser_mw]):
-            gdf_people[var] = gdf_people.counts * var_per_cap
-       
-        return gdf_people
-        
-    def assign_esupply_iea(self, gdf_pplants, path_elimpexp_iea, path_elcons_iea, unit='ktoe'):
-        """Assigns generation (mw) to each power plant"""
-        
-        if unit=='ktoe':
-            conv_fact = KTOE_TO_MWH
-        elif unit == 'TJ':
-            conv_fact = TJ_TO_MWH
-        else:
-            raise KeyError('Invalid unit entered')
-        
-        df_el_impexp = pd.read_csv(path_elimpexp_iea, skiprows=4)
-        df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
-                
-        # Latest annual Import/Export data from the IEA (2018)
-        # imports positive, exports negative sign        
-        tot_el_imp_mwh = df_el_impexp.iloc[-1]['Imports']*conv_fact
-        tot_el_exp_mwh = df_el_impexp.iloc[-1]['Exports']*conv_fact
-        tot_imp_exp_balance_mwh = tot_el_imp_mwh + tot_el_exp_mwh
-        
-        # Latest annual consumption data from the IEA (2018)
-        tot_cons_mwh = df_el_cons.iloc[-1][
-            ['Residential', 'Industry','Commercial and public services']
-            ].sum()*conv_fact
-        
-        # Annual generation (2018): assumed as el. consumption + imp/exp balance
-        tot_el_gen_mwh = tot_cons_mwh - tot_imp_exp_balance_mwh
+        # Latest Electricity Generation data from the IEA (2019)
+        if df_el_gen.iloc[-1]['Units']!='GWh':
+            LOGGER.warning('Expected different units for generation.')
+        gen = np.nansum(df_el_gen[
+            list(set(df_el_gen.columns.values).difference({'Units', 'Unnamed: 0'}))
+            ].iloc[-1].values)
         
         # generation from WRI power plants database (usually incomplete)
-        # TODO: check for last year in csv (not hardcoded 2017)
         gdf_pplants.estimated_generation_gwh_2017 = pd.to_numeric(
             gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
-            
-        gen_pplants_mwh = gdf_pplants.estimated_generation_gwh_2017*1000
         
-        # fill plants with no estimated generation by remainder of country production (2017!)
-        gen_unassigned = tot_el_gen_mwh - gen_pplants_mwh.sum()
-        gen_pplants_mwh[np.isnan(gen_pplants_mwh)] = gen_unassigned/np.isnan(gen_pplants_mwh).sum()
+        plant_gen = gdf_pplants.estimated_generation_gwh_2017.fillna(
+            np.nanmean(gdf_pplants.estimated_generation_gwh_2017))
         
-        # sanity check
-        if gen_pplants_mwh.sum() == tot_el_gen_mwh: 
-            LOGGER.info('''estimated annual el. production (IEA) now matches
-                        assigned annual el. generation (WRI)''')
-        else:
-            LOGGER.warning('''estimated el. production from IEA doesn`t match
-                           power plant el. generation''')
+        return np.array(plant_gen/sum(plant_gen)*gen)
+    
+    def assign_impexp_iea(self, gdf_pplants, path_elimpexp_iea, var_name):
+        """
+        Places an import / export node outside the country,
+        to account for this delta as reported in IEA.org
+        """
+        # Latest annual Import/Export data from the IEA (2019)      
+        df_el_impexp = pd.read_csv(path_elimpexp_iea, skiprows=4)
+
+        if df_el_impexp.iloc[-1]['Units']!='TJ':
+            LOGGER.warning('Expected different units for import/export.')
+        el_imp = df_el_impexp.iloc[-1]['Imports']*TJ_TO_GWH
+        el_exp = df_el_impexp.iloc[-1]['Exports']*TJ_TO_GWH
+        imp_exp = el_imp + el_exp
         
-        # add el. generation to network, 
-        # add another imp/exp balance node outside of cntry shape
-        # TODO: split into sub-function
-        gdf_pplants['el_gen_mw'] = gen_pplants_mwh/HRS_PER_YEAR
-        imp_exp_balance = gpd.GeoDataFrame(
-            {'geometry':[shapely.geometry.Point(max(gdf_pplants.geometry.x)+1,
+        return gpd.GeoDataFrame({'geometry':[shapely.geometry.Point(max(gdf_pplants.geometry.x)+1,
                                                 max(gdf_pplants.geometry.y)+1)],
-             'name': ['imp_exp_balance'],
-             'el_gen_mw': [tot_imp_exp_balance_mwh/HRS_PER_YEAR],
-             'ci_type' : 'power plant'
-             })
-        
-        return  gdf_pplants.append(imp_exp_balance, ignore_index=True)
-    
-    
+                                 'name': ['imp_exp_balance'],
+                                 f'{var_name}': [imp_exp]})
+
     def balance_el_generation(self, gdf_pplants, per_cap_cons, pop_no):
         
         gdf_pplants.estimated_generation_gwh_2017 = pd.to_numeric(

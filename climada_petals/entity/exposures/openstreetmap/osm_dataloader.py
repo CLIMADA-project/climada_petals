@@ -24,9 +24,7 @@ from pathlib import Path
 import subprocess
 import time
 import urllib.request
-
 import geopandas as gpd
-import numpy as np
 from osgeo import ogr, gdal
 import overpy
 import shapely
