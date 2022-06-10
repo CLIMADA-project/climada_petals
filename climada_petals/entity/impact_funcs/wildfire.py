@@ -81,9 +81,9 @@ class ImpfWildfire(ImpactFunc):
         Impf : climada.entity.impact_funcs.ImpfWildfire instance
 
         """
-        
+
         Impf = cls()
-        
+
         Impf.id = impf_id
         Impf.name = "wildfire default 1 km"
         Impf.intensity_unit = "K"
@@ -92,9 +92,9 @@ class ImpfWildfire(ImpactFunc):
         i_n = (Impf.intensity-i_thresh)/(i_half-i_thresh)
         Impf.paa = i_n**3 / (1 + i_n**3)
         Impf.mdd = np.ones(len(Impf.intensity))
-        
+
         return Impf
-        
+
     def set_default_FIRMS(self, *args, **kwargs):
         """This function is deprecated, use ImpfWildfire.from_default_FIRMS instead."""
         LOGGER.warning("The use of ImpfWildfire.set_default_FIRMS is deprecated."

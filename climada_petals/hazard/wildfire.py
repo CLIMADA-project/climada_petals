@@ -25,23 +25,39 @@ import logging
 import itertools
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
+import copy
 
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from scipy import sparse
+from scipy import sparse, ndimage
 from sklearn.neighbors import BallTree
 from sklearn.cluster import DBSCAN
 import numba
+import rasterio
+import shapely.geometry
+import xarray as xr
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.colors import from_levels_and_colors
 
+from climada import CONFIG
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
 from climada.hazard.tag import Tag as TagHazard
-from climada.util.constants import ONE_LAT_KM
+from climada.util.constants import ONE_LAT_KM, DEF_CRS, SYSTEM_DIR
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
 
 LOGGER = logging.getLogger(__name__)
+
+BBOX = list([shapely.geometry.box(-180, -85, 180, 85)])
+# [Lon min, lat min, lon max, lat max]
+""""Default geographical bounding box of the land extent covered by ISIMIP"""
 
 HAZ_TYPE = 'WF'
 """ Hazard type acronym for Wild Fire, might be changed to WFseason or WFsingle """
@@ -90,13 +106,20 @@ class WildFire(Hazard):
             removes FIRMS fires below defined theshold of entries
         minor_fire_thres_firms : int, default = 3
             number of FIRMS entries required to be considered a fire
-
+        crop_fires : bool, default = True
+            If false, crop fires are removed from firms data frame by
+            comparing to the land cover data
+        countries : list, default = None
+            List containing the iso3 codes from FIRMS data. Is used to
+            generate the propagation probability and ignition matrix.
         """
         clean_thresh: int = 30
         days_thres_firms: int = 2
         clus_thres_firms: int = 15
         remove_minor_fires_firms: bool = True
         minor_fire_thres_firms: int = 3
+        crop_fires: bool = True
+        countries: list = None
 
     @dataclass
     class ProbaParams():
@@ -107,23 +130,71 @@ class WildFire(Hazard):
 
         Attributes
         ----------
-        blurr_steps : int, default = 4
-            steps with exponential decay for fire propagation matrix
-        prop_proba : float, default = 0.21
+        blurr_steps : int, default = 4, deprecated
+            steps with exponential decay for fire propagation matrix.
+            Only used for deprecated method WildFire._set_fire_propa_matrix.
+        prop_proba_mean : float, default = 0.175
+            mean global propagation probability
+        prop_proba_std : float, default = 0.025
+            standard deviation of global propagation probability
+        min_prop_proba : float, default = 0.
+            Lower bound for global propagation probability.
+        max_prop_proba : float, default = 0.25
+            Upper bound for global propagation probability. Caps the global
+            propagation probability. Above the default upper limit, fires
+            spread almost inexorable.
+        prop_proba : list, default = None
+            stores the global propagation probabilities for each season
         max_it_propa : float, default = 500000
+            stops fire spread after defined number of iterations
+        forest_val : float, default = 1
+            fire spread probability of forest land cover classes
+        vegetation_val : float, default = 1
+            fire spread probability of vegetation land cover classes
+        medium_val : float, default = 0.85
+            fire spread probability of herbaceous wetland and
+            crop land (if explicitly simulated)
+        incombustible_val : float, default = 0
+            fire spread probability of incombustible land cover classes
+        pop_suppression : float, default = 50
+            Influence of the population on the fire spread suppression.
+            The larger the value, the weaker the suppression.
+        hist_igniton : bool, default = True
+            includes a historical component in the ignition matrix
+        hist_weight : float, default = 50
+            Influence of the historical fires on the ignition matrix. The
+            larger the value, the more imporatant are the historical fires
+            compared to the population ignition.
+        pop_weights_opt : int, default = 1
+            Influence of population on the ignition matrix.
+            Option 1: square root of population (stronger influence)
+            Option 2: ln of population (weaker influence)
         """
         blurr_steps: int = 4
-        prop_proba: float = 0.21
+        prop_proba_mean: float = 0.175
+        prop_proba_std: float = 0.025
+        min_prop_proba: float = 0.
+        max_prop_proba: float = 0.25
+        prop_proba: list = None
         max_it_propa: int = 500000
+        forest_val: float = 1.
+        vegetation_val: float = 1.
+        medium_val: float = 0.85
+        incombustible_val: float = 0.
+        pop_suppression: float = 50.
+        hist_ignition: bool = True
+        hist_weight: float = 50.
+        pop_weights_opt: int = 1 # 1 for sqrt, 2 for ln
 
-    def __init__(self):
-        """Empty constructor. """
-        Hazard.__init__(self, HAZ_TYPE)
+    def __init__(self, *args, **kwargs):
+        """Empty constructor."""
+        Hazard.__init__(self, HAZ_TYPE, *args, **kwargs)
         self.FirmsParams = self.FirmsParams()
         self.ProbaParams = self.ProbaParams()
 
     @classmethod
-    def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None):
+    def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None,
+                            seasons=False, land_path=None):
         """ Parse FIRMS data and generate historical fires by temporal and spatial
         clustering. Single fire events are defined as a set of data points
         that are geographically close and/or have consecutive dates. The
@@ -155,12 +226,18 @@ class WildFire(Hazard):
         centroids : Centroids, optional
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
-            
+        land_path : str, optional
+            Path to land cover raster file. Is used if crop fires should be
+            removed.
+        seasons : bool, optional, default = False
+            If from_hist_fire_seasons_FIRMS() method is used, crop fires are
+            only removed once and not every season.
+
         Returns
         ----------
         haz : WildFire instance
         """
-        
+
         haz = cls()
 
         # read and initialize data
@@ -173,6 +250,11 @@ class WildFire(Hazard):
             if not centroids.lat.any():
                 centroids.set_meta_to_lat_lon()
         res_centr = haz._centroids_resolution(centroids)
+
+        if not haz.FirmsParams.crop_fires and not seasons:
+            LOGGER.info('Removing crop fires.')
+            land_path = haz._get_landcover_file_path(land_path)
+            df_firms = haz._remove_crop_fires_df(df_firms, land_path, centroids)
 
         # fire identification
         while df_firms.iter_ev.any():
@@ -194,25 +276,25 @@ class WildFire(Hazard):
         LOGGER.info('Computing intensity of %s fires.',
                     np.unique(df_firms.event_id).size)
         haz._calc_brightness(df_firms, centroids, res_centr)
-        
+
         return haz
 
     def set_hist_fire_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
+        """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
+                       "Use WildFire.from_hist_fire_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
 
     @classmethod
     def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
                                     centroids=None, hemisphere=None,
                                     year_start=None, year_end=None,
-                                    keep_all_fires=False):
+                                    keep_all_fires=False, land_path=None):
 
         """ Parse FIRMS data and generate historical fire seasons.
 
         Individual fires are created using temporal and spatial clustering
-        according to the 'set_hist_fire_FIRMS' method. single fires are then
+        according to the 'from_hist_fire_FIRMS' method. single fires are then
         summarized to seasons using max intensity at each centroid for each year.
 
         This method sets the attributes self.n_fires, self.date_end, in
@@ -245,7 +327,10 @@ class WildFire(Hazard):
         keep_all_fires : bool, optional
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
-            
+        land_path : str, optional
+            Path to land cover raster file. Is used if crop fires should be
+            removed.
+
         Returns
         ----------
         haz : WildFire instance
@@ -253,6 +338,12 @@ class WildFire(Hazard):
 
         LOGGER.info('Setting up historical fires for year set.')
         haz = cls()
+
+        if haz.FirmsParams.countries is None:
+            haz.FirmsParams.countries = []
+            haz.FirmsParams.countries += (u_coord.country_to_iso(np.unique(
+                    u_coord.get_country_code(df_firms.latitude, df_firms.longitude,
+                                          gridded=False))))
 
         # read and initialize data
         df_firms = haz._clean_firms_df(df_firms)
@@ -263,6 +354,11 @@ class WildFire(Hazard):
         else:
             if not centroids.coord.size:
                 centroids.set_meta_to_lat_lon()
+
+        if not haz.FirmsParams.crop_fires:
+            LOGGER.info('Removing crop fires.')
+            land_path = haz._get_landcover_file_path(land_path)
+            df_firms = haz._remove_crop_fires_df(df_firms, land_path, centroids)
 
         # define hemisphere
         if hemisphere is None:
@@ -289,8 +385,7 @@ class WildFire(Hazard):
             LOGGER.info('Setting up historical fire seasons %s.', str(year))
             firms_temp = haz._select_fire_season(df_firms, year, hemisphere=hemisphere)
             # calculate historic fire seasons
-            wf_year = WildFire()
-            wf_year.set_hist_fire_FIRMS(firms_temp, centroids=centroids)
+            wf_year = WildFire.from_hist_fire_FIRMS(firms_temp, centroids=centroids, seasons=True)
             hist_fire_seasons.append(wf_year)
 
         # fires season (used to define distribution of n fire for the
@@ -327,21 +422,25 @@ class WildFire(Hazard):
         # Following values are defined for each fire and centroid
         haz.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
         for idx, wf in enumerate(hist_fire_seasons):
-            haz.intensity[idx] = wf.intensity.max(axis=0)
+            if n_fires[idx] > 0:
+                haz.intensity[idx] = wf.intensity.max(axis=0)
+            else:
+                haz.intensity[idx] = 0
         haz.intensity = haz.intensity.tocsr()
         haz.fraction = haz.intensity.copy()
         haz.fraction.data.fill(1.0)
-        
+
         return haz
 
     def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_seasons_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__        
+        """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
+                       "Use WildFire.from_hist_fire_seasons_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
-                               keep_all_fires=False):
+                               keep_all_fires=False, land_path=None,
+                               pop_path=None, reproduce=False, uniform=False):
         """ Generate probabilistic fire seasons.
 
         Fire seasons are created by running n probabilistic fires per year
@@ -351,11 +450,18 @@ class WildFire(Hazard):
         Probabilistic fires are created using the logic described in the
         method '_run_one_bushfire'.
 
-        The fire propagation matrix can be assigned separately, if that is not
-        done it will be generated on the available historic fire (seasons).
+        The fire propagation matrix is assigned automatically based on the
+        chosen ProbaParams.
 
         Intensities are drawn randomly from historic events. Thus, this method
         requires at least one fire to draw from.
+
+        The global propagation probabilities are randomly drawn from a normal
+        distribution defined by the ProbaPrams prop_proba_mean and
+        prop_proba_std.
+
+        The number of fire ignitions is randomly drawn from a gamma
+        distribution estimated from the historical fire seasons.
 
         This method modifies self (climada.hazard.WildFire instance)
         by adding probabilistic wildfire seasons.
@@ -367,28 +473,74 @@ class WildFire(Hazard):
         n_fire_seasons : int, optional
             number of fire seasons to be generated
         n_ignitions : array, optional
-            [min, max]: min/max of uniform distribution to sample from,
-            in order to determin n_fire per probabilistic year set.
-            If none, min/max is taken from hist.
+            [min, max]: min/max truncation of gamma distribution to sample from,
+            in order to determine n_fire per probabilistic year set.
+            If none, gamma distribution is not truncated.
         keep_all_fires : bool, optional
             keep detailed list of all fires; default is False to save
             memory.
+        land_path : str, optional
+            Path to land cover raster file
+        pop_path : str, optional
+            Path to population raster file
+        reproduce : bool, optional
+            Sets seeds to make the probabilistic seasons reproducible. Default
+            is False to ensure fully probabilistic seasons.
+        uniform : bool, optional
+            Draws global propagation probability from an uniform instead of
+            a normal distribution. Default is False.
         """
-        # min/max for uniform distribtion to sample for n_fires per year
-        if n_ignitions is None:
-            ign_min = np.min(self.n_fires)
-            ign_max = np.max(self.n_fires)
-        else:
-            ign_min = n_ignitions[0]
-            ign_max = n_ignitions[1]
+        bounds = tuple(np.round(self.centroids.total_bounds, 2))
+        res = self.centroids.meta['transform'][0]
+        land_path = self._get_landcover_file_path(land_path)
+        pop_path = self._get_pop_file_path(pop_path)
+
+        self._set_propagation_matrix(bounds = bounds, res = res,
+                                     land_path = land_path, pop_path = pop_path)
+        self._set_ignition_matrix(bounds = bounds, res = res,
+                                  land_path = land_path, pop_path = pop_path)
+        
+        n_fires_hist = self.select(orig = True).n_fires
+
+        if len(n_fires_hist) > 1:
+            shape_est = np.mean(n_fires_hist) ** 2 / np.std(n_fires_hist) ** 2
+            scale_est = np.std(n_fires_hist) ** 2 / np.mean(n_fires_hist)
 
         prob_fire_seasons = [] # list to save probabilistic fire seasons
+        n_fires_new = []
+        if self.ProbaParams.prop_proba is None:
+            self.ProbaParams.prop_proba = []
         # create probabilistic fire seasons
         for i in range(n_fire_seasons):
-            n_ign = np.random.randint(ign_min, ign_max)
-            LOGGER.info('Setting up probabilistic fire season with %s fires.',\
-                        str(n_ign))
-            prob_fire_seasons.append(self._set_one_proba_fire_season(n_ign, seed=i))
+            if reproduce:
+                np.random.seed(i)
+                random.seed(i)
+            if not uniform:
+                prop_proba = np.random.normal(
+                    self.ProbaParams.prop_proba_mean,
+                    self.ProbaParams.prop_proba_std)
+                # prop_proba is restricted to be smaller than 0.25 by default
+                prop_proba = min(prop_proba, self.ProbaParams.max_prop_proba)
+                prop_proba = max(prop_proba, self.ProbaParams.min_prop_proba)
+            else:
+                prop_proba = np.random.uniform(
+                    self.ProbaParams.min_prop_proba,
+                    self.ProbaParams.max_prop_proba)
+            self.ProbaParams.prop_proba.append(prop_proba)
+            if len(n_fires_hist) > 1:
+                n_proba_ign = int(np.around(np.random.gamma(shape_est, scale_est)))
+            else:
+                n_proba_ign = int(n_fires_hist)
+            if n_ignitions is not None:
+                n_proba_ign = max(n_proba_ign, int(n_ignitions[0]))
+                n_proba_ign = min(n_proba_ign, int(n_ignitions[1]))
+
+            LOGGER.info('Fire season: %i', (i + 1))
+            LOGGER.info('Setting up probabilistic fire season with %s fires.',
+                        n_proba_ign)
+            n_fires_new.append(n_proba_ign)
+            if n_proba_ign > 0:
+                prob_fire_seasons.append(self._set_one_proba_fire_season(n_proba_ign))
 
         if keep_all_fires:
             self.prob_fire_seasons = prob_fire_seasons
@@ -399,8 +551,12 @@ class WildFire(Hazard):
         self.event_id = np.concatenate((self.event_id, new_event_id), axis=None)
         new_event_name = list(map(str, new_event_id))
         self.event_name = np.append(self.event_name, new_event_name)
+        self.n_fires = np.append(self.n_fires, n_fires_new)
         new_orig = np.zeros(len(new_event_id), bool)
         self.orig = np.concatenate((self.orig, new_orig))
+        # There is no date for probabilistic seasons, therefore using event_id
+        self.date = np.concatenate((self.date, new_event_id))
+        self.date_end = np.concatenate((self.date_end, new_event_id))
         self._set_frequency()
 
         # Following values are defined for each event and centroid
@@ -993,21 +1149,19 @@ class WildFire(Hazard):
 
         return bright_list_nonzero, df_firms
 
-    def _set_one_proba_fire_season(self, n_ignitions, seed=8):
+    def _set_one_proba_fire_season(self, n_ignitions):
         """ Generate a probabilistic fire season.
 
         Parameters
         ----------
         n_ignitions : int
             number of wild fires for the season
-        seed : int
 
         Returns
         -------
         proba_fires : lil_matrix
             probablistic hazard
         """
-        np.random.seed(seed)
         proba_fires = sparse.lil_matrix(np.zeros((n_ignitions, self.centroids.size)))
         for i in range(n_ignitions):
             if np.mod(i, 10) == 0:
@@ -1019,13 +1173,14 @@ class WildFire(Hazard):
 
     def _run_one_fire(self):
         """ Run one bushfire on a fire propagation probability matrix.
-            If the matrix is not defined, it is constructed using past fire
-            experience -> a fire can only propagate on centroids that burned
-            in the past including a exponentially blurred range around the
-            historic fires.
-            The ignition point of a fire can be on any centroid, on which
-            the propagation probability equals 1. The fire is then propagated
-            with a cellular automat.
+            The propagation probability matrix is constructed using land cover
+            and population data. -> a fire can only propagate on centroids
+            that have a propagation probability larger than 0.
+            The ignition point of a fire can be on any centroid where the
+            land cover allows for it. The probability of fire ignition is,
+            according to the ignition matrix, higher near cities and where
+            historical occurred frequently. The fire is then propagated
+            with a cellular automaton.
             If the fire has not stopped burning after a defined number of
             iterations (self.ProbaParams.max_it_propa, default=500'000),
             the propagation is interrupted.
@@ -1059,18 +1214,18 @@ class WildFire(Hazard):
         centr_burned : np.array
             array indicating which centroids burned
         """
-        # set fire propagation matrix if not already defined
-        if not hasattr(self.centroids, 'fire_propa_matrix'):
-            self._set_fire_propa_matrix()
+        pos_centr = np.argwhere(self.centroids.ignition_weights_matrix.reshape( \
+                        len(self.centroids.lat)) > 0)[:, -1]
 
-        # Ignation only at centroids that burned in the past
-        pos_centr = np.argwhere(self.centroids.fire_propa_matrix.reshape( \
-            len(self.centroids.lat)) == 1)[:, 1]
+        # only take the 1d weights where they are not zero
+        weights = self.centroids.ignition_weights_matrix.reshape(len(self.centroids.lat)) \
+        [np.argwhere(self.centroids.ignition_weights_matrix.reshape( \
+                    len(self.centroids.lat)) > 0)]
 
         LOGGER.debug('Start ignition.')
-        # Random selection of ignition centroid
+        # Random selection of ignition centroid according to ignition matrix
         for _ in range(self.centroids.size):
-            centr = np.random.choice(pos_centr)
+            centr = random.choices(pos_centr, weights = weights)[0]
             centr_ix = int(centr/self.centroids.shape[1])
             centr_iy = centr%self.centroids.shape[1]
             centr_ix = max(0, centr_ix)
@@ -1087,6 +1242,8 @@ class WildFire(Hazard):
         centr_burned[centr_ix, centr_iy] = 1
         # Iterate the fire according to the propagation rules
         count_it = 0
+        num_tries = 0
+
         while np.any(centr_burned == 1) and count_it < self.ProbaParams.max_it_propa:
             count_it += 1
             # Select randomly one of the burning centroids
@@ -1096,15 +1253,23 @@ class WildFire(Hazard):
                 centr_ix, centr_iy = burned[np.random.randint(0, len(burned))]
             elif len(burned) == 1:
                 centr_ix, centr_iy = burned[0]
-            if not count_it % (self.ProbaParams.max_it_propa-1):
+            if not count_it % (self.ProbaParams.max_it_propa):
                 LOGGER.warning('Fire propagation not converging at iteration %s.',
                                count_it)
             if 1 <= centr_ix < self.centroids.shape[0]-1 and \
             1 <= centr_iy < self.centroids.shape[1]-1 and \
             self.centroids.on_land[(centr_ix*self.centroids.shape[1] + centr_iy)]:
                 centr_burned = self._fire_propagation_on_matrix(self.centroids.shape, \
-                    self.centroids.fire_propa_matrix, self.ProbaParams.prop_proba, \
+                    self.centroids.fire_propa_matrix, self.ProbaParams.prop_proba[-1], \
                     centr_ix, centr_iy, centr_burned, np.random.random(500))
+
+            else:
+                centr_ix, centr_iy = burned[np.random.randint(0, len(burned))]
+                num_tries += 1
+                if num_tries == 1000:
+                    LOGGER.info('Propagation conditions are not met')
+                    num_tries = 0
+                    break
 
         return centr_burned
 
@@ -1184,8 +1349,9 @@ class WildFire(Hazard):
         return proba_intensity
 
     def _set_fire_propa_matrix(self):
-
-        """ sets fire propagation matrix which is used to propagate
+        """This function is deprecated, use WildFire._set_propagation_matrix
+        instead.
+        Sets fire propagation matrix which is used to propagate
         probabilistic fires. The matrix is set so that burn probability on
         centroids which burned historically is set to 1. A blurr with
         exponential decay of burn probabilities is set around these
@@ -1202,6 +1368,9 @@ class WildFire(Hazard):
         ----------
         self : climada.hazard.WildFire instance
         """
+        LOGGER.warning("The use of WildFire._set_fire_propa_matrix is deprecated."
+                       "Use WildFire._set_propagation_matrix.")
+
         # historically burned centroids
         hist_burned = np.zeros(self.centroids.lat.shape, dtype=bool)
         hist_burned = self.intensity.sum(0) > 0.
@@ -1229,24 +1398,101 @@ class WildFire(Hazard):
 
         self.centroids.fire_propa_matrix = fire_propa_matrix
 
-    def plot_fire_prob_matrix(self):
-        """ Plots fire propagation probability matrix as contour plot.
-        At this point just to check the matrix but could easily be improved to
-        normal map.
-
-        Parameters
-        ----------
-        self : climada.hazard.WildFire instance
+    def plot_propagation_matrix(self):
+        """ Plots fire propagation probability matrix as colormesh plot.
 
         Returns
         -------
-        contour plot : plt
-            contour plot of fire_propa_matrix
+        colormesh plot : plt
+            colormesh plot of fire_propa_matrix
         """
 
-        lon = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
-        lat = np.reshape(self.centroids.lat, self.centroids.fire_propa_matrix.shape)
-        plt.contourf(lon, lat, self.centroids.fire_propa_matrix)
+        lon_grid = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
+        lat_grid = np.reshape(self.centroids.lat, self.centroids.fire_propa_matrix.shape)
+
+        plt.figure(figsize = (14,14))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        im = plt.pcolormesh(lon_grid, lat_grid, self.centroids.fire_propa_matrix,
+                     transform=ccrs.PlateCarree(), cmap = 'gist_earth_r',
+                     shading='auto')
+        ax.coastlines()
+        ax.add_feature(cfeature.BORDERS.with_scale('50m'))
+        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(),
+                            linewidth = 1.5, alpha = 0.3)
+        grid.top_labels = grid.right_labels = False
+        grid.xformatter = LONGITUDE_FORMATTER
+        grid.yformatter = LATITUDE_FORMATTER
+        grid.xlabel_style = {'size': 20}
+        grid.ylabel_style = {'size': 20}
+        cbax = make_axes_locatable(ax).append_axes(
+            'right', size="6.5%", pad=0.1, axes_class=plt.Axes)
+        cbar = plt.colorbar(im, cax = cbax)
+        cbar.set_label('Probability', size = 24)
+        cbar.ax.tick_params(labelsize=20)
+
+    def plot_ignition_matrix(self):
+        """ Plots fire ignition weights matrix as colormesh plot.
+
+        Returns
+        -------
+        colormesh plot : plt
+            colormesh plot of ignition_weights_matrix
+        """
+
+        lon_grid = np.reshape(self.centroids.lon, self.centroids.ignition_weights_matrix.shape)
+        lat_grid = np.reshape(self.centroids.lat, self.centroids.ignition_weights_matrix.shape)
+
+        plt.figure(figsize = (14,14))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        im = plt.pcolormesh(lon_grid, lat_grid, self.centroids.ignition_weights_matrix,
+                     transform=ccrs.PlateCarree(), cmap = 'cubehelix_r',
+                     shading='auto')
+        ax.coastlines()
+        ax.add_feature(cfeature.BORDERS.with_scale('50m'))
+        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(),
+                            linewidth = 1.5, alpha = 0.3)
+        grid.top_labels = grid.right_labels = False
+        grid.xformatter = LONGITUDE_FORMATTER
+        grid.yformatter = LATITUDE_FORMATTER
+        grid.xlabel_style = {'size': 20}
+        grid.ylabel_style = {'size': 20}
+        cbax = make_axes_locatable(ax).append_axes(
+            'right', size="6.5%", pad=0.1, axes_class=plt.Axes)
+        cbar = plt.colorbar(im, cax = cbax)
+        cbar.set_label('Weight', size = 24)
+        cbar.ax.tick_params(labelsize=20)
+
+    def plot_landcover(self):
+        """ Plots land cover classes as derived from Openlandmap as colormesh
+        plot with a resolution of 100m.
+
+        Returns
+        -------
+        colormesh plot : plt
+            colormesh plot of Land cover data
+        """
+        bounds = tuple(np.round(self.centroids.total_bounds, 2))
+
+        ax_x = np.linspace(bounds[0], bounds[2], self.centroids.landcover.shape[1])
+        ax_y = np.linspace(bounds[3], bounds[1], self.centroids.landcover.shape[0])
+        lon_grid, lat_grid = np.meshgrid(ax_x, ax_y)
+
+        cmap, norm = self._land_cmap()
+
+        plt.figure(figsize = (14,14))
+        ax = plt.axes(projection=ccrs.PlateCarree())
+        plt.pcolormesh(lon_grid, lat_grid, self.centroids.landcover,
+                     transform=ccrs.PlateCarree(), cmap = cmap,
+                     norm = norm, shading = 'auto')
+        ax.coastlines()
+        ax.add_feature(cfeature.BORDERS.with_scale('50m'))
+        grid = ax.gridlines(draw_labels=True, transform=ccrs.PlateCarree(),
+                            linewidth = 1.5, alpha = 0.3)
+        grid.top_labels = grid.right_labels = False
+        grid.xformatter = LONGITUDE_FORMATTER
+        grid.yformatter = LATITUDE_FORMATTER
+        grid.xlabel_style = {'size': 20}
+        grid.ylabel_style = {'size': 20}
 
     @staticmethod
     def _select_fire_season(df_firms, year, hemisphere='SHS'):
@@ -1290,14 +1536,769 @@ class WildFire(Hazard):
         -------
         self.frequency : np.array
         """
-        delta_time = date.fromordinal(int(np.max(self.date))).year - \
-            date.fromordinal(int(np.min(self.date))).year + 1
-        num_orig = self.orig.nonzero()[0].size
-        if num_orig > 0:
-            ens_size = self.event_id.size / num_orig
+        if self.event_id.size > 0:
+            delta_time = date.fromordinal(int(np.max(self.date[self.orig.nonzero()[0]]))).year - \
+                date.fromordinal(int(np.min(self.date[self.orig.nonzero()[0]]))).year + 1
+            num_orig = self.orig.nonzero()[0].size
+            if num_orig > 0:
+                ens_size = self.event_id.size / num_orig
+            else:
+                ens_size = 1
+            self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
         else:
-            ens_size = 1
-        self.frequency = np.ones(self.event_id.size) / delta_time / ens_size
+            self.frequency = 0.
+
+
+    def _set_propagation_matrix(self, bounds, res, land_path, pop_path):
+        """
+        Sets the propagation matrix. It aggregates the land cover data over a
+        certain area to account for the fraction of the specific land cover
+        classes in this area. The population data is aggregated with the
+        method 'sum'. Before aggregating the population data, a Gaussian
+        image filter is applied to the data to account for different
+        administrative input units and for simulating the active fire
+        suppression beginning in some distance away from the cities.
+
+        This method modifies self (climada.hazard.WildFire instance) by
+        creating the propagation probability matrix
+        self.centroids.fire_propa_matrix as np.array
+
+        Parameters
+        ----------
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of propagation probability matrix.
+        land_path : pathlib.Path
+            Path to land cover raster file
+        pop_path : pathlib.Path
+            Path to population raster file
+        """
+        if not hasattr(self.centroids, 'frac_propa_matrix'):
+            self._set_landcover_propa_mat(land_path, bounds, res)
+
+        if not hasattr(self.centroids, 'pop_propa_matrix'):
+            self._set_population_propa_mat(pop_path, bounds, res)
+
+        landpop_propa_matrix = self.centroids.frac_propa_matrix * self.centroids.pop_propa_matrix
+
+        landpop_propa_matrix = np.where(((self.centroids.population == 0.) &
+                                         (self.centroids.frac_propa_matrix > 0.)),
+                                        self.centroids.frac_propa_matrix,
+                                        landpop_propa_matrix)
+        # where the population is zero you get errors and the probability
+        # should actually be the landcover. Further, the landcover must also
+        # have a value larger than 0. Else e.g. lakes can burn as well.
+
+        self.centroids.fire_propa_matrix = landpop_propa_matrix
+
+    def _set_ignition_matrix(self, bounds, res, land_path, pop_path):
+        """
+        Sets the ignition matrix. The ignition weights are calculated as the
+        average between population and historical weights. The population
+        weights are derived from the Gaussian filtered population by using
+        the function defined in WildFire.PropaParams.pop_weights_opt. The
+        historical weights are derived from the number of seasons with at
+        least one fire occurrence per grid cell. A Gaussian image filter
+        was also applied to this number of seasons to account for
+        uncertainties and spread in the exact fire location. In the end, this
+        derived weights are multiplied with the propagation probability matrix
+        to only allow fire ignitions where the land cover class allows it.
+
+        This method modifies self (climada.hazard.WildFire instance) by
+        creating the ignition weights matrix
+        self.centroids.ignition_weights_matrix as np.array
+
+        Parameters
+        ----------
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of ignition matrix.
+        land_path : pathlib.Path
+            Path to land cover raster file
+        pop_path : pathlib.Path
+            Path to population raster file
+        """
+        if not hasattr(self.centroids, 'frac_propa_matrix'):
+            self._set_landcover_propa_mat(land_path, bounds, res)
+
+        if not hasattr(self.centroids, 'population'):
+            self._get_population(pop_path, bounds, res)
+
+        if self.ProbaParams.pop_weights_opt == 1:
+            pop_weights = np.sqrt(self.centroids.population)
+        elif self.ProbaParams.pop_weights_opt == 2:
+            pop_weights = np.log(self.centroids.population)
+
+        # to only increase the chance for ignition, not decrease
+        pop_weights = np.where(pop_weights < 1., 1., pop_weights)
+
+        if self.ProbaParams.hist_ignition:
+            intensities = self.select(orig = True).intensity.toarray()
+            fire_loc_hist = np.where(intensities != 0., 1., 0.)
+            fire_loc_hist = np.sum(fire_loc_hist, axis = 0).reshape(self.centroids.shape)
+            ignition_weights_matrix = (pop_weights + self.ProbaParams.hist_weight *\
+                                       ndimage.gaussian_filter(fire_loc_hist, sigma = 10,
+                                                               truncate = 3)) / 2
+        else:
+            ignition_weights_matrix = pop_weights
+
+        ignition_weights_matrix = ignition_weights_matrix * self.centroids.frac_propa_matrix
+
+        self.centroids.ignition_weights_matrix = ignition_weights_matrix
+
+    def _set_landcover_propa_mat(self, land_path, bounds, res):
+        """
+        Aggregates the land cover data over a certain area to account for the
+        fraction of the specific land cover classes in this area.
+
+        This method modifies self (climada.hazard.WildFire instance) by
+        creating the propagation probabilities
+        self.centroids.frac_propa_matrix as np.array derived from the
+        land cover classes by aggregating over a certain area.
+
+        Parameters
+        ----------
+        land_path : pathlib.Path
+            Path to land cover raster file
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of propagation probability / ignition matrix.
+        """
+
+        if not hasattr(self.centroids, 'landcover'):
+            transform_land = self._get_landcover(land_path, bounds, res)
+
+        land_propa_matrix = self._assign_prop_probas(self.centroids.landcover)
+        self.centroids.frac_propa_matrix = self.remap_raster(land_propa_matrix, res,
+                                                              bounds, transform_land,
+                                                              self.centroids.shape)
+
+        # #carmens alternative implementation - muss evtl effizienter gemacht werden
+        # # from osgeo import gdal
+        # # gdal_translate -tr 10 10 land_path
+        # x, y = transform_land * np.meshgrid(np.arange(self.centroids.landcover.shape[1]) + 0.5, np.arange(self.centroids.landcover.shape[0]) + 0.5)
+        # coord_land = np.stack((y.flatten(), x.flatten()), axis=1)
+
+        # idx_ups_coord = match_centroids(coord_land, self.centroids.coord)
+        # land_centr = land_propa_matrix.flatten()
+        # #Get unique FireMIP centroid entries
+        # unique_idx = np.unique(idx_ups_coord)
+        # upscaled = np.zeros(unique_idx.shape)
+        # #Remove -1 from the unique_idx array (if it is contained) - this happens if a
+        # #centroid in the probabilistic set is further away for the closest FireMIP centroid
+        # #than the specified threshold
+        # firemip_c = np.delete(unique_idx, np.where(unique_idx == -1)[0])
+
+        # for centroid in firemip_c:
+        #     prob_c = np.where(idx_ups_coord == centroid)[0]
+        #     upscaled[centroid] = np.mean(land_centr[prob_c])
+        
+        # #set probability to 0 in areas outside the country
+        # self.centroids.set_region_id()
+        # affected_countries = np.unique(self.centroids.region_id[self.intensity.nonzero()[1]])
+        # unaffected = np.where(self.centroids.region_id != affected_countries)[0]
+        # upscaled[unaffected] = 0
+        # self.centroids.frac_propa_matrix =  upscaled.reshape(self.centroids.shape)
+        # #sparse.csr_matrix(
+        
+
+
+
+    def _set_population_propa_mat(self, pop_path, bounds, res):
+        """
+        Sets the population propagation matrix using the estimated population
+        suppression function.
+
+        This method modifies self (climada.hazard.WildFire instance) by
+        creating the propagation probabilities
+        self.centroids.pop_propa_matrix as np.array derived from the
+        population by decreasing the probabilities in highly populated areas.
+
+        Parameters
+        ----------
+        pop_path : pathlib.Path
+            Path to population raster file
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of propagation probability / ignition matrix.
+        """
+
+        if not hasattr(self.centroids, 'population'):
+            self._get_population(pop_path, bounds, res)
+
+        pop = self.centroids.population
+        pop_propa_matrix = np.zeros(pop.shape)
+        pop_propa_matrix[pop > 0] = (1 / ((np.log(pop[pop > 0]) / \
+                                           np.log(self.ProbaParams.pop_suppression)) + 1)) + 0.5
+        pop_propa_matrix[pop == 0] = 1
+
+        # to remove impossible values generated by calculation
+        pop_propa_matrix = np.where(pop_propa_matrix < 0., 1., pop_propa_matrix)
+        pop_propa_matrix = np.where(pop_propa_matrix > 1., 1., pop_propa_matrix)
+
+        self.centroids.pop_propa_matrix = pop_propa_matrix
+
+    def _get_landcover(self, land_path, bounds, res):
+        """
+        Loads the land cover data. The land cover data are corrected by
+        aggregating the subclasses to their corresponding main classes.
+
+        This method modifies self (climada.hazard.WildFire instance) by
+        loading the land cover data and storing it on
+        self.centroids.landcover as np.array
+
+        Parameters
+        ----------
+        land_path : pathlib.Path
+            Path to land cover raster file
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of propagation probability / ignition matrix.
+
+        Returns
+        -------
+        transform_land : rasterio.Affine
+            Affine transformation defining the land cover raster data.
+        """
+
+        res_land = 0.1 / ONE_LAT_KM # original resolution
+        factor = res / res_land
+
+        # to get the same bounds and no spatial errors during remapping
+        shape_land = (int(self.centroids.shape[0]*  factor), int(self.centroids.shape[1] * factor))
+
+        landcover, transform_land = self.read_tif(land_path, bounds,
+                                                  res = res_land,
+                                                  shape = shape_land,
+                                                  resampling = rasterio.warp.Resampling.mode)
+        landcover = self._correct_landcover(landcover)
+
+        self.centroids.landcover = landcover
+
+        return transform_land
+
+    def _get_population(self, pop_path, bounds, res):
+        """
+        Loads the population data. The data are corrected (negative values
+        are removed) and a Gaussian image filter is applied (sigma = 10,
+        truncated at 3 sigmas).
+
+        This method modifies self (climada.hazard.WildFire instance) by
+        loading the population data and storing it on
+        self.centroids.population as np.array
+
+        Parameters
+        ----------
+        pop_path : pathlib.Path
+            Path to population raster file
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float
+            Resolution of propagation probability / ignition matrix.
+        """
+        geometry = u_coord.get_land_geometry(self.FirmsParams.countries)
+        population, _ = self.read_tif(pop_path, bounds, res,
+                                      shape = self.centroids.shape,
+                                      resampling = rasterio.warp.Resampling.sum)
+
+        population = np.where(population < 0., 0., population)
+        population = ndimage.gaussian_filter(population, sigma = 10, truncate = 3)
+        mask = (u_coord.coord_on_land(self.centroids.lat - res / 2,
+                                      self.centroids.lon + res / 2,
+                                      land_geom = geometry).astype(float))\
+            .reshape(self.centroids.shape)
+        mask[mask == 0] = np.nan
+        self.centroids.population = population * mask
+
+
+    @staticmethod
+    def _get_landcover_file_path(file_path):
+        """Adapted from gpw_population.py.
+        Checks if the land cover data is downloaded at the default directory.
+        Else the function reminds the user to either download it or to provide
+        the actual file location.
+
+        Parameters
+        ----------
+        file_path : str, optional
+            Absolute path where files are stored.
+
+        Raises
+        ------
+        FileExistsError
+
+        Returns
+        -------
+        pathlib.Path : path to input file with population data
+        """
+
+        if file_path is None:
+            file_name = "PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
+            file_path = SYSTEM_DIR / file_name
+        else:
+            file_path = Path(file_path)
+        if file_path.is_file():
+            return file_path
+        raise FileExistsError(f'The file {file_path} could not '
+                              + 'be found. Please download the file '
+                              + 'first or choose a different folder. '
+                              + 'The data can be downloaded from: '
+                              +'(https://zenodo.org/record/3939050#.Ydw0UdGZPZs).'
+                              )
+
+    @staticmethod
+    def _get_pop_file_path(file_path):
+        """Adapted from gpw_population.py.
+        Checks if the population data is downloaded at the default directory.
+        Else the function reminds the user to either download it or to provide
+        the actual file location.
+
+        Parameters
+        ----------
+        file_path : str, optional
+            Absolute path where files are stored.
+
+        Raises
+        ------
+        FileExistsError
+
+        Returns
+        -------
+        pathlib.Path : path to input file with population data
+        """
+
+        if file_path is None:
+            file_name = CONFIG.exposures.litpop.gpw_population.filename_gpw.str() % (11, 2020)
+            file_path = SYSTEM_DIR / file_name
+            if file_path.is_file():
+                return file_path
+            file_path = SYSTEM_DIR / \
+                (CONFIG.exposures.litpop.gpw_population.dirname_gpw.str() % (11, 2020)) / \
+                (CONFIG.exposures.litpop.gpw_population.filename_gpw.str() % (11, 2020))
+            if file_path.is_file():
+                return file_path
+        else:
+            file_path = Path(file_path)
+            if file_path.is_file():
+                return file_path
+
+        raise FileExistsError(f'The file {file_path} could not '
+                              + 'be found. Please download the file '
+                              + 'first or choose a different folder. '
+                              + 'The data can be downloaded from '
+                              + '(https://sedac.ciesin.columbia.edu/data/'
+                              + 'set/gpw-v4-population-count-rev11/'
+                              + 'data-download)'
+                              + 'Download 30 arcsec from the year 2020.'
+                              + '(Free NASA Earthdata login required). '
+                              )
+
+    def _remove_crop_fires_df(self, df_firms, land_path, centroids):
+        """Removes crop fires from the FIRMS data frame by checking the
+        nearest land cover class using the haversine distance. The land cover
+        data is first aggregated to a grid with 1km resolution by taking the
+        most frequent class in this area. If the nearest land cover class is
+        cropland, the fire is removed from the data frame.
+
+        Parameters
+        ----------
+        df_firms : pd.DataFrame
+            Stored historical fire data
+        land_path : pathlib.Path
+            Path to land cover raster file
+        centroids : Centroids
+
+        Returns
+        -------
+        df_firms : pd.DataFrame
+            Historical fire data without crop fires
+        """
+        df_firms.reset_index(drop = True, inplace = True)
+        bounds = tuple(np.round(centroids.total_bounds, 2))
+
+        landcover, _ = self.read_tif(land_path, bounds, centroids.meta['transform'][0],
+                                     shape = centroids.shape,
+                                     resampling = rasterio.warp.Resampling.mode)
+        landcover = self._correct_landcover(landcover)
+
+        lat_lon_centr = np.vstack((centroids.lat, centroids.lon)).T
+        lat_lon_firms = np.vstack((df_firms.latitude.to_numpy(), df_firms.longitude.to_numpy())).T
+
+        # To make it C_contiguous. Else problem with assign_coordinates() arises.
+        lat_lon_firms = np.ascontiguousarray(lat_lon_firms, dtype = np.float64)
+
+        idx = u_coord.assign_coordinates(lat_lon_firms, lat_lon_centr, distance = "haversine")
+        landcover = landcover.reshape(-1,)
+        crop_idx = np.where(landcover[idx] == 40)[0]
+        df_firms.drop(index=crop_idx, inplace = True)
+
+        return df_firms
+
+    @staticmethod
+    def _land_cmap():
+        """ Constructs colormap and norm according to the Openlandmap color
+        codes.
+
+        Returns
+        -------
+        cmap : matplotlib.colors.ListedColormap
+            Defined colormap from Openlandmap
+        norm : matplotlib.colors.BoundaryNorm
+            Norm used to create the colormap
+        """
+        colors = [
+        [255, 255, 255],# no data
+        [255, 187, 34], # shrubs
+        [255, 255, 76], # herbaceous vegetation
+        [240, 150, 255],# cropland
+        [250, 0, 0],    # urban
+        [180, 180, 180],# sparse
+        [240, 240, 240],# snow and ice
+        [0, 50, 200],   # permanent water
+        [0, 150, 160],  # herbaceous wetland
+        [250, 230, 160],# moss
+        [88, 72, 31],   # forest
+        [0, 0, 128]]    # sea
+
+        levels = [0, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 200]
+        colors = np.array(colors)/255.
+        cmap, norm = from_levels_and_colors(levels, colors, extend='max')
+        return cmap, norm
+
+    @staticmethod
+    def _correct_landcover(landcover):
+        """
+        Corrects undefined values in the land cover data. The land cover data
+        are corrected by aggregating the subclasses to their corresponding
+        main classes.
+
+        Parameters
+        ----------
+        landcover : np.array
+            Land cover classes
+
+        Returns
+        -------
+        landcover : np.array
+            Corrected land cover classes
+        """
+
+        for i in range(0, 130, 10):
+            cat = np.arange(i, i + 10)
+            for val in cat:
+                landcover = np.where(landcover == val, i, landcover)
+
+        landcover = np.where(landcover >= 130, 200, landcover)
+
+        return landcover
+
+    def _assign_prop_probas(self, landcover):
+        """
+        Assigns propagation probabilities to the land cover classes using the
+        defined values in ProbaParams.
+
+        Parameters
+        ----------
+        landcover : np.array
+            Land cover data with original corrected classes
+
+        Returns
+        -------
+        landcover : np.array
+            Raster with assigned propagation probabilities
+        """
+
+        forest = [110, 120]
+        vegetation = [20, 30, 100]
+        if self.FirmsParams.crop_fires:
+            medium = [40, 90]
+            incombustible = [50, 60, 70, 80, 200]
+        else:
+            medium = [90]
+            incombustible = [40, 50, 60, 70, 80, 200]
+
+        for val in forest:
+            landcover = np.where(landcover == val, self.ProbaParams.forest_val, landcover)
+        for val in vegetation:
+            landcover = np.where(landcover == val, self.ProbaParams.vegetation_val, landcover)
+        for val in medium:
+            landcover = np.where(landcover == val, self.ProbaParams.medium_val, landcover)
+        for val in incombustible:
+            landcover = np.where(landcover == val, self.ProbaParams.incombustible_val, landcover)
+
+        return landcover
+
+    @staticmethod
+    def remap_raster(raster_high, res_low, bounds, transform, shape_low=None):
+        """
+        Remaps a raster to a given lower resolution by aggregating a certain
+        number of grid cells by using an average function.
+
+        Parameters
+        ----------
+        raster_high : np.array
+            Original raster with the high resolution
+        res_low : float
+            Resolution of the remapped raster
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        transform : rasterio.Affine
+            Affine transformation defining the input raster data.
+        shape_low : tuple, optional
+            Shape of output with the lower resolution. Default: Shape matching
+            the given resolution and the bounds.
+
+        Returns
+        -------
+        raster_low : np.array
+            Output raster with the low resolution
+        """
+
+        if not isinstance(res_low, tuple):
+            res_low = (res_low, res_low)
+
+        res_high = (np.abs(transform[0]), np.abs(transform[4]))
+        if res_high[0] > res_low[0] or res_high[1] > res_low[1]:
+            raise ValueError('Low resolution is higher than high resolution: %s < %s.'
+                                  % (res_low, res_high))
+
+        window_x = int(np.floor(res_low[1] / res_high[1]))
+        window_y = int(np.floor(res_low[0] / res_high[0]))
+
+        width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+
+        if shape_low is None:
+            shape_low = (int(np.ceil(height / res_low[1]) + 1),
+                      int(np.ceil(width / res_low[0]) + 1))
+
+        raster_low = np.zeros(shape_low)
+
+        for i in range(0, shape_low[0]):
+            for j in range(0, shape_low[1]):
+                raster_low[i,j] = np.mean(raster_high[(i*window_y):(i + 1)*window_y,
+                                                      (j*window_x):(j + 1)*window_x])
+
+
+
+        return raster_low
+
+    @staticmethod
+    def read_tif(path, bounds, res=None, shape=None, resampling=rasterio.warp.Resampling.bilinear):
+        """
+        Adapted from read_raster_bounds in util.coordinates.py
+        Read raster file within given bounds and refine to given resolution
+
+        Makes sure that the extent of pixel centers covers the specified regions
+
+        Parameters
+        ----------
+        path : str
+            Path to raster file to open with rasterio.
+        bounds : tuple
+            (xmin, ymin, xmax, ymax)
+        res : float, optional
+            Resolution of output. Default: Resolution of input raster file.
+        shape : tuple, optional
+            Shape of output. Default: Shape matching the given resolution and
+            the bounds.
+        resampling : rasterio.warp.Resampling, optional
+            Resampling method from rasterio package. Default: Bilinear
+
+        Returns
+        -------
+        data : 2d np.array
+            First dimension is neglected as it is only one. Second dimension
+            is y (lat) and third dimension is x (lon).
+        transform : rasterio.Affine
+            Affine transformation defining the output raster data.
+        """
+
+        bands = [1]
+        with rasterio.open(path, 'r') as src:
+            if res:
+                if not isinstance(res, tuple):
+                    res = (res, res)
+            else:
+                res = (src.transform[0], src.transform[4])
+            res = (np.abs(res[0]), np.abs(res[1]))
+
+            width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+
+            if shape is None:
+                shape = (int(np.ceil(height / res[1]) + 1),
+                         int(np.ceil(width / res[0]) + 1))
+
+            # make sure that the extent of pixel centers covers the specified regions
+            extra = (0.5 * ((shape[1] - 1) * res[0] - width),
+                     0.5 * ((shape[0] - 1) * res[1] - height))
+            bounds = (bounds[0] - extra[0] - 0.5 * res[0], bounds[1] - extra[1] - 0.5 * res[1],
+                      bounds[2] + extra[0] + 0.5 * res[0], bounds[3] + extra[1] + 0.5 * res[1])
+
+            data = np.zeros((len(bands),) + shape, dtype=src.dtypes[0])
+            res = (np.sign(src.transform[0]) * res[0], np.sign(src.transform[4]) * res[1])
+            transform = rasterio.Affine(res[0], 0, bounds[0] if res[0] > 0 else bounds[2],
+                                        0, res[1], bounds[1] if res[1] > 0 else bounds[3])
+            crs = DEF_CRS if src.crs is None else src.crs
+            for iband, band in enumerate(bands):
+                rasterio.warp.reproject(
+                    source=rasterio.band(src, band),
+                    destination=data[iband],
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs=crs,
+                    resampling=resampling)
+        return data[0,:,:], transform
+
+    @classmethod
+    def from_netcdf(cls, input_dir, filename, id_bands, event_list, geometry=BBOX):
+
+        """Wrapper to fill hazard from NetCDF file.
+        Build and tested for output from ISIMIP2 and Sentinel data.
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+        filename : string
+            name of netcdf file in input_dir.
+        id_bands: list
+            list of indices of the bands to be extracted from the input file
+            can be generated with function 'from_isimip' and 'from_sentinel' for
+            specific data
+        event_list:list
+            list containing events in the format 'yyyy-mm-dd'
+            can be generated with function 'from_isimip' and 'from_sentinel' for
+            specific data
+        geometry : shapely.geometry
+            geometry of which to extract the data
+            default sets extents to (-180, -85, 180, 85) [Lonmin, latmin, lonmax, latmax]
+
+        """
+
+        # hazard setup: set attributes
+        haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands, geometry=geometry)
+
+        haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
+        haz.intensity.todense()
+
+        haz.event_name = event_list
+        #self.event_id = np.arange(1, len(event_list))
+        haz.frequency = np.ones(len(haz.event_name)) * (1 / len(haz.event_name))
+        haz.date = np.array(u_dt.str_to_date(event_list))
+
+        haz.fraction = haz.intensity.copy()
+        haz.fraction.data.fill(1.0)
+        #self.units = ' ' fraction of burnt area
+        haz.centroids.set_meta_to_lat_lon()
+        haz.centroids.region_id = (
+            u_coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
+        #haz.check()
+
+        return haz
+
+    @classmethod
+    def from_isimip_netcdf(cls, input_dir, filename, id_bands, event_list, extent=False,
+                            countries=False):
+
+        """Wrapper to fill hazard from NetCDF file.
+        Build and tested for output from ISIMIP2 and Sentinel data.
+
+        Parameters
+        ----------
+        input_dir : Path or str
+            path to input data directory,
+        filename : string
+            name of netcdf file in input_dir.
+        id_bands: list
+            list of indices of the bands to be extracted from the input file
+            can be generated with function 'from_firemip'
+        event_list:list
+            list containing events in the format 'yyyy-mm-dd'
+            can be generated with function 'from_firemip' and 'from_sentinel' for
+            specific data
+        extent : tuple of four floats
+            bounding box:
+            (lon min, lat min, lon max, lat max)
+        countries: list
+            list of ISO3-alpha countries to be extracted from the FireMIP file,
+            e.g ['ZWE', 'GBR', 'VNM', 'UZB']
+        """
+
+        if extent:
+            [lonmin, latmin, lonmax, latmax] = extent
+            geometry = list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)])
+        elif countries:
+            geometry = u_coord.get_land_geometry(country_names=countries)
+        else:
+            geometry = BBOX
+
+        haz = cls.from_netcdf(input_dir, filename, id_bands, event_list, geometry=geometry)
+        haz.intensity = haz.intensity/100
+
+        return haz
+
+    @classmethod
+    def from_firemip_netcdf(cls, model_path):
+        """Wrapper to fill hazard with FireMIP output data and read FireMIP grid
+        cell area file.
+
+
+        Parameters
+        ----------
+        model_path : str
+            Path to data directory and name of FireMIP model to be read.
+            E.g. "path/CLM"
+
+        Returns
+        -------
+        wf : WildFire
+            WildFire hazard instance with fraction of burnt area as intensity.
+        gridcell_area : csr.matrix
+            Area per grid cell [km2]
+
+        """
+        file_bf = model_path+'_burnedFrac.nc4'
+        file_area = model_path + '_gridcellArea.nc4'
+
+        haz = xr.open_dataset(file_bf)
+
+        intensity = haz['burnedFrac'].values
+        intensity[np.isnan(intensity)] = 0
+        intensity_flat = sparse.csr_matrix(np.flip(intensity, axis=1).reshape(
+            (intensity.shape[0]*intensity.shape[1], intensity.shape[2]), order='F'))
+        wf_haz = cls()
+        wf_haz.intensity = intensity_flat.T / 100
+
+        latitude = haz['lat'].values
+        longitude = haz['lon'].values
+        lon, lat = np.meshgrid(longitude, latitude)
+        wf_haz.centroids.lat = np.flip(lat.flatten())
+        wf_haz.centroids.lon = lon.flatten()
+        wf_haz.centroids.set_lat_lon_to_meta()
+
+        time = haz['time'].values
+        wf_haz.event_name = u_dt.date_to_str(u_dt.datetime64_to_ordinal(time))
+        wf_haz.event_id = np.arange(len(time))
+        wf_haz.date = u_dt.datetime64_to_ordinal(time)
+
+        wf_haz.fraction = wf_haz.intensity.copy()
+        wf_haz.fraction.data.fill(1.0)
+        wf_haz.centroids.set_region_id()
+
+        # FireMIP area unit is in m2
+        area = xr.open_dataset(file_area)
+        gridcellarea_fm = area['gridcellArea'].values
+        gridcell_area = sparse.csr_matrix(np.flip(gridcellarea_fm/1000000, axis=1).reshape(
+            (intensity.shape[0]*intensity.shape[1]), order='F'))
+
+        return wf_haz, gridcell_area
+
 
 @numba.njit
 def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
@@ -1329,3 +2330,433 @@ def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
             brightness_ev[0, ind[idx]] = max(brightness_ev[0, ind[idx]], \
                          np.max(fir_bright[lat_lon_cpy == index_uni[idx]]))
     return brightness_ev
+
+def intensity_to_burntarea(wf_haz, gridcell_area):
+    """Converts wildfire hazard intensity from fraction of burnt area to burnt area.
+
+
+    Parameters
+    ----------
+    wf_haz : WildFire
+        WildFire hazard instance with fraction of burnt area as intensity.
+    gridcell_area : csr.matrix
+        Area per grid cell [km2]
+
+    Returns
+    -------
+    wf_ba : WildFire
+        WildFire hazard instance with burnt area as intensity.
+
+    """
+    wf_ba = copy.deepcopy(wf_haz)
+    wf_ba.intensity =  wf_haz.intensity.multiply(gridcell_area)
+
+    return wf_ba
+
+def monthly_to_seasonal(wf_haz, starting_month=7):
+    """Converts wildfire hazard intensity from monthly values to seasonal values.
+    The default season starts in July (starting_month 7) of one year and last till
+    June of the following year. The date is set to the 1st of January marking the
+    middle of the season.
+
+
+    Parameters
+    ----------
+    wf_haz : WildFire
+        WildFire hazard instance with mothly intensity.
+    starting_month : TYPE, optional
+        Month marking the start of the season. The default is July (7).
+
+
+    Returns
+    -------
+    wf_haz_season : WildFire
+        WildFire hazard instance with seasonal intensity.
+
+    """
+    startyear = u_dt.first_year(wf_haz.date)
+    endyear = u_dt.last_year(wf_haz.date)
+    years = int(endyear)-int(startyear)
+    idx_months = np.arange(starting_month-1,years*12+starting_month-1)
+    chunks = np.array_split(idx_months, years)
+
+    season_intensity = np.zeros((years, wf_haz.centroids.lat.size))
+    for idx in range(years):
+        season_intensity[idx] = np.sum(wf_haz.intensity[chunks[idx],:], axis=0)
+
+    wf_haz_season = copy.deepcopy(wf_haz)
+    wf_haz_season.intensity = sparse.csr_matrix(season_intensity)
+    wf_haz_season.event_id = np.arange(0,years)
+    event_list = [str(event_) + '-01-01' for event_ in np.arange(startyear+1, endyear+1)]
+    wf_haz_season.event_name = event_list
+    wf_haz_season.date = np.array(u_dt.str_to_date(wf_haz_season.event_name))
+    wf_haz_season.frequency = np.ones(years)
+    wf_haz_season.fraction = wf_haz_season.intensity.copy()
+    wf_haz_season.fraction.data.fill(1.0)
+    wf_haz_season.orig = np.ones(years, dtype=bool)
+
+    return wf_haz_season
+
+
+def from_sentinel(filename):
+    """Read ids of contained bands and month covered by Sentinel data
+
+    Parameters
+    ----------
+    filename : string
+        name of Sentinel netcdf file
+
+    Returns
+    ----------
+    id_bands: list
+        list of indices of the bands contained in the input file
+    event_list:list
+        list of events contained in the input file in the format 'yyyy-mm-dd'
+
+    """
+
+    (_, _, _, date, _, _, _) = filename.split('_')
+    year = date[0:4]
+    month = date[4:6]
+    day = date[6:8]
+    event_list = [year + '-' + month + '-' + day]
+    id_bands = [1]
+
+    return id_bands, event_list
+
+def from_isimip(filename):
+    """Read ids of contained bands and month covered by Firemip data
+
+    Parameters
+    ----------
+    filename : string
+        name of FireMIP netcdf file
+
+    Returns
+    ----------
+    id_bands: list
+        list of indices of the bands contained in the input file
+    event_list:list
+        list of events contained in the input file in the format 'yyyy-mm-dd'
+
+    """
+
+    (_, _, _, _, _, _, _, _, _, startyear, endyearnc) = filename.split('_')
+    endyear, _ = endyearnc.split('.')
+
+
+    if 'annual' in filename:
+        event_names = [str(n) for n in range(int(startyear), int(endyear) + 1)]
+        event_list = [event_ + '-01-01' for event_ in event_names]
+        nr_bands = len(event_list)
+        id_bands = np.arange(1, nr_bands+1).tolist()
+    elif 'monthly' in filename:
+        event_names = list()
+        months_long_list = list()
+        year_list = np.arange(int(startyear), int(endyear) + 1)
+        for year in year_list:
+            event_names.extend([year]*12)
+        month_list = np.arange(1,13)
+        months_long_list.extend(month_list*145)
+        #different months need to be added - maybe a better solution to use xarray in general
+        #for rasters (would that drop the necessity to use the filename to identify e.g. the
+        #dates? --> this could then also be used in the crop production risk module)
+        event_list = [str(event_)+ '-01-01' for event_ in event_names]
+        nr_bands = len(event_list)
+        id_bands = np.arange(1, nr_bands+1).tolist()
+        #event_list = np.arange(0, len(event_names)).tolist()
+
+
+    return id_bands, event_list
+
+def firemip_dowscaling(haz_firemip, haz_prob):
+    """Wrapper function returning wildfire hazard consisting of probabilistic
+    wildfire seasons that were assigned to FireMIP pixel with a similar value
+    of burnt area per year / fire season
+
+    Parameters
+    ----------
+    haz_firemip : WildFire
+        WildFire hazard instance with fraction of burnt area as intensity
+    haz_prob : WildFire
+        Probabilistic WildFire hazard
+
+    Returns
+    -------
+    haz_downscaled : WildFire
+        Downscaled FireMIP wildfire hazard
+    """
+
+    "Calculate burnt area for FireMIP and probabilistic hazard"
+    # Burnt area of FireMIP hazard
+    resolution_fm = 0.5
+    ba_fm = calc_burnt_area(haz_firemip.intensity, haz_firemip.centroids.lat, resolution_fm)
+    # Set fraction of prob hazard !=0 to 1 (assumption: everything burns in affected centroids)
+    fraction_prob = copy.deepcopy(haz_prob.intensity)
+    fraction_prob[fraction_prob!=0] = 1
+    resolution_prob = 1./ONE_LAT_KM
+    ba_prob = calc_burnt_area(fraction_prob, haz_prob.centroids.lat, resolution_prob)
+
+    "Upscale probabilistic hazard to the FireMIP resolution"
+    # Match probabilistic centroids to FireMIP centroids
+    idx_ups_coord = match_centroids(haz_prob.centroids.coord, haz_firemip.centroids.coord)
+    #to do: include warning if some FireMIP centroids don't have corresponding centroid
+    #(idx_ups_coord contains -1 - remove -1 from array?)
+    #sum up centroids of higher resolution
+    nr_centroids_fm = ba_fm.shape[1]
+    ba_prob_upscaled = upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord)
+
+    "Match FireMIP events to best fitting probabilistic events"
+    matched_events = match_events(ba_fm, ba_prob_upscaled)
+
+    "Create new intensity by applying event matching and downscaling on the resolution of the"
+    "prob haz"
+    new_intensity = create_downscaled_haz(haz_prob.intensity, matched_events, idx_ups_coord)
+
+    "Set attributes of the new hazard (to do: there's an error when checking the hazard)"
+    haz_new = WildFire()
+    haz_new.intensity = new_intensity
+    haz_new.event_id = haz_firemip.event_id
+    haz_new.event_name = haz_firemip.event_name
+    haz_new.centroids.lat = haz_prob.centroids.lat
+    haz_new.centroids.lon = haz_prob.centroids.lon
+    #haz_new.centroids.crs = haz_prob.centroids.crs
+    haz_new.centroids.geometry = haz_prob.centroids.geometry
+    #haz_new.centroids.from_lat_lon(haz_prob.centroids.lat, haz_prob.centroids.lon)
+    haz_new.centroids.region_id = (
+        u_coord.coord_on_land(haz_new.centroids.lat, haz_new.centroids.lon)).astype(dtype=int)
+    haz_new.fraction = haz_new.intensity.copy()
+    haz_new.fraction.data.fill(1.0)
+    haz_new.frequency = haz_firemip.frequency
+    #haz_new.centroids.set_lat_lon_to_meta()
+    #haz_new.check()
+
+    return haz_new
+
+def calc_burnt_area(area_fraction, latitudes, resolution, unit='km2'):
+    """Return absolute burnt area [km2]
+
+    Parameters
+    ----------
+    area_fraction : csr.matrix
+        Matrix containing fraction of area burnt
+    latituds: np.array
+        Latitude values of each centroid contained in area_fraction
+
+    Returns
+    -------
+    burnt_area: csr.matrix
+        burnt area per centroid and event [km2]
+    """
+
+    grid_area = u_coord.get_gridcellarea(latitudes, resolution, unit)
+    burnt_area = area_fraction.multiply(grid_area).tocsr()
+
+    return burnt_area
+
+
+def match_centroids(high_res_coord, low_res_coord):
+    """Search nearest neighbour in high resolution coordinates for each entry in the
+    the low resolution coordinate array (default distance threshold 100 km - see u_coord)
+
+    Parameters
+    ----------
+    high_res_coord : np.array
+        high resolution coordinates
+    low_res_coord: np.array
+        low resolution coordinates
+
+    Returns
+    -------
+    idx_ups_coord: np.array
+        Array contraining index of pixel of lower resolution that correspond to each
+        centroids of higher resolution (len(idx_ups_coord) = len(high_res_coord))
+    """
+
+    idx_ups_coord = u_coord.assign_coordinates(high_res_coord, low_res_coord)
+
+    return idx_ups_coord
+
+
+def upscale_prob_haz(ba_prob, nr_centroids_fm, idx_ups_coord):
+    """Sum up burnt pixel of probabilistic set on the firemip raster by summing up
+    the burnt area in centroids with the same idx_ups_coord. The burnt area in
+    FireMIP centroids not covered by the probabilistic hazard are set to zero.
+
+    Parameters
+    ----------
+    ba_prob : csr.matix
+        burnt area per centroid and event [km2]
+    nr_centroids_fm : iterable
+        number of centroids covered by the FireMIP hazard
+    idx_ups_coord: np.array
+        index of pixel of lower resolution that correspond to each centroids of
+        higher resolution
+
+    Returns
+    -------
+    ba_prob_upscaled: csr.matrix
+        burnt area per centroid and event [km2] on the lower resolution
+    """
+
+    #Initiation - if a FireMIP centroid is not covered by the probabilistic hazard,
+    #the intensity is 0
+    nr_years, _ = ba_prob.shape
+    ba_prob_upscaled = np.zeros([nr_years, nr_centroids_fm])
+
+    #Get unique FireMIP centroid entries
+    unique_idx = np.unique(idx_ups_coord)
+    #Remove -1 from the unique_idx array (if it is contained) - this happens if a
+    #centroid in the probabilistic set is further away for the closest FireMIP centroid
+    #than the specified threshold
+    firemip_c = np.delete(unique_idx, np.where(unique_idx == -1)[0])
+
+    for centroid in firemip_c:
+        prob_c = np.where(idx_ups_coord == centroid)[0]
+        ba_prob_upscaled[:, centroid] = np.sum(ba_prob[:, prob_c],1).flatten()
+
+    return sparse.csr_matrix(ba_prob_upscaled)
+
+
+def match_events(ba_fm, ba_prob_sum):
+    """Find probabilistic wildfire hazard that best matches the total burnt area
+    for each FireMIP event and return their indeces (computations are performed per pixel)
+
+    Parameters
+    ----------
+    ba_fm : csr.matrix
+        Burnt area per pixel and event (year) of FireMIP
+    ba_prob_sum : csr.matrix
+        Burnt area per pixel and event (year) of probabilistic fireseason
+
+
+    Returns
+    -------
+    matched_events: matrix
+        Matrix of indices of events in the probabilistic hazard that best match the
+        FireMIP events
+    """
+
+    # to do: what happens if a FireMIP event doesn't have a corresponding event in the
+    # probabilistic set? (the difference exceeds a certain threshold)
+
+    years, centroids = ba_fm.shape
+    matched_events = np.empty([years, centroids])
+    matched_events[:] = np.NaN
+
+    #Get idx of probabilistic fires seasons per centroid
+    for centroid in range(centroids):
+
+        # extract array for respective centroid
+        ba_fm_c = np.squeeze(np.asarray(ba_fm[:, centroid].todense()))
+        ba_prob_c = np.squeeze(np.asarray(ba_prob_sum[:,centroid].todense()))
+
+        matched_events[:, centroid] = get_closest(ba_prob_c, ba_fm_c)
+
+    return matched_events.astype(int)
+
+def get_closest(array, values):
+    """Return index of entries contained in array that best match values
+
+    Parameters
+    ----------
+    array : np.array
+        Array to be matched on
+    values : np.array
+        Array of values that best matches shall be found for
+
+
+    Returns
+    -------
+    idx_sorted [idxs]: np.array
+        Array of indices of the values in the provided array that best match the
+        provided values
+    """
+
+    # to do: include a threshold; don't allow for doubling of sampled events
+
+    # sort array
+    array_sorted = np.sort(array)
+    idx_sorted = np.argsort(array)
+
+    # get insert positions
+    # this might be the place to spot doublings
+    idxs = np.searchsorted(array_sorted, values, side="left")
+
+    # find indexes where previous index is closer
+    prev_idx_is_less = ((idxs == len(array_sorted))|(
+        np.fabs(values - array_sorted[np.maximum(idxs-1, 0)]) <
+        np.fabs(values - array_sorted[np.minimum(idxs, len(array_sorted)-1)])))
+    idxs[prev_idx_is_less] -= 1
+
+    return idx_sorted[idxs]
+
+def create_downscaled_haz(intensity_prob, matched_events, idx_ups_coord):
+    """Create a hazard containing the intensity of the probabilistic events that
+    were matched to the FireMIP events on the original scale
+
+    Parameters
+    ----------
+    intensity_prob : WildFire
+        Probabilistic WildFire hazard
+    matched_events : matrix
+        Indeces of probabilistic events that match the FireMIP events
+    idx_ups_coord: np.array
+        index of pixel of lower resolution that correspond to each centroids of
+        higher resolution (len(idx_ups_coord) = nr centroids prob hazard)
+
+    Returns
+    -------
+    new_intensity: csr.matrix
+        Intensity of the probabilistic events that have been matched to the FireMIP events
+        on the downscaled resolution
+    """
+
+    #initiate new intensity: nr events as the FireMIP hazard (matched_events)
+    #nr of centroids as the probabilistic set (idx_ups_coord)
+    new_intensity = sparse.dok_matrix((matched_events.shape[0], len(idx_ups_coord)))
+
+    # downscale per FireMIP centroid
+    for centroid_fm in range(matched_events.shape[1]):
+
+        # index of the centroid in the probabilistic set
+        centroids_prob = np.where(idx_ups_coord == centroid_fm)[0]
+
+        # event index
+        events_match = matched_events[:, centroid_fm]
+
+        # cut out intensity for all events for respective FireMIP centroid from
+        # probabilistic event set and save it to new intensity for the respective events
+        new_intensity[:, centroids_prob] = extract_from_probhaz(intensity_prob, events_match,
+                                                        centroids_prob)
+
+    return new_intensity.tocsr()
+
+def extract_from_probhaz(intensity_prob, events_match, centroids_prob):
+    """Extracts events from probabilistic hazard for one FireMIP centroid for all events
+    (the FireMIP centroid corresponds to the centroids centroids_prob from the probabilistic
+     set)
+
+    Parameters
+    ----------
+    intensity_prob : csr.matrix
+        Intensity of the probabilistic WildFire hazard
+    events_match : np.array
+        Indeces of probabilistic events that match the FireMIP events
+    centroids_prob: np.array
+        Indeces of centroids of the probabilistic set that correspond to the respective
+        FireMIP centroid
+
+    Returns
+    -------
+    intensity_prob_c: np.array
+        Intensity of the events_match in the probabilistic event set
+    """
+
+    intensity_prob_c = sparse.dok_matrix((len(events_match), len(centroids_prob)))
+
+    for event_fm, event_prob in enumerate(events_match):
+
+        intensity_prob_c[event_fm, :] = intensity_prob[event_prob, centroids_prob]
+
+    return intensity_prob_c
