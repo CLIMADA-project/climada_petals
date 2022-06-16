@@ -22,6 +22,7 @@ Define EQ earthquake (EarthQuake class).
 __all__ = ['Earthquake']
 
 import numpy as np
+import pandas as pd
 from scipy import sparse
 
 from climada.hazard.base import Hazard, TagHazard
@@ -72,8 +73,13 @@ class Earthquake(Hazard):
         int_list = []
         cent_idx_list = []
         ev_idx_list = []
-        for idx, event in df.iterrows():
-            print(idx)
+
+        df2 = pd.DataFrame({
+            col: df[col].values
+            for col in ['lat', 'lon', 'mw', 'depth']
+        })
+
+        for idx, event in df2.iterrows():
             epi_lat, epi_lon = event[['lat', 'lon']]
             mag, depth = event[['mw', 'depth']]
 
