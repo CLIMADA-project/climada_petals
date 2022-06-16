@@ -30,10 +30,10 @@ from climada.util import coordinates as u_coord
 HAZ_TYPE = 'EQ'
 """Hazard type acronym for EarthQuake"""
 
-MIN_MMI = 2
+MIN_MMI = 3
 """Minimal MMI value"""
 
-MAX_DIST_DEG = 1.5
+MAX_DIST_DEG = 3
 """Maximum distance of the centroids from the epicenters in degrees"""
 
 class Earthquake(Hazard):
@@ -142,4 +142,4 @@ class Earthquake(Hazard):
         """
         max_MMI = 1.5 * (mag - 1.0)
         mmi = a1 + a2 * mag - a3 * np.log(dist + corr) - a4 * dist + b * depth
-        return np.clip(mmi, a_min=None, a_max=max_MMI)
+        return np.clip(mmi, a_min=MIN_MMI, a_max=max_MMI)
