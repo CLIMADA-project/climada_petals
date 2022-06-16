@@ -19,7 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Define EQ earthquake (EarthQuake class).
 """
 
-__all__ = ['EarthQuake']
+__all__ = ['Earthquake']
 
 import numpy as np
 
@@ -35,7 +35,7 @@ MIN_MMI = 2
 MAX_DIST_DEG = 10
 """Maximum distance of the centroids from the epicenters in degrees"""
 
-class EarthQuake(Hazard):
+class Earthquake(Hazard):
 
     def from_Mw_depth(self, df, centroids):
         """
