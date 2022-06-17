@@ -28,6 +28,7 @@ Tutorials
    tutorial/climada_hazard_TCForecast
    tutorial/climada_hazard_TCSurgeBathtub
    tutorial/climada_hazard_Wildfire
+   tutorial/climada_engine_Warn
 
 ----------------------
 Software documentation
