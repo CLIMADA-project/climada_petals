@@ -38,22 +38,23 @@ MAX_DIST_DEG = 3
 """Maximum distance of the centroids from the epicenters in degrees"""
 
 class Earthquake(Hazard):
-
+    """Earthquate class"""
     def __init__(self):
         Hazard.__init__(self, haz_type=HAZ_TYPE, pool=None)
 
     @classmethod
     def from_Mw_depth(cls, df, centroids):
         """
+        Earthquakes from  events epicenters positions, depth, and MW energy.
 
         Parameters
         ----------
-        df : TYPE
+        df : DataFrame
             lat, lon, Mw, depth
 
         Returns
         -------
-        None.
+        Hazard: hazard Earthquake
 
         """
 
@@ -110,40 +111,65 @@ class Earthquake(Hazard):
         return quake
 
     def footprint_MMI(self, cent_lat, cent_lon, epi_lat, epi_lon, mag, depth):
+        """
+        Compute the footprint (intensity in MMI) at centroids position for
+        epicenter position, depth and magnitude in Mw
+
+        Parameters
+        ----------
+        cent_lat : np.array
+            centroids latitudes
+        cent_lon : np.array
+            centroids longitudes
+        epi_lat : float
+            epicenter latitude
+        epi_lon : float
+            epienter longitude
+        mag : float
+            magnitude of earthquake in MMI
+        depth : float
+            depth in km
+
+        Returns
+        -------
+        np.array
+            array of intensities
+
+        """
         cent_lat, cent_lon = np.array([cent_lat]), np.array([cent_lon])
         dists = u_coord.dist_approx(cent_lat, cent_lon, np.array([[epi_lat]]), np.array([[epi_lon]]))
         return self.attenuation_MMI(dists, mag, depth)
 
     def attenuation_MMI(self, dist, mag, depth, corr=0.0, a1=1.7, a2=1.5, a3=1.1726, a4=0.00106, b=0.0):
         """
-        Modified Mercalli Intensity
+        Modified Mercalli Intensity (MMI)
         https://doi.org/10.1201/9781482271645
 
         Parameters
         ----------
-        mag : TYPE
-            DESCRIPTION.
-        dist : TYPE
-            DESCRIPTION.
-        depth : TYPE
-            DESCRIPTION.
-        corr : TYPE, optional
-            DESCRIPTION. The default is 0.
-        a1 : TYPE, optional
-            DESCRIPTION. The default is 1.7.
-        a2 : TYPE, optional
-            DESCRIPTION. The default is 1.5.
-        a3 : TYPE, optional
-            DESCRIPTION. The default is 1.1726.
-        a4 : TYPE, optional
-            DESCRIPTION. The default is 0.00106.
-        b : TYPE, optional
-            DESCRIPTION. The default is 0.
+        dist : np.array
+            distances in KM
+        mag : float
+            earthquake magnitude in Mw
+        depth : float
+            distance in KM
+        corr : float, optional
+            see MMI. The default is 0.
+        a1 : float, optional
+            see MMI. The default is 1.7.
+        a2 : float, optional
+            see MMI. The default is 1.5.
+        a3 : float optional
+            see MMI. The default is 1.1726.
+        a4 : float optional
+            see MMI. The default is 0.00106.
+        b : float, optional
+            see MMI. The default is 0.
 
         Returns
         -------
-        TYPE
-            DESCRIPTION.
+        np.array
+            MMI values for all distances
 
         """
         max_MMI = 1.5 * (mag - 1.0)
