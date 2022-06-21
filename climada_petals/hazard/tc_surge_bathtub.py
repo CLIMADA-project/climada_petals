@@ -26,7 +26,6 @@ import logging
 
 import numpy as np
 import rasterio.warp
-import scipy.sparse as sp
 
 from climada.hazard.base import Hazard
 import climada.util.coordinates as u_coord
