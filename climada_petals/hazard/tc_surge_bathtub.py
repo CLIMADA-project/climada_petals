@@ -97,11 +97,15 @@ class TCSurgeBathtub(Hazard):
         # Elevation data and coastal/non-coastal indices are used later in the code
         coastal_centroids_h = coastal_centroids_h[elevation_msk]
         coastal_idx = coastal_msk.nonzero()[0]
-        noncoastal_idx = (~coastal_msk).nonzero()[0]
+
+        # to each centroid, assign its position in `coastal_idx`, and assign an out-of-bounds
+        # index to all centroids that are not contained in `coastal_idx`
+        cent_to_coastal_idx = np.full(coastal_msk.shape, coastal_idx.size, dtype=np.int64)
+        cent_to_coastal_idx[coastal_msk] = np.arange(coastal_idx.size)
 
         # Initialize intensity array at coastal centroids
         inten_surge = wind_haz.intensity.copy()
-        inten_surge[:,noncoastal_idx] *= 0
+        inten_surge.data[~coastal_msk[inten_surge.indices]] = 0
         inten_surge.eliminate_zeros()
 
         # Conversion of wind to surge using the linear wind-surge relationship from
@@ -119,17 +123,16 @@ class TCSurgeBathtub(Hazard):
         coastal_centroids_h -= add_sea_level_rise
 
         # Efficient way to subtract from selected columns of sparse csr matrix
-        nz_coastal_cents = inten_surge[:,coastal_idx].nonzero()
-        nz_coastal_cents_inten = (nz_coastal_cents[0], coastal_idx[nz_coastal_cents[1]])
-        inten_surge[nz_coastal_cents_inten] -= coastal_centroids_h[nz_coastal_cents[1]]
+        inten_surge.data -= coastal_centroids_h[cent_to_coastal_idx[inten_surge.indices]]
 
         # Discard negative (invalid/unphysical) surge height values
         inten_surge.data = np.fmax(inten_surge.data, 0)
         inten_surge.eliminate_zeros()
 
         # Get fraction of (large) centroid cells on land according to the given (high-res) DEM
-        fract_surge = sp.csr_matrix(_fraction_on_land(centroids, topo_path))
-        fract_surge = sp.csr_matrix(np.ones((inten_surge.shape[0], 1))) * fract_surge
+        # only store the result in locations with non-zero surge height
+        fract_surge = inten_surge.copy()
+        fract_surge.data[:] = _fraction_on_land(centroids, topo_path)[fract_surge.indices]
 
         # Set other attributes
         haz = TCSurgeBathtub()
