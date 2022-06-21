@@ -170,7 +170,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
         self.assertEqual(haz.lowflow_df.shape[0], 1073)
         self.assertEqual(haz.lowflow_df.shape[1], 14)
         self.assertEqual(haz.lowflow_df.ndays.max(), 28.0)
-        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 9.994408201304752)
+        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 9.99440860748291, places=6)
         self.assertAlmostEqual(haz.lowflow_df.relative_dis.max(), 0.4480659)
         self.assertEqual(haz.centroids.lon.min(), -4.75)
         self.assertEqual(haz.centroids.lon.max(), 8.25)
@@ -204,7 +204,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
 
         self.assertEqual(haz.lowflow_df.shape[1], 14)
         self.assertEqual(haz.lowflow_df.ndays.max(), 31.0)
-        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 10.588021778584393)
+        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 10.588022232055664, places=6)
         self.assertAlmostEqual(haz.lowflow_df.relative_dis.max(), 0.41278067)
         self.assertEqual(haz.centroids.lon.min(), -4.75)
         self.assertEqual(haz.centroids.lon.max(), 8.25)
