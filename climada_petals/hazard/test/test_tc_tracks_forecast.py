@@ -153,10 +153,10 @@ class TestCXML(unittest.TestCase):
             )
         )
         self.assertEqual(forecast.data[0].name, "Vernon")
-        self.assertTrue(all([i.ensemble_number == 24 for i in forecast.data]))
+        self.assertTrue(all([i.ensemble_number == '24' for i in forecast.data]))
         self.assertEqual(
             forecast.data[2].run_datetime,
-            pd.Timestamp("2022-03-02 12:00:00+0000", tz="UTC"),
+            pd.Timestamp("2022-03-02 12:00:00"),
         )
         self.assertTrue(forecast.data[4].is_ensemble)
 
