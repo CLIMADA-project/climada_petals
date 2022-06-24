@@ -544,7 +544,17 @@ class TCForecast(TCTracks):
 
     @classmethod
     def read_cxml(cls, cxml_path: str, xsl_path: str = None):
-        """Reads a cxml (cyclone xml) file and returns a class instance."""
+        """Reads a cxml (cyclone xml) file and returns a class instance.
+        ----------
+        cxml_path : str
+            Path to the cxml file
+        xsl_path : str
+            Path to the xsl tranformation file needed to read the cxml data
+        Returns
+        -------
+        tracks : TCForecast
+            TCTracks with data from the given cxml file.
+        """
         df = cls._cxml_to_df(cxml_path=cxml_path, xsl_path=xsl_path)
         df_groupby = df.groupby(
             ["disturbance_no", "baseTime", "basin", "cycloneNumber", "member"],
