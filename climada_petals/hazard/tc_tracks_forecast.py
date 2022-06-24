@@ -88,7 +88,7 @@ MISSING_DOUBLE = ec.CODES_MISSING_DOUBLE
 MISSING_LONG = ec.CODES_MISSING_LONG
 """Missing double and integers in ecCodes """
 
-CXML2CSV_XSL = Path(__file__).parent / "data/tc_tracks_forecast_cxml2csv.xsl"
+CXML2CSV_XSL = Path(__file__).parent / "data/cxml_ecmwf_transformation.xsl"
 """Xsl file for transforming CXML to CSV format."""
 
 BASIN_ENV_PRESSURE_CXML = {
