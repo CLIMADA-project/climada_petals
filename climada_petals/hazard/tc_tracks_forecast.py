@@ -47,6 +47,7 @@ from climada.hazard.tc_tracks import (
     set_category,
 )
 from climada.util.files_handler import get_file_names
+from climada.util.constants import SYSTEM_DIR
 
 # declare constants
 ECMWF_FTP = 'dissemination.ecmwf.int'
@@ -87,8 +88,8 @@ MISSING_DOUBLE = ec.CODES_MISSING_DOUBLE
 MISSING_LONG = ec.CODES_MISSING_LONG
 """Missing double and integers in ecCodes """
 
-CXML2CSV_XSL = Path(__file__).parent / "tc_tracks_forecast_cxml2csv.xsl"
-"""Path at which an xsl is found for transforming CXML to CSV format."""
+CXML2CSV_XSL = SYSTEM_DIR.joinpath("cxml_ecmwf_transformation.xsl")
+"""Xsl file for transforming CXML to CSV format."""
 
 BASIN_ENV_PRESSURE_CXML = {
     "Southwest Pacific": BASIN_ENV_PRESSURE["SP"],

@@ -42,7 +42,7 @@ TEST_CXML_FILE = DATA_DIR.joinpath("cxml_sample_track.xml")
 https://confluence.ecmwf.int/display/TIGGE/Tools#Tools-ECMWFTropicalCycloneTrackData(XMLformat)
 """
 
-TEST_XSL_FILE = DATA_DIR.joinpath("cxml_sample_transformation.xsl")
+TEST_XSL_FILE = DATA_DIR.joinpath("cxml_sample_transf_w_60h_72h_filter.xsl")
 """A sample non-standard xsl file to only extract specific forecast ranges
 """
 
