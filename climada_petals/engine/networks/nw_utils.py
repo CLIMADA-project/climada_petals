@@ -165,6 +165,21 @@ def disaster_impact_service_geoseries(service, pre_graph, post_graph):
     return gpd.GeoSeries.from_wkt(
         geom[np.where((no_service_post-no_service_pre)>0)])
 
+def mark_disaster_impact_services(graph_disr, graph_orig):
+    """
+    In disrupted graph, mark services that were unavailable from beginning as 
+    -1, and such that were rendered unavailable from disaster impact as 0.
+    """
+    services = [attr_name for attr_name in graph_orig.graph.vs.attribute_names()
+                if 'actual_supply_' in attr_name]
+    for service in services:
+        serv_orig = np.array(graph_orig.graph.vs.select(ci_type='people')[service])
+        serv_disr = np.array(graph_disr.graph.vs.select(ci_type='people')[service])
+        serv_disr[serv_orig==0.] = -1.
+        graph_disr.graph.vs.select(ci_type='people')[service] = serv_disr
+    
+    return graph_disr
+
 def disaster_impact_service(service, pre_graph, post_graph):
 
     no_service_post = (1-np.array(post_graph.graph.vs.select(
@@ -179,13 +194,12 @@ def disaster_impact_service(service, pre_graph, post_graph):
 def disaster_impact_allservices(pre_graph, post_graph,
                 services=['power', 'healthcare', 'education', 'telecom', 'mobility', 'water']):
 
-    imp_dict = {}
-
-    for service in services:
-        imp_dict[service] = disaster_impact_service(
-            service, pre_graph, post_graph)
-
-    return imp_dict
+    dict_pre = number_noservices(pre_graph,services)
+    dict_post = number_noservices(post_graph,services)
+    dict_delta = {}
+    for key, value in dict_post.items():
+        dict_delta[key] = value-dict_pre[key]
+    return dict_delta
 
 def get_graphstats(graph):
     from collections import Counter
