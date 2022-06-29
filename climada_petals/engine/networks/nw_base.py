@@ -146,6 +146,10 @@ class Network:
         self.nodes.loc[self.nodes['ci_type']==f'{source}',f'capacity_{source}_{target}'] = 1
         self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
         
+    def initialize_supply(self, source):
+        self.nodes[f'actual_supply_{source}_people'] = 0
+        self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{source}_people'] = 1
+        
     
 
 
