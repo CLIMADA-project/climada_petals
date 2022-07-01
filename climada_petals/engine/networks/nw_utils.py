@@ -297,6 +297,13 @@ class PowerFunctionalData():
 
         if df_el_impexp.iloc[-1]['Units']!='TJ':
             LOGGER.warning('Expected different units for import/export.')
+        if 'Exports' not in df_el_impexp.columns():
+            df_el_impexp['Exports'] = 0
+            LOGGER.warning('No export column. Setting exports to 0.')
+        if 'Imports' not in df_el_impexp.columns():
+            df_el_impexp['Imports'] = 0
+            LOGGER.warning('No import column. Setting imports to 0.')
+        
         el_imp = df_el_impexp.iloc[-1]['Imports']*TJ_TO_GWH
         el_exp = df_el_impexp.iloc[-1]['Exports']*TJ_TO_GWH
         imp_exp = el_imp + el_exp

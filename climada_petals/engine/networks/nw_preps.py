@@ -28,8 +28,7 @@ import numpy as np
 
 # for working on cluster
 # sys.path.insert(1, '/cluster/project/climate/evelynm/trails/src/trails')
-# import simplify
-
+# for working on local machine
 sys.path.insert(1, '/Users/evelynm/trails/src/trails')
 import simplify
 
