@@ -113,7 +113,8 @@ class Earthquake(Hazard):
         row = np.hstack(ev_idx_list)
         data = np.hstack(int_list).ravel()
         quake.intensity = sparse.csr_matrix((data, (row, col)), shape=(n_events, n_centroids))  # events x centroids
-        quake.fraction = sparse.csr_matrix(np.empty((0, 0)))  # events x centroids
+        quake.fraction = quake.intensity.copy()
+        quake.fraction.data.fill(1) # events x centroids
         return quake
 
     def footprint_MMI(self, cent_lat, cent_lon, epi_lat, epi_lon, mag, depth):
