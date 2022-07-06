@@ -65,8 +65,10 @@ class Earthquake(Hazard):
         years = np.array([date.year for date in dates])
 
         quake = cls()
-        quake.tag = TagHazard()
-        n_years = 1
+        quake.tag.desription = \
+        ('Earthquakes from events epicenters positions, depth, and MW energy. '
+        'Using modified Mercalli Intensity (MMI) https://doi.org/10.1201/9781482271645')
+        n_years = years.max() - years.min()
         quake.units = 'Mw'
         quake.centroids = centroids
         # following values are defined for each event
