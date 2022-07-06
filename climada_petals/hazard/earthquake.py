@@ -44,7 +44,7 @@ class Earthquake(Hazard):
         Hazard.__init__(self, haz_type=HAZ_TYPE, pool=None)
 
     @classmethod
-    def from_Mw_depth(cls, df, centroids):
+    def from_Mw_depth(cls, df, centroids, pool=None):
         """
         Earthquakes from events epicenters positions, depth, and MW energy.
         Date column in format %Y-%m-%d %H:%M:%S.%f" .
@@ -83,27 +83,26 @@ class Earthquake(Hazard):
         cent_idx_list = []
         ev_idx_list = []
 
-        df2 = pd.DataFrame({
-            col: df[col].values
-            for col in ['lat', 'lon', 'mw', 'depth']
-        })
+        lat = df['lat'].to_numpy()
+        lon = df['lon'].to_numpy()
+        mw = df['mw'].to_numpy()
+        depth = df['depth'].to_numpy()
 
-        for idx, event in df2.iterrows():
-            epi_lat, epi_lon = event[['lat', 'lon']]
-            mag, depth = event[['mw', 'depth']]
+        all_cent_lat, all_cent_lon = centroids.lat, centroids.lon
+
+        for idx, (epi_lat, epi_lon, mag, depth) in enumerate(zip(lat, lon, mw, depth)):
 
             lon_min, lat_min, lon_max, lat_max =\
                 u_coord.latlon_bounds(np.array([epi_lat]), np.array([epi_lon]), buffer=MAX_DIST_DEG)
-            lat, lon = centroids.lat, centroids.lon
 
             lon_max += 360 if lon_min > lon_max else 0
-            lon_normalized = u_coord.lon_normalize(lon, center=0.5 * (lon_min + lon_max))
+            lon_normalized = u_coord.lon_normalize(all_cent_lon, center=0.5 * (lon_min + lon_max))
             mask = (
               (lon_normalized >= lon_min) & (lon_normalized <= lon_max) &
-              (lat >= lat_min) & (lat <= lat_max)
+              (all_cent_lat >= lat_min) & (all_cent_lat <= lat_max)
             )
-            cent_lat = lat[mask]
-            cent_lon = lon[mask]
+            cent_lat = all_cent_lat[mask]
+            cent_lon = all_cent_lon[mask]
             if cent_lat.size > 0:
                 int_list.append(quake.footprint_MMI(cent_lat, cent_lon, epi_lat, epi_lon, mag, depth))
                 cent_idx_list.append(np.where(mask)[0])
