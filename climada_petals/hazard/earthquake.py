@@ -24,6 +24,7 @@ __all__ = ['Earthquake']
 import numpy as np
 import pandas as pd
 from scipy import sparse
+from datetime import datetime
 
 from climada.hazard.base import Hazard, TagHazard
 from climada.util import coordinates as u_coord
@@ -45,7 +46,8 @@ class Earthquake(Hazard):
     @classmethod
     def from_Mw_depth(cls, df, centroids):
         """
-        Earthquakes from  events epicenters positions, depth, and MW energy.
+        Earthquakes from events epicenters positions, depth, and MW energy.
+        Date column in format %Y-%m-%d %H:%M:%S.%f" .
 
         Parameters
         ----------
@@ -58,6 +60,10 @@ class Earthquake(Hazard):
 
         """
 
+        format = "%Y-%m-%d %H:%M:%S.%f"
+        dates = [datetime.strptime(date_str, format) for date_str in df.date]
+        years = np.array([date.year for date in dates])
+
         quake = cls()
         quake.tag = TagHazard()
         n_years = 1
@@ -67,7 +73,7 @@ class Earthquake(Hazard):
         quake.event_id = df.eventid.to_numpy()
         quake.frequency = np.repeat(1 / n_years, len(df))
         quake.event_name = df.eventid.astype('str').to_list()
-        quake.date = df.date.to_numpy()
+        quake.date = np.array([date.toordinal() for date in dates])
         quake.orig = np.ones(len(df))
         # following values are defined for each event and centroid
 
