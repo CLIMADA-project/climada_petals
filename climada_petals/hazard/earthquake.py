@@ -68,7 +68,7 @@ class Earthquake(Hazard):
         quake.tag.desription = \
         ('Earthquakes from events epicenters positions, depth, and MW energy. '
         'Using modified Mercalli Intensity (MMI) https://doi.org/10.1201/9781482271645')
-        n_years = years.max() - years.min()
+        n_years = years.max() - years.min() + 1
         quake.units = 'Mw'
         quake.centroids = centroids
         # following values are defined for each event
@@ -106,7 +106,7 @@ class Earthquake(Hazard):
             if cent_lat.size > 0:
                 int_list.append(quake.footprint_MMI(cent_lat, cent_lon, epi_lat, epi_lon, mag, depth))
                 cent_idx_list.append(np.where(mask)[0])
-                ev_idx_list.append(np.repeat(idx, sum(mask)))
+                ev_idx_list.append(np.repeat(idx, np.count_nonzero(mask)))
 
         n_events = len(df)
         n_centroids = len(centroids.lat)
