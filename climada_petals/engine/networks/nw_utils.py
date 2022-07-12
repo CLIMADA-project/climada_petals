@@ -250,7 +250,7 @@ class PowerFunctionalData():
                 gdf_pplants['estimated_generation_gwh_2017'] = pd.to_numeric(
                     gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
                 gdf_pplants['estimated_generation_gwh_2017'].fillna(
-                    np.nanmean(gdf_pplants['estimated_generation_gwh_2017']))
+                    np.nanmean(gdf_pplants['estimated_generation_gwh_2017']), inplace=True)
                 gdf_pplants['el_generation'] = (
                     gdf_pplants.estimated_generation_gwh_2017/
                     gdf_pplants.estimated_generation_gwh_2017.sum()*final_cons)
