@@ -165,21 +165,6 @@ def disaster_impact_service_geoseries(service, pre_graph, post_graph):
     return gpd.GeoSeries.from_wkt(
         geom[np.where((no_service_post-no_service_pre)>0)])
 
-def mark_disaster_impact_services(graph_disr, graph_orig):
-    """
-    In disrupted graph, mark services that were unavailable from beginning as 
-    -1, and such that were rendered unavailable from disaster impact as 0.
-    """
-    services = [attr_name for attr_name in graph_orig.graph.vs.attribute_names()
-                if 'actual_supply_' in attr_name]
-    for service in services:
-        serv_orig = np.array(graph_orig.graph.vs.select(ci_type='people')[service])
-        serv_disr = np.array(graph_disr.graph.vs.select(ci_type='people')[service])
-        serv_disr[serv_orig==0.] = -1.
-        graph_disr.graph.vs.select(ci_type='people')[service] = serv_disr
-    
-    return graph_disr
-
 def disaster_impact_service(service, pre_graph, post_graph):
 
     no_service_post = (1-np.array(post_graph.graph.vs.select(
@@ -237,6 +222,46 @@ def get_worldpop_data(iso3, save_path, res=1000):
 # =============================================================================
     
 class PowerFunctionalData():
+    
+    def assign_el_prod_consump(self, gdf_people, gdf_pplants, iso3, path_final_cons):
+        """
+        Takes a countries' annual electricity consumption value (as
+        gathered by the IEA in https://www.iea.org/data-and-statistics/data-tables?,
+        "Total Final Consumption, Electricity") and assigns this 
+        i) to gdf_people, proportional to population count
+        ii) to gdf_pplants, either proportional to plant capacity reported in 
+        the global power plant database, or equally distributed.
+        
+        If no consumption value is available for the country, dummy demands 
+        proportional to population are assigned to gdf_people, and equally 
+        distributed onto gdf_pplants.
+        
+        Returns
+        ------
+        gdf_people with column el_consumption
+        gdf_pplants with column el_generation
+        
+        """
+        df_final_cons = pd.read_csv(path_final_cons)
+        final_cons = df_final_cons[df_final_cons.ISO3==iso3].el_consumption.values[0]
+        if not np.isnan(final_cons):
+            gdf_people['el_consumption'] = gdf_people.counts/gdf_people.counts.sum()*final_cons
+            if 'estimated_generation_gwh_2017' in gdf_pplants.columns:
+                gdf_pplants['estimated_generation_gwh_2017'] = pd.to_numeric(
+                    gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
+                gdf_pplants['estimated_generation_gwh_2017'].fillna(
+                    np.nanmean(gdf_pplants['estimated_generation_gwh_2017']))
+                gdf_pplants['el_generation'] = (
+                    gdf_pplants.estimated_generation_gwh_2017/
+                    gdf_pplants.estimated_generation_gwh_2017.sum()*final_cons)
+            else:
+                gdf_pplants['el_generation'] = final_cons/len(gdf_pplants)
+        else:
+            gdf_people['el_consumption'] = gdf_people.counts.values
+            gdf_pplants['el_generation'] = gdf_people['el_consumption'].sum()/len(gdf_pplants)
+        
+        return gdf_people, gdf_pplants
+            
     
     def assign_edemand_iea(self, gdf_people, path_elcons_iea):
         """
@@ -297,10 +322,10 @@ class PowerFunctionalData():
 
         if df_el_impexp.iloc[-1]['Units']!='TJ':
             LOGGER.warning('Expected different units for import/export.')
-        if 'Exports' not in df_el_impexp.columns():
+        if 'Exports' not in df_el_impexp.columns:
             df_el_impexp['Exports'] = 0
             LOGGER.warning('No export column. Setting exports to 0.')
-        if 'Imports' not in df_el_impexp.columns():
+        if 'Imports' not in df_el_impexp.columns:
             df_el_impexp['Imports'] = 0
             LOGGER.warning('No import column. Setting imports to 0.')
         
