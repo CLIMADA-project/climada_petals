@@ -69,7 +69,7 @@ class Earthquake(Hazard):
         ('Earthquakes from events epicenters positions, depth, and MW energy. '
         'Using modified Mercalli Intensity (MMI) https://doi.org/10.1201/9781482271645')
         n_years = years.max() - years.min() + 1
-        quake.units = 'Mw'
+        quake.units = 'MMI'
         quake.centroids = centroids
         # following values are defined for each event
         quake.event_id = df.eventid.to_numpy()
