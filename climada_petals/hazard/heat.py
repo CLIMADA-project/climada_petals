@@ -53,7 +53,7 @@ class Heat(Hazard):
     
     In this module heat events are calculated using single model initial
     condition large ensemble (SMILE) climate data which yields the advantage
-    that no extrapolation to extremes are equired. Several large ensemble runs
+    that no extrapolation to extremes are required. Several large ensemble runs
     are available at
     https://www.cesm.ucar.edu/projects/community-projects/MMLEA/
     The model is also compatible with normal CMIP/CORDEX/...
@@ -62,7 +62,7 @@ class Heat(Hazard):
     Especially for heat-related mortality, the calculated impacts can be
     extremely sensitive to small biases. Hence, we strongly recommend to
     perform a bias correction. A small bias of 0.5 degree C which is very
-    common in climate models might hide a whole signal from climate change.
+    common in climate models but might hide the whole climate change signal.
     
 
     Attributes
@@ -77,7 +77,7 @@ class Heat(Hazard):
     
     @classmethod
     def from_SMILE(cls, filelist, lat, lon, temp_obs=None,
-                t_start=None, t_end=None, temp_var='tas'):
+                t_start=None, t_end=None, TMM=None, temp_var='tas'):
 
         """ Wrapper to fill heat hazard with single model initial concition large
         ensemble data
@@ -98,6 +98,8 @@ class Heat(Hazard):
             Start date
         t_end : string (yyyy-mm-dd)
             End date
+        TMM : np.array()
+            Array of location specific temperature of minimum mortality
         temp_var : string
             Variable name of temperature varibale to be read from SMILE data
         
@@ -124,16 +126,12 @@ class Heat(Hazard):
         
         # read all ensemble members given in filelist_model
         print('Start with loading and slicing large ensemble members')
-        if t_start or t_end is None:
-            print('Full time range is returned')
         for i, file in enumerate(filelist):
-            print(i)
+            if np.mod(i, 10)==0:
+                print('('+str(i)+'/'+str(len(filelist))+')')
             # load and slice ensemble member
             data_ESM = xr.open_dataset(file) # read file
             dat = data_ESM[temp_var].sel(lon=loc_lon, lat=loc_lat, method="nearest")
-            # slice over time
-            if t_start and t_end is not None:
-                dat = dat.sel(time=slice(t_start, t_end))
             # concat nearest point to xarray
             if i==0:
                 d = dat
@@ -141,7 +139,6 @@ class Heat(Hazard):
                 d =  xr.concat([d, dat], dim='ens')
         
         # do bias correction if temp_obs is given
-        intensity = np.zeros([d.time.size*d.ens.size, loc_lon.size])
         if temp_obs is not None:
             print('Start with bias correction')
             for i, obs_data in enumerate(temp_obs):
@@ -153,22 +150,38 @@ class Heat(Hazard):
                 # get model location data
                 data_city = d.sel(points=i)
                 data_ref = data_city.sel(time=slice(sdate, edate)).to_pandas()
-                data_per = data_city.to_pandas()
+                if t_start and t_end is not None:
+                    data_per = data_city.sel(
+                        time=slice(t_start, t_end)).to_pandas()
+                else:
+                    data_per = data_city.to_pandas()
                 
                 # do bias correction
                 data_bc = bias_correct_ensemble(data_ref.T, obs_data.temp,
                                                 data_per.T)
-                intensity[:,i] = data_bc.to_numpy().ravel()
+                if i==0:
+                    intensity = data_bc.to_numpy().ravel('F')
+                else:
+                    intensity = np.stack((intensity,
+                                          data_bc.to_numpy().ravel('F')), axis=1)
                 
         else:
             print('No bias correction is performed.')
             for i in range(loc_lon.size):
                 data_city = d.sel(points=i)
                 data_per = data_city.to_pandas()
-                intensity[:,i] = data_per.to_numpy().ravel()
-                
-        #!! continue coding here !!#
+                if i==0:
+                    intensity = data_per.to_numpy().ravel('F')
+                else:
+                    intensity = np.stack((intensity,
+                                          data_per.to_numpy().ravel('F')), axis=1)
         
+        # only values above TMM
+        if TMM is not None:
+            for i, T in enumerate(TMM):
+                intensity[:,i][intensity[:,i]<T] = 0
+                
+        # create hazard class
         haz = cls()
         haz.tag = TagHazard('Heat')
         
@@ -181,6 +194,9 @@ class Heat(Hazard):
         if len(filelist)>1:
             haz.ens_member = np.repeat(np.arange(0, len(filelist)),
                                        len(data_per.columns.to_datetimeindex()))
+        haz.doy = np.tile(np.arange(1,366), len(filelist) * 
+                          (pd.DatetimeIndex(haz.date)[-1].year -
+                           pd.DatetimeIndex(haz.date)[0].year + 1))
         haz.orig = np.zeros(len(haz.date), bool)
 
         haz.intensity = sp.sparse.csr_matrix(intensity)
