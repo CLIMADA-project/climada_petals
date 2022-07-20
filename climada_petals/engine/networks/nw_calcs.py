@@ -62,7 +62,7 @@ class GraphCalcs():
                               'distance' : lengths, 'func_internal' : 1,
                               'func_tot' : 1, 'imp_dir' : 0})
 
-    def link_clusters(self):
+    def link_clusters(self, dist_thresh=np.inf):
         """
         link nodes from different clusters to their nearest nodes in other
         clusters to generate one connected graph.
@@ -74,19 +74,25 @@ class GraphCalcs():
         source_ix = []
         target_ix = []
 
+        # very rough conversion from metres to degrees
+        dist_thresh = dist_thresh/(ONE_LAT_KM*1000)
+            
         for member in range(len(self.graph.clusters())):
             gdf_a = gdf_vs[gdf_vs['membership']==member]
             gdf_b = gdf_vs[gdf_vs['membership']!=member]
-            dists, ix_match = _ckdnearest(gdf_a, gdf_b)
+            try:
+                dists, ix_match = _ckdnearest(gdf_a, gdf_b, dist_thresh=dist_thresh)
+                source_ix.append(
+                    gdf_a.iloc[np.where(dists==min(dists))[0]].name.values[0])
+                target_ix.append(
+                    gdf_b.loc[ix_match[np.where(dists==min(dists))[0]]].name.values[0])
+                link_name = gdf_vs.ci_type[0]
+            except IndexError:
+                # if no match within given distance
+                continue
 
-            source_ix.append(
-                gdf_a.iloc[np.where(dists==min(dists))[0]].name.values[0])
-            target_ix.append(
-                gdf_b.loc[ix_match[np.where(dists==min(dists))[0]]].name.values[0])
-
-        link_name = gdf_vs.ci_type[0]
-
-        self._edges_from_vlists(source_ix, target_ix, link_name)
+        if len(source_ix)>0:
+            self._edges_from_vlists(source_ix, target_ix, link_name)
 
 
     def link_vertices_closest_k(self, source_ci, target_ci, link_name=None,
@@ -99,9 +105,11 @@ class GraphCalcs():
         gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
         gdf_vs_source = gdf_vs[gdf_vs.ci_type==source_ci]
 
+        
         # shape: (#target vs, k)
         dists, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
-
+        
+        # TODO: replace this by dist_thresh in _ckdnearest!
         if dist_thresh is not None:
             # conversion from degrees to m holds only vaguely
             dists_bool = dists.flatten() < (dist_thresh/(ONE_LAT_KM*1000))

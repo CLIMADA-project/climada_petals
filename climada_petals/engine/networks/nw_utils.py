@@ -60,7 +60,7 @@ def _preselect_destinations(vs_assign, vs_base, dist_thresh):
     return ix_matches
 
 
-def _ckdnearest(vs_assign, gdf_base, k=1):
+def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
     """
     see https://gis.stackexchange.com/a/301935
 
@@ -80,7 +80,7 @@ def _ckdnearest(vs_assign, gdf_base, k=1):
         n_assign = np.array([(vs_assign.geometry.x, vs_assign.geometry.y)])
     n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
     btree = cKDTree(n_base)
-    dist, idx = btree.query(n_assign, k=k)
+    dist, idx = btree.query(n_assign, k=k, distance_upper_bound=dist_thresh)
     return dist, np.array(gdf_base.iloc[idx.flatten()].index).reshape(dist.shape)
 
 def _resample_res(filepath, upscale_factor, nodata):
