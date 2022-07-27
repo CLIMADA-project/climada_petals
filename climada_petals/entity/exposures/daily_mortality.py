@@ -61,11 +61,11 @@ class DailyMortality(Exposures):
         """
         
         exp_df = pd.DataFrame(columns = ['value', 'latitude', 'longitude',
-                                         'impf_RR', 'category_id'])
+                                         'impf_', 'category_id'])
         
         for i, dat in enumerate(pd_list):
             exp_loc = pd.DataFrame(columns = ['value', 'latitude', 'longitude',
-                                             'impf_RR', 'category_id'])
+                                             'impf_', 'category_id'])
             # calculate mean daily mortality
             mort_clean = _clean_data_to_365day_year(dat)
             n_years = int(mort_clean.shape[0]/365)
@@ -94,7 +94,7 @@ class DailyMortality(Exposures):
         exp.check()
         
         return exp
-        
+   
 def _remove_leap_days(data):
     date_series = pd.to_datetime(data.date)
     idx_leap_day = np.where((date_series.dt.is_leap_year.values==True) & \
@@ -105,10 +105,12 @@ def _remove_leap_days(data):
 def _clean_data_to_365day_year(data):
     ''' This function adds nan values to a time series data frame in order to
     fill up values to full years and removes leap days '''
+    # make sure that data.date is a Timestamp series
     
+    d_start = dt.datetime(data.date.min().year, 1 , 1)
+    d_end = dt.datetime(data.date.max().year, 12 , 31)
     d = pd.DataFrame()
-    d['date'] = pd.date_range(start=dt.datetime(data.date.min().year, 1 , 1),
-                             end=dt.datetime(data.date.max().year, 12 , 31), freq='D')
+    d['date'] = pd.date_range(start=d_start, end=d_end, freq='D')
         
     d = d.merge(data, on='date', how='left')
     # correct for leap days
