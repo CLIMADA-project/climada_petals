@@ -110,7 +110,7 @@ class GraphCalcs():
         dists, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
         
         # TODO: replace this by dist_thresh in _ckdnearest!
-        if not (np.isnan(dist_thresh) or (dist_thresh is None)):
+        if dist_thresh:
             # conversion from degrees to m holds only vaguely
             dists_bool = dists.flatten() < (dist_thresh/(ONE_LAT_KM*1000))
         else:
