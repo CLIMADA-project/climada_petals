@@ -99,7 +99,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
             np.reshape(exposures.gdf.longitude.values, [-1,365])[:,0]], axis=1)
         self.eai_exp = np.sum(imp_clean * hazard.frequency[:, None], 0)
         self.aai_agg = sum(self.at_event * hazard.frequency)
-        if hasattr(self, 'ens_member'):
+        if hasattr(hazard, 'ens_member'):
             self.ens_member = hazard.ens_member
         
     def aggregate_to_years(self, save_mat=False):
