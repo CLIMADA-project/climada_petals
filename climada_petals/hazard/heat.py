@@ -402,17 +402,17 @@ class Heat(Hazard):
 
             """
         # define quantiles used for mapping
-        q = np.arange(minq, maxq, incq)
+        qt = np.arange(minq, maxq, incq)
         # (1) calc cdf of observational and modeled data
-        cdf_obs = cls._calc_cdf(dat_obs, q)
-        cdf_mod = cls._calc_cdf(dat_mod, q)
+        cdf_obs = cls._calc_cdf(dat_obs, qt)
+        cdf_mod = cls._calc_cdf(dat_mod, qt)
 
         # (2) estimate correction function
         cdf_dif = cdf_mod - cdf_obs
 
         # (3) perform quantile mapping to data
         dat_mod_all_corrected = cls._map_quantile(dat_mod_all, cdf_mod,
-                                                   cdf_dif, q)
+                                                   cdf_dif, qt)
 
         return dat_mod_all_corrected
 
@@ -453,21 +453,21 @@ class Heat(Hazard):
 
             """
         # define quantiles used for mapping
-        q = np.arange(minq, maxq, incq)
+        qt = np.arange(minq, maxq, incq)
         # (1) calc cdf of observational and modeled data
-        cdf_obs = cls._calc_cdf(dat_obs, q)
-        cdf_mod = cls._calc_cdf_ens(dat_mod, q)
+        cdf_obs = cls._calc_cdf(dat_obs, qt)
+        cdf_mod = cls._calc_cdf_ens(dat_mod, qt)
 
         # (2) estimate correction function
         cdf_dif = cdf_mod - cdf_obs
 
         # (3) perform quantile mapping to data
-        dat_mod_corrected = cls._map_quantile_ens(dat_mod_all, cdf_mod, cdf_dif, q)
+        dat_mod_corrected = cls._map_quantile_ens(dat_mod_all, cdf_mod, cdf_dif, qt)
 
         return dat_mod_corrected
 
     @staticmethod
-    def _calc_cdf(data_series, q):
+    def _calc_cdf(data_series, qt):
         """ Calculates cumulative distribution function (CDF) of any time series.
         Takes no assumption on distribution.
 
@@ -475,7 +475,7 @@ class Heat(Hazard):
         ----------
         data_series : pd.Series
             Data series
-        q : np.array
+        qt : np.array
             quantiles of cdf to be calculated
 
         Returns
@@ -488,14 +488,14 @@ class Heat(Hazard):
         # sort data
         dat_sorted = np.sort(data_series.dropna().values)
         # calculate the proportional values of samples
-        p = 1. * np.arange(len(dat_sorted)) / (len(dat_sorted) - 1)
+        per = 1. * np.arange(len(dat_sorted)) / (len(dat_sorted) - 1)
         # map to percentiles
-        cdf = np.interp(q, p, dat_sorted)
+        cdf = np.interp(qt, per, dat_sorted)
 
         return cdf
 
     @staticmethod
-    def _map_quantile(dat_mod_all, cdf_mod_orig, cdf_dif, q):
+    def _map_quantile(dat_mod_all, cdf_mod_orig, cdf_dif, qt):
         """ Performs bias correction using quantile mapping
 
         Parameters
@@ -516,16 +516,16 @@ class Heat(Hazard):
 
         """
         # calc percentile value of each temperature value in modelled time series
-        perc_mod = np.interp(dat_mod_all, cdf_mod_orig, q)
+        perc_mod = np.interp(dat_mod_all, cdf_mod_orig, qt)
         # correction term for each temperature value in modelled time series
-        cor_term = np.interp(perc_mod, q, cdf_dif)
+        cor_term = np.interp(perc_mod, qt, cdf_dif)
         # adjust for bias
         dat_mod_adj = dat_mod_all-cor_term
 
         return pd.Series(dat_mod_adj)
 
     @classmethod
-    def _calc_cdf_ens(cls, dat_mod, q):
+    def _calc_cdf_ens(cls, dat_mod, qt):
         """ Calculates cumulative distribution function (CDF) an ensemble.
         Ensemble CDF is calculated as the mean over all CDF of the ensemble
         members.
@@ -546,10 +546,10 @@ class Heat(Hazard):
         """
 
         # array to store cdfs
-        cdf_array = np.zeros((dat_mod.shape[1], len(q)))
+        cdf_array = np.zeros((dat_mod.shape[1], len(qt)))
         for i in range(dat_mod.shape[1]):
             # calc cdf per member
-            cdf_array[i,:] = cls._calc_cdf(dat_mod.iloc[:,i], q)
+            cdf_array[i,:] = cls._calc_cdf(dat_mod.iloc[:,i], qt)
 
         # average cdf
         cdf_ens = np.nanmean(cdf_array, axis=0)
@@ -557,7 +557,7 @@ class Heat(Hazard):
         return cdf_ens
 
     @classmethod
-    def _map_quantile_ens(cls, dat_mod_all, cdf_mod, cdf_dif, q):
+    def _map_quantile_ens(cls, dat_mod_all, cdf_mod, cdf_dif, qt):
         """ Performs bias correction for each ensemble member.
 
         Parameters
@@ -580,7 +580,7 @@ class Heat(Hazard):
         ens_array = np.zeros(dat_mod_all.shape)
         for i in range(dat_mod_all.shape[1]):
             ens_array[:,i] = cls._map_quantile(dat_mod_all.iloc[:,i],
-                                                cdf_mod, cdf_dif, q)
+                                                cdf_mod, cdf_dif, qt)
         dat_mod_corrected = pd.DataFrame(ens_array)
         dat_mod_corrected.columns = dat_mod_all.columns
 

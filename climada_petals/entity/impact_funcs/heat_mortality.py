@@ -52,7 +52,7 @@ class ImpfSetHeat(ImpactFunc, ImpactFuncSet):
         ----------
         pd_list_RR : list
             list of pandas dataframes. List needs to be in line with
-            lat/lon arrays of exposure and hazard. Each pd.dataframe() 
+            lat/lon arrays of exposure and hazard. Each pd.dataframe()
             must contain a column 'temp' and 'RRfit'.
 
         Returns

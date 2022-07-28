@@ -95,8 +95,8 @@ class DailyMortality(Exposures):
 
 def _remove_leap_days(data):
     date_series = pd.to_datetime(data.date)
-    idx_leap_day = np.where((date_series.dt.is_leap_year.values==True) & \
-                            (date_series.dt.day_of_year.values==60))[0]
+    idx_leap_day = np.where((date_series.dt.is_leap_year.values == True) & \
+                            (date_series.dt.day_of_year.values == 60))[0]
     data_clean = data.drop(idx_leap_day)
     return data_clean
 
@@ -106,11 +106,11 @@ def _clean_data_to_365day_year(data):
     # make sure that data.date is a Timestamp series
     d_start = dt.datetime(data.date.min().year, 1 , 1)
     d_end = dt.datetime(data.date.max().year, 12 , 31)
-    d = pd.DataFrame()
-    d['date'] = pd.date_range(start=d_start, end=d_end, freq='D')
+    dat = pd.DataFrame()
+    dat['date'] = pd.date_range(start=d_start, end=d_end, freq='D')
 
-    d = d.merge(data, on='date', how='left')
+    dat = dat.merge(data, on='date', how='left')
     # correct for leap days
-    dat = _remove_leap_days(d)
+    dat_clean = _remove_leap_days(dat)
 
-    return dat
+    return dat_clean
