@@ -35,7 +35,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
     """Impact for heat-related mortality. In contrast to conventional impact
     calculations, the heat mortality calculation relies on the annual cycle
     of death counts.
-    
+
     Attributes
     ----------
     ens_member (optional) : np.array
@@ -61,7 +61,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
             Daily mortality counts
         impact_funcs : climada_petals.entity.impact_funcs.heat_mortality
             impact functions / relativ risk curves
-        hazard : climada_petals.hazard.heat 
+        hazard : climada_petals.hazard.heat
         save_mat : bool
             self impact matrix: events x n_locations
 
@@ -69,14 +69,14 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         -------
             climada.engine.impact.ImpactHeat
         """
-        
+
         # calculate impacts using impact.calc
         self.calc(exposures, impact_funcs, hazard, save_mat=True)
         imp_mat = self.imp_mat.toarray()
 
         n_loc = int(imp_mat.shape[1]/365)
         n_years = int(imp_mat.shape[0]/365)
-        
+
         # impacts are calculated for each day & exposure. Correct values are
         # there for on the diagonal of the tile of each daily array
         year_stack = np.stack(np.vsplit(
@@ -87,12 +87,12 @@ class ImpactHeat(Impact, ImpactFreqCurve):
             imp_clean = np.concatenate([imp_clean,
                                         np.diag(year_stack[:,:,i])],0)
         imp_clean = np.reshape(imp_clean, [n_years*365, n_loc], 'F')
-        
+
         # assign correct variables
         if save_mat:
             self.imp_mat = sparse.csr_matrix(imp_clean)
         self.at_event += np.squeeze(np.asarray(np.sum(imp_clean, axis=1)))
-        
+
         # assign variables
         self.coord_exp = np.stack([
             np.reshape(exposures.gdf.latitude.values, [-1,365])[:,0],
@@ -101,10 +101,10 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         self.aai_agg = sum(self.at_event * hazard.frequency)
         if hasattr(hazard, 'ens_member'):
             self.ens_member = hazard.ens_member
-        
+
     def aggregate_to_years(self, save_mat=False):
         """Aggregate daily mortality counts to annual
-        
+
         Parameters
         ----------
         save_mat : bool
@@ -116,7 +116,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         """
         if not hasattr(self, 'imp_mat'):
             raise ValueError('No imp_mat. Calculate impact with save_mat=True')
-        
+
         if hasattr(self, 'ens_member'):
             summary_df = pd.DataFrame(columns = ['Year', 'ens_member'])
             summary_df.Year = pd.to_datetime(self.date).year
@@ -130,9 +130,9 @@ class ImpactHeat(Impact, ImpactFreqCurve):
             summary_df = pd.concat([summary_df,
                                         pd.DataFrame(self.imp_mat.toarray())], axis=1)
             annual_aggregate = summary_df.groupby(['Year']).sum()
-            
+
         annual_imp_mat = annual_aggregate.to_numpy()
-        
+
         self.event_id = np.arange(1, annual_aggregate.shape[0]+1).astype(int)
         self.event_name = list(map(str, self.event_id))
         self.date = annual_aggregate.index.get_level_values('Year').values
@@ -146,14 +146,13 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         self.eai_exp = np.sum(annual_imp_mat * self.frequency[:, None], 0)
         self.aai_agg = sum(self.at_event * self.frequency)
 
-
-    def aggregate_to_window(self, window=21, save_mat=False, warm_season_only=True, 
+    def aggregate_to_window(self, window=21, save_mat=False, warm_season_only=True,
                             len_season=180):
         """Aggregate daily mortality counts to specified time windows. Time
         windows are calculate to find the location specific maximum event
         per season. Hence dates between locations might no longer be in line.
         Therefore, the new attripute self.imp_date is introduced.
-        
+
         Parameters
         ----------
         window : int
@@ -164,15 +163,14 @@ class ImpactHeat(Impact, ImpactFreqCurve):
             calculate impacts during warm season only
         len_season : int
             number of days of warm season
-            
-            
+
         Returns
         -------
             climada.engine.impact.ImpactHeat
         """
         if not hasattr(self, 'imp_mat'):
             raise ValueError('No imp_mat. Calculate impact with save_mat=True')
-        
+
         # set warm season
         if warm_season_only:
             imp_mat_season, imp_mat_date = self._set_warm_season(len_season)
@@ -180,17 +178,17 @@ class ImpactHeat(Impact, ImpactFreqCurve):
             imp_mat_season = self.imp_mat.toarray()
             imp_mat_date = np.tile(self.date, (imp_mat_season.shape[1], 1)).T
             len_season = 365
-        
+
         # aggregate to window
         imp_mat, imp_date = self._set_time_window(window, imp_mat_season,
                                              imp_mat_date, len_season)
-        
+
         # assign class attributes
         if hasattr(self, 'ens_member'):
             n_ens = len(np.unique(self.ens_member))
         else: n_ens = 1
         n_years = int(self.imp_mat.shape[0]/n_ens/365)
-        
+
         self.event_id = np.arange(1, imp_mat.shape[0]+1).astype(int)
         self.event_name = list(map(str, self.event_id))
         years = imp_date.astype('datetime64[Y]').astype(int) + 1970
@@ -207,7 +205,6 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         self.eai_exp = np.sum(imp_mat * self.frequency[:, None], 0)
         self.aai_agg = sum(self.at_event * self.frequency)
 
-
     def _set_warm_season(self, len_season=180):
         """Identifies warm season based on mortality counts for each location.
 
@@ -215,7 +212,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         ----------
         len_season : int
             number of days of warm season
-            
+
         Returns
         -------
             imp_mat_season : np.array
@@ -229,7 +226,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         n_years = int(self.imp_mat.shape[0]/n_ens/365)
         impacts = pd.DataFrame(self.imp_mat.toarray())
         rolling_impacts = impacts.rolling(len_season).mean().to_numpy()
-        
+
         for i in range(rolling_impacts.shape[1]):
             ens_means = np.nanmean(np.reshape(rolling_impacts[:,i], [365,-1], 'F'), axis=1)
             season_idx = np.argmax(ens_means)
@@ -241,7 +238,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
                 ind[365-(180-season_idx):365] = True
 
             bool_waarm_season = np.tile(ind, n_ens*n_years)
-            
+
             if i==0:
                 imp_mat_season = self.imp_mat.toarray()[bool_waarm_season,i]
                 imp_mat_date = self.date[bool_waarm_season]
@@ -251,7 +248,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
                                                  [bool_waarm_season,i]], axis=1)
                 imp_mat_date = np.stack([imp_mat_date,
                                                self.date[bool_waarm_season]],
-                                              axis=1) 
+                                              axis=1)
 
         return imp_mat_season, imp_mat_date
 
@@ -291,7 +288,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
             # arange events per season accordingly
             n_evts = len_season//window-1
             ind_start = np.mod(max_ind, window)
-            
+
             # loop over all seasons and ensemble members
             evt_imp_loc = np.zeros([0])
             evt_date_loc = np.zeros([0], dtype='datetime64[ns]')
@@ -313,4 +310,3 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         date_events = np.reshape(date_events, [-1, imp_mat_season.shape[1]], 'F')
 
         return imp_events, date_events
-        

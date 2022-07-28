@@ -38,16 +38,16 @@ class ImpfSetHeat(ImpactFunc, ImpactFuncSet):
         self.haz_type = haz_type
 
     @classmethod
-    def from_pandas_list(cls, pd_list_RR):
+    def from_pandas_list(cls, pd_list_rr):
         """ This function sets the impact functions set for heat mortality.
         For heat mortality, impact functions refer to the relativ risk (RR)
         of dying at a given temperature.
-        
+
         These impact functions can be calculated using quasi-Poisson regression
         time series analyses with distributed lag nonlinear models (DLNM).
         A R-tutorial is available at https://pubmed.ncbi.nlm.nih.gov/30829832/
         (Vicedo-Cabrera et al. 2019, DOI: 10.1097/EDE.0000000000000982)
-        
+
         Parameters
         ----------
         pd_list_RR : list
@@ -61,11 +61,11 @@ class ImpfSetHeat(ImpactFunc, ImpactFuncSet):
 
         """
         Impf_set = ImpactFuncSet()
-        
-        for i, dat in enumerate(pd_list_RR):
-        
+
+        for i, dat in enumerate(pd_list_rr):
+
             Impf = cls()
-        
+
             Impf.id = i
             Impf.name = "Relativ risk for"
             Impf.intensity_unit = "C"
@@ -73,7 +73,7 @@ class ImpfSetHeat(ImpactFunc, ImpactFuncSet):
             Impf.mdd = dat.RRfit-1
             Impf.paa = np.ones(len(Impf.intensity))
             Impf.haz_type = 'Heat'
-            
+
             Impf_set.append(Impf)
-        
+
         return Impf_set
