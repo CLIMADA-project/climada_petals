@@ -101,11 +101,11 @@ class GraphCalcs():
         find k nearest source_ci vertices for each target_ci vertex,
         given distance constraints
         """
+        
         gdf_vs = self.graph.get_vertex_dataframe()
         gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[gdf_vs.ci_type==source_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & (gdf_vs.func_tot==1)]
 
-        
         # shape: (#target vs, k)
         dists, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
         
