@@ -474,7 +474,7 @@ class GraphCalcs():
 
     def cascade(self, df_dependencies, p_source='power_plant',
                 p_sink='power_line', source_var='el_generation', demand_var='el_consumption', 
-                preselect='auto'):
+                preselect='auto', initial=False):
         """
         wrapper for internal state update, functional dependency iterations,
         enduser dependency updates
@@ -496,7 +496,7 @@ class GraphCalcs():
 
         LOGGER.info('Ended functional state update.' +
                     ' Proceeding to end-user update.')
-        if cycles > 1:
+        if (cycles > 1) or (initial):
             self._update_enduser_dependencies(df_dependencies, preselect)
 
 
