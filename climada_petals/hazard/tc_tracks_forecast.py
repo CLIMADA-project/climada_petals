@@ -158,8 +158,8 @@ class TCForecast(TCTracks):
                 file = open(file, 'rb')
 
             if os.name == 'nt' and hasattr(file, 'file'):
-                file = file.file  # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
-
+                file = file.file   # if in windows try accessing the underlying tempfile directly
+                                   # in case variable file is tempfile._TemporaryFileWrapper
             self.read_one_bufr_tc(file, id_no=i)
 
             file.close()  # discards if tempfile
@@ -437,7 +437,6 @@ class TCForecast(TCTracks):
             for i in range(len(var)):
                 if var[i] != MISSING_LONG:
                     return var
-                    break
             raise ValueError("Did not find a non-missing value in the array")
 
     @staticmethod
@@ -574,6 +573,7 @@ class TCForecast(TCTracks):
             xsl_path = CXML2CSV_XSL
 
         # coerce Path objects to str; coercion superfluous for lxml >= 4.8.0
+        # pylint: disable= c-extension-no-member
         xsl = et.parse(str(xsl_path))
         xml = et.parse(str(cxml_path))
         transformer = et.XSLT(xsl)
@@ -612,7 +612,8 @@ class TCForecast(TCTracks):
         )
 
         all_storms_df['time_step'] = all_storms_df.hour.diff().astype(float)
-        all_storms_df.time_step[(np.isnan(all_storms_df.time_step)) | (all_storms_df.time_step < 0)] = 0
+        all_storms_df.time_step[(np.isnan(all_storms_df.time_step))
+                               |(all_storms_df.time_step < 0)] = 0
 
         return all_storms_df
 
