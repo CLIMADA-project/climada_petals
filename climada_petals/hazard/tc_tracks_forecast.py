@@ -429,15 +429,11 @@ class TCForecast(TCTracks):
 
     @staticmethod
     def get_value_from_bufr_array(var):
-        if len(var) == 1:
-            if var[0] == MISSING_LONG:
-                ValueError("Array contained a single, missing value")
-            return var[0]
-        else:
-            for i in range(len(var)):
-                if var[i] != MISSING_LONG:
-                    return var
-            raise ValueError("Did not find a non-missing value in the array")
+        for v_i in var:
+            if v_i != MISSING_LONG:
+                return v_i
+        raise ValueError("Array contained a single, missing value") if len(var) == 1 \
+            else ValueError("Did not find a non-missing value in the array")
 
     @staticmethod
     def _subset_to_track(msg, index, provider, timestamp_origin, name, id_no):
