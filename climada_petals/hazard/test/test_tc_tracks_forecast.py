@@ -21,6 +21,7 @@ Test tc_tracks_forecast module.
 
 import unittest
 import numpy as np
+import pandas as pd
 
 from climada import CONFIG
 from climada_petals.hazard.tc_tracks_forecast import TCForecast
@@ -35,6 +36,16 @@ TEST_BUFR_FILES = [
 """TC tracks in four BUFR formats as provided by ECMWF. Sourced from
 https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
 """
+
+TEST_CXML_FILE = DATA_DIR.joinpath("cxml_sample_track.xml")
+"""A sample CXML file holding forecast data, subset from the ECMWF archive at
+https://confluence.ecmwf.int/display/TIGGE/Tools#Tools-ECMWFTropicalCycloneTrackData(XMLformat)
+"""
+
+TEST_XSL_FILE = DATA_DIR.joinpath("cxml_sample_transf_w_60h_72h_filter.xsl")
+"""A sample non-standard xsl file to only extract specific forecast ranges
+"""
+
 
 class TestECMWF(unittest.TestCase):
     """Test reading of BUFR TC track forecasts"""
@@ -99,7 +110,68 @@ class TestECMWF(unittest.TestCase):
                 np.testing.assert_array_equal(tr[v].values, tr_read[v].values)
             self.assertEqual(tr.sid, tr_read.sid)
 
+
+class TestCXML(unittest.TestCase):
+    """Test that cxml track data can be read."""
+
+    def test_default_xsl(self):
+        """ "Test with default XSL conversion"""
+        forecast = TCForecast.read_cxml(TEST_CXML_FILE)
+
+        self.assertEqual(len(forecast.data), 7)
+        self.assertTrue(
+            all(
+                forecast.data[0].time.data
+                == np.array(
+                    [
+                        "2022-03-02T12:00:00",
+                        "2022-03-02T18:00:00",
+                        "2022-03-03T00:00:00",
+                        "2022-03-03T06:00:00",
+                        "2022-03-03T12:00:00",
+                        "2022-03-03T18:00:00",
+                        "2022-03-04T00:00:00",
+                        "2022-03-04T06:00:00",
+                        "2022-03-04T12:00:00",
+                        "2022-03-04T18:00:00",
+                        "2022-03-05T00:00:00",
+                        "2022-03-05T06:00:00",
+                        "2022-03-05T12:00:00",
+                        "2022-03-05T18:00:00",
+                        "2022-03-06T00:00:00",
+                        "2022-03-06T06:00:00",
+                        "2022-03-06T12:00:00",
+                        "2022-03-06T18:00:00",
+                        "2022-03-07T00:00:00",
+                        "2022-03-07T06:00:00",
+                        "2022-03-07T12:00:00",
+                        "2022-03-07T18:00:00",
+                        "2022-03-08T12:00:00",
+                    ],
+                    dtype="datetime64[ns]",
+                )
+            )
+        )
+        self.assertEqual(forecast.data[0].name, "Vernon")
+        self.assertTrue(all([i.ensemble_number == '24' for i in forecast.data]))
+        self.assertEqual(
+            forecast.data[2].run_datetime,
+            pd.Timestamp('2022-03-02 12:00:00+0000', tz='UTC'),
+        )
+        self.assertTrue(forecast.data[4].is_ensemble)
+
+    def test_custom_xsl(self):
+        """Test with custom XSL conversion"""
+        forecast = TCForecast.read_cxml(
+            cxml_path=TEST_CXML_FILE, xsl_path=TEST_XSL_FILE
+        )
+        self.assertEqual(len(forecast.data), 6)
+        self.assertEqual(forecast.data[0].time.size, 3)
+        self.assertEqual([f.time.size for f in forecast.data], [3, 3, 3, 3, 2, 1])
+
+
 # Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestECMWF)
+    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestCXML))
     unittest.TextTestRunner(verbosity=2).run(TESTS)
