@@ -24,7 +24,7 @@ __all__ = ['Earthquake']
 import numpy as np
 import pandas as pd
 from scipy import sparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from climada.hazard.base import Hazard, TagHazard
 from climada.util import coordinates as u_coord
@@ -44,7 +44,7 @@ class Earthquake(Hazard):
         Hazard.__init__(self, haz_type=HAZ_TYPE, pool=None)
 
     @classmethod
-    def from_Mw_depth(cls, df, centroids, pool=None):
+    def from_Mw_depth(cls, df, centroids, orig=True):
         """
         Earthquakes from events epicenters positions, depth, and MW energy.
         Date column in format %Y-%m-%d %H:%M:%S.%f" .
@@ -52,7 +52,7 @@ class Earthquake(Hazard):
         Parameters
         ----------
         df : DataFrame
-            lat, lon, Mw, depth
+            lat, lon, Mw, depth, eventid, date
 
         Returns
         -------
@@ -60,8 +60,8 @@ class Earthquake(Hazard):
 
         """
 
-        format = "%Y-%m-%d %H:%M:%S.%f"
-        dates = [datetime.strptime(date_str, format) for date_str in df.date]
+        format_date = "%Y-%m-%d %H:%M:%S.%f"
+        dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
         years = np.array([date.year for date in dates])
 
         quake = cls()
@@ -76,7 +76,10 @@ class Earthquake(Hazard):
         quake.frequency = np.repeat(1 / n_years, len(df))
         quake.event_name = df.eventid.astype('str').to_list()
         quake.date = np.array([date.toordinal() for date in dates])
-        quake.orig = np.ones(len(df))
+        if orig:
+            quake.orig = np.ones(len(df))
+        else:
+            quake.orig = np.zeros(len(df))
         # following values are defined for each event and centroid
 
         int_list = []
@@ -95,7 +98,7 @@ class Earthquake(Hazard):
             lon_min, lat_min, lon_max, lat_max =\
                 u_coord.latlon_bounds(np.array([epi_lat]), np.array([epi_lon]), buffer=MAX_DIST_DEG)
 
-            lon_max += 360 
+            lon_max += 360
             all_cent_lon_normalized = u_coord.lon_normalize(all_cent_lon, center=0.5 * (lon_min + lon_max))
             mask = (
               (all_cent_lon_normalized >= lon_min) & (all_cent_lon_normalized <= lon_max) &
@@ -117,6 +120,49 @@ class Earthquake(Hazard):
         quake.fraction = quake.intensity.copy()
         quake.fraction.data.fill(1) # events x centroids
         return quake
+
+    @classmethod
+    def random_events(cls, df, centroids, n=1, loc_shift_deg=1.0, depth_mult=0.2, mag_mult=0.5):
+
+        lat_orig = df['lat'].to_numpy()
+        lon_orig = df['lon'].to_numpy()
+        mw_orig = df['mw'].to_numpy()
+        depth_orig = df['depth'].to_numpy()
+
+        n_tot = n * len(df)
+
+        lat_rnd = np.random.uniform(-loc_shift_deg/2, loc_shift_deg/2, size=n_tot)
+        lon_rnd = np.random.uniform(-loc_shift_deg/2, loc_shift_deg/2, size=n_tot)
+
+        mw_rnd = np.random.uniform(-mag_mult/2, mag_mult/2, size=n_tot)
+        depth_rnd = np.random.uniform(-mag_mult/2, mag_mult/2, size=n_tot)
+
+        format_date = "%Y-%m-%d %H:%M:%S.%f"
+        dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
+        years = np.array([date.year for date in dates])
+        n_years = np.max(years) - np.min(years)
+
+        new_dates = []
+        for n_rnd in range(1, n+1):
+            for date in dates:
+                new_year = date.year + n_rnd *  n_years
+                if date.month == 2 and date.day==29:
+                    new_dates.append(date.replace(year=new_year, day=28))
+                else:
+                    new_dates.append(date.replace(year=new_year))
+        new_dates = [date.strftime(format_date) for date in new_dates]
+
+        rnd_df = pd.DataFrame({
+            'lat' : lat_rnd + np.repeat(lat_orig, n),
+            'lon' : lon_rnd + np.repeat(lon_orig, n),
+            'mw' : mw_rnd + np.repeat(mw_orig, n),
+            'depth' : depth_rnd + np.repeat(depth_orig, n),
+            'date' : new_dates,
+            'eventid': np.arange(1, len(new_dates)+1)
+            })
+
+        return cls.from_Mw_depth(df=rnd_df, centroids=centroids, orig=False)
+
 
     def footprint_MMI(self, cent_lat, cent_lon, epi_lat, epi_lon, mag, depth):
         """

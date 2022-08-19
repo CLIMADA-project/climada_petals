@@ -28,3 +28,5 @@ from climada_petals.hazard import Earthquake
 
 
 quake = Earthquake.from_Mw_depth(isc_gem_cat, centroids)
+
+quake_rnd = Earthquake.random_events(isc_gem_cat, centroids, n=2)
