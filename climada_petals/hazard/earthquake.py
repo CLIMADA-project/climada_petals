@@ -24,9 +24,9 @@ __all__ = ['Earthquake']
 import numpy as np
 import pandas as pd
 from scipy import sparse
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from climada.hazard.base import Hazard, TagHazard
+from climada.hazard.base import Hazard
 from climada.util import coordinates as u_coord
 
 HAZ_TYPE = 'EQ'
@@ -52,7 +52,7 @@ class Earthquake(Hazard):
         Parameters
         ----------
         df : DataFrame
-            lat, lon, Mw, depth, eventid, date
+            lat, lon, mw, depth, eventid, date
 
         Returns
         -------
