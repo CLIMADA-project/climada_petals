@@ -26,7 +26,10 @@ centroids.set_meta_to_lat_lon()
 
 from climada_petals.hazard import Earthquake
 
-
 quake = Earthquake.from_Mw_depth(isc_gem_cat, centroids)
 
-quake_rnd = Earthquake.random_events(isc_gem_cat, centroids, n=2)
+import numpy as np
+idx = np.unique(quake.intensity.nonzero()[0])[1:100]
+quake_rnd = Earthquake.uniform_random_events(isc_gem_cat.iloc[idx], centroids, n=2)
+
+quake_rnd_interp = Earthquake.interpolate_random_events(isc_gem_cat.iloc[idx], centroids, n=2, rnd_buffer=2)

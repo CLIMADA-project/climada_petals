@@ -121,7 +121,7 @@ class Earthquake(Hazard):
         return quake
 
     @classmethod
-    def random_events(cls, df, centroids, n=1, loc_shift_deg=1.0, depth_mult=0.2, mag_mult=0.5):
+    def uniform_random_events(cls, df, centroids, n=1, loc_shift_deg=1.0, depth_mult=0.2, mag_mult=0.5):
 
         lat_orig = df['lat'].to_numpy()
         lon_orig = df['lon'].to_numpy()
@@ -134,7 +134,7 @@ class Earthquake(Hazard):
         lon_rnd = np.random.uniform(-loc_shift_deg/2, loc_shift_deg/2, size=n_tot)
 
         mw_rnd = np.random.uniform(-mag_mult/2, mag_mult/2, size=n_tot)
-        depth_rnd = np.random.uniform(-mag_mult/2, mag_mult/2, size=n_tot)
+        depth_rnd = np.random.uniform(-depth_mult/2, depth_mult/2, size=n_tot)
 
         format_date = "%Y-%m-%d %H:%M:%S.%f"
         dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
@@ -155,6 +155,89 @@ class Earthquake(Hazard):
             'lat' : lat_rnd + np.repeat(lat_orig, n),
             'lon' : lon_rnd + np.repeat(lon_orig, n),
             'mw' : mw_rnd + np.repeat(mw_orig, n),
+            'depth' : depth_rnd + np.repeat(depth_orig, n),
+            'date' : new_dates,
+            'eventid': np.arange(1, len(new_dates)+1)
+            })
+
+        return cls.from_Mw_depth(df=rnd_df, centroids=centroids, orig=False)
+
+    @classmethod
+    def interpolate_random_events(cls, df, centroids, n=1, rnd_buffer=5):
+
+        depth_mult = 0.2
+        mw_mult = 0.1
+        lat_orig = df['lat'].to_numpy()
+        lon_orig = df['lon'].to_numpy()
+        mw_orig = df['mw'].to_numpy()
+        depth_orig = df['depth'].to_numpy()
+
+        n_tot = n * len(df)
+        depth_rnd = np.random.uniform(-depth_mult/2, depth_mult/2, size=n_tot)
+
+        import math
+        from sklearn.neighbors import KernelDensity
+        from scipy.stats import genextreme
+
+        rnd_lat = []
+        rnd_lon = []
+        rnd_mw = []
+        for i, (epi_lat, epi_lon) in enumerate(zip(lat_orig, lon_orig)):
+            lon_min, lat_min, lon_max, lat_max =\
+                u_coord.latlon_bounds(
+                    np.array([epi_lat]), np.array([epi_lon]), buffer=rnd_buffer
+                    )
+            lon_orig_normalized = u_coord.lon_normalize(
+                lon_orig.copy(), center=0.5 * (lon_min + lon_max)
+                )
+            mask = (
+              (lon_orig_normalized >= lon_min) & (lon_orig <= lon_max) &
+              (lat_orig >= lat_min) & (lat_orig <= lat_max)
+            )
+            close_lat = lat_orig[mask]
+            close_lon = lon_orig[mask]
+            close_mw = mw_orig[mask]
+
+            Xtrain = np.vstack([close_lat / math.pi, close_lon / 2 / math.pi]).T
+            kde = KernelDensity(
+                bandwidth=0.04, metric="haversine", kernel="gaussian", algorithm="ball_tree"
+                )
+            kde.fit(Xtrain)
+            new_lat, new_lon = kde.sample(n).T
+            new_lat *= math.pi
+            new_lon *= 2*math.pi
+            rnd_lat.append(new_lat)
+            rnd_lon.append(new_lon)
+            try:
+                params = genextreme.fit(close_mw)
+                new_mw = genextreme(*params).rvs(size=n)
+            except RuntimeWarning:
+                new_mw = np.repeat(mw_orig[i], n) * np.random.uniform(-mw_mult/2, mw_mult/2, size=n)
+            if np.any(new_mw > 9.5):
+                new_mw = np.repeat(mw_orig[i], n) * np.random.uniform(-mw_mult/2, mw_mult/2, size=n)
+                new_mw = np.clip(new_mw, a_min=0, a_max=9.5)
+            rnd_mw.append(new_mw)
+
+
+        format_date = "%Y-%m-%d %H:%M:%S.%f"
+        dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
+        years = np.array([date.year for date in dates])
+        n_years = np.max(years) - np.min(years)
+
+        new_dates = []
+        for n_rnd in range(1, n+1):
+            for date in dates:
+                new_year = date.year + n_rnd *  n_years
+                if date.month == 2 and date.day==29:
+                    new_dates.append(date.replace(year=new_year, day=28))
+                else:
+                    new_dates.append(date.replace(year=new_year))
+        new_dates = [date.strftime(format_date) for date in new_dates]
+
+        rnd_df = pd.DataFrame({
+            'lat' : np.hstack(rnd_lat),
+            'lon' : np.hstack(rnd_lon),
+            'mw' : np.hstack(rnd_mw),
             'depth' : depth_rnd + np.repeat(depth_orig, n),
             'date' : new_dates,
             'eventid': np.arange(1, len(new_dates)+1)
