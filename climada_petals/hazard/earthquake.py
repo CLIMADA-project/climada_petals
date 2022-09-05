@@ -98,8 +98,7 @@ class Earthquake(Hazard):
             lon_min, lat_min, lon_max, lat_max =\
                 u_coord.latlon_bounds(np.array([epi_lat]), np.array([epi_lon]), buffer=MAX_DIST_DEG)
 
-            lon_max += 360
-            all_cent_lon_normalized = u_coord.lon_normalize(all_cent_lon, center=0.5 * (lon_min + lon_max))
+            all_cent_lon_normalized = u_coord.lon_normalize(all_cent_lon.copy(), center=0.5 * (lon_min + lon_max))
             mask = (
               (all_cent_lon_normalized >= lon_min) & (all_cent_lon_normalized <= lon_max) &
               (all_cent_lat >= lat_min) & (all_cent_lat <= lat_max)
