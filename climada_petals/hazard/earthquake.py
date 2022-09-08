@@ -215,8 +215,7 @@ class Earthquake(Hazard):
                 new_mw = genextreme(*params).rvs(size=n)
             except RuntimeWarning:
                 new_mw = np.repeat(mw_orig[i], n) * np.random.uniform(-mw_mult/2, mw_mult/2, size=n)
-            if np.any(new_mw > max_mw_orig*(1+mw_mult)) or np.any(new_mw < min_mw_orig * (1-mw_mult)):
-                new_mw = np.repeat(mw_orig[i], n) * np.random.uniform(-mw_mult/2, mw_mult/2, size=n)
+            new_mw = np.clip(new_mw, min_mw_orig*(1-mw_mult), max_mw_orig*(1+mw_mult))
             rnd_mw.append(new_mw)
 
 
