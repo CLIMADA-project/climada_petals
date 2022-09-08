@@ -163,19 +163,13 @@ class Earthquake(Hazard):
         return cls.from_Mw_depth(df=rnd_df, centroids=centroids, orig=False)
 
     @classmethod
-    def interpolate_random_events(cls, df, centroids, n=1, rnd_buffer=5):
+    def interpolate_random_events(cls, df, centroids, n=1, rnd_buffer=5, mw_min=4.75, mw_max=9.55,
+                                  depth_mult = 0.2, mw_mult = 0.1):
 
-        depth_mult = 0.2
-        mw_mult = 0.1
         lat_orig = df['lat'].to_numpy()
         lon_orig = df['lon'].to_numpy()
         mw_orig = df['mw'].to_numpy()
         depth_orig = df['depth'].to_numpy()
-
-        min_mw_orig, max_mw_orig = mw_orig.min(), mw_orig.max()
-
-        n_tot = n * len(df)
-        depth_rnd = np.random.uniform(-depth_mult/2, depth_mult/2, size=n_tot)
 
         import math
         from sklearn.neighbors import KernelDensity
@@ -184,6 +178,7 @@ class Earthquake(Hazard):
         rnd_lat = []
         rnd_lon = []
         rnd_mw = []
+        rnd_depth = []
         for i, (epi_lat, epi_lon) in enumerate(zip(lat_orig, lon_orig)):
             lon_min, lat_min, lon_max, lat_max =\
                 u_coord.latlon_bounds(
@@ -199,6 +194,8 @@ class Earthquake(Hazard):
             close_lat = lat_orig[mask]
             close_lon = lon_orig[mask]
             close_mw = mw_orig[mask]
+            close_depth = depth_orig[mask]
+            depth_min, depth_max = close_depth.min(), close_depth.max()
 
             Xtrain = np.vstack([close_lat / math.pi, close_lon / 2 / math.pi]).T
             kde = KernelDensity(
@@ -214,20 +211,22 @@ class Earthquake(Hazard):
                 params = genextreme.fit(close_mw)
                 new_mw = genextreme(*params).rvs(size=n)
             except RuntimeWarning:
-                new_mw = np.repeat(mw_orig[i], n) * np.random.uniform(-mw_mult/2, mw_mult/2, size=n)
-            new_mw = np.clip(new_mw, min_mw_orig*(1-mw_mult), max_mw_orig*(1+mw_mult))
+                new_mw = np.repeat(mw_orig[i], n) * (1+np.random.uniform(-mw_mult/2, mw_mult/2, size=n))
+            new_mw = np.clip(new_mw, mw_min*(1-mw_mult), mw_max*(1+mw_mult))
+            new_depth = np.random.uniform(depth_min * (1- depth_mult), depth_max*(1+depth_mult), size=n)
+            rnd_depth.append(new_depth)
             rnd_mw.append(new_mw)
 
 
         format_date = "%Y-%m-%d %H:%M:%S.%f"
         dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
         years = np.array([date.year for date in dates])
-        n_years = np.max(years) - np.min(years)
+        n_years_orig = np.max(years) - np.min(years)
 
         new_dates = []
         for n_rnd in range(1, n+1):
             for date in dates:
-                new_year = date.year + n_rnd *  n_years
+                new_year = date.year + n_rnd *  n_years_orig
                 if date.month == 2 and date.day==29:
                     new_dates.append(date.replace(year=new_year, day=28))
                 else:
@@ -238,7 +237,7 @@ class Earthquake(Hazard):
             'lat' : np.hstack(rnd_lat),
             'lon' : np.hstack(rnd_lon),
             'mw' : np.hstack(rnd_mw),
-            'depth' : depth_rnd + np.repeat(depth_orig, n),
+            'depth' : np.hstack(rnd_depth),
             'date' : new_dates,
             'eventid': np.arange(1, len(new_dates)+1)
             })
