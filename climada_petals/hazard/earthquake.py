@@ -172,6 +172,8 @@ class Earthquake(Hazard):
         mw_orig = df['mw'].to_numpy()
         depth_orig = df['depth'].to_numpy()
 
+        min_mw_orig, max_mw_orig = mw_orig.min(), mw_orig.max()
+
         n_tot = n * len(df)
         depth_rnd = np.random.uniform(-depth_mult/2, depth_mult/2, size=n_tot)
 
@@ -213,9 +215,8 @@ class Earthquake(Hazard):
                 new_mw = genextreme(*params).rvs(size=n)
             except RuntimeWarning:
                 new_mw = np.repeat(mw_orig[i], n) * np.random.uniform(-mw_mult/2, mw_mult/2, size=n)
-            if np.any(new_mw > 9.5):
+            if np.any(new_mw > max_mw_orig*(1+mw_mult)) or np.any(new_mw < min_mw_orig * (1-mw_mult)):
                 new_mw = np.repeat(mw_orig[i], n) * np.random.uniform(-mw_mult/2, mw_mult/2, size=n)
-                new_mw = np.clip(new_mw, a_min=0, a_max=9.5)
             rnd_mw.append(new_mw)
 
 

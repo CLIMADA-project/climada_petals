@@ -7,8 +7,6 @@ Created on Thu Jun 16 14:35:55 2022
 """
 
 import pandas as pd
-from climada import CONFIG
-from pathlib import Path
 
 isc_gem_cat_file='/Users/ckropf/Documents/Climada/climada_petals/climada_petals/hazard/test/data/isc-gem-cat.csv'
 isc_gem_cat = pd.read_csv(isc_gem_cat_file, delimiter=' , ', comment='#', header=None, engine='python')
