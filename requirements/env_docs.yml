@@ -329,6 +329,7 @@ dependencies:
     - alabaster==0.7.12
     - babel==2.10.3
     - bitstring==3.1.9
+    - climada==3.2.0
     - deprecation==2.1.0
     - docutils==0.19
     - imagesize==1.4.1
