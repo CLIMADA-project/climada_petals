@@ -499,55 +499,19 @@ class GraphCalcs():
         if (cycles > 1) or (initial):
             self._update_enduser_dependencies(df_dependencies, preselect)
 
-
-    def graph_style(self, ecol='red', vcol='red', vsize=2, ewidth=3):
-        visual_style = {}
-        visual_style["edge_color"] = ecol
-        visual_style["vertex_color"] = vcol
-        visual_style["vertex_size"] = vsize
-        visual_style["edge_width"] = ewidth
-        visual_style["layout"] = self.graph.layout("fruchterman_reingold")
-        visual_style["edge_arrow_size"] = 0
-        visual_style["edge_curved"] = 1
-
-        return visual_style
-
-    def plot_graph(self, *kwargs):
-        return ig.plot(self.graph, **self.graph_style(*kwargs))
-
-    def plot_multigraph(self,layer_dict,layout):
-        visual_style = {}
-        visual_style["vertex_size"] = [layer_dict['vsize'][attr] for attr in
-                                       self.graph.vs["ci_type"]]
-        visual_style["edge_arrow_size"] = 1
-        visual_style["edge_color"] = [layer_dict['edge_col'][attr] for attr in
-                                      self.graph.vs["ci_type"]]
-        visual_style["vertex_color"] = [layer_dict['vertex_col'][attr] for attr
-                                        in self.graph.vs["ci_type"]]
-        if layout == "fruchterman_reingold":
-            visual_style["layout"] = self.graph.layout("fruchterman_reingold")
-        elif layout == 'sugiyama':
-            visual_style["layout"] = self.graph.layout_sugiyama(
-                layers=[layer_dict['layers'][attr] for attr in
-                        self.graph.vs["ci_type"]])
-        visual_style["edge_curved"] = 0.2
-        visual_style["edge_width"] = 1
-
-        return ig.plot(self.graph, **visual_style)
-
-
     def return_network(self):
         return Network.from_graphs([self.graph])
 
 
 class Graph(GraphCalcs):
     """
-    create an igraph Graph from network components
+    creates a graph object from the 
     """
 
     def __init__(self, network, directed=False):
         """
-        network : instance of networks.base.Network"""
+        network : instance of networks.base.Network
+        """
         if network.edges is not None:
             self.graph = self.graph_from_es(
                 gdf_edges=network.edges, gdf_nodes=network.nodes,

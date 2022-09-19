@@ -14,16 +14,15 @@ PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
 You should have received a copy of the GNU Lesser General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
-"""
+---
 
-"""Make network base classes (data containers)"""
+Make network base classes (data containers)
+"""
 
 import logging
 import numpy as np
 import geopandas as gpd
 import igraph as ig
-import matplotlib.pyplot as plt
-import contextily as ctx
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ class Network:
                  nodes=gpd.GeoDataFrame(), 
                  ci_type=None):
         """
-        initialize network structure with edges and nodes dataframes
+        initialize a network object given edges and nodes dataframes
         """
         if edges.empty:
             edges = gpd.GeoDataFrame(
@@ -58,6 +57,9 @@ class Network:
           
     @classmethod
     def from_nws(cls, networks):
+        """
+        make one network object out of several network objects
+        """
         edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
         nodes = gpd.GeoDataFrame(columns=['name_id', 'ci_type'])
         
@@ -79,7 +81,9 @@ class Network:
 
     @classmethod
     def from_graphs(cls, graphs):
-        
+        """
+        make one network object out of several graph objects
+        """
         graph = ig.Graph(directed=graphs[0].is_directed())
         for g in graphs:
             graph += g
@@ -101,41 +105,11 @@ class Network:
     def _add_orig_id(cls, gdf):
         return range(len(gdf))
     
-    def plot_cis(self, ci_types=[], **kwargs):
-        
-        if not ci_types:
-            ci_types = self.ci_type
-        
-        colors = kwargs.get('colors')
-        if not colors:
-            colors = ['brown', 'red', 'black', 'green', 'blue', 'orange', 
-                      'pink', 'white'][:len(ci_types)]
-        labels = kwargs.get('labels')
-        if not labels:
-            labels=ci_types
-            
-        ax = self.edges[self.edges.ci_type==ci_types[0]].append(
-            self.nodes[self.nodes.ci_type==ci_types[0]]
-            ).set_crs(epsg=4326).to_crs(epsg=3857).plot(
-                figsize=(15, 15), alpha=1, markersize=40, color='yellow', 
-                        edgecolor='yellow', label=labels[0])
-
-        for ci_type, color, label in zip(ci_types[1:], colors, labels[1:]):
-            self.edges[self.edges.ci_type==ci_type].append(
-            self.nodes[self.nodes.ci_type==ci_type]
-            ).set_crs(epsg=4326).to_crs(epsg=3857).plot(
-                ax=ax, figsize=(15, 15), alpha=1, markersize=40, color=color, 
-                edgecolor=color, label=label)
-        
-        handles, labels = ax.get_legend_handles_labels() 
-        ax.legend(handles=handles, loc='upper left')
-        ax.set_title(kwargs.get('title'), fontsize=25)
-        ctx.add_basemap(ax)
-        
-        return plt.show()
     
     def initialize_funcstates(self):
-        """ """
+        """ 
+        
+        """
         self.edges[['func_internal','func_tot']] = 1
         self.nodes[['func_internal','func_tot']] = 1
         self.edges['imp_dir'] = 0
@@ -151,5 +125,3 @@ class Network:
         self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{source}_people'] = 1
         
     
-
-

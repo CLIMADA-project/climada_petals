@@ -24,7 +24,6 @@ import pygeos
 import pandas as pd
 import logging
 import sys
-import numpy as np
 
 # for working on cluster
 # sys.path.insert(1, '/cluster/project/climate/evelynm/trails/src/trails')
@@ -41,15 +40,15 @@ LOGGER.setLevel('INFO')
 
 class NetworkPreprocess():
     """
-    Preprocessing Baseclass
-    Takes gdfs, returns pre-processed, formatted gdfs nodes, edges that
+    Preprocessing Baseclass.
+    Takes gdfs, returns pre-processed, formatted gdfs  of nodes and edges that
     have correct network topology.
 
     Note
     ----
     This network preprocessing class is relying greatly on functionalities
     developed within the GitHub trails project:
-    (https://github.com/BenDickens/trails) . It has dependencies that are
+    (https://github.com/BenDickens/trails). It has dependencies that are
     not by default in CLIMADA; plan is to potentially replace those gradually.
     """
     def __init__(self, ci_type):
@@ -154,44 +153,11 @@ class NetworkPreprocess():
 
         return edges, nodes
 
-    @staticmethod
-    def close_gaps(self, df, tolerance=0.0005):
-        """Close gaps in LineString geometry where it should be contiguous.
-        Snaps both lines to a centroid of a gap in between.
-        0.0005 (° if lat/lon) ca 55m lat
-        """
-        geom = df.geometry.values.data
-        coords = pygeos.get_coordinates(geom)
-        indices = pygeos.get_num_coordinates(geom)
-
-        # generate a list of start and end coordinates and create point geometries
-        edges = [0]
-        i = 0
-        for ind in indices:
-            ix = i + ind
-            edges.append(ix - 1)
-            edges.append(ix)
-            i = ix
-        edges = edges[:-1]
-        points = pygeos.points(np.unique(coords[edges], axis=0))
-
-        buffered = pygeos.buffer(points, tolerance)
-
-        dissolved = pygeos.union_all(buffered)
-
-        exploded = [
-            pygeos.get_geometry(dissolved, i)
-            for i in range(pygeos.get_num_geometries(dissolved))
-        ]
-
-        centroids = pygeos.centroid(exploded)
-
-        snapped = pygeos.snap(geom, pygeos.union_all(centroids), tolerance)
-
-        return snapped
-
 class RoadPreprocess(NetworkPreprocess):
-
+    """ 
+    Preprocessing class inheriting from the baseclass, specifically for
+    road geodata.
+    """
     def __init__(self):
         self.ci_type = 'road'
 
@@ -221,7 +187,10 @@ class RoadPreprocess(NetworkPreprocess):
         return self.pygeos_to_shapely(self, network.edges), self.pygeos_to_shapely(self, network.nodes)
 
 class PowerlinePreprocess(NetworkPreprocess):
-
+    """ 
+    Preprocessing class inheriting from the baseclass, specifically for
+    powerline geodata.
+    """
     def __init__(self):
         self.ci_type = 'power_line'
 

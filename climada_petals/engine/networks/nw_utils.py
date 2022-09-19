@@ -353,7 +353,4 @@ class PowerFunctionalData():
         gdf_pplants['el_gen_mw'][np.isnan(gdf_pplants.el_gen_mw)] = unassigned/nans
         
         return  gdf_pplants
-    
-    def assign_linecapa():
-        pass
 
