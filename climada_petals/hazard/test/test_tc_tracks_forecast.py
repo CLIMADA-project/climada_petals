@@ -33,6 +33,7 @@ TEST_BUFR_FILES = [
         'tracks_22S_HEROLD_2020031912.eps.bufr4',
     ]
 ]
+TEST_BUFR_FILE_MULTIMESSAGE = DATA_DIR.joinpath('test202204181200.bufr')
 """TC tracks in four BUFR formats as provided by ECMWF. Sourced from
 https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
 """
@@ -69,10 +70,24 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].sid, '22S')
         self.assertEqual(forecast.data[1].name, 'HEROLD')
         np.testing.assert_array_equal(forecast.data[0].basin, 'S')
-        self.assertEqual(forecast.data[0].category, 'Tropical Depression')
-        self.assertEqual(forecast.data[0].run_datetime,
-                         np.datetime64('2020-03-19T12:00:00.000000'))
-        self.assertEqual(forecast.data[1].is_ensemble, True)
+        
+        
+    def test_ecmwf_multimessage(self):
+        """Test ECMWF reader in multimessage format"""
+        forecast = TCForecast()
+        forecast.fetch_ecmwf(files=TEST_BUFR_FILE_MULTIMESSAGE)
+
+        self.assertEqual(forecast.size, 122)
+        self.assertEqual(forecast.data[121].lat[2], 9.6)
+        self.assertEqual(forecast.data[121].lon[2], -126.8)
+        np.testing.assert_array_equal(
+            np.unique(
+                [forecast.data[ind_i].name
+                 for ind_i in np.arange(122)]
+                ),
+            np.array(['70E', '70W', '71E', '71W', '72W'], dtype='<U3')
+            )
+
 
     def test_equal_timestep(self):
         """Test equal timestep"""
