@@ -22,25 +22,29 @@ Define TCTracks auxiliary methods: BUFR based TC predictions (from ECMWF)
 __all__ = ['TCForecast']
 
 # standard libraries
-import os
 import datetime as dt
 import fnmatch
 import ftplib
+import io
 import logging
+import os
 import tempfile
 from pathlib import Path
-import collections
 
 # additional libraries
+import eccodes as ec
+import lxml.etree as et
 import numpy as np
 import pandas as pd
 import tqdm
 import xarray as xr
-import eccodes as ec
-
 # climada dependencies
 from climada.hazard.tc_tracks import (
-    TCTracks, set_category, DEF_ENV_PRESSURE, CAT_NAMES
+    BASIN_ENV_PRESSURE,
+    CAT_NAMES,
+    DEF_ENV_PRESSURE,
+    TCTracks,
+    set_category,
 )
 from climada.util.files_handler import get_file_names
 
@@ -82,6 +86,18 @@ LOGGER = logging.getLogger(__name__)
 MISSING_DOUBLE = ec.CODES_MISSING_DOUBLE
 MISSING_LONG = ec.CODES_MISSING_LONG
 """Missing double and integers in ecCodes """
+
+CXML2CSV_XSL = Path(__file__).parent / "data/cxml_ecmwf_transformation.xsl"
+"""Xsl file for transforming CXML to CSV format."""
+
+BASIN_ENV_PRESSURE_CXML = {
+    "Southwest Pacific": BASIN_ENV_PRESSURE["SP"],
+    "North Indian": BASIN_ENV_PRESSURE["NI"],
+    "Northeast Pacific": BASIN_ENV_PRESSURE["EP"],
+    "Northwest Pacific": BASIN_ENV_PRESSURE["WP"],
+    "North Atlantic": BASIN_ENV_PRESSURE["NA"],
+}
+
 
 class TCForecast(TCTracks):
     """An extension of the TCTracks construct adapted to forecast tracks
@@ -135,7 +151,6 @@ class TCForecast(TCTracks):
         elif not isinstance(files, list):
             files = [files]
 
-
         for i, file in tqdm.tqdm(enumerate(files, 1), desc='Processing',
                                  unit=' files', total=len(files)):
             # Open the bufr file if not already
@@ -143,8 +158,8 @@ class TCForecast(TCTracks):
                 file = open(file, 'rb')
 
             if os.name == 'nt' and hasattr(file, 'file'):
-                file = file.file # if in windows try accessing the underlying tempfile directly incase variable file is tempfile._TemporaryFileWrapper
-
+                file = file.file   # if in windows try accessing the underlying tempfile directly
+                                   # in case variable file is tempfile._TemporaryFileWrapper
             self.read_one_bufr_tc(file, id_no=i)
 
             file.close()  # discards if tempfile
@@ -230,10 +245,8 @@ class TCForecast(TCTracks):
         if isinstance(file, str) or isinstance(file, Path):
             # for the case that file is str, try open it
             file = open(file, 'rb')
-        
         # loop for the messages in the file
         while 1:
-            # read the next message in the file
             bufr = ec.codes_bufr_new_from_file(file)
             # break loop if there are no more messages
             if bufr is None:
@@ -335,7 +348,6 @@ class TCForecast(TCTracks):
                     pressure[ind_ens] = np.append(pressure[ind_ens], pre[ind_ens])
                     max_wind[ind_ens] = np.append(max_wind[ind_ens], wnd[ind_ens])
     
-    
             # storing information into a dictionary
             msg = {
                 # subset forecast data
@@ -397,7 +409,6 @@ class TCForecast(TCTracks):
                     track.attrs['run_datetime']
                     )
 
-
     @classmethod
     def from_hdf5(cls, file_name):
         """Create new TCTracks object from a NetCDF4-compliant HDF5 file
@@ -410,7 +421,7 @@ class TCForecast(TCTracks):
         tracks : TCForecast
             TCTracks with data from the given HDF5 file.
         """
-        temp = super().from_hdf5(file_name = file_name)
+        temp = super().from_hdf5(file_name=file_name)
         tracks = TCForecast()
         tracks.data = temp.data
         for track in tracks.data:
@@ -422,17 +433,11 @@ class TCForecast(TCTracks):
 
     @staticmethod
     def get_value_from_bufr_array(var):
-        if len(var) == 1:
-            if var[0] == MISSING_LONG:
-                ValueError("Array contained a single, missing value")
-            return var[0]
-        else:
-            for i in range(len(var)):
-                if var[i] != MISSING_LONG:
-                    return var
-                    break
-            raise ValueError("Did not find a non-missing value in the array")
-
+        for v_i in var:
+            if v_i != MISSING_LONG:
+                return v_i
+        raise ValueError("Array contained a single, missing value") if len(var) == 1 \
+            else ValueError("Did not find a non-missing value in the array")
 
     @staticmethod
     def _subset_to_track(msg, index, provider, timestamp_origin, name, id_no):
@@ -519,7 +524,6 @@ class TCForecast(TCTracks):
         track.attrs['category'] = cat_name
         return track
 
-
     @staticmethod
     def _check_variable(var, n_ens, varname=None):
         """Check the value and dimension of variable"""
@@ -535,3 +539,127 @@ class TCForecast(TCTracks):
 
         else:
             raise ValueError
+
+    @classmethod
+    def read_cxml(cls, cxml_path: str, xsl_path: str = None):
+        """Reads a cxml (cyclone xml) file and returns a class instance.
+        ----------
+        cxml_path : str
+            Path to the cxml file
+        xsl_path : str
+            Path to the xsl tranformation file needed to read the cxml data
+        Returns
+        -------
+        tracks : TCForecast
+            TCTracks with data from the given cxml file.
+        """
+        df = cls._cxml_to_df(cxml_path=cxml_path, xsl_path=xsl_path)
+        df_groupby = df.groupby(
+            ["disturbance_no", "baseTime", "basin", "cycloneNumber", "member"],
+            sort=False,
+            dropna=False,
+        )
+        instance = cls()
+        instance.data = [cls._fcastdf_to_ds(subdf) for _, subdf in df_groupby]
+
+        return instance
+
+    @staticmethod
+    def _cxml_to_df(
+        cxml_path: str, xsl_path: str = None, basin_env_pressures: dict = None
+    ):
+        """Read a cxml v1.1 file; may not work on newer specs."""
+        if xsl_path is None:
+            xsl_path = CXML2CSV_XSL
+
+        # coerce Path objects to str; coercion superfluous for lxml >= 4.8.0
+        # pylint: disable= c-extension-no-member
+        xsl = et.parse(str(xsl_path))
+        xml = et.parse(str(cxml_path))
+        transformer = et.XSLT(xsl)
+        csv_string = str(transformer(xml))
+
+        all_storms_df = pd.read_csv(
+            io.StringIO(csv_string),
+            dtype={
+                "member": "Int64",
+                "cycloneNumber": "Int64",
+                "hour": "Int64",
+                "cycloneName": "object",
+                "id": "object",
+            },
+            parse_dates=["baseTime", "validTime"],
+            infer_datetime_format=True,
+        )
+
+        all_storms_df.dropna(
+            subset=["validTime", "latitude", "longitude"], how="any", inplace=True
+        )
+
+        if basin_env_pressures is None:
+            basin_env_pressures = BASIN_ENV_PRESSURE_CXML
+
+        default_env_pressure = all_storms_df.basin.replace(basin_env_pressures)
+
+        all_storms_df["is_named_storm"] = -all_storms_df["cycloneName"].isna()
+        default_name = (
+            all_storms_df["cycloneNumber"].astype(str) + " - " + all_storms_df["basin"]
+        )
+
+        all_storms_df.fillna(
+            {"cycloneName": default_name, "lastClosedIsobar": default_env_pressure},
+            inplace=True,
+        )
+
+        all_storms_df['time_step'] = all_storms_df.hour.diff().astype(float)
+        all_storms_df.time_step[(np.isnan(all_storms_df.time_step))
+                               |(all_storms_df.time_step < 0)] = 0
+
+        return all_storms_df
+
+    @staticmethod
+    def _fcastdf_to_ds(track_as_df: pd.DataFrame):
+        """Convert a given subdataframe into an xr.Dataset"""
+
+        if pd.isna(track_as_df["member"].iloc[0]):
+            sid = track_as_df["id"].iloc[0]
+        else:
+            sid = '{}_{}'.format(track_as_df["id"].iloc[0], track_as_df["member"].iloc[0])
+
+        cat_name = CAT_NAMES[set_category(
+            max_sus_wind=track_as_df.maximumWind.values,
+            wind_unit="m/s",
+            saffir_scale=SAFFIR_MS_CAT
+        )]
+
+        return xr.Dataset(
+            data_vars={
+                # transformation in kn needed until issue https://github.com/CLIMADA-project/climada_python/issues/456 is resolved
+                "max_sustained_wind": ("time", track_as_df["maximumWind"].values*1.94384),
+                "central_pressure": ("time", track_as_df["minimumPressure"].values),
+                "hour": ("time", track_as_df["hour"].values.astype(float)),
+                "time_step": ("time", track_as_df["time_step"].values),
+                "radius_max_wind": ("time", track_as_df["maximumWindRadius"].values),
+                "environmental_pressure": ("time", track_as_df["lastClosedIsobar"].values),
+                "basin": ("time", track_as_df["basin"].values),
+            },
+            coords={
+                "time": track_as_df["validTime"].values,
+                "lat": ("time", track_as_df["latitude"].values),
+                "lon": ("time", track_as_df["longitude"].values),
+            },
+            attrs={
+                "max_sustained_wind_unit": "kn",
+                "central_pressure_unit": "mb",
+                "name": track_as_df["cycloneName"].iloc[0],
+                "sid": sid,
+                "orig_event_flag": False,
+                "data_provider": track_as_df["origin"].iloc[0],
+                "id_no": str(track_as_df["cycloneNumber"].iloc[0]),
+                "ensemble_number": str(track_as_df["member"].iloc[0]),
+                "is_ensemble": not pd.isna(track_as_df["member"].iloc[0]),
+                "run_datetime": track_as_df["baseTime"].iloc[0],
+                "is_named_storm": track_as_df["is_named_storm"].iloc[0].astype(int),
+                "category": cat_name
+            },
+        )

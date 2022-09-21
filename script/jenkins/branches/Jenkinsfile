@@ -13,6 +13,7 @@ pipeline {
             rm -f pylint.log
             pylint -ry climada_petals | tee pylint.log'''
 
+            discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
         }
@@ -23,6 +24,7 @@ pipeline {
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
             rm -rf tests_xml/
+            rm -rf coverage/
             python -m coverage run tests_runner.py unit
             python -m coverage xml -o coverage.xml
             python -m coverage html -d coverage'''
