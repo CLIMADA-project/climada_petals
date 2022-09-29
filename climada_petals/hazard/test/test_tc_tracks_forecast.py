@@ -70,8 +70,12 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].sid, '22S')
         self.assertEqual(forecast.data[1].name, 'HEROLD')
         np.testing.assert_array_equal(forecast.data[0].basin, 'S')
-        
-        
+        self.assertEqual(forecast.data[0].category, 'Tropical Depression')
+        self.assertEqual(forecast.data[0].run_datetime,
+                         np.datetime64('2020-03-19T12:00:00.000000'))
+        self.assertEqual(forecast.data[1].is_ensemble, True)
+
+
     def test_ecmwf_multimessage(self):
         """Test ECMWF reader in multimessage format"""
         forecast = TCForecast()
