@@ -246,11 +246,13 @@ class TCForecast(TCTracks):
             # for the case that file is str, try open it
             file = open(file, 'rb')
         # loop for the messages in the file
-        while 1:
+        check_for_messages = True
+        while check_for_messages:
             bufr = ec.codes_bufr_new_from_file(file)
             # break loop if there are no more messages
             if bufr is None:
-                break
+                check_for_messages = False
+                continue
     
             # we need to instruct ecCodes to expand all the descriptors
             # i.e. unpack the data values
