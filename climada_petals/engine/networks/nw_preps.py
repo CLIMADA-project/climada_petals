@@ -90,7 +90,6 @@ class NetworkPreprocess():
 
 
     def _simplify_network(self, edges=None, nodes=None):
-
         # trails.simplify runs in pygeos, not shapely. convert.
         if not edges.empty:
             edges = self.shapely_to_pygeos(self, edges)
