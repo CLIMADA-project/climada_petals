@@ -407,8 +407,7 @@ class LowFlow(Hazard):
 
         # Following values are defined for each event and centroid
         self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     def identify_clusters(self, clus_thresh_xy=None, clus_thresh_t=None, min_samples=None):
         """call clustering functions to identify the clusters inside the dataframe

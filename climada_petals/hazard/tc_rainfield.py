@@ -152,8 +152,7 @@ class TCRain(Hazard):
         # frequency set when all tracks available
         new_haz.frequency = np.array([1])
         new_haz.event_name = [track.sid]
-        new_haz.fraction = new_haz.intensity.copy()
-        new_haz.fraction.data.fill(1)
+        new_haz.fraction = sparse.csr_matrix(new_haz.intensity.shape)
         # store date of start
         new_haz.date = np.array([dt.datetime(
             track.time.dt.year[0], track.time.dt.month[0],

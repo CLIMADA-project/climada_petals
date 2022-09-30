@@ -155,12 +155,12 @@ class WildFire(Hazard):
         centroids : Centroids, optional
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
-            
+
         Returns
         ----------
         haz : WildFire instance
         """
-        
+
         haz = cls()
 
         # read and initialize data
@@ -194,7 +194,7 @@ class WildFire(Hazard):
         LOGGER.info('Computing intensity of %s fires.',
                     np.unique(df_firms.event_id).size)
         haz._calc_brightness(df_firms, centroids, res_centr)
-        
+
         return haz
 
     def set_hist_fire_FIRMS(self, *args, **kwargs):
@@ -245,7 +245,7 @@ class WildFire(Hazard):
         keep_all_fires : bool, optional
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
-            
+
         Returns
         ----------
         haz : WildFire instance
@@ -329,16 +329,15 @@ class WildFire(Hazard):
         for idx, wf in enumerate(hist_fire_seasons):
             haz.intensity[idx] = wf.intensity.max(axis=0)
         haz.intensity = haz.intensity.tocsr()
-        haz.fraction = haz.intensity.copy()
-        haz.fraction.data.fill(1.0)
-        
+        haz.fraction = sparse.csr_matrix(haz.intensity.shape)
+
         return haz
 
     def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
             """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
             LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
                            "Use WildFire.from_hist_fire_seasons_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__        
+            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False):
@@ -410,8 +409,7 @@ class WildFire(Hazard):
         new_intensity = new_intensity.tocsr()
         self.intensity = sparse.vstack([self.intensity, new_intensity],
                                        format='csr')
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     def combine_fires(self, event_id_merge=None, remove_rest=False,
                       probabilistic=False):
@@ -452,8 +450,7 @@ class WildFire(Hazard):
                     self.date_end = np.array([date_end])
                     self.orig = np.ones(1, bool)
                     self._set_frequency()
-                    self.fraction = self.intensity.copy()
-                    self.fraction.data.fill(1.0)
+                    self.fraction = sparse.csr_matrix(self.intensity.shape)
                 else:
                     # merge event & append
                     self.intensity = sparse.vstack([self.intensity, \
@@ -473,8 +470,7 @@ class WildFire(Hazard):
                     self.date_end = np.delete(self.date_end, evt_idx_merge)
                     self.orig = np.delete(self.orig, evt_idx_merge)
                     self._set_frequency()
-                    self.fraction = self.intensity.copy()
-                    self.fraction.data.fill(1.0)
+                    self.fraction = sparse.csr_matrix(self.intensity.shape)
 
             else:
                 self.intensity = sparse.csr_matrix(np.amax(self.intensity, 0))
@@ -484,8 +480,7 @@ class WildFire(Hazard):
                 self.date_end = np.array([np.max(self.date_end)])
                 self.orig = np.ones(1, bool)
                 self._set_frequency()
-                self.fraction = self.intensity.copy()
-                self.fraction.data.fill(1.0)
+                self.fraction = sparse.csr_matrix(self.intensity.shape)
             LOGGER.info('The merged event has event_id %s', self.event_id[-1])
 
         else:
@@ -493,8 +488,7 @@ class WildFire(Hazard):
             self.event_id = np.array([np.max(self.event_id)+1])
             self.orig = np.zeros(1, bool)
             self._set_frequency()
-            self.fraction = self.intensity.copy()
-            self.fraction.data.fill(1.0)
+            self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     def summarize_fires_to_seasons(self, year_start=None, year_end=None,
                                    hemisphere=None):
@@ -571,8 +565,7 @@ class WildFire(Hazard):
 
         # Following values are defined for each fire and centroid
         self.intensity = intensity_new.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
 
     #@staticmethod
@@ -915,8 +908,7 @@ class WildFire(Hazard):
         for idx, ev_bright in enumerate(bright_list):
             self.intensity[idx] = ev_bright
         self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     @staticmethod
     def _brightness_one_fire(df_firms, tree_centr, ev_id, res_centr, num_centr):

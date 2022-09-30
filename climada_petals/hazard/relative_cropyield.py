@@ -235,8 +235,7 @@ class RelativeCropyield(Hazard):
         haz.crop = crop
         haz.event_name = [str(n) for n in range(int(yearrange[0]), int(yearrange[-1] + 1))]
         haz.frequency = np.ones(len(haz.event_name)) * (1 / len(haz.event_name))
-        haz.fraction = haz.intensity.copy()
-        haz.fraction.data.fill(1.0)
+        haz.fraction = sparse.csr_matrix(haz.intensity.shape)
         haz.units = 't / y / ha'
         haz.date = np.array(dt.str_to_date(
             [event_ + '-01-01' for event_ in haz.event_name]))

@@ -240,9 +240,7 @@ class Drought(Hazard):
 
         self.frequency = np.ones(self.n_years) / self.n_years
 
-        self.fraction = self.intensity.copy()
-        self.fraction = self.intensity.copy().tocsr()
-        self.fraction.data.fill(1)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
         self.date = np.arange(1, self.n_years + 1, 1)
         # new_haz.orig =
         self.check()

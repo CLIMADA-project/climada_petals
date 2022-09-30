@@ -211,7 +211,7 @@ class Landslide(Hazard):
         haz.intensity = sparse.csr_matrix(
             (np.ones(n_ev), (np.arange(n_ev), gdf_cropped.flat_ix)),
             shape=(n_ev, haz.centroids.size))
-        haz.fraction = haz.intensity.copy()
+        haz.fraction = sparse.csr_matrix(haz.intensity.shape)
 
         if hasattr(gdf_cropped, 'ev_date'):
             haz.date = pd.to_datetime(gdf_cropped.ev_date, yearfirst=True)
@@ -305,8 +305,7 @@ class Landslide(Hazard):
 
         # sample events from probabilities
         haz.intensity = sample_events(prob_matrix, n_years, dist)
-        haz.fraction = haz.intensity.copy()
-        haz.fraction[haz.intensity.nonzero()] = 1
+        haz.fraction = sparse.csr_matrix(haz.intensity.shape)
         haz.frequency = np.ones(n_years) / n_years
 
         # meaningless, such that check() method passes:
