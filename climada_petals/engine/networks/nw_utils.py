@@ -140,17 +140,48 @@ def number_noservice(service, graph):
         ci_type='people')[service_dict()[service]]))
     pop = np.array(graph.graph.vs.select(
         ci_type='people')['counts'])
-
     return (no_service*pop).sum()
 
-def number_noservices(graph,
-                         services=['power', 'healthcare', 'education', 'telecom', 'mobility', 'water']):
+def number_noservices(graph, services=['power', 'healthcare', 'education', 
+                                       'telecom', 'mobility', 'water']):
 
     servstats_dict = {}
     for service in services:
         servstats_dict[service] = number_noservice(service, graph)
     return servstats_dict
 
+def number_noservice_df(service, df, service_dict=service_dict()):
+    """
+    Number of population having '0' in service state for a respective service
+    
+    Parameters
+    -----------
+    service : str
+        the service to check (in-)availability for
+    df : dataframe
+        a (geo-)dataframe containing information on population clusters
+        and the respective state of certain sevices, e.g. from a df_res extracted
+        for saving from disrupted graph, or from network.nodes instance
+        
+    Note
+    -----
+    same as number_noservice, just that it's performed on a df, not on the graph
+    """
+    no_service = (1-df[df.ci_type=='people'][service_dict[service]])
+    pop = df[df.ci_type=='people'].counts
+    return (no_service*pop).sum()
+
+def number_noservices_df(df, services=['power', 'healthcare', 'education', 
+                                           'telecom', 'mobility', 'water']):
+    """
+    Note
+    -----
+    same as number_noservices, just that it's performed on a df, not on the graph
+    """
+    servstats_dict = {}
+    for service in services:
+        servstats_dict[service] = number_noservice_df(service, df)
+    return servstats_dict
 
 def disaster_impact_service_geoseries(service, pre_graph, post_graph):
 
@@ -158,32 +189,46 @@ def disaster_impact_service_geoseries(service, pre_graph, post_graph):
         ci_type='people')[service_dict()[service]]))
     no_service_pre = (1-np.array(pre_graph.graph.vs.select(
         ci_type='people')[service_dict()[service]]))
-
     geom = np.array(post_graph.graph.vs.select(
         ci_type='people')['geom_wkt'])
-
     return gpd.GeoSeries.from_wkt(
         geom[np.where((no_service_post-no_service_pre)>0)])
 
 def disaster_impact_service(service, pre_graph, post_graph):
-
+    
     no_service_post = (1-np.array(post_graph.graph.vs.select(
         ci_type='people')[service_dict()[service]]))
     no_service_pre = (1-np.array(pre_graph.graph.vs.select(
         ci_type='people')[service_dict()[service]]))
     pop = np.array(pre_graph.graph.vs.select(
         ci_type='people')['counts'])
-
     return ((no_service_post-no_service_pre)*pop).sum()
 
 def disaster_impact_allservices(pre_graph, post_graph,
-                services=['power', 'healthcare', 'education', 'telecom', 'mobility', 'water']):
+                                services=['power', 'healthcare', 'education', 
+                                          'telecom', 'mobility', 'water']):
 
     dict_pre = number_noservices(pre_graph,services)
     dict_post = number_noservices(post_graph,services)
     dict_delta = {}
     for key, value in dict_post.items():
         dict_delta[key] = value-dict_pre[key]
+    return dict_delta
+
+def disaster_impact_allservices_df(df_pre, df_post, 
+                                   services=['power', 'healthcare', 'education',
+                                             'telecom', 'mobility', 'water']):
+    """
+    Note
+    -----
+    same as disaster_impact_allservices, just that it's performed on a df, 
+    not on the graph
+    """
+    dict_pre = number_noservices_df(df_pre,services)
+    dict_post = number_noservices_df(df_post,services)
+    dict_delta = {}
+    for key, value in dict_post.items():
+        dict_delta[key] = value-dict_pre[key] 
     return dict_delta
 
 def get_graphstats(graph):
