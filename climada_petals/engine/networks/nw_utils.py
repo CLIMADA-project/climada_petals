@@ -27,6 +27,7 @@ from pathlib import Path
 import urllib.request
 
 from climada.util import coordinates as u_coords
+from climada_petals.util.constants import DICT_SPEED
 
 # Energy conversion factors
 KTOE_TO_GWH = 11.630 #(kilo ton of oil equivalents)
@@ -261,7 +262,30 @@ def get_worldpop_data(iso3, save_path, res=1000):
         urllib.request.urlretrieve(download_url, local_filepath)
     else:
         LOGGER.info(f'file already exists as {local_filepath}')
+
+# =============================================================================
+# Distance Threshold setting
+# =============================================================================
+
+def set_distance_threshs(df_dependencies, iso3, hrs_max=1):
+    """
+    set road travel distance threshold according to the average distance
+    covered within a specified amount of hours in the respective country.
     
+    Data taken from Road Quality and Mean Speed Score
+    Author/Editor:Marian Moszoro ; Mauricio Soto
+    ISBN: 9798400210440/1018-5941
+    """
+    try:
+        df_dependencies.loc[
+            df_dependencies.access_cnstr==True, 'thresh_dist'] = \
+            int(DICT_SPEED[iso3]*1000*hrs_max)
+    except KeyError:
+        df_dependencies.loc[
+            df_dependencies.access_cnstr==True, 'thresh_dist'] = \
+            int(DICT_SPEED['other']*1000*hrs_max)
+    return df_dependencies
+
 # =============================================================================
 # Power Supply & Demand Data
 # =============================================================================
