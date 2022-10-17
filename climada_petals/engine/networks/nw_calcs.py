@@ -153,7 +153,7 @@ class GraphCalcs():
             True recommended for large road networks (>100k edges).
             Default is auto - algorithm based on # edges.
         """
-        print('running updated algorithm')
+
         v_seq = self.graph.vs.select(
             ci_type_in=[source_ci, target_ci, via_ci]).select(func_tot_gt=0)
         subgraph = self.graph.induced_subgraph(v_seq)

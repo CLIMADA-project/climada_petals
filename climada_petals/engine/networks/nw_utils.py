@@ -27,7 +27,7 @@ from pathlib import Path
 import urllib.request
 
 from climada.util import coordinates as u_coords
-from climada_petals.util.constants import DICT_SPEED
+from climada_petals.util.constants import DICT_SPEEDS
 
 # Energy conversion factors
 KTOE_TO_GWH = 11.630 #(kilo ton of oil equivalents)
@@ -279,11 +279,11 @@ def set_distance_threshs(df_dependencies, iso3, hrs_max=1):
     try:
         df_dependencies.loc[
             df_dependencies.access_cnstr==True, 'thresh_dist'] = \
-            int(DICT_SPEED[iso3]*1000*hrs_max)
+            int(DICT_SPEEDS[iso3]*1000*hrs_max)
     except KeyError:
         df_dependencies.loc[
             df_dependencies.access_cnstr==True, 'thresh_dist'] = \
-            int(DICT_SPEED['other']*1000*hrs_max)
+            int(DICT_SPEEDS['other']*1000*hrs_max)
     return df_dependencies
 
 # =============================================================================
