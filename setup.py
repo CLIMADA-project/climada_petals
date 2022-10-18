@@ -45,6 +45,7 @@ setup(
         'bottleneck',
         'climada',
         'cartopy',
+        'cdsapi',
         'cfgrib',
         'contextily',
         'dask',
