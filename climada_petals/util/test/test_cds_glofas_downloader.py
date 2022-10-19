@@ -25,7 +25,7 @@ class TestGloFASRequest(unittest.TestCase):
     )
     def test_forecast_single(self, mock_req):
         """Test request for a single forecast day"""
-        glofas_request("forecast", "2022-01-01", "2022-01-01", self.tempdir.name)
+        glofas_request("forecast", "2022-01-01", None, self.tempdir.name)
         request = deepcopy(DEFAULT_REQUESTS["forecast"])
         request["month"] = "01"
         request["day"] = "01"
@@ -84,7 +84,7 @@ class TestGloFASRequest(unittest.TestCase):
     )
     def test_historical_single(self, mock_req):
         """Test request for single historical year"""
-        glofas_request("historical", "2019", "2019", self.tempdir.name)
+        glofas_request("historical", "2019", None, self.tempdir.name)
         request = deepcopy(DEFAULT_REQUESTS["historical"])
         request["hyear"] = "2019"
         mock_req.assert_called_once_with(

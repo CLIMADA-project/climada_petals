@@ -76,7 +76,7 @@ def glofas_request_multiple(
 def glofas_request(
     product,
     date_from: str,
-    date_to: str,
+    date_to: Optional[str],
     output_dir: Path,
     num_proc: int = 1,
     request_kw: Optional[Mapping[str, str]] = None,
@@ -104,8 +104,9 @@ def glofas_request(
         The indentifier for the CMS product to download. See below for available options.
     date_from : str
         First date to download data for. Interpretation varies based on ``product``.
-    date_to : str
-        Last date to download data for. Interpretation varies based on ``product``.
+    date_to : str or None
+        Last date to download data for. Interpretation varies based on ``product``. If
+        ``None``, or the same date as ``date_from``, only download data for ``date_from``
     output_dir : Path
         Output directory for the downloaded data
     num_proc : int
@@ -136,7 +137,8 @@ def glofas_request(
 
     if product == "historical":
         # Interpret dates as years only
-        year_from, year_to = int(date_from), int(date_to)
+        year_from = int(date_from)
+        year_to = int(date_to) if date_to is not None else year_from
 
         # Create request dict
         def get_request(year: int):
