@@ -290,15 +290,24 @@ DICT_CIS_OSM =  {
                              building='kindergarten' or 
                              amenity='kindergarten' or
                              building='college' or amenity='college' or
-                             building='university' or amenity='university' or
-                             building='college' or amenity='college' or
-                             building='childcare' or amenity='childcare'"""},
+                             building='childcare' or amenity='childcare' or
+                             education='school' or education='kindergarten' or
+                             amenity='university' or building='university'
+                             """},
+        'primary_education' : {
+            'osm_keys' : ['amenity','building','education','name'],
+            'osm_query' : """building='school' or amenity='school' or
+                             education='school' or amenity='college' or 
+                             building='college'
+                             """},
+                             
         'healthcare' : {
             'osm_keys' : ['amenity','building','healthcare','name'],
             'osm_query' : """amenity='hospital' or healthcare='hospital' or
                              building='hospital' or building='clinic' or
                              amenity='clinic' or healthcare='clinic' or 
-                             amenity='doctors' or healthcare='doctors'
+                             amenity='doctors' or healthcare='doctors' or 
+                             amenity='health_post'
                              """},
         'water' : {
             'osm_keys' : ['man_made','pump','pipeline','emergency','name'],
