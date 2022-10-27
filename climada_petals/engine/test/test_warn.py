@@ -373,4 +373,4 @@ class TestWarn(unittest.TestCase):
 
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestWarn)
-    unittest.TextTestRunner(vaerbosity=2).run(TESTS)
+    unittest.TextTestRunner(verbosity=2).run(TESTS)

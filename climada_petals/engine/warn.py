@@ -19,6 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Define the Warn module.
 """
 import logging
+from typing import Optional, Union
 import copy
 from dataclasses import dataclass, field
 from enum import Enum
@@ -178,21 +179,24 @@ class Warn:
                     else:
                         raise ValueError(f"{op} is not a valid Operation")
 
-    def __init__(self, warning, coord, warn_params):
+    def __init__(self,
+                 warn_params: WarnParameters,
+                 warning: Optional[np.ndarray] = None,
+                 coord: Optional[np.ndarray] = None):
         """Initialize Warn.
 
         Parameters
         ----------
+        warn_params : WarnParameters
+            Contains information on how to generate the warning (operations and details).
         warning : np.ndarray
             Warn level for every coordinate of input map.
         coord : np.ndarray
             Coordinates of warning map.
-        warn_params : WarnParameters
-            Contains information on how to generate the warning (operations and details).
         """
-        self.warning = warning
-        self.coord = coord
         self.warn_params = warn_params
+        self.warning = warning if warning is not None else np.array([])
+        self.coord = coord if coord is not None else np.array([])
 
     @classmethod
     def from_map(cls, input_map, coord, warn_params):
@@ -219,7 +223,7 @@ class Warn:
         warning = cls._generate_warn_map(binned_map, warn_params)
         if warn_params.change_sm:
             warning = cls._change_small_regions(warning, warn_params.change_sm)
-        return cls(warning, coord, warn_params)
+        return cls(warn_params, warning, coord, )
 
     @classmethod
     def wind_from_cosmo(cls, path_to_cosmo, warn_params, lead_time, quant_nr=0.7):
@@ -257,7 +261,7 @@ class Warn:
         warning = cls._generate_warn_map(binned_map, warn_params)
         if warn_params.change_sm:
             warning = cls._change_small_regions(warning, warn_params.change_sm)
-        return cls(warning, coord, warn_params)
+        return cls(warn_params, warning, coord)
 
     @classmethod
     def from_hazard(cls, hazard, warn_params):
@@ -283,7 +287,7 @@ class Warn:
         warning = cls._generate_warn_map(binned_map, warn_params)
         if warn_params.change_sm:
             warning = cls._change_small_regions(warning, warn_params.change_sm)
-        return cls(warning, coord, warn_params)
+        return cls(warn_params, warning, coord)
 
     @staticmethod
     def bin_map(input_map, levels):
