@@ -1,0 +1,135 @@
+# Holds all information relevant for a climada evaluation
+---
+# The directory associated with the DataManager.
+# (Is not required to hold any data, but can be used for loading data from.)
+data_dir: rf_glofas_data
+
+# Keyword arguments that are used to set up the DataManager and PlotManager
+data_manager:
+  out_dir: "_output"
+  out_dir_kwargs:
+    exist_ok: true
+
+  load_cfg:
+    flood_maps:
+      loader: xr_dataarray
+      glob_str: flood_maps.nc
+      required: True
+      engine: h5netcdf
+
+    glofas_historical_gumbel_fit:
+      loader: xr_dataset
+      glob_str: glofas-historical-gumbel-fit.nc
+      required: True
+      engine: h5netcdf
+
+plot_manager:
+  raise_exc: true
+  out_dir: '{timestamp:}/'  # also the default
+  default_creator: base
+  shared_creator_init_kwargs:
+    default_ext: pdf
+
+# The "evaluation" routine, orchestrated by the PlotManager but not requiring
+# to actually output any plots.
+# (This can also be the path to a separate file.)
+eval:
+  # .. Shared configs .........................................................
+  # ... starting with a dot: ignored by default, used only in `based_on`
+
+  .shared:
+    # Need to define a "plot" function ... but does not need to do anything
+    module: __main__
+    plot_func: show_results
+
+    # Configure the DAG framework
+    use_dag: true
+    # compute_only: ~   # can also pass a list of tags here, e.g. [result]
+    compute_only: [flood_depth]
+    dag_visualization:
+      when:
+        on_compute_success: true  # -> always saves a DAG representation plot
+
+  .dag.cache.use:
+    dag_options:
+      file_cache_defaults:
+        read:
+          enabled: true
+          load_options:
+            engine: h5netcdf
+        write:
+          enabled: true
+          min_compute_time: 1.
+          storage_options:
+            engine: h5netcdf
+
+  # An evaluation task with default cache use (and some explicit cases)
+  with_cache:
+    based_on:
+      - .shared
+      - .dag.cache.use  # ⇒ cache used on all nodes with compute time > 1s
+
+    # Define variables for spatial extent
+    .spatial_extent:
+      west: &lon_min 66
+      east: &lon_max 77
+      north: &lat_max 32
+      south: &lat_min 23
+
+    dag_options:
+      meta_operations:
+        # Shortcut for spatial subsection
+        sel_lon_lat:
+          transform:
+            - operation: .sel
+              args: [ !arg 0 ]
+              kwargs:
+                latitude: !slice [ *lat_max , *lat_min ]
+                longitude: !slice [ *lon_min , *lon_max ]
+
+    select:
+      flood_maps: flood_maps
+      gumbel_fits: glofas_historical_gumbel_fit
+
+    transform:
+      # NOTE: Need to slice static data appropriately!
+      - operation: download_glofas_discharge
+        args: [forecast, "2022-08-01", "2022-08-02", 2]
+        kwargs:
+          area: [*lat_max , *lon_min , *lat_min , *lon_max ]
+          leadtime_hour: ["24", "48", "72"]
+          format: grib
+      - sel_lon_lat: [!dag_prev ]
+
+      # Take the leadtime maximum
+      - operation: .max
+        args: [!dag_prev ]
+        kwargs:
+          dim: step
+        tag: discharge
+
+      # Extract loc and scale from GEV fit dataset
+      - getitem: [!dag_tag gumbel_fits, loc]
+      - sel_lon_lat: [!dag_prev ]
+        tag: gev_loc
+
+      - getitem: [!dag_tag gumbel_fits, scale]
+      - sel_lon_lat: [!dag_prev ]
+        tag: gev_scale
+
+      # Compute the return period
+      - operation: return_period
+        args: [!dag_tag discharge, !dag_tag gev_loc, !dag_tag gev_scale]
+        tag: return_period
+
+      # Interpolate onto finer grid
+      - sel_lon_lat: [!dag_tag flood_maps ]
+        tag: flood_maps_sel
+      - operation: interpolate_space
+        args: [!dag_tag return_period, !dag_prev ]
+        tag: return_period_interpolated
+
+      # Compute flood depth
+      - operation: flood_depth
+        args: [!dag_tag return_period_interpolated, !dag_tag flood_maps_sel]
+        tag: flood_depth

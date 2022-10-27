@@ -1,7 +1,7 @@
 from pathlib import Path
 import multiprocessing as mp
 from copy import deepcopy
-from typing import Iterable, Mapping, Any, Optional
+from typing import Iterable, Mapping, Any, Optional, List
 from itertools import repeat
 from datetime import date, timedelta
 
@@ -74,14 +74,14 @@ def glofas_request_multiple(
 
 
 def glofas_request(
-    product,
+    product: str,
     date_from: str,
     date_to: Optional[str],
     output_dir: Path,
     num_proc: int = 1,
     request_kw: Optional[Mapping[str, str]] = None,
     client_kw: Optional[Mapping[str, Any]] = None,
-):
+) -> List[Path]:
     """Request download of GloFAS data products from the Copernicus Data Store (CDS)
 
     Uses the Copernicus Data Store API (cdsapi) Python module. The interpretation of the
@@ -114,6 +114,10 @@ def glofas_request(
     request_kw : dict(str: str)
         Dictionary to update the default request for the given product
 
+    Returns
+    -------
+    list of Path
+        Paths of the downloaded files
 
     Available products
     ------------------
@@ -192,3 +196,6 @@ def glofas_request(
 
     # Execute request
     glofas_request_multiple(glofas_product, requests, outfiles, num_proc)
+
+    # Return the (absolute) filepaths
+    return [file.resolve() for file in outfiles]
