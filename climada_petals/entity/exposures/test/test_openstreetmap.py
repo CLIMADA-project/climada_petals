@@ -62,20 +62,33 @@ class TestOSMRaw(unittest.TestCase):
         Path.unlink(Path(DATA_DIR,'pitcairn-islands-latest-free.shp.zip'))
         Path.unlink(Path(DATA_DIR,'pitcairn-islands-latest.osm.pbf'))
 
+
+    def test_simplify_shapelist(self):
+        """test _simplify_shapelist"""
+        pass
+
+    def test_shapely2poly(self):
+        """test _shapely2poly"""
+        pass
+    
+    def test_build_osmosis_cmd(self):
+        """test _build_osmosis_cmd"""
+        pass
+
     def test_osmosis_extract(self):
         """test _osmosis_extract"""
         pass
                 
-    def test_get_data_planet(self):
-        """test methods of osmraw" """
+    def test_extract_from_bbox(self):
+        """test extract_from_bbox"""
         pass
 
-    def get_data_planetextract(self):
-        """test get_data_planetextract """
-        pass 
+    def test_extract_from_poly(self):
+        """test extract_from_poly"""
+        pass
     
-    def test_get_data_fileextract(self):
-        """test get_data_fileextract"""
+    def test_extract_from_shapes(self):
+        """test extract_from_shapes"""
         pass
         
 class TestOSMFileQuery(unittest.TestCase):

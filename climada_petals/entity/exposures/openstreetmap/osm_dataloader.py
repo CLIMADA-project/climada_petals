@@ -16,8 +16,10 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Define functions to download openstreetmap data
+Define functions to download, cut and extract openstreetmap data
 """
+
+import os
 import itertools
 import logging
 from pathlib import Path
@@ -25,12 +27,14 @@ import subprocess
 import time
 import urllib.request
 import geopandas as gpd
+import numpy as np
 from osgeo import ogr, gdal
 import overpy
 import shapely
 from tqdm import tqdm
 
 from climada import CONFIG
+import climada.util.coordinates as u_coords
 from climada_petals.util.constants import DICT_GEOFABRIK, DICT_CIS_OSM
 
 
@@ -78,10 +82,10 @@ class OSMRaw:
             if iso3=='RUS':
                 raise KeyError("""Russia comes in two files. Please specify either
                              'RUS-A for the Asian or RUS-E for the European part.""")
-            else:
-                raise KeyError("""The provided iso3 is not a recognised
-                             code. Please have a look on Geofabrik.de if it
-                             exists, or check your iso3 code.""")
+            raise KeyError("""The provided iso3 seems not to be available on
+                               Geofabrik.de. You can extract it from the planet
+                               file or an adequate regional file, instead. See
+                               get_data_fileextract() for this.""")
 
         return LOGGER.error('invalid file format. Please choose one of [shp, pbf]')
 
@@ -123,6 +127,17 @@ class OSMRaw:
         else:
             LOGGER.info(f'file already exists as {local_filepath}')
 
+
+    def get_country_shapelist(self, cntry_name):
+        """
+        cntry_name : str
+            Country name (full) or ISO3 code
+        """
+        iso3 = u_coords.country_to_iso(cntry_name)
+        __, cntry_shape = u_coords.get_admin1_info([iso3])
+        return cntry_shape[iso3]
+
+
     def get_data_planet(self,
                         save_path=Path(DATA_DIR,'planet-latest.osm.pbf')):
         """
@@ -139,11 +154,107 @@ class OSMRaw:
         else:
             LOGGER.info(f'file already exists as {save_path}')
 
-    def _osmosis_extract(self, shape, path_planet, path_extract,
+
+    def _simplify_shapelist(self, geom_list):
+        """
+        remove tiny shapes and simplify outlines to save on file size for
+        .poly files
+        """
+        thresh = 0.1 if shapely.ops.unary_union(geom_list).area > 1 else 0.01
+        geom_list = [geom for geom in geom_list if geom.area>thresh]
+        return [geom.simplify(tolerance=0.01, preserve_topology=True) for
+                geom in geom_list]
+
+
+    def _shapely2poly(self, geom_list, path_save_poly):
+        """
+        Convert list of shapely (multi)polygon(s) into .poly files needed for
+        osmosis to generate cut-outs from bigger osm.pbf files
+        Saves the hence created file under path_save_poly.
+
+        Parameters
+        ---------
+        geom_list : list
+            list of polygon, polygons or multipolygons containing a (complex) shape
+            to be cut out of a bigger file
+        path_save_poly : str
+            path (incl. .poly file extension) under which the created file is to be
+            stored
+
+        Returns
+        -------
+        None
+
+        Note
+        ----
+        For more info on what .poly files are (incl. several tools for
+        creating them), see
+        https://wiki.openstreetmap.org/wiki/Osmosis/Polygon_Filter_File_Format
+
+        For creating .poly files on admin0 to admin3 levels of any place on the
+        globe, see the GitHub repo https://github.com/ElcoK/osm_clipper
+        (especially the function make_poly_file(), on which also this code draws)
+        """
+
+        if os.path.exists(path_save_poly):
+            LOGGER.info('.poly file already exists, aborting.')
+            return None
+
+        # start writing the .poly file
+        file = open(path_save_poly, 'w')
+        file.write('Polygons' + "\n")
+
+        i = 0
+
+        # loop over the different polygons, get their exterior and write the
+        # coordinates of the ring to the .poly file
+        for shape in geom_list:
+            if shape.geom_type == 'MultiPolygon':
+                polygons = shape.geoms
+            elif shape.geom_type == 'Polygon':
+                polygons = [shape]
+
+            for polygon in polygons:
+                polygon = np.array(polygon.exterior)
+                j = 0
+                file.write(str(i) + "\n")
+
+                for ring in polygon:
+                    j = j + 1
+                    file.write("    " + str(ring[0]) + "     " + str(ring[1]) +"\n")
+
+                i = i + 1
+                # close the ring of one subpolygon if done
+                file.write("END" +"\n")
+
+        # close the file when done
+        file.write("END" +"\n")
+        file.close()
+
+
+    def _build_osmosis_cmd(self, shape, path_parentfile, path_extract):
+
+        if isinstance(shape[0], (float, int)):
+            return['osmosis', '--read-pbf', 'file='+str(path_parentfile),
+                   '--bounding-box', f'top={shape[3]}', f'left={shape[0]}',
+                   f'bottom={shape[1]}', f'right={shape[2]}',
+                   '--write-pbf', 'file='+str(path_extract)]
+        if isinstance(shape[0], str):
+            return ['osmosis', '--read-pbf', 'file='+str(path_parentfile),
+                   '--bounding-polygon', 'file='+shape, '--write-pbf',
+                   'file='+str(path_extract)]
+
+        raise ValueError('''shape does not have the correct format.
+                              Only bounding boxes or filepaths to .poly
+                              files are allowed''')
+
+
+    def _osmosis_extract(self, shape, path_parentfile, path_extract,
                          overwrite=False):
         """
         Runs the command line tool osmosis to cut out all map info within
-        shape, from the osm planet file, unless file already exists.
+        shape (bounding box or poygon(s)), from a bigger parent file, unless
+        file already exists.
 
         If your device doesn't have osmosis yet, see installation instructions:
         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
@@ -151,11 +262,12 @@ class OSMRaw:
         Parameters
         -----------
         shape : list or str
-            bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
-        path_planet : str or pathlib.Path
-            file path to planet.osm.pbf
+            list containing [xmin, ymin, xmax, ymax] for a bounding box  or
+            a string to the .poly file path delimiting the bounds.
+        path_parentfile : str or pathlib.Path
+            file path to planet.osm.pbf or other osm.pbf file to extract from
         path_extract : str or pathlib.Path
-            file path (incl. name & ending) under which extract will be stored
+            file path (incl. name & ending osm.pbf) under which extract will be stored
         overwrite : bool
             default is False. Whether to overwrite files if they already exist.
 
@@ -169,90 +281,36 @@ class OSMRaw:
 
             LOGGER.info("""File doesn`t yet exist or overwriting old one.
                         Assembling osmosis command.""")
-            if isinstance(shape, (list, tuple)):
-                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet),
-                       '--bounding-box', f'top={shape[3]}', f'left={shape[0]}',
-                       f'bottom={shape[1]}', f'right={shape[2]}',
-                       '--write-pbf', 'file='+str(path_extract)]
-            elif isinstance(shape, str):
-                cmd = ['osmosis', '--read-pbf', 'file='+str(path_planet),
-                       '--bounding-polygon', 'file='+shape, '--write-pbf',
-                       'file='+str(path_extract)]
 
-            LOGGER.info('''Extracting from the osm planet file...
+            cmd = self._build_osmosis_cmd(shape, path_parentfile, path_extract)
+
+            LOGGER.info('''Extracting from larger file...
                         This will take a while''')
 
             return subprocess.run(cmd, stdout=subprocess.PIPE,
                                   universal_newlines=True)
 
-        if (Path(path_extract).is_file() and (overwrite is False)):
-            LOGGER.info("Extracted file already exists!")
-        else:
-            LOGGER.info("""Something went wrong with Path specifications.
-                        'Please enter either a valid string or pathlib.Path""")
+        LOGGER.info("Extracted file already exists!")
         return None
 
-    def get_data_planetextract(self, shape, path_extract,
-                               path_planet=Path(DATA_DIR, 'planet-latest.osm.pbf'),
-                               overwrite=False):
+
+    def extract_from_bbox(self, bbox, path_extract,
+                          path_parentfile=Path(DATA_DIR, 'planet-latest.osm.pbf'),
+                          overwrite=False):
         """
-        get OSM raw data from a custom shape / bounding-box, which is extracted
-        from the entire OSM planet file. Accepts bbox lists or .poly files for
-        non-rectangular shapes.
+        get OSM raw data from abounding-box, which is extracted
+        from a bigger (e.g. the planet) file.
 
         Parameters
         ----------
-        shape : list or str
-            bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
+        bbox : list
+            bounding box [xmin, ymin, xmax, ymax]
         path_extract : str or pathlib.Path
             file path (incl. name & ending) under which extract will be stored
         path_planet : str or pathlib.Path
             file path to planet-latest.osm.pbf. Will download & store it as
             indicated, if doesn`t yet exist.
             Default is DATA_DIR/planet-latest.osm.pbf
-
-        Note
-        ----
-        For more info on what .poly files are (incl. several tools for
-        creating them), see
-        https://wiki.openstreetmap.org/wiki/Osmosis/Polygon_Filter_File_Format
-
-        For creating .poly files on admin0 to admin3 levels of any place on the
-        globe, see the GitHub repo https://github.com/ElcoK/osm_clipper
-        (especially the function make_poly_file())
-
-        Note
-        ----
-        This function uses the command line tool osmosis to cut out new
-        osm.pbf files from the original ones.
-        Installation instructions (windows, linux, apple) - see
-        https://wiki.openstreetmap.org/wiki/Osmosis/Installation
-        """
-
-        if not Path(path_planet).is_file():
-            LOGGER.info("planet-latest.osm.pbf wasn't found. Downloading it.")
-            self.get_data_planet(path_planet)
-
-        self._osmosis_extract(shape, path_planet, path_extract, overwrite)
-
-    def get_data_fileextract(self, shape, path_extract, path_parentfile,
-                             overwrite=False):
-        """
-        Extract a geographic sub-set from a raw osm-pbf file.
-
-        Note
-        ----
-        The shape must be entirely contained within the file to extract from,
-        else it will yield weird results.
-
-        Parameters
-        ----------
-        shape : list or str
-            bounding box [xmin, ymin, xmax, ymax] or file path to a .poly file
-        path_extract : str or pathlib.Path
-            file path (incl. name & ending) under which extract will be stored
-        path_parentfile : str or pathlib.Path
-            file path to parentfile.osm.pbf from which the shape will be cut out
         overwrite : bool
             default is False. Whether to overwrite files if they already exist.
 
@@ -264,7 +322,89 @@ class OSMRaw:
         https://wiki.openstreetmap.org/wiki/Osmosis/Installation
         """
 
-        self._osmosis_extract(shape, path_parentfile, path_extract, overwrite)
+        if not Path(path_parentfile).is_file():
+            LOGGER.info("Paret file wasn't found. Downloading planet file.")
+            self.get_data_planet(path_parentfile)
+        self._osmosis_extract(bbox, path_parentfile, path_extract, overwrite)
+
+
+    def extract_from_poly(self, path_poly, path_extract,
+                          path_parentfile=Path(DATA_DIR, 'planet-latest.osm.pbf'),
+                          overwrite=False):
+        """
+        get OSM raw data from a custom shape defined in .poly file which is extracted
+        from the entire OSM planet file. Accepts path to
+        .poly files.
+
+        Parameters
+        ----------
+        path_poly : str
+            file path to a .poly file
+        path_extract : str or pathlib.Path
+            file path (incl. name & ending) under which extract will be stored
+        path_parentfile : str or pathlib.Path
+            file path to planet-latest.osm.pbf. Will download & store it as
+            indicated, if doesn`t yet exist.
+            Default is DATA_DIR/planet-latest.osm.pbf
+        overwrite : bool
+            default is False. Whether to overwrite files if they already exist.
+
+        Note
+        ----
+        This function uses the command line tool osmosis to cut out new
+        osm.pbf files from the original ones.
+        Installation instructions (windows, linux, apple) - see
+        https://wiki.openstreetmap.org/wiki/Osmosis/Installation
+        """
+
+        if not Path(path_parentfile).is_file():
+            LOGGER.info("Parent file wasn't found. Downloading planet file.")
+            self.get_data_planet(path_parentfile)
+        self._osmosis_extract(path_poly, path_parentfile, path_extract,
+                              overwrite)
+
+    def extract_from_shapes(self, shape_list, path_poly, path_extract,
+                            path_parentfile=Path(DATA_DIR, 'planet-latest.osm.pbf'),
+                            overwrite=False):
+        """
+        get OSM raw data from a custom shape defined by a list of polygons
+        which is extracted from the entire OSM planet file.
+        The list of shapes first needs to be converted to a .poly file and then
+        passed back to the function (under the hood).
+
+        Parameters
+        ----------
+        shape_list : list
+            list of (Multi-)Polygon(s) that define the shape which should be cut,
+            as e.g. obtained
+        path_extract : str or pathlib.Path
+            file path (incl. name & ending) under which extract will be stored
+        path_poly : str
+            file path under which the .poly file should be stored that is created
+            from the shapes.
+        path_parentfile : str or pathlib.Path
+            file path to planet-latest.osm.pbf. Will download & store it as
+            indicated, if doesn`t yet exist.
+            Default is DATA_DIR/planet-latest.osm.pbf
+        overwrite : bool
+            default is False. Whether to overwrite files if they already exist.
+
+        Note
+        ----
+        This function uses the command line tool osmosis to cut out new
+        osm.pbf files from the original ones.
+        Installation instructions (windows, linux, apple) - see
+        https://wiki.openstreetmap.org/wiki/Osmosis/Installation
+        """
+
+        if not Path(path_parentfile).is_file():
+            LOGGER.info("Parent file wasn't found. Downloading planet file.")
+            self.get_data_planet(path_parentfile)
+
+        shape_list = self._simplify_shapelist(shape_list)
+        self._shapely2poly(shape_list, path_poly)
+        self._osmosis_extract(path_poly, path_parentfile, path_extract,
+                              overwrite)
 
 
 class OSMFileQuery:
@@ -365,7 +505,7 @@ class OSMFileQuery:
         constraint_dict = {
             'osm_keys' : osm_keys,
             'osm_query' : osm_query}
-        
+
         driver = ogr.GetDriverByName('OSM')
         data = driver.Open(self.osm_path)
         query = self._query_builder(geo_type, constraint_dict)
@@ -446,7 +586,7 @@ class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
 
-    area: tuple (xmin, ymin, xmax, ymax), list [xmin, ymin, xmax, ymax] 
+    area: tuple (xmin, ymin, xmax, ymax), list [xmin, ymin, xmax, ymax]
         or shapely.geometry.Polygon
     query: str
         must be of format '["key"]' or '["key"="value"]', etc.
@@ -470,6 +610,8 @@ class OSMApiQuery:
             lon, lat = area.exterior.coords.xy
             lat_lon_str = " ".join([str(y)+" "+str(x) for y, x in zip(lat, lon)])
             return f'(poly:"{lat_lon_str}")'
+    
+        return None
 
     def _insistent_osm_api_query(self, query_clause, read_chunk_size=100000, end_of_patience=127):
         """Runs a single Overpass API query through overpy.Overpass.query.
@@ -491,7 +633,7 @@ class OSMApiQuery:
                 return api.query(query_clause)
             except overpy.exception.OverpassTooManyRequests:
                 if waiting_period < end_of_patience:
-                    LOGGER.warning("""Too many Overpass API requests - 
+                    LOGGER.warning("""Too many Overpass API requests -
                                    trying again in {waiting_period} seconds """)
                 else:
                     raise Exception("Overpass API is consistently unavailable")
