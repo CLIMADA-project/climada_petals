@@ -95,6 +95,38 @@ class GraphCalcs():
             self._edges_from_vlists(source_ix, target_ix, link_name)
 
 
+    def _select_closest_k(self, source_ci, target_ci, dist_thresh=None, 
+                          bidir=False, k=5):
+        gdf_vs = self.graph.get_vertex_dataframe()
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
+                               (gdf_vs.func_tot==1)]
+        del gdf_vs
+        
+        if dist_thresh is not None:
+            dist_thresh/=(ONE_LAT_KM*1000)
+        else:
+            dist_thresh = np.inf
+        
+        # index matches, in format (#target vs, k). nans for those without matches
+        __, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k,
+                                     dist_thresh=dist_thresh)
+        # broadcast target indices to same format
+        ix_matches = ix_matches.flatten()
+        v_ids_target = np.array(
+            np.broadcast_to(np.array([gdf_vs_target.name]).T,
+                            (len(gdf_vs_target),k)
+                            ).flatten())
+        v_ids_target = v_ids_target[~np.isnan(ix_matches)]
+        v_ids_source = np.array(
+            gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].name)
+
+        if bidir:
+            v_ids_target.extend(v_ids_source)
+            v_ids_source.extend(v_ids_target)
+            
+        return list(v_ids_source), list(v_ids_target)
+    
     def link_vertices_closest_k(self, source_ci, target_ci, link_name=None,
                                 dist_thresh=None, bidir=False, k=5):
         """
@@ -102,66 +134,81 @@ class GraphCalcs():
         given distance constraints
         """
 
-        gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & (gdf_vs.func_tot==1)]
-
-        # shape: (#target vs, k)
-        # dists, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
-        if dist_thresh is not None:
-            dist_thresh/=(ONE_LAT_KM*1000)
-        else:
-            dist_thresh = np.inf
-        __, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k,
-                                     dist_thresh=dist_thresh)
-        # broadcast target indices to same format, select based on distance
-        # name and vertex ids are the same. also same in gdf_vs
-        ix_matches = ix_matches.flatten()
-        v_ids_target = np.array(np.broadcast_to(np.array([gdf_vs_target.name]).T,
-                                            (len(gdf_vs_target),k)).flatten())
-        v_ids_target = v_ids_target[~np.isnan(ix_matches)]
-        v_ids_source = np.array(gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].name)
-
-        if bidir:
-            v_ids_target.extend(v_ids_source)
-            v_ids_source.extend(v_ids_target)
-
+        v_ids_source, v_ids_target = self._select_closest_k(
+            source_ci, target_ci, dist_thresh, bidir, k)
+        
         if not link_name:
             link_name = f'dependency_{source_ci}_{target_ci}'
 
-        self._edges_from_vlists(list(v_ids_source), 
-                                list(v_ids_target), 
-                                link_name)
+        self._edges_from_vlists(v_ids_source, v_ids_target, link_name)
 
-    def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf, link_name=None,
-                                dist_thresh=None, bidir=False, k=5, dur_thresh=None):
+    def _calc_friction(self, edge_geoms, friction_surf):
         
-        gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & (gdf_vs.func_tot==1)]
+        from climada.entity.exposures.base import Exposures
+        from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
+        from climada.engine import Impact
+        from climada.util import lines_polys_handler as u_lp
+        import geopandas as gpd
+        
+        # define mapping as impact function.
+        impf_fric = ImpactFunc() 
+        impf_fric.id = 1
+        impf_fric.haz_type = ''
+        impf_fric.name = 'friction surface mapping'
+        impf_fric.intensity_unit = 'min/m'
+        impf_fric.intensity = np.linspace(friction_surf.intensity.data.min(),
+                                          friction_surf.intensity.data.max(), 
+                                          num=500) 
+        impf_fric.mdd = np.linspace(friction_surf.intensity.data.min(),
+                                    friction_surf.intensity.data.max(), 
+                                    num=500)
+        impf_fric.paa = np.sort(np.linspace(1, 1, num=500))
+        impf_fric.check()
+        impf_set = ImpactFuncSet()
+        impf_set.append(impf_fric)
+        
+        # perform impact calc for mapping.
+        exp_links = Exposures(gpd.GeoDataFrame({'geometry': edge_geoms}))
+        exp_links.gdf['impf_'] = 1
 
-        # shape: (#target vs, k)
-        dists, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
-
-        # TODO: replace this by dist_thresh in _ckdnearest!
-        if dist_thresh:
-            # conversion from degrees to m holds only vaguely
-            dists_bool = dists.flatten() < (dist_thresh/(ONE_LAT_KM*1000))
-        else:
-            dists_bool = [True]*len(dists.flatten())
-
-        # broadcast target indices to same format, select based on distance
-        # name and vertex ids are the same. also same in gdf_vs
-        v_ids_target = list(np.broadcast_to(
-            np.array([gdf_vs_target.name]).T,
-            (len(gdf_vs_target),k)).flatten()[dists_bool])
-        v_ids_source = list(gdf_vs_source.loc[ix_matches.flatten()
-                                              ].name[dists_bool])
-
-        if bidir:
-            v_ids_target.extend(v_ids_source)
-            v_ids_source.extend(v_ids_target)
-    
+        # step-by-step to avoid 0 duration sections
+        exp_pnt = u_lp.exp_geom_to_pnt(
+            exp_links, res=100, to_meters=True, 
+            disagg_met=u_lp.DisaggMethod.FIX, disagg_val=100)
+        
+        impact_pnt = Impact()
+        impact_pnt.calc(exp_pnt, impf_set, friction_surf, save_mat=True)
+        if impact_pnt.imp_mat.size < len(exp_pnt.gdf):
+            imp_arry = np.array(impact_pnt.imp_mat.todense()).flatten()
+            imp_arry[imp_arry==0] = \
+                exp_pnt.gdf.value[imp_arry==0]*friction_surf.intensity.data.min()
+            impact_pnt.imp_mat = scipy.sparse.csr_matrix(imp_arry)      
+        
+        friction = u_lp.impact_pnt_agg(
+            impact_pnt, exp_pnt.gdf, u_lp.AggMethod.SUM)
+        
+        return friction.eai_exp
+        
+    def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf, 
+                                    link_name=None, dist_thresh=None, 
+                                    bidir=False, k=5, dur_thresh=None):
+        
+        v_ids_source, v_ids_target = self._select_closest_k(
+            source_ci, target_ci, dist_thresh, bidir, k)
+            
+        edge_geoms = make_edge_geometries(
+            self.graph.vs[v_ids_source]['geometry'],
+            self.graph.vs[v_ids_target]['geometry'])
+        
+        friction = self._calc_friction(edge_geoms, friction_surf)
+        v_ids_source = np.array(v_ids_source)[friction<dur_thresh]
+        v_ids_target = np.array(v_ids_target)[friction<dur_thresh]
+        
+        if not link_name:
+            link_name = f'dependency_{source_ci}_{target_ci}'
+        
+        self._edges_from_vlists(
+            list(v_ids_source), list(v_ids_target), link_name)
     
     def link_vertices_shortest_paths(self, source_ci, target_ci, via_ci,
                                     dist_thresh=10e6, criterion='distance',
@@ -171,7 +218,6 @@ class GraphCalcs():
         between all possible sources & targets --> doesnt matter whether search
         is done from source to all targets or from target to all sources
 
-
         Parameters
         ----------
         preselect : str, bool
@@ -179,7 +225,7 @@ class GraphCalcs():
             search. If False, does an all-to-all path search and selects in
             hindsight based on distance. If True, pre-selects per target some
             potential candidates, but loops individually through each target.
-            True recommended for large road networks (>100k edges).
+            True recommended for large road networks (>>100k edges).
             Default is auto - algorithm based on # edges.
         """
 
@@ -538,6 +584,7 @@ class GraphCalcs():
 
     def return_network(self):
         return Network.from_graphs([self.graph])
+
 
 
 class Graph(GraphCalcs):
