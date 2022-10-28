@@ -43,7 +43,7 @@ __all__ = ['SYSTEM_DIR',
            'WS_DEMO_NC']
 
 from climada.util.constants import *
-
+import numpy as np
 
 HAZ_DEMO_FLDDPH = DEMO_DIR.joinpath('flddph_2000_DEMO.nc')
 """NetCDF4 Flood depth from isimip simulations"""
@@ -570,6 +570,9 @@ DICT_SPEEDS =  {'BTN': 38.0,
  'USA': 107.0,
  'other': 73.0}
 
+"""
+World Bank Income Group Classifications - 2021
+"""
 DICT_INCCLASS = {'ABW': 1.0,
  'AFG': 4.0,
  'AGO': 3.0,
@@ -689,7 +692,7 @@ DICT_INCCLASS = {'ABW': 1.0,
  'LUX': 1.0,
  'LVA': 1.0,
  'MAC': 1.0,
- 'St. Martin (French part)': 1.0,
+ 'MAF': 1.0,
  'MAR': 3.0,
  'MCO': 1.0,
  'MDA': 2.0,
@@ -775,10 +778,10 @@ DICT_INCCLASS = {'ABW': 1.0,
  'URY': 1.0,
  'USA': 1.0,
  'UZB': 3.0,
- 'St. Vincent and the Grenadines': 2.0,
- 'Venezuela, RB': nan,
+ 'VCT': 2.0,
+ 'VEN': np.nan,
  'VGB': 1.0,
- 'Virgin Islands (U.S.)': 1.0,
+ 'VIR': 1.0,
  'VNM': 3.0,
  'VUT': 3.0,
  'WSM': 3.0,
