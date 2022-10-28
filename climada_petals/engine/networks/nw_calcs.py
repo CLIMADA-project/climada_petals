@@ -122,8 +122,8 @@ class GraphCalcs():
             gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].name)
 
         if bidir:
-            v_ids_target.extend(v_ids_source)
-            v_ids_source.extend(v_ids_target)
+            np.append(v_ids_target,v_ids_source)
+            np.append(v_ids_source,v_ids_target)
             
         return list(v_ids_source), list(v_ids_target)
     
@@ -228,12 +228,14 @@ class GraphCalcs():
             True recommended for large road networks (>>100k edges).
             Default is auto - algorithm based on # edges.
         """
+        print('entered shortest path function')
 
         v_seq = self.graph.vs.select(
             ci_type_in=[source_ci, target_ci, via_ci]).select(func_tot_gt=0)
         subgraph = self.graph.induced_subgraph(v_seq)
         subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
-        wrong_edges = set(subgraph.es['ci_type']).difference({via_ci})
+        wrong_edges = set(subgraph.es['ci_type']).difference({via_ci,
+                                                              f'dependency_{source_ci}_{target_ci}'})
         subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
 
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
@@ -298,12 +300,13 @@ class GraphCalcs():
         Per target, choose single shortest path to source which is
         below dist_thresh.
         """
-
+        print('entered shortest path function')
         v_seq = self.graph.vs.select(
             ci_type_in=[source_ci, target_ci, via_ci]).select(func_tot_gt=0)
         subgraph = self.graph.induced_subgraph(v_seq)
         subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
-        wrong_edges = set(subgraph.es['ci_type']).difference({via_ci})
+        wrong_edges = set(subgraph.es['ci_type']).difference({via_ci,
+                                                              f'dependency_{source_ci}_{target_ci}'})
         subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
 
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
@@ -363,7 +366,8 @@ class GraphCalcs():
                                 lengths=lengths)
 
     def place_dependency(self, source, target, single_link=True,
-                         access_cnstr=False, dist_thresh=None, preselect='auto'):
+                         access_cnstr=False, dist_thresh=None, preselect='auto',
+                         friction_surf=None):
         """
         source : supporting infra
         target : dependent infra / ppl
@@ -393,11 +397,18 @@ class GraphCalcs():
                 self.link_vertices_closest_k(source, target, link_name=dep_name,
                                              dist_thresh=dist_thresh, k=5)
         else:
+            self.graph.delete_edges(ci_type=f'dependency_{source}_{target}')
             if single_link:
+                self.link_vertices_friction_surf(source, target, friction_surf,
+                                                 link_name=dep_name,dist_thresh=5000,
+                                                 k=1, dur_thresh=60)
                 self.link_vertices_shortest_path(source, target, via_ci='road',
                                     dist_thresh=dist_thresh, criterion='distance',
                                     link_name=dep_name, preselect=preselect)
             else:
+                self.link_vertices_friction_surf(source, target, friction_surf,
+                                                 link_name=dep_name,dist_thresh=5000,
+                                                 k=5, dur_thresh=60)
                 self.link_vertices_shortest_paths(source, target, via_ci='road',
                                     dist_thresh=dist_thresh, criterion='distance',
                                     link_name=dep_name, preselect=preselect)
@@ -490,7 +501,7 @@ class GraphCalcs():
             
             self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
-    def _update_enduser_dependencies(self, df_dependencies, preselect):
+    def _update_enduser_dependencies(self, df_dependencies, preselect,friction_surf):
 
         for __, row in df_dependencies[
                 df_dependencies['type_I']=='enduser'].iterrows():
@@ -500,12 +511,22 @@ class GraphCalcs():
                 # from scratch, hence check from scratch.
                 LOGGER.info(f'Re-calculating paths from {row.source} to {row.target}')
                 self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
+                    
                 if row.single_link:
+                    self.link_vertices_friction_surf(row.source, row.target, friction_surf,
+                                                     link_name=f'dependency_{row.source}_{row.target}'
+                                                     ,dist_thresh=5000,
+                                                     k=1, dur_thresh=60)
+
                     self.link_vertices_shortest_path(row.source, row.target, via_ci='road',
                                     dist_thresh=row.thresh_dist, criterion='distance',
                                     link_name=f'dependency_{row.source}_{row.target}',
                                     bidir=False, preselect=preselect)
                 else:
+                    self.link_vertices_friction_surf(row.source, row.target, friction_surf,
+                                                     link_name=f'dependency_{row.source}_{row.target}',
+                                                     dist_thresh=5000,
+                                                     k=5, dur_thresh=60)
                     self.link_vertices_shortest_paths(row.source, row.target, via_ci='road',
                                     dist_thresh=row.thresh_dist, criterion='distance',
                                     link_name=f'dependency_{row.source}_{row.target}',
@@ -557,7 +578,7 @@ class GraphCalcs():
 
     def cascade(self, df_dependencies, p_source='power_plant',
                 p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
-                preselect='auto', initial=False):
+                preselect='auto', initial=False, friction_surf=None):
         """
         wrapper for internal state update, functional dependency iterations,
         enduser dependency updates
@@ -580,7 +601,7 @@ class GraphCalcs():
         LOGGER.info('Ended functional state update.' +
                     ' Proceeding to end-user update.')
         if (cycles > 1) or (initial):
-            self._update_enduser_dependencies(df_dependencies, preselect)
+            self._update_enduser_dependencies(df_dependencies, preselect,friction_surf)
 
     def return_network(self):
         return Network.from_graphs([self.graph])
