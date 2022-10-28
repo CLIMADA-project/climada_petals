@@ -82,7 +82,12 @@ def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
     n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
     btree = cKDTree(n_base)
     dist, idx = btree.query(n_assign, k=k, distance_upper_bound=dist_thresh)
-    return dist, np.array(gdf_base.iloc[idx.flatten()].index).reshape(dist.shape)
+    
+    vld_ind = gdf_base.iloc[idx[dist<np.inf]].index.values
+    vld_ind_formatted = np.empty(dist.shape)
+    vld_ind_formatted[:]=np.nan
+    vld_ind_formatted[np.where(dist<np.inf)]=vld_ind
+    return dist, vld_ind_formatted
 
 def _resample_res(filepath, upscale_factor, nodata):
         

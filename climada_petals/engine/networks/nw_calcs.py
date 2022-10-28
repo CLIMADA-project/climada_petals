@@ -107,6 +107,40 @@ class GraphCalcs():
         gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & (gdf_vs.func_tot==1)]
 
         # shape: (#target vs, k)
+        # dists, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
+        if dist_thresh is not None:
+            dist_thresh/=(ONE_LAT_KM*1000)
+        else:
+            dist_thresh = np.inf
+        __, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k,
+                                     dist_thresh=dist_thresh)
+        # broadcast target indices to same format, select based on distance
+        # name and vertex ids are the same. also same in gdf_vs
+        ix_matches = ix_matches.flatten()
+        v_ids_target = np.array(np.broadcast_to(np.array([gdf_vs_target.name]).T,
+                                            (len(gdf_vs_target),k)).flatten())
+        v_ids_target = v_ids_target[~np.isnan(ix_matches)]
+        v_ids_source = np.array(gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].name)
+
+        if bidir:
+            v_ids_target.extend(v_ids_source)
+            v_ids_source.extend(v_ids_target)
+
+        if not link_name:
+            link_name = f'dependency_{source_ci}_{target_ci}'
+
+        self._edges_from_vlists(list(v_ids_source), 
+                                list(v_ids_target), 
+                                link_name)
+
+    def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf, link_name=None,
+                                dist_thresh=None, bidir=False, k=5, dur_thresh=None):
+        
+        gdf_vs = self.graph.get_vertex_dataframe()
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & (gdf_vs.func_tot==1)]
+
+        # shape: (#target vs, k)
         dists, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k)
 
         # TODO: replace this by dist_thresh in _ckdnearest!
@@ -127,15 +161,6 @@ class GraphCalcs():
         if bidir:
             v_ids_target.extend(v_ids_source)
             v_ids_source.extend(v_ids_target)
-
-        if not link_name:
-            link_name = f'dependency_{source_ci}_{target_ci}'
-
-        self._edges_from_vlists(v_ids_source, v_ids_target, link_name)
-
-    def link_vertices_friction_surf(self, source_ci, target_ci, link_name=None,
-                                dist_thresh=None, bidir=False, k=5, dur_thresh=None):
-        pass
     
     
     def link_vertices_shortest_paths(self, source_ci, target_ci, via_ci,
