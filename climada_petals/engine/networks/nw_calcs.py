@@ -133,7 +133,11 @@ class GraphCalcs():
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_name)
 
-
+    def link_vertices_friction_surf(self, source_ci, target_ci, link_name=None,
+                                dist_thresh=None, bidir=False, k=5, dur_thresh=None):
+        pass
+    
+    
     def link_vertices_shortest_paths(self, source_ci, target_ci, via_ci,
                                     dist_thresh=10e6, criterion='distance',
                                     link_name=None, bidir=False, preselect='auto'):
@@ -412,28 +416,8 @@ class GraphCalcs():
             if row.access_cnstr:
                 # TODO: Implement
                 LOGGER.warning('Road access condition for CI-CI deps not yet implemented')
-
-            v_seq = self.graph.vs.select(ci_type_in=[row.source, row.target])
-            subgraph = self.graph.induced_subgraph(v_seq)
-            adj_sub = subgraph.get_adjacency_sparse()
-            # Hadamard product func_tot (*) capacity
-            func_capa = np.multiply(v_seq['func_tot'],
-                                    v_seq[f'capacity_{row.source}_{row.target}'])
-            # propagate capacities down from source --> target along adj
-            capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
-            # functionality thesholds for recieved capacity
-            func_thresh = np.array([row.thresh_func if vx['ci_type'] == row.target
-                                    else -999 for vx in v_seq])
-            # boolean vector whether received capacity great enough to supply endusers
-            capa_suff = (np.array(capa_rec.todense()).squeeze()>=func_thresh).astype(int)
-            func_tot = np.minimum(capa_suff, v_seq['func_tot'])
-
-            # TODO: This is under the assumption that subgraph retains the same
-            # relative ordering of vertices as in v_seq extracted from graph!!
-            # This further assumes that any operation on a VertexSeq equally modifies its graph.
-            # Both should be the case, but igraph doc. is always a bit ambiguous
-            v_seq['func_tot'] = func_tot
-
+            
+            self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
     def _update_enduser_dependencies(self, df_dependencies, preselect):
 
@@ -456,29 +440,43 @@ class GraphCalcs():
                                     link_name=f'dependency_{row.source}_{row.target}',
                                     bidir=False, preselect=preselect)
 
-            v_seq = self.graph.vs.select(ci_type_in=[row.source, row.target])
-            subgraph = self.graph.induced_subgraph(v_seq)
-            try:
-                adj_sub = subgraph.get_adjacency_sparse()
-            except TypeError:
-                #treats case where empty adjacency matrix!
-                adj_sub = scipy.sparse.csr_matrix(subgraph.get_adjacency().data)
-            # Hadamard product func_tot (*) capacity
-            func_capa = np.multiply(v_seq['func_tot'],
-                                    v_seq[f'capacity_{row.source}_{row.target}'])
-            # propagate capacities down from source --> target along adj
-            capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
-            # functionality thesholds for recieved capacity
-            func_thresh = np.array([row.thresh_func if vx['ci_type'] == row.target
-                                    else 0 for vx in v_seq])
-            # boolean vector whether received capacity great enough to supply endusers
-            capa_suff = (np.array(capa_rec.todense()).squeeze()>=func_thresh).astype(int)
+            self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
-            # This is under the assumption that subgraph retains the same
-            # relative ordering of vertices as in v_seq extracted from graph!
-            # This further assumes that any operation on a VertexSeq equally modifies its graph.
-            # Both should be the case, but the igraph doc is always a bit ambiguous
-            v_seq[f'actual_supply_{row.source}_{row.target}'] = capa_suff
+
+    def _propagate_check_fail(self, source, target, thresh_func):
+        """
+        propagate capacities from source vertices to target vertices
+        on the subgraph via the adjacency matrix.
+        check whether capacitiy enough.
+        fail target if not.
+        """
+        v_seq = self.graph.vs.select(ci_type_in=[source, target])
+        subgraph = self.graph.induced_subgraph(v_seq)
+        try:
+            adj_sub = subgraph.get_adjacency_sparse()
+        except TypeError:
+            #treats case where empty adjacency matrix!
+            adj_sub = scipy.sparse.csr_matrix(subgraph.get_adjacency().data)
+        # Hadamard product func_tot (*) capacity
+        func_capa = np.multiply(v_seq['func_tot'],
+                                v_seq[f'capacity_{source}_{target}'])
+        # propagate capacities down from source --> target along adj
+        capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
+        # functionality thesholds for recieved capacity
+        func_thresh = np.array([thresh_func if vx['ci_type'] == target
+                                else 0 for vx in v_seq])
+        # boolean vector whether received capacity great enough to supply endusers
+        capa_suff = (np.array(capa_rec.todense()).squeeze()>=func_thresh).astype(int)
+         
+        # This is under the assumption that subgraph retains the same
+        # relative ordering of vertices as in v_seq extracted from graph!
+        # This further assumes that any operation on a VertexSeq equally modifies its graph.
+        # Both should be the case, but the igraph doc is always a bit ambiguous
+        if target=='people':
+            v_seq[f'actual_supply_{source}_{target}'] = capa_suff
+        else:
+            func_tot = np.minimum(capa_suff, v_seq['func_tot'])
+            v_seq['func_tot'] = func_tot
 
 
     def _get_subgraph2graph_vsdict(self, vertex_seq):
@@ -527,20 +525,25 @@ class Graph(GraphCalcs):
         network : instance of networks.base.Network
         """
         if network.edges is not None:
-            self.graph = self.graph_from_es(
+            self.graph = self.from_es(
                 gdf_edges=network.edges, gdf_nodes=network.nodes,
                 directed=directed)
         else:
-            self.graph = self.graph_from_vs(
+            self.graph = self.from_vs(
                 gdf_nodes=network.nodes, directed=directed)
 
-    @staticmethod
-    def graph_from_es(gdf_edges, gdf_nodes=None, directed=False):
+    def _remove_namecol(self, gdf_nodes):
+        if gdf_nodes is not None:
+            if hasattr(gdf_nodes, 'name'):
+                gdf_nodes = gdf_nodes.drop('name', axis=1)
+        return gdf_nodes
+    
+    def from_es(self, gdf_edges, gdf_nodes=None, directed=False):
         return ig.Graph.DataFrame(
-            gdf_edges, vertices=gdf_nodes, directed=directed)
+            gdf_edges, vertices=self._remove_namecol(gdf_nodes), directed=directed)
 
-    @staticmethod
-    def graph_from_vs(gdf_nodes, directed=False):
+    def from_vs(self, gdf_nodes, directed=False):
+        gdf_nodes = self._remove_namecol(gdf_nodes)
         vertex_attrs = gdf_nodes.to_dict('list')
         return ig.Graph(
             n=len(gdf_nodes),vertex_attrs=vertex_attrs, directed=directed)
