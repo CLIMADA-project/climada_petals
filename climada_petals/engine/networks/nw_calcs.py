@@ -122,8 +122,8 @@ class GraphCalcs():
             gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].name)
 
         if bidir:
-            np.append(v_ids_target,v_ids_source)
-            np.append(v_ids_source,v_ids_target)
+            v_ids_target = np.append(v_ids_target,v_ids_source)
+            v_ids_source = np.append(v_ids_source,v_ids_target)
             
         return list(v_ids_source), list(v_ids_target)
     
@@ -513,20 +513,20 @@ class GraphCalcs():
                 self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
                     
                 if row.single_link:
-                    self.link_vertices_friction_surf(row.source, row.target, friction_surf,
-                                                     link_name=f'dependency_{row.source}_{row.target}'
-                                                     ,dist_thresh=5000,
-                                                     k=1, dur_thresh=60)
+                    # self.link_vertices_friction_surf(row.source, row.target, friction_surf,
+                    #                                  link_name=f'dependency_{row.source}_{row.target}'
+                    #                                  ,dist_thresh=5000,
+                    #                                  k=1, dur_thresh=60)
 
                     self.link_vertices_shortest_path(row.source, row.target, via_ci='road',
                                     dist_thresh=row.thresh_dist, criterion='distance',
                                     link_name=f'dependency_{row.source}_{row.target}',
                                     bidir=False, preselect=preselect)
                 else:
-                    self.link_vertices_friction_surf(row.source, row.target, friction_surf,
-                                                     link_name=f'dependency_{row.source}_{row.target}',
-                                                     dist_thresh=5000,
-                                                     k=5, dur_thresh=60)
+                    # self.link_vertices_friction_surf(row.source, row.target, friction_surf,
+                    #                                  link_name=f'dependency_{row.source}_{row.target}',
+                    #                                  dist_thresh=5000,
+                    #                                  k=5, dur_thresh=60)
                     self.link_vertices_shortest_paths(row.source, row.target, via_ci='road',
                                     dist_thresh=row.thresh_dist, criterion='distance',
                                     link_name=f'dependency_{row.source}_{row.target}',
