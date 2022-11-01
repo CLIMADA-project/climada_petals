@@ -95,13 +95,9 @@ class GraphCalcs():
             self._edges_from_vlists(source_ix, target_ix, link_name)
 
 
-    def _select_closest_k(self, source_ci, target_ci, dist_thresh=None, 
+    def _select_closest_k(self, gdf_vs_source, gdf_vs_target, dist_thresh=None, 
                           bidir=False, k=5):
-        gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
-                               (gdf_vs.func_tot==1)]
-        del gdf_vs
+        
         
         if dist_thresh is not None:
             dist_thresh/=(ONE_LAT_KM*1000)
@@ -127,15 +123,44 @@ class GraphCalcs():
             
         return list(v_ids_source), list(v_ids_target)
     
+    
+    def link_vertices_closest_k_cond(self, source_ci, target_ci, cond, 
+                                     link_name=None, dist_thresh=None, 
+                                     bidir=False, k=5):
+        """
+        find k nearest source_ci vertices for each target_ci vertex,
+        given distance constraints
+        """
+        gdf_vs = self.graph.get_vertex_dataframe()
+        gdf_vs_target = gdf_vs[(gdf_vs.ci_type==target_ci) &
+                               (gdf_vs[cond[0]]==cond[1])]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
+                               (gdf_vs.func_tot==1)]
+        del gdf_vs
+        
+        v_ids_source, v_ids_target = self._select_closest_k(
+            gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
+        
+        if not link_name:
+            link_name = f'dependency_{source_ci}_{target_ci}'
+
+        self._edges_from_vlists(v_ids_source, v_ids_target, link_name) 
+
+
     def link_vertices_closest_k(self, source_ci, target_ci, link_name=None,
                                 dist_thresh=None, bidir=False, k=5):
         """
         find k nearest source_ci vertices for each target_ci vertex,
         given distance constraints
         """
-
+        gdf_vs = self.graph.get_vertex_dataframe()
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
+                               (gdf_vs.func_tot==1)]
+        del gdf_vs
+        
         v_ids_source, v_ids_target = self._select_closest_k(
-            source_ci, target_ci, dist_thresh, bidir, k)
+            gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
         
         if not link_name:
             link_name = f'dependency_{source_ci}_{target_ci}'
@@ -193,8 +218,14 @@ class GraphCalcs():
                                     link_name=None, dist_thresh=None, 
                                     bidir=False, k=5, dur_thresh=None):
         
+        gdf_vs = self.graph.get_vertex_dataframe()
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
+                               (gdf_vs.func_tot==1)]
+        del gdf_vs
+        
         v_ids_source, v_ids_target = self._select_closest_k(
-            source_ci, target_ci, dist_thresh, bidir, k)
+            gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
             
         edge_geoms = make_edge_geometries(
             self.graph.vs[v_ids_source]['geometry'],
