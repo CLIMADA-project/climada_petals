@@ -25,6 +25,7 @@ from rasterio.enums import Resampling
 import logging
 from pathlib import Path
 import urllib.request
+import requests
 
 from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
@@ -309,6 +310,45 @@ def set_distance_threshs(df_dependencies, iso3, hrs_max=1):
     
 class PowerFunctionalData():
     
+    def query_elaccess_wb(self, iso3):
+        ind = 'EG.ELC.ACCS.ZS'
+        query = f'http://api.worldbank.org/v2/country/{iso3.lower()}/indicator/{ind}?mrnev=1&format=json'
+        response = requests.get(query)
+        return response.json()[1][0]['value']
+
+    def load_eltargets(self, cntry_shape, path_et):
+        meta_et, arr_et = u_coords.read_raster(path_et, src_crs={'epsg':'4326'},
+                                               geometry=[cntry_shape])
+        grid = u_coords.raster_to_meshgrid(meta_et['transform'], meta_et['width'], 
+                                           meta_et['height'])                                               
+        gdf_et = gpd.GeoDataFrame({'counts': arr_et.squeeze().flatten(), 
+                                'geometry': gpd.points_from_xy(
+                                    grid[0].flatten(), grid[1].flatten())})
+        gdf_et = gdf_et[gdf_et.counts!=0].reset_index(drop=True)
+        gdf_et['geometry'] = gdf_et.geometry.buffer(meta_et['transform'][0]/2)
+        return gdf_et
+
+    def assign_el_targets(self, gdf_people, iso3, cntry_shape, path_et):
+        
+        el_rate = self.query_elaccess_wb(iso3)
+    
+        if el_rate < 90:
+            gdf_et = self.load_eltargets(cntry_shape, path_et)
+            gdf_people['electrified'] = \
+                gdf_people.sjoin(gdf_et, how='left', predicate="within"
+                                 )['counts_right'].groupby(level=0).sum()>0
+            counter = 0
+            while (gdf_people[gdf_people['electrified']].counts.sum()<(gdf_people.counts.sum()*el_rate/100)
+                   and counter<10):
+                gdf_et['geometry'] = gdf_et.geometry.buffer(0.01)
+                gdf_people['electrified'] = (gdf_people.sjoin(gdf_et, how='left', predicate="within")['counts_right'].groupby(level=0).sum()>0)
+                counter+=1
+        else:
+            gdf_people['electrified'] = True
+        
+        return gdf_people.electrified
+    
+    
     def assign_el_prod_consump(self, gdf_people, gdf_pplants, iso3, path_final_cons):
         """
         Takes a countries' annual electricity consumption value (as
@@ -326,26 +366,40 @@ class PowerFunctionalData():
         ------
         gdf_people with column el_consumption
         gdf_pplants with column el_generation
-        
         """
+        
+        # easiest default for population and power plants - assign count dummies
+        gdf_people['el_consumption'] = 0
+        gdf_people.loc[gdf_people.electrified, 'el_consumption'] = \
+            gdf_people.loc[gdf_people.electrified, 'counts']
+        gdf_pplants['el_generation'] = \
+            gdf_people['el_consumption'].sum()/len(gdf_pplants)
+        
+        # check if better data available from IEA & WRI
         df_final_cons = pd.read_csv(path_final_cons)
-        final_cons = df_final_cons[df_final_cons.ISO3==iso3].el_consumption.values[0]
+        final_cons = df_final_cons[df_final_cons.ISO3==iso3
+                                   ].el_consumption.values[0]
         if not np.isnan(final_cons):
-            gdf_people['el_consumption'] = gdf_people.counts/gdf_people.counts.sum()*final_cons
+            # assign electricity consumption to population
+            gdf_people.loc[gdf_people.electrified, 'el_consumption'] = \
+                gdf_people.loc[gdf_people.electrified, 'counts']/\
+                    gdf_people.loc[gdf_people.electrified, 'counts'].sum(
+                        )*final_cons
             if 'estimated_generation_gwh_2017' in gdf_pplants.columns:
+                # assign electricity generation to power plants
                 gdf_pplants['estimated_generation_gwh_2017'] = pd.to_numeric(
                     gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
                 gdf_pplants['estimated_generation_gwh_2017'].fillna(
-                    np.nanmean(gdf_pplants['estimated_generation_gwh_2017']), inplace=True)
+                    np.nanmean(gdf_pplants['estimated_generation_gwh_2017']),
+                    inplace=True)
                 gdf_pplants['el_generation'] = (
                     gdf_pplants.estimated_generation_gwh_2017/
                     gdf_pplants.estimated_generation_gwh_2017.sum()*final_cons)
+                gdf_pplants = gdf_pplants.drop('estimated_generation_gwh_2017',
+                                               axis=1)
             else:
                 gdf_pplants['el_generation'] = final_cons/len(gdf_pplants)
-        else:
-            gdf_people['el_consumption'] = gdf_people.counts.values
-            gdf_pplants['el_generation'] = gdf_people['el_consumption'].sum()/len(gdf_pplants)
-        
+            
         return gdf_people, gdf_pplants
             
     
