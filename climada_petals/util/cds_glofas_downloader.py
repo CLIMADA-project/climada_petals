@@ -1,7 +1,7 @@
 from pathlib import Path
 import multiprocessing as mp
 from copy import deepcopy
-from typing import Iterable, Mapping, Any, Optional, List
+from typing import Iterable, Mapping, Any, Optional, List, Union
 from itertools import repeat
 from datetime import date, timedelta
 
@@ -57,7 +57,7 @@ DEFAULT_REQUESTS = {
 
 
 def glofas_request_single(product, request, outfile):
-    client_kw_default = dict(quiet=True, debug=False)
+    client_kw_default = dict(quiet=False, debug=False)
     # client_kw_default.update(client_kwargs)
     client = cdsapi.Client(**client_kw_default)
     client.retrieve(product, request, outfile)
@@ -77,7 +77,7 @@ def glofas_request(
     product: str,
     date_from: str,
     date_to: Optional[str],
-    output_dir: Path,
+    output_dir: Union[Path, str],
     num_proc: int = 1,
     request_kw: Optional[Mapping[str, str]] = None,
     client_kw: Optional[Mapping[str, Any]] = None,

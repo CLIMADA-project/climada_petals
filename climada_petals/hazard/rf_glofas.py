@@ -1,7 +1,6 @@
 import sys
 import logging
 from pathlib import Path
-from climada.util.constants import SYSTEM_DIR
 from copy import deepcopy
 from typing import Optional, Union
 
@@ -17,6 +16,7 @@ from dantro.containers import XrDataContainer
 from dantro.tools import load_yml
 from dantro.plot import is_plot_func
 
+from climada.util.constants import SYSTEM_DIR
 from climada_petals.util import glofas_request
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +34,8 @@ def download_glofas_discharge(
     """Download the GloFAS data and return the resulting dataset"""
     # Create the download path if it does not yet exist
     LOGGER.debug("Preparing download directory: %s", download_path)
+    if isinstance(download_path, str):
+        download_path = Path(download_path)
     download_path.mkdir(parents=True, exist_ok=True)
 
     # Request the data
@@ -58,7 +60,15 @@ def return_period(
 ) -> xr.DataArray:
     """Compute the return period for a discharge from a Gumbel EV distribution fit"""
     # Make sure both objects are aligned (there might be slight coordinate differences)
-    discharge = discharge.reindex_like(gev_loc, method="nearest", tolerance=1e-6)
+    # NOTE: Deviations greater than 'tolerance' will lead to NaNs, not errors!
+    #       Therefore, we check the (not-)NaN count.
+    count_not_na = discharge.count()
+    discharge = discharge.reindex_like(gev_loc, method="nearest", tolerance=1e-3)
+    if count_not_na > discharge.count():
+        raise ValueError(
+            "Coordinates of discharge and GEV fits do not match! "
+            "Try interpolating the discharge dataset onto the GEV grid."
+        )
 
     # Compute the return period
     def rp(dis, loc, scale):
@@ -71,7 +81,7 @@ def return_period(
         gev_loc,
         gev_scale,
         dask="parallelized",
-        output_dtypes=[discharge.dtype],
+        output_dtypes=[np.float32],
     ).rename("Return Period")
 
 
@@ -85,6 +95,7 @@ def interpolate_space(
     return return_period.interp(
         coords=dict(longitude=flood_maps["longitude"], latitude=flood_maps["latitude"]),
         method=method,
+        kwargs=dict(fill_value=None),  # Extrapolate
     )
 
 
@@ -140,6 +151,9 @@ class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
     _HDF5_DSET_DEFAULT_CLS = XrDataContainer
     """Tells the HDF5 loader which container class to use"""
 
+    _NEW_CONTAINER_CLS = XrDataContainer
+    """Which container class to use when adding new containers"""
+
 
 @is_plot_func(use_dag=True, required_dag_tags=("return_period"))
 def write_results(*, data: dict, out_path: str, **plot_kwargs):
@@ -164,6 +178,12 @@ def show_results(*args, data, **kwargs):
 
 def return_flood_depth(*args, data, **kwargs):
     return data["flood_depth"]
+
+
+def store_flood_depth_in_dm(*args, data, **kwargs):
+    # flood_depth_cont = XrDataContainer(name="flood_depth", data=data["flood_depth"])
+    data["data_manager"].new_container("flood_depth", data=data["flood_depth"])
+
 
 class GloFASRiverFlood:
     def __init__(self, yaml_cfg_path):
@@ -195,6 +215,9 @@ class GloFASRiverFlood:
         pm.plot_from_cfg(plots_cfg=cfg.get("eval"))
 
         # Return xarray for `from_raster_xarray`??
+        print(dm.tree)
+        print(dm["flood_depth"].data)
+        return dm["flood_depth"].data.to_dataset()
 
 
 def run(_, cfg_file_path: str):
