@@ -41,6 +41,7 @@ dependencies:
   - xmlrunner>=1.7
   - pip:
     - cdsapi
+    - dantro
     - deprecation>=2.1
     - overpy>=0.4
     - peewee>=3.14

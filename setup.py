@@ -48,6 +48,7 @@ setup(
         'cdsapi',
         'cfgrib',
         'contextily',
+        'dantro',
         'dask',
         'deprecation',
         'geopandas',
