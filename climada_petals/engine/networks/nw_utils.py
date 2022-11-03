@@ -310,6 +310,24 @@ def set_distance_threshs(df_dependencies, iso3, hrs_max=1):
     
 class PowerFunctionalData():
     
+    def load_pplants_wri(self, path_pplants_wri, iso3):
+        """
+        load power plant gdf from an excel file containing the WRI global
+        power plant database.
+        """
+        gdf_pp_world = gpd.read_file(path_pplants_wri, crs='EPSG:4326')
+        gdf_pp = gdf_pp_world[gdf_pp_world.country==f'{iso3}'][
+            ['estimated_generation_gwh_2017','latitude','longitude',
+             'name']] 
+        del gdf_pp_world
+        if not gdf_pp.empty:
+            gdf_pp = gpd.GeoDataFrame(
+                gdf_pp, geometry=gpd.points_from_xy(gdf_pp.longitude, gdf_pp.latitude))
+            gdf_pp = gdf_pp.drop(['latitude', 'longitude'], axis=1)
+        
+        return gdf_pp
+        
+    
     def query_elaccess_wb(self, iso3):
         ind = 'EG.ELC.ACCS.ZS'
         query = f'http://api.worldbank.org/v2/country/{iso3.lower()}/indicator/{ind}?mrnev=1&format=json'
