@@ -87,7 +87,7 @@ class GraphCalcs():
                 target_ix.append(
                     gdf_b.loc[ix_match[np.where(dists==min(dists))[0]]].name.values[0])
                 link_name = gdf_vs.ci_type[0]
-            except IndexError:
+            except (IndexError, KeyError):
                 # if no match within given distance
                 continue
 
