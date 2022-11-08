@@ -82,10 +82,10 @@ class GraphCalcs():
             gdf_b = gdf_vs[gdf_vs['membership']!=member]
             try:
                 dists, ix_match = _ckdnearest(gdf_a, gdf_b, dist_thresh=dist_thresh)
-                source_ix.append(
-                    gdf_a.iloc[np.where(dists==min(dists))[0]].name.values[0])
-                target_ix.append(
-                    gdf_b.loc[ix_match[np.where(dists==min(dists))[0]]].name.values[0])
+                source = gdf_a.iloc[np.where(dists==min(dists))[0]].name.values[0]
+                target = gdf_b.loc[ix_match[np.where(dists==min(dists))[0]]].name.values[0]
+                source_ix.append(source)
+                target_ix.append(target)
                 link_name = gdf_vs.ci_type[0]
             except (IndexError, KeyError):
                 # if no match within given distance
