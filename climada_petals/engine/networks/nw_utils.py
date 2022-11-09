@@ -26,6 +26,7 @@ import logging
 from pathlib import Path
 import urllib.request
 import requests
+import time
 
 from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
@@ -331,8 +332,15 @@ class PowerFunctionalData():
     def query_elaccess_wb(self, iso3):
         ind = 'EG.ELC.ACCS.ZS'
         query = f'http://api.worldbank.org/v2/country/{iso3.lower()}/indicator/{ind}?mrnev=1&format=json'
-        response = requests.get(query)
-        return response.json()[1][0]['value']
+        trials = 0
+        while trials<5:
+            trials+=1
+            try: 
+                response = requests.get(query)
+                return response.json()[1][0]['value']
+            except:
+                time.sleep(5)
+                LOGGER.info('Sleeping for 5 secs until next WB data query try')
 
     def load_eltargets(self, cntry_shape, path_et):
         meta_et, arr_et = u_coords.read_raster(path_et, src_crs={'epsg':'4326'},
