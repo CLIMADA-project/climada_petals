@@ -276,7 +276,8 @@ def get_pop_cutoff(gdf_people, cutoff):
     the entire gdf for less than a cutoff fraction of the entire population number
     to decrease the 
     """
-    bins=[0,10,20,35,50,75,100,200,400,750, 1000, 3000, 5000, gdf_people["counts"].max()]
+    bins=[0,10,20,35,50,75]
+    bins.extend(list(np.linspace(start=100, stop=gdf_people["counts"].max(), num=30)))
     df_cum = gdf_people.groupby(pd.cut(gdf_people["counts"], bins)).sum()/gdf_people["counts"].sum()
     cutoff_bool = (df_cum.cumsum()>=cutoff).counts.values
     cutoff_interval = df_cum.index.categories[cutoff_bool][0]
