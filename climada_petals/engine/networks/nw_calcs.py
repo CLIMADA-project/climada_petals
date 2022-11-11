@@ -362,14 +362,14 @@ class GraphCalcs():
                     if bool_check]
         
         # delete those edges on graph that have to be re-checked
-        if len(es_check)>0:
-            self.graph.delete_edges([edge.index for edge in es_check])
+        if len(es_check)>0: 
     
             # make subgraph to perform path search on
             v_ids_target = list(np.unique([edge.target for edge in es_check]))
             v_ids_source = list(np.unique([edge.source for edge in es_check]))
             v_ids_via = [vs.index for vs in 
                          self.graph.vs.select(ci_type=f'{via_ci}')]
+            self.graph.delete_edges([edge.index for edge in es_check])
             
             v_seq = self.graph.vs([*v_ids_target, *v_ids_source,*v_ids_via])
             subgraph = self.graph.induced_subgraph(v_seq)
