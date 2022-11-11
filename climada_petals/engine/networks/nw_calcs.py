@@ -408,9 +408,10 @@ class GraphCalcs():
             if not link_name:
                 link_name = f'dependency_{source_ci}_{target_ci}'
     
-            self._edges_from_vlists(v_ids_source, v_ids_target,
-                                    link_name=link_name,
-                                    lengths=lengths)
+            if len(v_ids_source) > 0:
+                self._edges_from_vlists(v_ids_source, v_ids_target,
+                                        link_name=link_name,
+                                        lengths=lengths)
     
     
     def link_vertices_shortest_path(self, source_ci, target_ci, via_ci,
