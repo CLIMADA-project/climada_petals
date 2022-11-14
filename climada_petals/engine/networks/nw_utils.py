@@ -404,8 +404,10 @@ class PowerFunctionalData():
         
         # check if better data available from IEA & WRI
         df_final_cons = pd.read_csv(path_final_cons)
-        final_cons = df_final_cons[df_final_cons.ISO3==iso3
-                                   ].el_consumption.values[0]
+        final_cons = np.nan
+        if iso3 in df_final_cons.ISO3.values:
+            final_cons = df_final_cons[df_final_cons.ISO3==iso3
+                                       ].el_consumption.values[0]
         if not np.isnan(final_cons):
             # assign electricity consumption to population
             gdf_people.loc[gdf_people.electrified, 'el_consumption'] = \
