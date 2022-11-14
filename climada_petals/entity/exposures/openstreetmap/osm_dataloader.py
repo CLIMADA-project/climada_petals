@@ -568,7 +568,7 @@ class OSMFileQuery:
 
         # features consisting in points, multipolygons and lines:
         elif ci_type in ['gas','oil','telecom','water','wastewater','power',
-                         'rail','road', 'main_road']:
+                         'rail']:
             gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
                                  DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(
@@ -577,6 +577,9 @@ class OSMFileQuery:
             gdf = gdf.append(
                 self.retrieve('lines', DICT_CIS_OSM[ci_type]['osm_keys'],
                                  DICT_CIS_OSM[ci_type]['osm_query']))
+        elif ci_type in ['road', 'main_road']:
+            gdf = self.retrieve('lines', DICT_CIS_OSM[ci_type]['osm_keys'],
+                                 DICT_CIS_OSM[ci_type]['osm_query'])
         else:
             LOGGER.warning('feature not in DICT_CIS_OSM. Returning empty gdf')
             gdf = gpd.GeoDataFrame()
