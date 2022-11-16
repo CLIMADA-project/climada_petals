@@ -380,6 +380,15 @@ DICT_CIS_OSM =  {
                                power='tower' or power='terminal' or 
                                power='switch' or power='catenary_mast' or
                                utility='power'"""},
+        'power_components' : {
+              'osm_keys' : ['power','voltage','utility','name'],
+              'osm_query' : """power='plant' or
+                               power='generator' or power='substation' or
+                               power='transformer' or
+                               power='portal' or 
+                               power='terminal' or 
+                               power='switch' or
+                               utility='power'"""},
         'wastewater' : {
               'osm_keys' : ['reservoir_type','man_made','utility','natural',
                             'name'],

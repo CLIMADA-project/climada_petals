@@ -554,7 +554,8 @@ class OSMFileQuery:
         CIs. Modify if desired.
         """
         # features consisting in points and multipolygon results:
-        if ci_type in ['healthcare','education','primary_education', 'food', 'buildings']:
+        if ci_type in ['healthcare','education','primary_education', 'food',
+                       'buildings', 'power_components']:
             gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
                                  DICT_CIS_OSM[ci_type]['osm_query'])
             gdf = gdf.append(
