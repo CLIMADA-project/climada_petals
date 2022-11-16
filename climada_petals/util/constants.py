@@ -385,7 +385,6 @@ DICT_CIS_OSM =  {
               'osm_query' : """power='plant' or
                                power='generator' or power='substation' or
                                power='transformer' or
-                               power='portal' or 
                                power='terminal' or 
                                power='switch' or
                                utility='power'"""},
