@@ -397,7 +397,7 @@ class GraphCalcs():
                               if edge['distance']<5000]
             v_ids_source_f = [edge.source for edge in es_check
                               if edge['distance']<5000]
-            edge_geoms_f = [edge['distance'] for edge in es_check
+            edge_geoms_f = [edge['geometry'] for edge in es_check
                             if edge['distance']<5000]
             
             friction = self._calc_friction(edge_geoms_f, friction_surf)
