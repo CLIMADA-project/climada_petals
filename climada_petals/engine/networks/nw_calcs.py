@@ -650,11 +650,12 @@ class GraphCalcs():
                     # from scratch, hence check from scratch.
                     starttime = timeit.default_timer()
                     self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
-                    self.link_vertices_friction_surf(row.source, row.target, friction_surf,
-                                                      link_name=f'dependency_{row.source}_{row.target}',
-                                                      dist_thresh=dur_thresh*83.33,
-                                                      k=5, dur_thresh=dur_thresh)
-                    print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer() - starttime)
+                    if row.source != 'road': # for road, friction wasn't included in setup.
+                        self.link_vertices_friction_surf(row.source, row.target, friction_surf,
+                                                          link_name=f'dependency_{row.source}_{row.target}',
+                                                          dist_thresh=dur_thresh*83.33,
+                                                          k=5, dur_thresh=dur_thresh)
+                        print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer() - starttime)
                     starttime = timeit.default_timer()
                     self.link_vertices_shortest_paths(row.source, row.target, via_ci='road',
                                     dist_thresh=row.thresh_dist, criterion='distance',
