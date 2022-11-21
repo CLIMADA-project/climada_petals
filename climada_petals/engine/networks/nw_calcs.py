@@ -57,10 +57,10 @@ class GraphCalcs():
             lengths = [pyproj.Geod(ellps='WGS84').geometry_length(edge_geom) for
                      edge_geom in edge_geoms]
 
-        self.graph.add_edges(pairs, attributes=
-                             {'geometry' : edge_geoms, 'ci_type' : [link_name],
-                              'distance' : lengths, 'func_internal' : 1,
-                              'func_tot' : 1, 'imp_dir' : 0})
+        self.graph.add_edges(pairs, attributes= {
+            'geometry' : edge_geoms, 'ci_type' : [link_name],
+            'distance' : lengths, 'func_internal' : 1,
+            'func_tot' : 1, 'imp_dir' : 0})
 
     def link_clusters(self, dist_thresh=np.inf):
         """
@@ -143,7 +143,23 @@ class GraphCalcs():
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_name) 
 
+    def link_vertices_edgecond(self, source_ci, target_ci, link_name, edge_type):
+        """
+        make a dependency edge between two vertices if another edge with a 
+        certain attribute (specified in edge_type) already exists between those 
+        two.
+        Primarily intended for dependency_road_people, given that a road exists
+        directly at people node.
+        """
+        vs_target = self.graph.vs.select(ci_type=target_ci)
+        pot_edges = [self.graph.incident(v_target, mode='in') for v_target in vs_target]
+        pot_edges = [item for sublist in pot_edges for item in sublist]
+        select_edges = self.graph.es[pot_edges].select(ci_type=edge_type).select(func_tot_gt=0)
+        
+        self._edges_from_vlists([edge.source for edge in select_edges],
+                                [edge.target for edge in select_edges], link_name) 
 
+        
     def link_vertices_closest_k(self, source_ci, target_ci, link_name=None,
                                 dist_thresh=None, bidir=False, k=5):
         """
@@ -347,40 +363,64 @@ class GraphCalcs():
         self._edges_from_vlists(v_ids_source, v_ids_target,
                                 link_name=link_name,
                                 lengths=lengths)
-
-    def check_vertices_shortest_path(self, source_ci, target_ci, via_ci,
-                                     dist_thresh=10e6, criterion='distance',
-                                     link_name=None, bidir=False):
         
-        # re-check those where source_ci functional AND distance of link > 5000m
-        # since those are the ones with road paths
+    def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
+                       dist_thresh, dur_thresh, criterion='distance',
+                       link_name=None, bidir=False):
+        """
+        for links with access constraints, re-check those with functional 
+        sources where paths may however be broken now.
+        Those with dysfunctional sources don't need to be checked, since
+        dysfunctionality will anyways propagate to target later.
+        """
         es_check = self.graph.es.select(
-            ci_type=f'dependency_{source_ci}_{target_ci}', distance_gt=5000)
+            ci_type=f'dependency_{source_ci}_{target_ci}')
+        
         bools_check = [self.graph.vs[edge.source]['func_tot'] > 0 
                        for edge in es_check]
         es_check = [edge for edge, bool_check in zip(es_check, bools_check) 
                     if bool_check]
         
-        # delete those edges on graph that have to be re-checked
-        if len(es_check)>0: 
-    
-            # make subgraph to perform path search on
-            v_ids_target = list(np.unique([edge.target for edge in es_check]))
-            v_ids_source = list(np.unique([edge.source for edge in es_check]))
+        if len(es_check)>0:
+            
+            # links where shortest path algorithm needs rechecking:
+            v_ids_target_sp = [edge.target for edge in es_check
+                            if edge['distance']>5000]
+            v_ids_source_sp = [edge.source for edge in es_check
+                            if edge['distance']>5000]
             v_ids_via = [vs.index for vs in 
                          self.graph.vs.select(ci_type=f'{via_ci}')]
+            
+            # those from edges shorter than 5000m may potentially be a 
+            # friction layer link
+            v_ids_target_f = [edge.target for edge in es_check
+                              if edge['distance']<5000]
+            v_ids_source_f = [edge.source for edge in es_check
+                              if edge['distance']<5000]
+            edge_geoms_f = [edge['distance'] for edge in es_check
+                            if edge['distance']<5000]
+            
+            friction = self._calc_friction(edge_geoms_f, friction_surf)
+            
+            v_ids_target_sp.extend(list(np.array(v_ids_target_f)[friction>dur_thresh]))
+            v_ids_source_sp.extend(list(np.array(v_ids_source_f)[friction>dur_thresh]))
+            
+            v_ids_source_f = list(np.array(v_ids_source_f)[friction<dur_thresh])
+            v_ids_target_f = list(np.array(v_ids_target_f)[friction<dur_thresh])
+            
+            # delete those edges on graph that have to be re-checked
             self.graph.delete_edges([edge.index for edge in es_check])
             
-            v_seq = self.graph.vs([*v_ids_target, *v_ids_source,*v_ids_via])
+            # for those longer than 5000, and those where
+            # friction layer wasn't enough, make subgraph to perform shortest path search on
+            v_seq = self.graph.vs([*v_ids_target_sp, *v_ids_source_sp, *v_ids_via])
             subgraph = self.graph.induced_subgraph(v_seq)
             subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
             subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
             wrong_edges = set(subgraph.es['ci_type']).difference(
                 {via_ci, f'dependency_{source_ci}_{target_ci}'})
             subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
-            
-            lengths = []
-    
+                
             path_dists = subgraph.shortest_paths(
                 source=subgraph.vs.select(ci_type=source_ci), 
                 target=subgraph.vs.select(ci_type=target_ci), 
@@ -392,26 +432,27 @@ class GraphCalcs():
                 ix_source, ix_target = np.where(
                     ((path_dists == path_dists.min(axis=0)) &
                      (path_dists<=dist_thresh))) # min dist. per target
-                v_ids_source = [subgraph_graph_vsdict[vs.index]
+                v_ids_source_sp = [subgraph_graph_vsdict[vs.index]
                                 for vs in subgraph.vs.select(
                                         ci_type=source_ci)[list(ix_source)]]
-                v_ids_target = [subgraph_graph_vsdict[vs.index]
+                v_ids_target_sp = [subgraph_graph_vsdict[vs.index]
                                 for vs in subgraph.vs.select(
                                         ci_type=target_ci)[list(ix_target)]]
-                lengths = path_dists[(ix_source, ix_target)]
-    
+                
+            # recombine both friction and shortest path links
+            v_ids_target_f.extend(v_ids_target_sp)
+            v_ids_source_f.extend(v_ids_source_sp)
+            
             if bidir:
-                v_ids_target.extend(v_ids_source)
-                v_ids_source.extend(v_ids_target)
-                lengths.extend(lengths)
+                v_ids_target_f.extend(v_ids_source_f)
+                v_ids_source_f.extend(v_ids_target_f)
     
             if not link_name:
                 link_name = f'dependency_{source_ci}_{target_ci}'
     
-            if len(v_ids_source) > 0:
-                self._edges_from_vlists(v_ids_source, v_ids_target,
-                                        link_name=link_name,
-                                        lengths=lengths)
+            if len(v_ids_source_f) > 0:
+                self._edges_from_vlists(v_ids_source_f, v_ids_target_f,
+                                        link_name=link_name)
     
     
     def link_vertices_shortest_path(self, source_ci, target_ci, via_ci,
@@ -523,7 +564,10 @@ class GraphCalcs():
                                                  dist_thresh=dist_thresh, k=5)
         else:
             self.graph.delete_edges(ci_type=f'dependency_{source}_{target}')
-            if single_link:
+            if source=='road':
+                self.link_vertices_edgecond(source, target, link_name=dep_name,
+                                            edge_type='road')
+            elif single_link:
                 self.link_vertices_friction_surf(source, target, friction_surf,
                                                  link_name=dep_name,
                                                  dist_thresh=dur_thresh*83.3,
@@ -637,30 +681,34 @@ class GraphCalcs():
 
             if row.access_cnstr:
                 LOGGER.info(f'Re-calculating paths from {row.source} to {row.target}')
-                if row.single_link:
+                if (row.source == 'road'): # separate checking algorithm for road access
+                    self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
+                    self.link_vertices_edgecond(row.source, row.targe, 
+                                                link_name=f'dependency_{row.source}_{row.target}',
+                                                edge_type='road')
+                elif row.single_link: # those need to be re-checked on their fixed s-t pairs
                     starttime = timeit.default_timer()
-                    # those need to be re-checked on their fixed s-t pairs
-                    self.check_vertices_shortest_path(row.source, row.target, via_ci='road',
-                                    dist_thresh=row.thresh_dist, criterion='distance',
-                                    link_name=f'dependency_{row.source}_{row.target}',
-                                    bidir=False)
+                    self.recheck_access(row.source, row.target, via_ci='road',
+                                        friction_surf=friction_surf, dist_thresh=row.thresh_dist,
+                                        dur_thresh=dur_thresh, criterion='distance',
+                                        link_name=f'dependency_{row.source}_{row.target}',
+                                        bidir=False)
                     print(f"Time for recalculating from {row.source} to {row.target} :", timeit.default_timer() - starttime)
                 else:
                     # the re-checking takes much longer than checking completely
                     # from scratch, hence check from scratch.
                     starttime = timeit.default_timer()
                     self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
-                    if row.source != 'road': # for road, friction wasn't included in setup.
-                        self.link_vertices_friction_surf(row.source, row.target, friction_surf,
-                                                          link_name=f'dependency_{row.source}_{row.target}',
-                                                          dist_thresh=dur_thresh*83.33,
-                                                          k=5, dur_thresh=dur_thresh)
-                        print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer() - starttime)
+                    self.link_vertices_friction_surf(row.source, row.target, friction_surf,
+                                                     link_name=f'dependency_{row.source}_{row.target}',
+                                                     dist_thresh=dur_thresh*83.33,
+                                                     k=5, dur_thresh=dur_thresh)
+                    print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer() - starttime)
                     starttime = timeit.default_timer()
                     self.link_vertices_shortest_paths(row.source, row.target, via_ci='road',
-                                    dist_thresh=row.thresh_dist, criterion='distance',
-                                    link_name=f'dependency_{row.source}_{row.target}',
-                                    bidir=False, preselect=preselect)
+                                        dist_thresh=row.thresh_dist, criterion='distance',
+                                        link_name=f'dependency_{row.source}_{row.target}',
+                                        bidir=False, preselect=preselect)
                     print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer() - starttime)
             self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
