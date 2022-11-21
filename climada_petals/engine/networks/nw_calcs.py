@@ -683,7 +683,7 @@ class GraphCalcs():
                 LOGGER.info(f'Re-calculating paths from {row.source} to {row.target}')
                 if (row.source == 'road'): # separate checking algorithm for road access
                     self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
-                    self.link_vertices_edgecond(row.source, row.targe, 
+                    self.link_vertices_edgecond(row.source, row.target, 
                                                 link_name=f'dependency_{row.source}_{row.target}',
                                                 edge_type='road')
                 elif row.single_link: # those need to be re-checked on their fixed s-t pairs
