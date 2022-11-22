@@ -21,6 +21,7 @@ Define RiverFlood class.
 
 __all__ = ['RiverFlood']
 
+from typing import Union
 import logging
 import datetime as dt
 import copy
@@ -35,6 +36,8 @@ from climada.util.constants import RIVER_FLOOD_REGIONS_CSV
 import climada.util.coordinates as u_coord
 from climada.hazard.base import Hazard
 from climada.hazard.centroids import Centroids
+
+# from .rf_glofas import GloFASRiverFlood
 
 NATID_INFO = pd.read_csv(RIVER_FLOOD_REGIONS_CSV)
 
@@ -68,10 +71,10 @@ class RiverFlood(Hazard):
         every centroid for every event
     """
 
-    def __init__(self):
+    def __init__(self, haz_type=HAZ_TYPE, **kwargs):
         """Empty constructor"""
 
-        Hazard.__init__(self, HAZ_TYPE)
+        Hazard.__init__(self, haz_type, **kwargs)
 
     @classmethod
     def from_nc(cls, dph_path=None, frc_path=None, origin=False,
@@ -101,18 +104,18 @@ class RiverFlood(Hazard):
         years : int list
             years that are considered
 
-        
+
         Returns
         -------
         haz : RiverFlood instance
-        
+
         Raises
         ------
         NameError
         """
-        
+
         haz = cls()
-        
+
         if years is None:
             years = [2000]
         if dph_path is None:
@@ -246,7 +249,7 @@ class RiverFlood(Hazard):
                                               flood_dph.time[i].dt.month,
                                               flood_dph.time[i].dt.day).toordinal()
                                   for i in event_index])
-            
+
         return haz
 
     def set_from_nc(self, *args, **kwargs):
@@ -254,7 +257,18 @@ class RiverFlood(Hazard):
         LOGGER.warning("The use of RiverFlood.set_from_nc is deprecated."
                        "Use LowFlow.from_nc instead.")
         self.__dict__ = RiverFlood.from_nc(*args, **kwargs).__dict__
-        
+
+    @classmethod
+    def from_glofas_discharge(cls, cfg_file: Union[str, Path]):
+        rf = GloFASRiverFlood(cfg_file)
+        ds = rf.compute_hazard()
+        return cls.from_raster_xarray(
+            rf.compute_hazard(),
+            hazard_type=HAZ_TYPE,
+            intensity="Flood Depth",
+            intensity_unit="m",
+        )
+
     def _select_event(self, time, years):
         """
         Selects events only in specific years and returns corresponding event
@@ -436,3 +450,7 @@ class RiverFlood(Hazard):
         centroids.id = np.arange(centroids.lon.shape[0])
         # centroids.set_region_id()
         return centroids, country_isos, natIDs
+
+if __name__ == "__main__":
+    import sys
+    run(*sys.argv)

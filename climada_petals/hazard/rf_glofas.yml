@@ -2,7 +2,7 @@
 ---
 # The directory associated with the DataManager.
 # (Is not required to hold any data, but can be used for loading data from.)
-data_dir: rf_glofas_data
+data_dir: ~/coding/climada_petals/climada_petals/hazard/rf_glofas_data
 
 # Keyword arguments that are used to set up the DataManager and PlotManager
 data_manager:
@@ -39,13 +39,14 @@ eval:
 
   .shared:
     # Need to define a "plot" function ... but does not need to do anything
-    module: __main__
-    plot_func: show_results
+    # module: __main__
+    module: climada_petals.hazard.rf_glofas
+    plot_func: store_flood_depth_in_dm
 
     # Configure the DAG framework
     use_dag: true
     # compute_only: ~   # can also pass a list of tags here, e.g. [result]
-    compute_only: [flood_depth]
+    compute_only: [flood_depth, data_manager]
     dag_visualization:
       when:
         on_compute_success: true  # -> always saves a DAG representation plot
@@ -76,7 +77,6 @@ eval:
       north: &lat_max 32
       south: &lat_min 23
 
-    dag_options:
       meta_operations:
         # Shortcut for spatial subsection
         sel_lon_lat:
@@ -92,29 +92,32 @@ eval:
       gumbel_fits: glofas_historical_gumbel_fit
 
     transform:
-      # NOTE: Need to slice static data appropriately!
       - operation: download_glofas_discharge
-        args: [forecast, "2022-08-01", "2022-08-02", 2]
+        args: [forecast, "2022-08-10", "2022-08-11", 2]
         kwargs:
           area: [*lat_max , *lon_min , *lat_min , *lon_max ]
-          leadtime_hour: ["24", "48", "72"]
+          # leadtime_hour: ["24", "48", "72"]
           format: grib
-      - sel_lon_lat: [!dag_prev ]
 
       # Take the leadtime maximum
-      - operation: .max
-        args: [!dag_prev ]
+      # - operation: .max
+      #   args: [!dag_prev ]
+      #   kwargs:
+      #     dim: step
+      #   tag: discharge
+
+      # Compute quantiles of the ensemble
+      - operation: .quantile
+        args: [!dag_prev , [0.1, 0.5, 0.9]]
         kwargs:
-          dim: step
+          dim: number
         tag: discharge
 
       # Extract loc and scale from GEV fit dataset
       - getitem: [!dag_tag gumbel_fits, loc]
-      - sel_lon_lat: [!dag_prev ]
         tag: gev_loc
 
       - getitem: [!dag_tag gumbel_fits, scale]
-      - sel_lon_lat: [!dag_prev ]
         tag: gev_scale
 
       # Compute the return period
@@ -123,13 +126,21 @@ eval:
         tag: return_period
 
       # Interpolate onto finer grid
-      - sel_lon_lat: [!dag_tag flood_maps ]
-        tag: flood_maps_sel
       - operation: interpolate_space
-        args: [!dag_tag return_period, !dag_prev ]
+        args: [!dag_tag return_period, !dag_tag flood_maps]
         tag: return_period_interpolated
+        file_cache:
+          read:
+            load_options:
+              chunks: {time: -1, number: -1, step: -1}
 
       # Compute flood depth
       - operation: flood_depth
-        args: [!dag_tag return_period_interpolated, !dag_tag flood_maps_sel]
+        args: [!dag_tag return_period_interpolated, !dag_tag flood_maps]
         tag: flood_depth
+        file_cache:
+          write: true
+
+      # Pass the data manager to the plot function so we can store the result in it
+      - pass: !dag_tag dm
+        tag: data_manager
