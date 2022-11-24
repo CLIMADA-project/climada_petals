@@ -137,7 +137,8 @@ def download_glofas_discharge(
         geo = get_country_geometries(iso, extent=area)
 
         # NOTE: 'bounds': minx (west), miny (south), maxx (east), maxy (north)
-        bounds = deque(geo.total_bounds)
+        # NOTE: Explicitly cast to float to ensure that YAML parser can dump the data
+        bounds = deque(map(float, geo.total_bounds.flat))
         bounds.rotate(1)
 
         # Insert into kwargs
