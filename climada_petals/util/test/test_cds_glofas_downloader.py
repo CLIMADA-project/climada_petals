@@ -3,9 +3,16 @@ import unittest
 import unittest.mock as mock
 from copy import deepcopy
 from pathlib import Path
+from multiprocessing import Pool
+
+import cdsapi
+from ruamel.yaml import YAML
 
 from climada_petals.util import glofas_request
-from climada_petals.util.cds_glofas_downloader import DEFAULT_REQUESTS
+from climada_petals.util.cds_glofas_downloader import (
+    DEFAULT_REQUESTS,
+    glofas_request_single,
+)
 
 
 class TestGloFASRequest(unittest.TestCase):
@@ -18,6 +25,64 @@ class TestGloFASRequest(unittest.TestCase):
     def tearDown(self):
         """Clean up the temporary directory"""
         self.tempdir.cleanup()
+
+    @mock.patch("climada_petals.util.cds_glofas_downloader.Client", autospec=True)
+    def test_request_single(self, client_mock):
+        """Test execution of a single request without actually downloading stuff"""
+        product = "product"
+        request = deepcopy(DEFAULT_REQUESTS["forecast"])
+        outfile = Path(self.tempdir.name, "request.nc")
+        client_obj_mock = mock.create_autospec(cdsapi.Client)
+        client_mock.return_value = client_obj_mock
+
+        # Call once
+        glofas_request_single(product, request, outfile, use_cache=True)
+        client_mock.assert_called_once_with(quiet=False, debug=False)
+        client_obj_mock.retrieve.assert_called_once_with(product, request, outfile)
+
+        # Check if request was correctly dumped
+        outfile_yml = outfile.with_suffix(".yml")
+        self.assertTrue(outfile_yml.exists())
+        yaml = YAML()
+        self.assertEqual(yaml.load(outfile_yml), request)
+
+        # Call again to check caching
+        with tempfile.NamedTemporaryFile(dir=self.tempdir.name) as tmp_file:
+            # Dump the request next to the (fake) outfile
+            yaml.dump(request, Path(tmp_file.name).with_suffix(".yml"))
+
+            # Client should not have been called again
+            client_mock.reset_mock()
+            client_obj_mock.reset_mock()
+            glofas_request_single(product, request, tmp_file.name, use_cache=True)
+            client_mock.assert_not_called()
+            client_obj_mock.retrieve.assert_not_called()
+
+            # ...but it should when cache is not used
+            # Also check client_kw here!
+            glofas_request_single(
+                product,
+                request,
+                tmp_file.name,
+                use_cache=False,
+                client_kw=dict(verify=True, debug=True),
+            )
+            client_mock.assert_called_once_with(quiet=False, debug=True, verify=True)
+            client_obj_mock.retrieve.assert_called_once_with(
+                product, request, tmp_file.name
+            )
+
+            # Wrong request should also induce new download
+            client_mock.reset_mock()
+            client_obj_mock.reset_mock()
+            wrong_request = deepcopy(request)
+            wrong_request["leadtime_hour"][2] = "xx"
+            yaml.dump(wrong_request, Path(tmp_file.name).with_suffix(".yml"))
+            glofas_request_single(product, request, tmp_file.name, use_cache=True)
+            client_mock.assert_called_once_with(quiet=False, debug=False)
+            client_obj_mock.retrieve.assert_called_once_with(
+                product, request, tmp_file.name
+            )
 
     @mock.patch(
         "climada_petals.util.cds_glofas_downloader.glofas_request_multiple",
@@ -34,6 +99,8 @@ class TestGloFASRequest(unittest.TestCase):
             [request],
             [Path(self.tempdir.name, "glofas-forecast-ensemble-2022-01-01.nc")],
             1,
+            True,
+            None,
         )
 
     @mock.patch(
@@ -92,6 +159,8 @@ class TestGloFASRequest(unittest.TestCase):
             [request],
             [Path(self.tempdir.name, "glofas-historical-2019.grib")],
             1,
+            True,
+            None,
         )
 
     @mock.patch(

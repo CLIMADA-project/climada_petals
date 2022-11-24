@@ -4,8 +4,12 @@ from copy import deepcopy
 from typing import Iterable, Mapping, Any, Optional, List, Union
 from itertools import repeat
 from datetime import date, timedelta
+import logging
 
-import cdsapi
+from cdsapi import Client
+from ruamel.yaml import YAML
+
+LOGGER = logging.getLogger(__name__)
 
 DEFAULT_REQUESTS = {
     "historical": {
@@ -56,11 +60,55 @@ DEFAULT_REQUESTS = {
 }
 
 
-def glofas_request_single(product, request, outfile):
+def glofas_request_single(
+    product: str,
+    request: Mapping[str, Any],
+    outfile: Union[Path, str],
+    use_cache: bool,
+    client_kw: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Perform a single request for data from the Copernicus data store
+
+    This will skip the download if a file was found at the target location with the same
+    request. The request will be stored as YAML file alongside the target file and used
+    for comparison. This behavior can be adjusted with the ``use_cache`` parameter.
+
+    Parameters
+    ----------
+    product : str
+        The string identifier of the product in the Copernicus data store
+    request : dict
+        The download request as dictionary
+    outfile : str or Path
+        The file path to store the download into (including extension)
+    use_cache : bool (optional)
+        Skip downloading if the target file exists and the accompanying request file
+        contains the same request
+    client_kw : dict (optional)
+        Dictionary with keyword arguments for the ``cdsapi.Client`` used for downloading
+    """
+    # Set up YAML parser
+    yaml = YAML()
+    request_cfg = Path(outfile).with_suffix(".yml")
+
+    # Check if file exists and request_cfg matches
+    if use_cache and Path(outfile).is_file() and request_cfg.is_file():
+        if yaml.load(request_cfg) == request:
+            LOGGER.info(
+                "Skipping request for file '%s' because it already exists", outfile
+            )
+            return
+
+    # Set up client and retrieve data
+    LOGGER.info("Downloading file: %s", outfile)
     client_kw_default = dict(quiet=False, debug=False)
-    # client_kw_default.update(client_kwargs)
-    client = cdsapi.Client(**client_kw_default)
+    if client_kw is not None:
+        client_kw_default.update(client_kw)
+    client = Client(**client_kw_default)
     client.retrieve(product, request, outfile)
+
+    # Dump the request next to the file
+    yaml.dump(request, request_cfg)
 
 
 def glofas_request_multiple(
@@ -68,9 +116,21 @@ def glofas_request_multiple(
     requests: Iterable[Mapping[str, str]],
     outfiles: Iterable[Path],
     num_proc: int,
-):
+    use_cache: bool,
+    client_kw: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Execute multiple requests to the Copernicus data store in parallel"""
     with mp.Pool(num_proc) as pool:
-        pool.starmap(glofas_request_single, zip(repeat(product), requests, outfiles))
+        pool.starmap(
+            glofas_request_single,
+            zip(
+                repeat(product),
+                requests,
+                outfiles,
+                repeat(use_cache),
+                repeat(client_kw),
+            ),
+        )
 
 
 def glofas_request(
@@ -79,6 +139,7 @@ def glofas_request(
     date_to: Optional[str],
     output_dir: Union[Path, str],
     num_proc: int = 1,
+    use_cache: bool = True,
     request_kw: Optional[Mapping[str, str]] = None,
     client_kw: Optional[Mapping[str, Any]] = None,
 ) -> List[Path]:
@@ -145,23 +206,25 @@ def glofas_request(
         year_to = int(date_to) if date_to is not None else year_from
 
         # Create request dict
-        def get_request(year: int):
+        def get_request_historical(year: int):
             request = deepcopy(default_request)
             request.update(hyear=str(year))
             return request
 
         # List up all requests
         glofas_product = f"cems-glofas-{product}"
-        years = [year for year in range(year_from, year_to + 1)]
-        requests = [get_request(year) for year in years]
+        years = list(range(year_from, year_to + 1))
+        requests = [get_request_historical(year) for year in years]
         outfiles = [
             Path(output_dir, f"glofas-{product}-{year:04}.grib") for year in years
         ]
 
     elif product == "forecast":
         # Download single date if 'date_to' is 'None'
-        date_from = date.fromisoformat(date_from)
-        date_to = date.fromisoformat(date_to) if date_to is not None else date_from
+        date_from: date = date.fromisoformat(date_from)
+        date_to: date = (
+            date.fromisoformat(date_to) if date_to is not None else date_from
+        )
 
         # Switch file extension based on selected format
         file_ext = "grib" if default_request["format"] == "grib" else "nc"
@@ -172,7 +235,7 @@ def glofas_request(
                 yield begin + timedelta(days=day)
 
         # Create request dict
-        def get_request(date: date):
+        def get_request_forecast(date: date):
             request = deepcopy(default_request)
             request.update(
                 year=str(date.year), month=f"{date.month:02d}", day=f"{date.day:02d}"
@@ -181,8 +244,8 @@ def glofas_request(
 
         # List up all requests
         glofas_product = f"cems-glofas-{product}"
-        dates = [d for d in date_range(date_from, date_to + timedelta(days=1))]
-        requests = [get_request(d) for d in dates]
+        dates = list(date_range(date_from, date_to + timedelta(days=1)))
+        requests = [get_request_forecast(d) for d in dates]
         product_id = default_request["product_type"].split("_")[0]
         outfiles = [
             Path(
@@ -195,7 +258,9 @@ def glofas_request(
         NotImplementedError()
 
     # Execute request
-    glofas_request_multiple(glofas_product, requests, outfiles, num_proc)
+    glofas_request_multiple(
+        glofas_product, requests, outfiles, num_proc, use_cache, client_kw
+    )
 
     # Return the (absolute) filepaths
     return [file.resolve() for file in outfiles]

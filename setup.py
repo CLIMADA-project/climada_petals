@@ -67,6 +67,7 @@ setup(
         'pybufrkit',
         'pycountry',
         'rasterio',
+        'ruamel.yaml',
         'scikit-image',
         'scikit-learn',
         'statsmodels',
