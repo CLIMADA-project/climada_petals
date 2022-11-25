@@ -621,18 +621,27 @@ class GraphCalcs():
         if {p_source, p_sink}.issubset(set(self.graph.vs['ci_type'])):
             LOGGER.info('Updating power clusters')
             # For another version using pandapower, see nw_utils.py
+            # Since powerlines are directed in a directed graph,
+            # make sure 'reverse' lines are also down
+            
+            edges_dys = self.graph.es.select(ci_type='power_line'
+                                             ).select(func_tot_eq=0)
+            reverse_edges = [(edge.target, edge.source) for edge in edges_dys]
+            eids = self.graph.get_eids(pairs=reverse_edges, path=None,
+                                       directed=True, error=True)
+            self.graph.es[eids]['func_tot']=0
+            
             self.powercap_from_clusters(p_source=p_source, p_sink=p_sink,
                 demand_ci='people', source_var=source_var, demand_var=demand_var)
 
 
-    def powercap_from_clusters(self, p_source='power plant',
-                                   p_sink='substation', demand_ci='people',
-                                   source_var='el_generation', demand_var='el_consumption'):
+    def powercap_from_clusters(self, p_source, p_sink, demand_ci, source_var,
+                               demand_var):
 
         capacity_vars = [var for var in self.graph.vs.attributes()
                          if f'capacity_{p_sink}_' in var]
         power_vs = self.graph.vs.select(
-            ci_type_in=['power line', p_source, p_sink, demand_ci])
+            ci_type_in=['power_line', p_source, p_sink, demand_ci])
         # make subgraph spanning all nodes, but only functional edges
         # Subgraph operations do not modify original graph.
         power_subgraph = self.graph.induced_subgraph(power_vs)
