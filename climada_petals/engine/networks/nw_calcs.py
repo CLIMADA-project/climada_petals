@@ -630,7 +630,9 @@ class GraphCalcs():
             eids = self.graph.get_eids(pairs=reverse_edges, path=None,
                                        directed=True, error=True)
             self.graph.es[eids]['func_tot']=0
-            
+            print(f"""Using updated power line algorithm: dysfunc edges before:
+                  {len(edges_dys)}, after: {len(self.graph.es.select(ci_type='power_line'
+                                             ).select(func_tot_eq=0))}""")
             self.powercap_from_clusters(p_source=p_source, p_sink=p_sink,
                 demand_ci='people', source_var=source_var, demand_var=demand_var)
 
