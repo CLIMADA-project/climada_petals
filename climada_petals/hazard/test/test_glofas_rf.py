@@ -286,13 +286,14 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         )
 
         x = np.arange(10)
-        values = np.array([range(100)]).reshape((10, 10)) + self.rng.uniform(
-            -0.1, 0.1, size=(10, 10)
+        core_dim = np.arange(2)
+        values = np.array([range(200)]).reshape((10, 10, 2)) + self.rng.uniform(
+            -0.1, 0.1, size=(10, 10, 2)
         )
         da_return_period = xr.DataArray(
             data=values,
-            dims=["longitude", "latitude"],
-            coords=dict(longitude=x, latitude=x),
+            dims=["longitude", "latitude", "core_dim"],
+            coords=dict(longitude=x, latitude=x, core_dim=core_dim),
         )
 
         da_result = flood_depth(da_return_period, da_flood_maps)
@@ -300,12 +301,44 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         # NOTE: Single point precision, so reduce the decimal accuracy
         npt.assert_allclose(da_result.values, values)
 
+        # Check NaN shortcut
+        da_flood_maps = xr.DataArray(
+            data=[np.full_like(ones, np.nan)] * 3,
+            dims=["return_period", "longitude", "latitude"],
+            coords=dict(
+                return_period=[1, 10, 100],
+                longitude=np.arange(12),
+                latitude=np.arange(13),
+            ),
+        )
+        with patch("climada_petals.hazard.rf_glofas.np.full_like") as full_like_mock:
+            full_like_mock.side_effect = lambda x, _ : np.full(x.shape, 0.0)
+            flood_depth(da_return_period, da_flood_maps)
+            # Should have been called 100 times, one time for each lon/lat coordinate
+            self.assertEqual(full_like_mock.call_count, 100)
+
+        # Check NaN sanitizer
+        da_flood_maps = xr.DataArray(
+            data=[np.full_like(ones, np.nan), ones, ones * 10],
+            dims=["return_period", "longitude", "latitude"],
+            coords=dict(
+                return_period=[1, 10, 100],
+                longitude=np.arange(12),
+                latitude=np.arange(13),
+            ),
+        )
+        with patch("climada_petals.hazard.rf_glofas.interp1d") as interp1d_mock:
+            interp1d_mock.return_value = lambda x: np.full_like(x, 0.0)
+            flood_depth(da_return_period, da_flood_maps)
+            hazard_args = np.array([call[0][1] for call in interp1d_mock.call_args_list])
+            self.assertFalse(np.any(np.isnan(hazard_args)))
+
         # Check that DataArrays have to be aligned
         x_diff = x + self.rng.uniform(-1e-3, 1e-3, size=x.shape)
         da_return_period = xr.DataArray(
             data=values,
-            dims=["longitude", "latitude"],
-            coords=dict(longitude=x_diff, latitude=x_diff),
+            dims=["longitude", "latitude", "core_dim"],
+            coords=dict(longitude=x_diff, latitude=x_diff, core_dim=core_dim),
         )
         with self.assertRaises(ValueError) as cm:
             flood_depth(da_return_period, da_flood_maps)

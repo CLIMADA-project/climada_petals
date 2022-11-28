@@ -246,6 +246,15 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
             The hazard cannot become negative. Values beyond the given return periods
             range are extrapolated.
         """
+        # Shortcut for only NaNs
+        if np.all(np.isnan(hazard)):
+            return np.full_like(return_period, np.nan)
+
+        # Make NaNs to zeros
+        # NOTE: NaNs should be grouped at lower end of 'return_periods', so this should
+        #       be sane.
+        hazard = np.nan_to_num(hazard)
+
         # Use extrapolation and have 0.0 as minimum value
         ret = interp1d(
             return_periods,
