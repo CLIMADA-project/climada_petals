@@ -100,7 +100,7 @@ class WildFire(Hazard):
 
     @dataclass
     class ProbaParams():
-        """ DataClass as container for parameters for generation of
+        """ Dataclass as container for parameters for generation of
         probabilistic events.
 
         PLEASE BE AWARE: Parameter values did not undergo any calibration.
@@ -110,7 +110,7 @@ class WildFire(Hazard):
         blurr_steps : int, default = 4
             steps with exponential decay for fire propagation matrix
         prop_proba : float, default = 0.21
-        max_it_propa : float, default = 500000
+        max_it_propa : int, default = 500000
         """
         blurr_steps: int = 4
         prop_proba: float = 0.21

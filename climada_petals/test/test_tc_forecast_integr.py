@@ -72,7 +72,7 @@ class TestTCForecast(unittest.TestCase):
         self.assertIsInstance(tr_forecast.data[0].id_no, float)
         self.assertIsInstance(tr_forecast.data[0].ensemble_number, np.integer)
         self.assertIsInstance(tr_forecast.data[1].is_ensemble, np.bool_)
-        self.assertIsInstance(tr_forecast.data[0].forecast_time, np.datetime64)
+        self.assertIsInstance(tr_forecast.data[0].run_datetime, np.datetime64)
         self.assertIsInstance(tr_forecast.data[0].category, str)
 
     def test_compute_TC_windfield_from_ecmwf(self):

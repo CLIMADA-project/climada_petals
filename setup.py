@@ -16,7 +16,7 @@ extra_files = [str(here / 'climada_petals/conf/climada.conf')]
 setup(
     name='climada_petals',
 
-    version='3.1.1-dev',
+    version='3.2.0-dev',
 
     description='CLIMADA in Python',
 
@@ -65,6 +65,7 @@ setup(
         'pybufrkit',
         'pycountry',
         'rasterio',
+        'scikit-image',
         'scikit-learn',
         'statsmodels',
         'tables',

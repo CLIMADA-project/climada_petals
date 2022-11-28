@@ -21,7 +21,7 @@ Test config module.
 import unittest
 from pathlib import Path
 
-from climada.util.constants import DEMO_DIR
+from climada.util.constants import SYSTEM_DIR
 from climada.util.config import CONFIG
 
 class TestConfig(unittest.TestCase):
@@ -33,10 +33,11 @@ class TestConfig(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def test_check_constants_depending_on_config(self):
+    def test_petals_config_supersession(self):
         """Check whether the petals configuration correctly supersedes."""
-        self.assertEqual(CONFIG.local_data.demo.str(), './data/demo')
-        self.assertEqual(DEMO_DIR, Path('./data/demo').absolute())
+        self.assertEqual(CONFIG._comment.str(), "this is a climada_petals configuration file meant"
+            " to supersede the default configuration in climada_petals/conf during test")
+        self.assertEqual(SYSTEM_DIR, Path.home().joinpath('climada', 'data'))
 
 
 # Execute Tests

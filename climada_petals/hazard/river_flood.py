@@ -231,7 +231,7 @@ class RiverFlood(Hazard):
 
         haz.units = 'm'
         haz.tag.file_name = str(dph_path) + ';' + str(frc_path)
-        haz.event_id = np.arange(haz.intensity.shape[0])
+        haz.event_id = np.arange(1, haz.intensity.shape[0] + 1)
         haz.event_name = list(map(str, years))
 
         if origin:
