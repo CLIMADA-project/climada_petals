@@ -4,6 +4,7 @@ from pathlib import Path
 from copy import deepcopy
 from typing import Optional, Union, List
 from collections import deque
+from collections.abc import Iterable
 
 import numpy as np
 import xarray as xr
@@ -158,6 +159,26 @@ def download_glofas_discharge(
     return xr.open_mfdataset(files, chunks={}, combine="nested", concat_dim="time")[
         "dis24"
     ]
+
+
+@is_operation
+def max_from_isel(
+    array: xr.DataArray, dim: str, selections: List[Union[Iterable, slice]]
+):
+    """Compute the maximum over several selections of an array dimension"""
+    if not all(
+        [isinstance(sel, Iterable) or isinstance(sel, slice) for sel in selections]
+    ):
+        raise TypeError(
+            "This function only works with iterables or slices as selection"
+        )
+
+    data = [array.isel({dim: sel}) for sel in selections]
+    return xr.concat(
+        [da.max(dim=dim, skipna=True) for da in data],
+        dim=pd.Index(list(range(len(selections))), name="select")
+        # dim=xr.concat([da[dim].max() for da in data], dim=dim)
+    )
 
 
 @is_operation
