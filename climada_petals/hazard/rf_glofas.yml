@@ -1,8 +1,8 @@
 # Holds all information relevant for a climada evaluation
 ---
 # The directory associated with the DataManager.
-# (Is not required to hold any data, but can be used for loading data from.)
-data_dir: ~/coding/climada_petals/climada_petals/hazard/rf_glofas_data
+# Defaults to the CLIMADA system directory
+# data_dir: ~/my_data_dir
 
 # Keyword arguments that are used to set up the DataManager and PlotManager
 data_manager:
@@ -39,14 +39,12 @@ eval:
 
   .shared:
     # Need to define a "plot" function ... but does not need to do anything
-    # module: __main__
     module: climada_petals.hazard.rf_glofas
-    plot_func: store_flood_depth_in_dm
+    plot_func: finalize
 
     # Configure the DAG framework
     use_dag: true
-    # compute_only: ~   # can also pass a list of tags here, e.g. [result]
-    compute_only: [flood_depth, data_manager]
+    compute_only: ~   # can also pass a list of tags here, e.g. [result]
     dag_visualization:
       when:
         on_compute_success: true  # -> always saves a DAG representation plot
@@ -60,7 +58,7 @@ eval:
             engine: h5netcdf
         write:
           enabled: true
-          min_compute_time: 1.
+          min_compute_time: 1.   # ⇒ cache used on all nodes with compute time > 1s
           storage_options:
             engine: h5netcdf
 
@@ -68,24 +66,11 @@ eval:
   with_cache:
     based_on:
       - .shared
-      - .dag.cache.use  # ⇒ cache used on all nodes with compute time > 1s
+      - .dag.cache.use
 
-    # Define variables for spatial extent
-    .spatial_extent:
-      west: &lon_min 66
-      east: &lon_max 77
-      north: &lat_max 32
-      south: &lat_min 23
-
-      meta_operations:
-        # Shortcut for spatial subsection
-        sel_lon_lat:
-          transform:
-            - operation: .sel
-              args: [ !arg 0 ]
-              kwargs:
-                latitude: !slice [ *lat_max , *lat_min ]
-                longitude: !slice [ *lon_min , *lon_max ]
+    # NOTE: Needs data_manager to be passed through the TransformationDAG
+    to_dm:
+      - flood_depth
 
     select:
       flood_maps: flood_maps
@@ -95,9 +80,19 @@ eval:
       - operation: download_glofas_discharge
         args: [forecast, "2022-08-10", "2022-08-11", 2]
         kwargs:
-          area: [*lat_max , *lon_min , *lat_min , *lon_max ]
-          # leadtime_hour: ["24", "48", "72"]
+          # area: [*lat_max , *lon_min , *lat_min , *lon_max ]
+          countries: ["Pakistan"]
+          leadtime_hour: ["24", "48", "72", "96", "120"]
           format: grib
+
+      - operation: max_from_isel
+        args: [!dag_prev ]
+        kwargs:
+          dim: step
+          selections:  # NOTE: .isel with slice is NOT inclusive!
+            - !slice [0, 3]
+            - !slice [0, 5]
+        tag: discharge
 
       # Take the leadtime maximum
       # - operation: .max
@@ -107,11 +102,11 @@ eval:
       #   tag: discharge
 
       # Compute quantiles of the ensemble
-      - operation: .quantile
-        args: [!dag_prev , [0.1, 0.5, 0.9]]
-        kwargs:
-          dim: number
-        tag: discharge
+      # - operation: .quantile
+      #   args: [!dag_prev , [0.1, 0.5, 0.9]]
+      #   kwargs:
+      #     dim: number
+      #   tag: discharge
 
       # Extract loc and scale from GEV fit dataset
       - getitem: [!dag_tag gumbel_fits, loc]
@@ -124,15 +119,30 @@ eval:
       - operation: return_period
         args: [!dag_tag discharge, !dag_tag gev_loc, !dag_tag gev_scale]
         tag: return_period
+        file_cache:
+          write:
+            enabled: true
+            always: true
+          read:
+            enabled: true
+            always: true
+            load_options:
+              chunks: {latitude: -1, longitude: -1, time: 1}
 
       # Interpolate onto finer grid
       - operation: interpolate_space
         args: [!dag_tag return_period, !dag_tag flood_maps]
         tag: return_period_interpolated
+        # Force reading and writing due to chunks!
         file_cache:
+          write:
+            enabled: true
+            always: true
           read:
+            enabled: true
+            always: true
             load_options:
-              chunks: {time: -1, number: -1, step: -1}
+              chunks: {time: -1, number: -1, step: -1, step_max: -1, longitude: 500, latitude: 500}
 
       # Compute flood depth
       - operation: flood_depth

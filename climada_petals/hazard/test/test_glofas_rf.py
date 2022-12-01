@@ -149,6 +149,30 @@ class TestDantroOpsGloFASDownload(unittest.TestCase):
             [1.0, 0.0, 0.0, 1.0],
         )
 
+    def test_preprocess(self):
+        """Test the capabilities of the preprocessing"""
+        # Simple addition
+        ds = download_glofas_discharge(
+            "forecast", "2022-01-01", None, 1, preprocess="x+1"
+        )
+        npt.assert_array_equal(ds["time"].data, [0, 1])
+        npt.assert_array_equal(ds["x"].data, [0, 1, 2])
+        npt.assert_array_equal(ds.data, [[1, 2, 3], [11, 12, 13]])
+
+        # Maximum new concat dim
+        ds = download_glofas_discharge(
+            "forecast",
+            "2022-01-01",
+            None,
+            1,
+            preprocess="x.max(dim='x').rename_vars(time='year')",
+            open_mfdataset_kw=dict(concat_dim="year"),
+        )
+        self.assertNotIn("time", ds)
+        self.assertNotIn("x", ds)
+        npt.assert_array_equal(ds["year"].data, [0, 1])
+        npt.assert_array_equal(ds.data, [2, 12])
+
 
 class TestDantroOpsGloFAS(unittest.TestCase):
     """Test case for other dantro operations"""
@@ -312,7 +336,7 @@ class TestDantroOpsGloFAS(unittest.TestCase):
             ),
         )
         with patch("climada_petals.hazard.rf_glofas.np.full_like") as full_like_mock:
-            full_like_mock.side_effect = lambda x, _ : np.full(x.shape, 0.0)
+            full_like_mock.side_effect = lambda x, _: np.full(x.shape, 0.0)
             flood_depth(da_return_period, da_flood_maps)
             # Should have been called 100 times, one time for each lon/lat coordinate
             self.assertEqual(full_like_mock.call_count, 100)
@@ -330,7 +354,9 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         with patch("climada_petals.hazard.rf_glofas.interp1d") as interp1d_mock:
             interp1d_mock.return_value = lambda x: np.full_like(x, 0.0)
             flood_depth(da_return_period, da_flood_maps)
-            hazard_args = np.array([call[0][1] for call in interp1d_mock.call_args_list])
+            hazard_args = np.array(
+                [call[0][1] for call in interp1d_mock.call_args_list]
+            )
             self.assertFalse(np.any(np.isnan(hazard_args)))
 
         # Check that DataArrays have to be aligned

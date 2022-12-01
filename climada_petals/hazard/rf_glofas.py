@@ -2,9 +2,10 @@ import sys
 import logging
 from pathlib import Path
 from copy import deepcopy
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Mapping, Any
 from collections import deque
 from collections.abc import Iterable
+import re
 
 import numpy as np
 import xarray as xr
@@ -17,7 +18,7 @@ from dantro.data_ops import is_operation
 from dantro.data_loaders import AllAvailableLoadersMixin
 from dantro.containers import XrDataContainer
 from dantro.tools import load_yml
-from dantro.plot import is_plot_func
+from dantro.groups import OrderedDataGroup
 
 from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
@@ -28,14 +29,39 @@ from climada_petals.util import glofas_request
 LOGGER = logging.getLogger(__name__)
 
 
-def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
-    """Select a lon/lat slice from 'target' using coordinates of 'source'
+def save_file(
+    data: Union[xr.Dataset, xr.DataArray],
+    output_path: Union[Path, str],
+    **encoding_kwargs,
+):
+    """Save xarray data as a file with default compression
 
-    Warning
-    -------
-    This assumes the DataArrays are based on GloFAS data, where latitude runs from
-    north to south (decreasing!)
+    Parameters
+    ----------
+    data : xr.Dataset or xr.Dataarray
+        The data to be stored in the file
+    output_path : pathlib.Path or str
+        The file path to store the data into. If it does not contain a suffix, ``.nc``
+        is automatically appended. The enclosing folder must already exist.
+    encoding_kwargs
+        Optional keyword arguments for the encoding, which applies to every data
+        variable. Default encoding settings are:
+        ``dict(dtype="float32", zlib=True, complevel=4)``
     """
+    # Store encoding
+    encoding = dict(dtype="float32", zlib=True, complevel=4)
+    encoding.update(encoding_kwargs)
+    encoding = {var: encoding for var in data.data_vars}
+
+    # Repeat encoding for each variable
+    output_path = Path(output_path)
+    if not output_path.suffix:
+        output_path = output_path.with_suffix(".nc")
+    data.to_netcdf(output_path, encoding=encoding)
+
+
+def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
+    """Select a lon/lat slice from 'target' using coordinates of 'source'"""
     lon = source["longitude"][[0, -1]]
     lat = source["latitude"][[0, -1]]
     return target.sel(longitude=slice(*lon), latitude=slice(*lat))
@@ -106,20 +132,129 @@ def reindex(
 
 
 @is_operation
+def merge_flood_maps(flood_maps: OrderedDataGroup) -> xr.Dataset:
+    """Merge the flood maps GeoTIFFs into one NetCDF file
+
+    Adds a "zero" flood map (all zeros)
+
+    Parameters
+    ----------
+    flood_maps : dantro.OrderedDataGroup
+        The flood maps stored in a data group. Each flood map is expected to be an
+        xarray Dataset named ``floodMapGL_rpXXXy``, where ``XXX`` indicates the return
+        period of the respective map.
+
+    """
+    # print(flood_maps)
+    expr = re.compile(r"floodMapGL_rp(\d+)y")
+    years = [int(expr.match(name).group(1)) for name in flood_maps]
+    idx = np.argsort(years)
+    dsets = list(flood_maps.values())
+    dsets = [dsets[i].drop_vars("spatial_ref").squeeze("band", drop=True) for i in idx]
+
+    # Add zero flood map
+    # NOTE: Return period of 1 is the minimal value
+    ds_null_flood = xr.zeros_like(dsets[0])
+    dsets.insert(0, ds_null_flood)
+
+    # Concatenate and rename
+    years = np.insert(np.array(years)[idx], 0, 1)
+    ds_flood_maps = xr.concat(dsets, pd.Index(years, name="return_period"))
+    ds_flood_maps = ds_flood_maps.rename(
+        band_data="flood_depth", x="longitude", y="latitude"
+    )
+    return ds_flood_maps
+
+
+@is_operation
+def fit_gumbel_r(
+    input_data: xr.DataArray, fit_method: str = "MLE", min_samples: int = 2
+):
+    """Fit a right-handed Gumbel distribution to the data
+
+    input_data : xr.DataArray
+        The input time series to compute the distributions for. It must contain the
+        dimension ``year``.
+    fit_method : str
+        The method used for computing the distribution. Either ``MLE`` (Maximum
+        Likelihood Estimation) or ``MM`` (Method of Moments).
+    min_samples : int
+        The number of finite samples along the ``year`` dimension required for a
+        successful fit. If there are fewer samples, the fit result will be NaN.
+    """
+
+    def fit(time_series):
+        # Count finite samples
+        samples = np.isfinite(time_series)
+        if np.count_nonzero(samples) < min_samples:
+            return np.nan, np.nan
+
+        # Mask array
+        return gumbel_r.fit(time_series[samples], method=fit_method)
+
+    # Apply fitting
+    loc, scale = xr.apply_ufunc(
+        fit,
+        input_data,
+        input_core_dims=[["year"]],
+        output_core_dims=[[], []],
+        exclude_dims={"year"},
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[np.float64, np.float64],
+    )
+
+    return xr.Dataset(dict(loc=loc, scale=scale))
+
+
+@is_operation
 def download_glofas_discharge(
     product: str,
     date_from: str,
     date_to: Optional[str],
-    num_proc: int,
+    num_proc: int = 1,
     download_path: Union[str, Path] = Path(SYSTEM_DIR, "glofas-discharge"),
     countries: Optional[Union[List[str], str]] = None,
+    preprocess: Optional[str] = None,
+    open_mfdataset_kw: Optional[Mapping[str, Any]] = None,
     **request_kwargs,
 ) -> xr.DataArray:
-    """Download the GloFAS data and return the resulting dataset"""
+    """Download the GloFAS data and return the resulting dataset
+
+    Several parameters are passed directly to
+    :py:func:`climada_petals.util.glofas_request`. See this functions documentation for
+    further information.
+
+    Parameters
+    ----------
+    product : str
+        The string identifier of the product to download. See
+        :py:func:`climada_petals.util.glofas_request` for supported products.
+    date_from : str
+        Earliest date to download. Specification depends on the ``product`` chosen.
+    date_to : str or None
+        Latest date to download. If ``None``, only download the ``date_from``.
+        Specification depends on the ``product`` chosen.
+    num_proc : int
+        Number of parallel processes to use for downloading. Defaults to 1.
+    download_path : str or pathlib.Path
+        Directory to store the downloaded data. The directory (and all required parent
+        directories!) will be created if it does not yet exist. Defaults to
+        ``~/climada/data/glofas-discharge/``.
+    countries : str or list of str, optional
+        Countries to download data for. Uses the maximum extension of all countries for
+        selecting the latitude/longitude range of data to download.
+    preprocess : str, optional
+        String expression for preprocessing the data before merging it into one dataset.
+        Must be valid Python code. The downloaded data is passed as variable ``x``.
+    open_mfdataset_kw : dict, optional
+        Optional keyword arguments for the ``xarray.open_mfdataset`` function.
+    request_kwargs:
+        Keyword arguments for the Copernicus data store request.
+    """
     # Create the download path if it does not yet exist
     LOGGER.debug("Preparing download directory: %s", download_path)
-    if isinstance(download_path, str):
-        download_path = Path(download_path)
+    download_path = Path(download_path)  # Make sure it is a Path
     download_path.mkdir(parents=True, exist_ok=True)
 
     # Determine area from 'countries'
@@ -155,10 +290,17 @@ def download_glofas_discharge(
         request_kw=request_kwargs,
     )
 
+    # Set arguments for 'open_mfdataset'
+    open_kwargs = dict(chunks={}, combine="nested", concat_dim="time")
+    if open_mfdataset_kw is not None:
+        open_kwargs.update(open_mfdataset_kw)
+
+    # Preprocessing
+    if preprocess is not None:
+        open_kwargs.update(preprocess=lambda x: eval(preprocess))
+
     # Open the data and return it
-    return xr.open_mfdataset(files, chunks={}, combine="nested", concat_dim="time")[
-        "dis24"
-    ]
+    return xr.open_mfdataset(files, **open_kwargs)["dis24"]
 
 
 @is_operation
@@ -298,114 +440,100 @@ class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
     """Which container class to use when adding new containers"""
 
 
-@is_plot_func(use_dag=True, required_dag_tags=("return_period"))
-def write_results(*, data: dict, out_path: str, **plot_kwargs):
-    data["return_period"].to_netcdf(out_path)
-
-
-def show_results(*args, data, **kwargs):
-    """Prints the arguments that are passed to it, with `data` being the
-    results from the data transformation framework"""
-    print(f"args:   {args}")
-    print(f"kwargs: {kwargs}")
-    print("")
-
-    print(f"Data Transformation Results\n{'-'*27}")
-    print("\n".join(f"-- {k}:\n{v}\n" for k, v in data.items()))
-    print("")
-
-    out_path = Path(kwargs["out_path"]).parent / "output.nc"
-    print(f"Writing output data to {out_path}")
-    data["flood_depth"].to_netcdf(out_path)
-
-
-def return_flood_depth(*args, data, **kwargs):
-    return data["flood_depth"]
-
-
-def store_flood_depth_in_dm(*args, data, **kwargs):
-    # flood_depth_cont = XrDataContainer(name="flood_depth", data=data["flood_depth"])
-    data["data_manager"].new_container("flood_depth", data=data["flood_depth"])
-
-
-class GloFASRiverFlood:
-    def __init__(self, yaml_cfg_path):
-        # Load config
-        self.cfg = load_yml(yaml_cfg_path)
-
-    def compute_hazard(self, **cfg_kwargs):
-        # Update the config
-        cfg = deepcopy(self.cfg)
-        cfg.update(cfg_kwargs)
-
-        # Create data directory
-        data_dir = Path(self.cfg["data_dir"]).expanduser().absolute()
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-        # Set up DataManager
-        dm = ClimadaDataManager(data_dir, **cfg.get("data_manager", {}))
-
-        # NOTE Can let the DataManager load something here, if desired ...
-        # dm.load(...)
-        # dm.load_from_cfg(...)
-
-        dm.load_from_cfg(load_cfg=cfg["data_manager"]["load_cfg"], print_tree=True)
-
-        # Set up the PlotManager ...
-        pm = dtr.PlotManager(dm=dm, **cfg.get("plot_manager"))
-
-        # ... and use it to invoke some evaluation routine
-        pm.plot_from_cfg(plots_cfg=cfg.get("eval"))
-
-        # Return xarray for `from_raster_xarray`??
-        print(dm.tree)
-        # print(dm["flood_depth"].data)
-        # print(dm["area"])
-        return dm["flood_depth"].data.to_dataset()
-
-    def get_forecast(self, hazard_concat_dim="number", **cfg_kwargs) -> pd.Series:
-        # Run the hazard computation pipeline
-        ds_hazard = self.compute_hazard(**cfg_kwargs)
-
-        # Squeeze: Drop all coordinates that are not dimensions
-        ds_hazard = ds_hazard.squeeze()
-
-        def create_hazard(ds: xr.Dataset) -> Hazard:
-            """Create hazard from a GloFASRiverFlood hazard dataset"""
-            return RiverFlood.from_raster_xarray(
-                ds,
-                hazard_type="RF",
-                intensity="Flood Depth",
-                intensity_unit="m",
-                coordinate_vars=dict(event=hazard_concat_dim),
-                data_vars=dict(date="time"),
-            )
-
-        # Iterate over all dimensions that are not lon, lat, or number
-        # NOTE: Why would we have others than "time"? Multiple instances of 'max' over
-        #       'step'? How would this look like in the DAG? Check this first!
-        iter_dims = list(
-            set(ds_hazard.dims) - {"longitude", "latitude", hazard_concat_dim}
-        )
-        if iter_dims:
-            index = pd.MultiIndex.from_product(
-                [ds_hazard[dim].values for dim in iter_dims], names=iter_dims
-            )
-            hazards = [
-                create_hazard(ds_hazard.sel(dict(zip(iter_dims, idx))))
-                for idx in index.to_flat_index()
-            ]
+def finalize(*args, data, **kwargs):
+    """Store tagged nodes in files or in the DataManager depending on the user input"""
+    # Write data to files
+    output_dir = Path(kwargs["out_path"]).parent
+    for entry in kwargs.get("to_file", {}):
+        if isinstance(entry, dict):
+            tag = entry["tag"]
+            filename = entry.get("filename", tag)
+            encoding = entry.get("encoding", {})
         else:
-            index = None
-            hazards = [create_hazard(ds_hazard)]
+            tag = entry
+            filename = entry
+            encoding = {}
+        save_file(data[tag], output_dir / filename, **encoding)
 
-        return pd.Series(hazards, index=index)
+    # Store data in DataManager
+    for entry in kwargs.get("to_dm", {}):
+        if isinstance(entry, dict):
+            tag = entry["tag"]
+            name = entry.get("name", tag)
+        else:
+            tag = entry
+            name = entry
+        data["data_manager"].new_container(name, data=data[tag])
 
 
-def run(_, cfg_file_path: str):
-    grf = GloFASRiverFlood(cfg_file_path)
-    grf.compute_hazard()
+DEFAULT_DATA_DIR = SYSTEM_DIR / "glofas-computation"
 
 
-if __name__ == "__main__":
-    run(*sys.argv)
+def dantro_transform(yaml_cfg_path):
+    # Load the config
+    cfg = load_yml(yaml_cfg_path)
+
+    # Create data directory
+    data_dir = Path(cfg.get("data_dir", DEFAULT_DATA_DIR)).expanduser().absolute()
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    # Set up DataManager
+    dm = ClimadaDataManager(data_dir, **cfg.get("data_manager", {}))
+    dm.load_from_cfg(load_cfg=cfg["data_manager"]["load_cfg"], print_tree=True)
+
+    # Set up the PlotManager ...
+    pm = dtr.PlotManager(dm=dm, **cfg.get("plot_manager"))
+
+    # ... and use it to invoke some evaluation routine
+    pm.plot_from_cfg(plots_cfg=cfg.get("eval"))
+
+    # Return the DataManager
+    print(dm.tree)
+    return dm
+
+
+def prepare(
+    cfg=Path(
+        "~/coding/climada_petals/climada_petals/hazard/rf_glofas_util.yml"
+    ).expanduser(),
+):
+    dantro_transform(cfg)
+
+
+def compute_hazard_series(
+    cfg=Path(
+        "~/coding/climada_petals/climada_petals/hazard/rf_glofas.yml"
+    ).expanduser(),
+    hazard_concat_dim="number",
+):
+    dm = dantro_transform(cfg)
+    ds_hazard = dm["flood_depth"].data.to_dataset()
+
+    def create_hazard(ds: xr.Dataset) -> Hazard:
+        """Create hazard from a GloFASRiverFlood hazard dataset"""
+        return RiverFlood.from_raster_xarray(
+            ds,
+            hazard_type="RF",
+            intensity="Flood Depth",
+            intensity_unit="m",
+            coordinate_vars=dict(event=hazard_concat_dim),
+            data_vars=dict(date="time"),
+        )
+
+    # Iterate over all dimensions that are not lon, lat, or number
+    # NOTE: Why would we have others than "time"? Multiple instances of 'max' over
+    #       'step'? How would this look like in the DAG? Check this first!
+    iter_dims = list(set(ds_hazard.dims) - {"longitude", "latitude", hazard_concat_dim})
+    if iter_dims:
+        index = pd.MultiIndex.from_product(
+            [ds_hazard[dim].values for dim in iter_dims], names=iter_dims
+        )
+        hazards = [
+            create_hazard(ds_hazard.sel(dict(zip(iter_dims, idx))))
+            for idx in index.to_flat_index()
+        ]
+    else:
+        index = None
+        hazards = [create_hazard(ds_hazard)]
+
+    return pd.Series(hazards, index=index)

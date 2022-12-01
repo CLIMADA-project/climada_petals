@@ -1,0 +1,115 @@
+# Holds all information relevant for a climada evaluation
+---
+# The directory associated with the DataManager.
+# Defaults to the CLIMADA system directory
+# data_dir: ~/my_data_dir
+
+# Keyword arguments that are used to set up the DataManager and PlotManager
+data_manager:
+  out_dir: ./
+  out_dir_kwargs:
+    exist_ok: true
+
+  load_cfg:
+    flood_maps_tif:
+      loader: xr_dataset
+      glob_str: "**/floodMapGL_rp*y.tif"
+      required: True
+      engine: rasterio
+      path_regex: /(\w+).tif
+      target_path: flood_maps/{match:}
+      chunks: auto
+
+plot_manager:
+  raise_exc: true
+  out_dir: ./
+  default_creator: base
+  shared_creator_init_kwargs:
+    default_ext: pdf
+
+# The "evaluation" routine, orchestrated by the PlotManager but not requiring
+# to actually output any plots.
+# (This can also be the path to a separate file.)
+eval:
+  # .. Shared configs .........................................................
+  # ... starting with a dot: ignored by default, used only in `based_on`
+
+  .shared:
+    # Need to define a "plot" function ... but does not need to do anything
+    module: climada_petals.hazard.rf_glofas
+    plot_func: finalize
+
+    # Configure the DAG framework
+    use_dag: true
+    compute_only: ~
+
+  .dag.cache.use:
+    dag_options:
+      file_cache_defaults:
+        read:
+          enabled: true
+          always: true
+          load_options:
+            engine: h5netcdf
+        write:
+          enabled: true
+          always: true
+          min_compute_time: 1.
+          storage_options:
+            engine: h5netcdf
+
+  glofas_historical_fits:
+    based_on:
+      - .shared
+      - .dag.cache.use
+
+    to_file:
+      - tag: fit
+        filename: gumbel-fit.nc
+        encoding:
+          dtype: float64
+
+    transform:
+      - operation: download_glofas_discharge
+        args: [historical, "1979", "1981", 8]
+        kwargs:
+          preprocess: x.groupby("time.year").max()
+          open_mfdataset_kw:
+            concat_dim: year
+        tag: discharge
+        file_cache:
+          write:
+            always: true
+          read:
+            always: true
+            load_options:
+              chunks: {year: -1, longitude: 1800, latitude: 750}
+      - operation: fit_gumbel_r
+        args: [!dag_prev ]
+        kwargs:
+          min_samples: 1
+        tag: fit
+        file_cache:
+          write: false
+          read: false
+
+  flood_maps_merge:
+    based_on:
+      - .shared
+      - .dag.cache.use
+
+    to_file:
+      - tag: flood_maps
+        filename: flood-maps.nc
+
+    select:
+      flood_map_tifs: flood_maps
+
+    transform:
+      - operation: merge_flood_maps
+        args: [!dag_tag flood_map_tifs ]
+        tag: flood_maps
+      # Pass the data manager to the plot function so we can store the result in it
+      # - pass: !dag_tag dm
+      #   tag: data_manager
+
