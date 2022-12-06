@@ -287,7 +287,7 @@ def get_pop_cutoff(gdf_people, cutoff):
 # Distance Threshold setting
 # =============================================================================
 
-def set_distance_threshs(df_dependencies, iso3, hrs_max=1):
+def set_travel_distance_threshs(df_dependencies, iso3, hrs_max=1):
     """
     set road travel distance threshold according to the average distance
     covered within a specified amount of hours in the respective country.
@@ -297,13 +297,15 @@ def set_distance_threshs(df_dependencies, iso3, hrs_max=1):
     ISBN: 9798400210440/1018-5941
     """
     try:
-        df_dependencies.loc[
-            df_dependencies.access_cnstr==True, 'thresh_dist'] = \
-            int(DICT_SPEEDS[iso3]*1000*hrs_max)
+        thresh_dist =  int(DICT_SPEEDS[iso3]*1000*hrs_max)
     except KeyError:
-        df_dependencies.loc[
-            df_dependencies.access_cnstr==True, 'thresh_dist'] = \
-            int(DICT_SPEEDS['other']*1000*hrs_max)
+        thresh_dist =  int(DICT_SPEEDS['other']*1000*hrs_max)
+        
+    df_dependencies.loc[(df_dependencies.source=='health') | 
+                        (df_dependencies.source=='education') & 
+                        (df_dependencies.target=='people'), 
+                        'thresh_dist'] = thresh_dist
+    
     return df_dependencies
 
 # =============================================================================
