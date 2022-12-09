@@ -19,7 +19,7 @@ from climada_petals.hazard.river_flood import RiverFlood
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = SYSTEM_DIR / "glofas-computation"
-DEFAULT_SETUP_CFG = Path(__file__).parent.absolute() / "rf_glofas_util.yml"
+DEFAULT_SETUP_CFG = Path(__file__).parent.absolute() / "setup.yml"
 DEFAULT_GLOFAS_CFG = Path(__file__).parent.absolute() / "rf_glofas.yml"
 
 
