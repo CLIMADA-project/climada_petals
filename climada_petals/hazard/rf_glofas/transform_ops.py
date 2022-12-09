@@ -1,63 +1,25 @@
-import sys
 import logging
+import re
 from pathlib import Path
-from copy import deepcopy
 from typing import Optional, Union, List, Mapping, Any
 from collections import deque
 from collections.abc import Iterable
-import re
+import tempfile
 
-import numpy as np
 import xarray as xr
+import numpy as np
+import pandas as pd
 from scipy.stats import gumbel_r
 from scipy.interpolate import interp1d
-import pandas as pd
 
-import dantro as dtr
 from dantro.data_ops import is_operation
-from dantro.data_loaders import AllAvailableLoadersMixin
-from dantro.containers import XrDataContainer
-from dantro.tools import load_yml
 from dantro.groups import OrderedDataGroup
 
-from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries, country_to_iso
-from climada_petals.hazard.river_flood import RiverFlood
 from climada_petals.util import glofas_request
 
 LOGGER = logging.getLogger(__name__)
-
-
-def save_file(
-    data: Union[xr.Dataset, xr.DataArray],
-    output_path: Union[Path, str],
-    **encoding_kwargs,
-):
-    """Save xarray data as a file with default compression
-
-    Parameters
-    ----------
-    data : xr.Dataset or xr.Dataarray
-        The data to be stored in the file
-    output_path : pathlib.Path or str
-        The file path to store the data into. If it does not contain a suffix, ``.nc``
-        is automatically appended. The enclosing folder must already exist.
-    encoding_kwargs
-        Optional keyword arguments for the encoding, which applies to every data
-        variable. Default encoding settings are:
-        ``dict(dtype="float32", zlib=True, complevel=4)``
-    """
-    # Store encoding
-    encoding = dict(dtype="float32", zlib=True, complevel=4)
-    encoding.update(encoding_kwargs)
-    encoding = {var: encoding for var in data.data_vars}
-
-    # Repeat encoding for each variable
-    output_path = Path(output_path)
-    if not output_path.suffix:
-        output_path = output_path.with_suffix(".nc")
-    data.to_netcdf(output_path, encoding=encoding)
 
 
 def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
@@ -430,14 +392,35 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
     ).rename("Flood Depth")
 
 
-class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
-    """A DataManager that can load many different file formats"""
+def save_file(
+    data: Union[xr.Dataset, xr.DataArray],
+    output_path: Union[Path, str],
+    **encoding_kwargs,
+):
+    """Save xarray data as a file with default compression
 
-    _HDF5_DSET_DEFAULT_CLS = XrDataContainer
-    """Tells the HDF5 loader which container class to use"""
+    Parameters
+    ----------
+    data : xr.Dataset or xr.Dataarray
+        The data to be stored in the file
+    output_path : pathlib.Path or str
+        The file path to store the data into. If it does not contain a suffix, ``.nc``
+        is automatically appended. The enclosing folder must already exist.
+    encoding_kwargs
+        Optional keyword arguments for the encoding, which applies to every data
+        variable. Default encoding settings are:
+        ``dict(dtype="float32", zlib=True, complevel=4)``
+    """
+    # Store encoding
+    encoding = dict(dtype="float32", zlib=True, complevel=4)
+    encoding.update(encoding_kwargs)
+    encoding = {var: encoding for var in data.data_vars}
 
-    _NEW_CONTAINER_CLS = XrDataContainer
-    """Which container class to use when adding new containers"""
+    # Repeat encoding for each variable
+    output_path = Path(output_path)
+    if not output_path.suffix:
+        output_path = output_path.with_suffix(".nc")
+    data.to_netcdf(output_path, encoding=encoding)
 
 
 def finalize(*args, data, **kwargs):
@@ -464,76 +447,3 @@ def finalize(*args, data, **kwargs):
             tag = entry
             name = entry
         data["data_manager"].new_container(name, data=data[tag])
-
-
-DEFAULT_DATA_DIR = SYSTEM_DIR / "glofas-computation"
-
-
-def dantro_transform(yaml_cfg_path):
-    # Load the config
-    cfg = load_yml(yaml_cfg_path)
-
-    # Create data directory
-    data_dir = Path(cfg.get("data_dir", DEFAULT_DATA_DIR)).expanduser().absolute()
-    data_dir.mkdir(parents=True, exist_ok=True)
-
-    # Set up DataManager
-    dm = ClimadaDataManager(data_dir, **cfg.get("data_manager", {}))
-    dm.load_from_cfg(load_cfg=cfg["data_manager"]["load_cfg"], print_tree=True)
-
-    # Set up the PlotManager ...
-    pm = dtr.PlotManager(dm=dm, **cfg.get("plot_manager"))
-
-    # ... and use it to invoke some evaluation routine
-    pm.plot_from_cfg(plots_cfg=cfg.get("eval"))
-
-    # Return the DataManager
-    print(dm.tree)
-    return dm
-
-
-def prepare(
-    cfg=Path(
-        "~/coding/climada_petals/climada_petals/hazard/rf_glofas_util.yml"
-    ).expanduser(),
-):
-    dantro_transform(cfg)
-
-
-def compute_hazard_series(
-    cfg=Path(
-        "~/coding/climada_petals/climada_petals/hazard/rf_glofas.yml"
-    ).expanduser(),
-    hazard_concat_dim="number",
-):
-    dm = dantro_transform(cfg)
-    ds_hazard = dm["flood_depth"].data.to_dataset()
-
-    def create_hazard(ds: xr.Dataset) -> Hazard:
-        """Create hazard from a GloFASRiverFlood hazard dataset"""
-        return RiverFlood.from_raster_xarray(
-            ds,
-            hazard_type="RF",
-            intensity="Flood Depth",
-            intensity_unit="m",
-            coordinate_vars=dict(event=hazard_concat_dim),
-            data_vars=dict(date="time"),
-        )
-
-    # Iterate over all dimensions that are not lon, lat, or number
-    # NOTE: Why would we have others than "time"? Multiple instances of 'max' over
-    #       'step'? How would this look like in the DAG? Check this first!
-    iter_dims = list(set(ds_hazard.dims) - {"longitude", "latitude", hazard_concat_dim})
-    if iter_dims:
-        index = pd.MultiIndex.from_product(
-            [ds_hazard[dim].values for dim in iter_dims], names=iter_dims
-        )
-        hazards = [
-            create_hazard(ds_hazard.sel(dict(zip(iter_dims, idx))))
-            for idx in index.to_flat_index()
-        ]
-    else:
-        index = None
-        hazards = [create_hazard(ds_hazard)]
-
-    return pd.Series(hazards, index=index)

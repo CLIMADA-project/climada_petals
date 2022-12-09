@@ -13,15 +13,17 @@ data_manager:
   load_cfg:
     flood_maps:
       loader: xr_dataarray
-      glob_str: flood_maps.nc
+      glob_str: flood-maps.nc
       required: True
-      engine: h5netcdf
+      engine: netcdf4
+
 
     glofas_historical_gumbel_fit:
       loader: xr_dataset
-      glob_str: glofas-historical-gumbel-fit.nc
+      glob_str: gumbel-fit.nc
       required: True
-      engine: h5netcdf
+      engine: netcdf4
+      # chunks: auto
 
 plot_manager:
   raise_exc: true
@@ -39,7 +41,7 @@ eval:
 
   .shared:
     # Need to define a "plot" function ... but does not need to do anything
-    module: climada_petals.hazard.rf_glofas
+    module: climada_petals.hazard.rf_glofas.transform_ops
     plot_func: finalize
 
     # Configure the DAG framework
@@ -55,12 +57,14 @@ eval:
         read:
           enabled: true
           load_options:
-            engine: h5netcdf
+            engine: netcdf4
+            chunks: auto
         write:
           enabled: true
-          min_compute_time: 1.   # ⇒ cache used on all nodes with compute time > 1s
+          allow_overwrite: false
+          min_compute_time: 10.0   # ⇒ cache used on all nodes with compute time > 10s
           storage_options:
-            engine: h5netcdf
+            engine: netcdf4
 
   # An evaluation task with default cache use (and some explicit cases)
   with_cache:
@@ -94,20 +98,6 @@ eval:
             - !slice [0, 5]
         tag: discharge
 
-      # Take the leadtime maximum
-      # - operation: .max
-      #   args: [!dag_prev ]
-      #   kwargs:
-      #     dim: step
-      #   tag: discharge
-
-      # Compute quantiles of the ensemble
-      # - operation: .quantile
-      #   args: [!dag_prev , [0.1, 0.5, 0.9]]
-      #   kwargs:
-      #     dim: number
-      #   tag: discharge
-
       # Extract loc and scale from GEV fit dataset
       - getitem: [!dag_tag gumbel_fits, loc]
         tag: gev_loc
@@ -119,37 +109,34 @@ eval:
       - operation: return_period
         args: [!dag_tag discharge, !dag_tag gev_loc, !dag_tag gev_scale]
         tag: return_period
+        # Force reading and writing due to chunks!
         file_cache:
           write:
-            enabled: true
             always: true
           read:
-            enabled: true
             always: true
             load_options:
-              chunks: {latitude: -1, longitude: -1, time: 1}
+              chunks: {latitude: -1, longitude: -1, time: 1, number: 1}
+              engine: netcdf4
 
       # Interpolate onto finer grid
       - operation: interpolate_space
-        args: [!dag_tag return_period, !dag_tag flood_maps]
+        args: [!dag_tag return_period , !dag_tag flood_maps]
         tag: return_period_interpolated
         # Force reading and writing due to chunks!
         file_cache:
           write:
-            enabled: true
             always: true
           read:
-            enabled: true
             always: true
             load_options:
-              chunks: {time: -1, number: -1, step: -1, step_max: -1, longitude: 500, latitude: 500}
+              chunks: {time: -1, number: -1, step: -1, select: -1, longitude: 500, latitude: 500}
+              engine: netcdf4
 
       # Compute flood depth
       - operation: flood_depth
-        args: [!dag_tag return_period_interpolated, !dag_tag flood_maps]
+        args: [!dag_prev , !dag_tag flood_maps]
         tag: flood_depth
-        file_cache:
-          write: true
 
       # Pass the data manager to the plot function so we can store the result in it
       - pass: !dag_tag dm

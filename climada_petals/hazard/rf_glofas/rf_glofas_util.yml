@@ -24,6 +24,7 @@ plot_manager:
   raise_exc: true
   out_dir: ./
   default_creator: base
+  cfg_exists_action: overwrite
   shared_creator_init_kwargs:
     default_ext: pdf
 
@@ -36,7 +37,7 @@ eval:
 
   .shared:
     # Need to define a "plot" function ... but does not need to do anything
-    module: climada_petals.hazard.rf_glofas
+    module: climada_petals.hazard.rf_glofas.transform_ops
     plot_func: finalize
 
     # Configure the DAG framework
@@ -48,15 +49,15 @@ eval:
       file_cache_defaults:
         read:
           enabled: true
-          always: true
           load_options:
-            engine: h5netcdf
+            engine: netcdf4
         write:
           enabled: true
-          always: true
-          min_compute_time: 1.
+          allow_overwrite: false
+          min_compute_time: 10.0
           storage_options:
-            engine: h5netcdf
+            attempt_pickling: false
+            engine: netcdf4
 
   glofas_historical_fits:
     based_on:
@@ -71,27 +72,26 @@ eval:
 
     transform:
       - operation: download_glofas_discharge
-        args: [historical, "1979", "1981", 8]
+        args: [historical, "1979", "2021", 8]
         kwargs:
           preprocess: x.groupby("time.year").max()
           open_mfdataset_kw:
             concat_dim: year
         tag: discharge
+        # Force reading and writing due to chunks!
         file_cache:
           write:
             always: true
           read:
             always: true
             load_options:
-              chunks: {year: -1, longitude: 1800, latitude: 750}
+              chunks: {year: -1, longitude: 100, latitude: 100}
+              engine: netcdf4
       - operation: fit_gumbel_r
         args: [!dag_prev ]
         kwargs:
-          min_samples: 1
+          min_samples: 10
         tag: fit
-        file_cache:
-          write: false
-          read: false
 
   flood_maps_merge:
     based_on:
