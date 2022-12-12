@@ -11,7 +11,7 @@ import xarray as xr
 import geopandas as gpd
 from shapely.geometry import Polygon
 
-from climada_petals.hazard.rf_glofas import (
+from climada_petals.hazard.rf_glofas.transform_ops import (
     download_glofas_discharge,
     return_period,
     interpolate_space,
