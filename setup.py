@@ -67,6 +67,7 @@ setup(
         'pybufrkit',
         'pycountry',
         'rasterio',
+        'rioxarray',
         'ruamel.yaml',
         'scikit-image',
         'scikit-learn',
