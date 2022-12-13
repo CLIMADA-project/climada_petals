@@ -412,7 +412,7 @@ class GraphCalcs():
                         source=graph_subgraph_vsdict[source], 
                         target=graph_subgraph_vsdict[target], 
                         weights='distance')
-                    if dist < dist_thresh:
+                    if dist[0][0] < dist_thresh:
                         bool_keep[ix] = True
                         es_check[ix]['distance'] = dist
             self.graph.delete_edges([edge.index for edge, bool_f in 
