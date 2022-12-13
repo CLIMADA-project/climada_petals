@@ -383,77 +383,41 @@ class GraphCalcs():
         
         if len(es_check)>0:
             
-            # links where shortest path algorithm needs rechecking:
-            v_ids_target_sp = [edge.target for edge in es_check
-                            if edge['distance']>5000]
-            v_ids_source_sp = [edge.source for edge in es_check
-                            if edge['distance']>5000]
+            edge_geoms = [edge['geometry'] for edge in es_check]
+            v_ids_target = [edge.target for edge in es_check]
+            v_ids_source = [edge.source for edge in es_check]
             v_ids_via = [vs.index for vs in 
                          self.graph.vs.select(ci_type=f'{via_ci}')]
             
-            # those from edges shorter than 5000m may potentially be a 
-            # friction layer link
-            v_ids_target_f = [edge.target for edge in es_check
-                              if edge['distance']<5000]
-            v_ids_source_f = [edge.source for edge in es_check
-                              if edge['distance']<5000]
-            edge_geoms_f = [edge['geometry'] for edge in es_check
-                            if edge['distance']<5000]
+            # first check friction
+            friction = self._calc_friction(edge_geoms, friction_surf)
+            bool_keep = friction < dur_thresh
             
-            friction = self._calc_friction(edge_geoms_f, friction_surf)
-            
-            v_ids_target_sp.extend(list(np.array(v_ids_target_f)[friction>dur_thresh]))
-            v_ids_source_sp.extend(list(np.array(v_ids_source_f)[friction>dur_thresh]))
-            
-            v_ids_source_f = list(np.array(v_ids_source_f)[friction<dur_thresh])
-            v_ids_target_f = list(np.array(v_ids_target_f)[friction<dur_thresh])
-            
-            # delete those edges on graph that have to be re-checked
-            self.graph.delete_edges([edge.index for edge in es_check])
-            
-            # for those longer than 5000, and those where
-            # friction layer wasn't enough, make subgraph to perform shortest path search on
-            v_seq = self.graph.vs([*v_ids_target_sp, *v_ids_source_sp, *v_ids_via])
+            # then check shortest paths
+            v_seq = self.graph.vs(list(np.unique([*v_ids_target, *v_ids_source,
+                                                  *v_ids_via])))
             subgraph = self.graph.induced_subgraph(v_seq)
             subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
+            graph_subgraph_vsdict = {v: k for k, v in subgraph_graph_vsdict.items()}
             subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
             wrong_edges = set(subgraph.es['ci_type']).difference(
                 {via_ci, f'dependency_{source_ci}_{target_ci}'})
             subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
-                
-            path_dists = subgraph.shortest_paths(
-                source=subgraph.vs.select(ci_type=source_ci), 
-                target=subgraph.vs.select(ci_type=target_ci), 
-                weights='distance')
             
-            path_dists = np.array(path_dists) # dim: (#sources, #targets)
-            
-            if len(path_dists)>0:
-                ix_source, ix_target = np.where(
-                    ((path_dists == path_dists.min(axis=0)) &
-                     (path_dists<=dist_thresh))) # min dist. per target
-                v_ids_source_sp = [subgraph_graph_vsdict[vs.index]
-                                for vs in subgraph.vs.select(
-                                        ci_type=source_ci)[list(ix_source)]]
-                v_ids_target_sp = [subgraph_graph_vsdict[vs.index]
-                                for vs in subgraph.vs.select(
-                                        ci_type=target_ci)[list(ix_target)]]
-                
-            # recombine both friction and shortest path links
-            v_ids_target_f.extend(v_ids_target_sp)
-            v_ids_source_f.extend(v_ids_source_sp)
-            
-            if bidir:
-                v_ids_target_f.extend(v_ids_source_f)
-                v_ids_source_f.extend(v_ids_target_f)
-    
-            if not link_name:
-                link_name = f'dependency_{source_ci}_{target_ci}'
-    
-            if len(v_ids_source_f) > 0:
-                self._edges_from_vlists(v_ids_source_f, v_ids_target_f,
-                                        link_name=link_name)
-    
+            for ix, source, target, bool_f in (zip(np.arange(len(bool_keep)),
+                                                   v_ids_source, v_ids_target,
+                                                   bool_keep)):
+                if not bool_f:
+                    dist = subgraph.shortest_paths(
+                        source=graph_subgraph_vsdict[source], 
+                        target=graph_subgraph_vsdict[target], 
+                        weights='distance')
+                    if dist < dist_thresh:
+                        bool_keep[ix] = True
+                        es_check[ix]['distance'] = dist
+            self.graph.delete_edges([edge.index for edge, bool_f in 
+                                     zip(es_check , bool_keep)
+                                     if not bool_f])
     
     def link_vertices_shortest_path(self, source_ci, target_ci, via_ci,
                                     dist_thresh=10e6, criterion='distance',
