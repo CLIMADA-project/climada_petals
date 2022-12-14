@@ -414,7 +414,7 @@ class GraphCalcs():
                         weights='distance')
                     if dist[0][0] < dist_thresh:
                         bool_keep[ix] = True
-                        es_check[ix]['distance'] = dist
+                        es_check[ix]['distance'] = dist[0][0]
             self.graph.delete_edges([edge.index for edge, bool_f in 
                                      zip(es_check , bool_keep)
                                      if not bool_f])
