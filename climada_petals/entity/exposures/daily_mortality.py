@@ -37,8 +37,13 @@ DEF_HAZ_TYPE = 'HT'
 class DailyMortality(Exposures):
     """ Defines exposures from daily mortality counts
     """
+    def __init__(self):
+        """Empty constructor"""
 
-    def from_pandas_list(self, pd_list, lat, lon):
+        Exposures.__init__(self)
+    
+    @classmethod
+    def from_pandas_list(cls, pd_list, lat, lon):
         """ Set up exposure from daily mortality time series
 
         Parameters
