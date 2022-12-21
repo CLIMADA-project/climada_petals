@@ -261,7 +261,7 @@ class GraphCalcs():
         Create a subgraph from the original graph to perform a shortest path
         search on.
         Includes only vertices from source, target and via types.
-        Deletes all edges that do not belong to appropriate types or are 
+        Deletes all edges that do not belong to appropriate via-type or are 
         not fully functional.
         Deletes all vertices that are either not fully functional or already
         have a valid connection.
@@ -283,7 +283,7 @@ class GraphCalcs():
         subgraph = self.graph.induced_subgraph(v_seq)
         subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
         wrong_edges = set(subgraph.es['ci_type']).difference(
-            {via_ci, f'dependency_{source_ci}_{target_ci}'})
+            {via_ci})
         subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
         
         return v_seq, subgraph
@@ -378,6 +378,7 @@ class GraphCalcs():
         
         bools_check = [self.graph.vs[edge.source]['func_tot'] > 0 
                        for edge in es_check]
+        
         es_check = [edge for edge, bool_check in zip(es_check, bools_check) 
                     if bool_check]
         
@@ -401,7 +402,7 @@ class GraphCalcs():
             graph_subgraph_vsdict = {v: k for k, v in subgraph_graph_vsdict.items()}
             subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
             wrong_edges = set(subgraph.es['ci_type']).difference(
-                {via_ci, f'dependency_{source_ci}_{target_ci}'})
+                {via_ci})
             subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
             
             for ix, source, target, bool_f in (zip(np.arange(len(bool_keep)),
@@ -594,7 +595,7 @@ class GraphCalcs():
             eids = self.graph.get_eids(pairs=reverse_edges, path=None,
                                        directed=True, error=True)
             self.graph.es[eids]['func_tot']=0
-            print(f"""Using updated power line algorithm: dysfunc edges before:
+            LOGGER.info(f"""Using updated power line algorithm: dysfunc edges before:
                   {len(edges_dys)}, after: {len(self.graph.es.select(ci_type='power_line'
                                              ).select(func_tot_eq=0))}""")
             self.powercap_from_clusters(p_source=p_source, p_sink=p_sink,
