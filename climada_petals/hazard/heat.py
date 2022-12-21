@@ -289,9 +289,8 @@ class Heat(Hazard):
                 if i==0:
                     intensity = data_bc.to_numpy(dtype=float)
                 else:
-                    intensity = np.stack((intensity,
-                                          data_bc.to_numpy(dtype=float)),
-                                         axis=1)
+                    intensity = np.column_stack((intensity,
+                                          data_bc.to_numpy(dtype=float)))
 
         else:
             LOGGER.info('No bias correction is performed.')
@@ -310,6 +309,9 @@ class Heat(Hazard):
         haz.units = 'C'
         haz.event_id = np.arange(1, intensity.shape[0]+1).astype(int)
         haz.event_name = list(map(str, haz.event_id))
+        if t_start and t_end is not None:
+            data_per = pd_df.loc[(pd_df.date >= pd.Timestamp(t_start)) & 
+                                 (pd_df.date <= pd.Timestamp(t_end))]
         haz.date = data_per.date.values
         haz.orig = np.zeros(len(haz.date), bool)
 
@@ -355,10 +357,10 @@ class Heat(Hazard):
         intensity = self.intensity.toarray()
         if kind=='heat':
             for i, temp in enumerate(mmt):
-                intensity[:,i][intensity[:,i]<temp] = 0
+                intensity[:,i][intensity[:,i]<temp] = np.nan
         elif kind=='cold':
             for i, temp in enumerate(mmt):
-                intensity[:,i][intensity[:,i]>temp] = 0
+                intensity[:,i][intensity[:,i]>temp] = np.nan
         else:
             raise ValueError('"kind" does not equal "heat" or "cold"')
 
