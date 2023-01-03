@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import zipfile
+import warnings
 
 from climada import CONFIG
 from climada.util import files_handler as u_fh
@@ -237,9 +238,15 @@ class SupplyChain():
             ]
         self.years = np.unique([date.year for date in dates])
 
+        #these won't be needed after merging direct and indirect impact calc (we can simply access Hazard)
+        self.freq = hazard.frequency
+        self.event_id = hazard.event_id
+
         unique_exp_regid = exposure.gdf.region_id.unique()
-        self.direct_impact = np.zeros(shape=(len(self.years),
+        # TODO: Do we need this inizilization?
+        self.direct_impact = np.zeros(shape=(len(self.event_id),
                                              len(self.mriot_reg_names)*len(self.sectors)))
+        self.direct_aai_agg = np.zeros(shape=(len(self.mriot_reg_names)*len(self.sectors)))
 
         self.reg_dir_imp = []
         for exp_regid in unique_exp_regid:
@@ -253,7 +260,7 @@ class SupplyChain():
             # Calc impact for country
             imp = Impact()
             imp.calc(reg_exp, imp_fun_set, hazard)
-            imp_year_set = np.array(list(imp.calc_impact_year_set(imp).values()))
+            #imp_event_set = np.array(list(imp.calc_impact_year_set(imp).values()))
 
             mriot_reg_name = self._map_exp_to_mriot(exp_regid, self.mriot_type)
 
@@ -263,19 +270,18 @@ class SupplyChain():
                 continue
 
             subsec_reg_pos = np.array(selected_subsec) + self.reg_pos[mriot_reg_name][0]
-            subsec_reg_prod = self.mriot_data[subsec_reg_pos].sum(axis=1)
+            subsec_reg_prod = self.mriot_data[subsec_reg_pos].sum(axis=1)*self.get_conversion_factor()
 
-            imp_year_set = np.repeat(imp_year_set, len(selected_subsec)
-                                     ).reshape(len(self.years),
+            imp_sec_event = np.repeat(imp.at_event, len(selected_subsec)
+                                     ).reshape(len(self.event_id),
                                                len(selected_subsec))
-            direct_impact_reg = np.multiply(imp_year_set, subsec_reg_prod)
+            direct_impact_reg = np.multiply(imp_sec_event, subsec_reg_prod)
 
             # Sum needed below in case of many ROWs, which are aggregated into
             # one country as per WIOD table.
             self.direct_impact[:, subsec_reg_pos] += direct_impact_reg.astype(np.float32)
-
-        # average impact across years
-        self.direct_aai_agg = self.direct_impact.mean(axis=0)
+        
+        self.direct_aai_agg = sum(np.multiply(self.direct_impact.T, self.freq).T)
 
     def calc_indirect_impact(self, io_approach='ghosh'):
         """Calculate indirect impacts according to the specified input-output
@@ -298,8 +304,8 @@ class SupplyChain():
         """
         # TODO: Consider splitting the computation of coefficients to the indirect risk assessment
         io_switch = {'leontief': self._leontief_calc,
-                            'ghosh': self._ghosh_calc,
-                            'eeioa': self._eeioa_calc}
+                     'ghosh': self._ghosh_calc,
+                     'eeioa': self._eeioa_calc}
 
         # Compute coefficients based on selected IO approach
         coefficients = np.zeros_like(self.mriot_data, dtype=np.float32)
@@ -321,16 +327,15 @@ class SupplyChain():
 
         # Calculate indirect impacts
         self.indirect_impact = np.zeros_like(self.direct_impact, dtype=np.float32)
-        risk_structure = np.zeros(np.shape(self.mriot_data) + (len(self.years),),
+        risk_structure = np.zeros(np.shape(self.mriot_data) + (len(self.event_id),),
                                   dtype=np.float32)
 
-        # Loop over years indices:
-        for year_i, _ in enumerate(tqdm(self.years)):
-            direct_impact_yearly = self.direct_impact[year_i, :]
+        # Loop over events:
+        for event_i, at_event_damage in enumerate(tqdm(self.direct_impact)):
 
-            direct_intensity = np.zeros_like(direct_impact_yearly)
-            for idx, (impact, production) in enumerate(zip(direct_impact_yearly,
-                                                           self.total_prod)):
+            # TODO: is this initialization needed?
+            direct_intensity = np.zeros_like(at_event_damage)
+            for idx, (impact, production) in enumerate(zip(at_event_damage, self.total_prod)):
                 if production > 0:
                     direct_intensity[idx] = impact/production
                 else:
@@ -338,12 +343,12 @@ class SupplyChain():
 
             # Calculate risk structure based on selected IO approach
             risk_structure = io_switch[io_approach](direct_intensity, inverse,
-                                                    risk_structure, year_i)
+                                                    risk_structure, event_i)
             # Total indirect risk per sector/country-combination:
-            self.indirect_impact[year_i, :] = np.nansum(
-                risk_structure[:, :, year_i], axis=0)
+            self.indirect_impact[event_i, :] = np.nansum(
+                risk_structure[:, :, event_i], axis=0)
 
-        self.indirect_aai_agg = self.indirect_impact.mean(axis=0)
+        self.indirect_aai_agg = sum(np.multiply(self.indirect_impact.T, self.freq).T)
 
         self.io_data = {}
         self.io_data.update({'coefficients': coefficients, 'inverse': inverse,
@@ -354,6 +359,14 @@ class SupplyChain():
         """Calculate total impacts summing direct and indirect impacts."""
         self.total_impact = self.indirect_impact + self.direct_impact
         self.total_aai_agg = self.total_impact.mean(axis=0)
+
+    def get_conversion_factor(self):
+        if self.unit.unit[0] == 'M.EUR':
+            conv_factor = 1e6
+        else:
+            conv_factor = 1
+            warnings.warn("No conversion factor was found")
+        return conv_factor
 
     def _map_exp_to_mriot(self, exp_regid, mriot_type):
         """
@@ -384,26 +397,26 @@ class SupplyChain():
 
         return mriot_reg_name
 
-    def _leontief_calc(self, direct_intensity, inverse, risk_structure, year_i):
+    def _leontief_calc(self, direct_intensity, inverse, risk_structure, event_i):
         """Calculate the risk_structure based on the Leontief approach."""
         demand = self.total_prod - np.nansum(self.mriot_data, axis=1)
         degr_demand = direct_intensity*demand
         for idx, row in enumerate(inverse):
-            risk_structure[:, idx, year_i] = row * degr_demand
+            risk_structure[:, idx, event_i] = row * degr_demand
         return risk_structure
 
-    def _ghosh_calc(self, direct_intensity, inverse, risk_structure, year_i):
+    def _ghosh_calc(self, direct_intensity, inverse, risk_structure, event_i):
         """Calculate the risk_structure based on the Ghosh approach."""
         value_added = self.total_prod - np.nansum(self.mriot_data, axis=0)
         degr_value_added = np.maximum(direct_intensity*value_added,\
                                       np.zeros_like(value_added))
         for idx, col in enumerate(inverse.T):
            # Here, we iterate across columns of inverse (hence transpose used).
-            risk_structure[:, idx, year_i] = degr_value_added * col
+            risk_structure[:, idx, event_i] = degr_value_added * col
         return risk_structure
 
-    def _eeioa_calc(self, direct_intensity, inverse, risk_structure, year_i):
+    def _eeioa_calc(self, direct_intensity, inverse, risk_structure, event_i):
         """Calculate the risk_structure based on the EEIOA approach."""
         for idx, col in enumerate(inverse.T):
-            risk_structure[:, idx, year_i] = (direct_intensity * col) * self.total_prod[idx]
+            risk_structure[:, idx, event_i] = (direct_intensity * col) * self.total_prod[idx]
         return risk_structure
