@@ -22,7 +22,7 @@ We recommend using a powerful machine or even a server cluster for large computa
 
 All computations within this module are executed as a Transformation DAG pipeline of the `dantro <https://dantro.readthedocs.io/en/latest/>`_ package.
 It handles the data management, caches results for later use and can be controlled via `YAML <https://yaml.org/>`_ configuration files.
-We provide one configuration file for the setup (`climada_petals/hazard/rf_glofas/setup.yml`) and one exemplary configuratio file for a river flood foodprint computation task (`climada_petals/hazard/rf_glofas/rf_glofas.yml`).
+We provide one configuration file for the setup (``climada_petals/hazard/rf_glofas/setup.yml``) and one exemplary configuratio file for a river flood foodprint computation task (``climada_petals/hazard/rf_glofas/rf_glofas.yml``).
 
 ------------
 Preparations
@@ -67,7 +67,7 @@ The data required for flood footprint computation has been uploaded to the `ETH 
 You can download the ``gumbel-fit.nc`` and ``flood-maps.nc`` files from there.
 Place them in the data directory you created in the last section.
 
-If you downloaded the data and placed it into the ``glofas-computation`` directory, you can directly proceed with `compute`_.
+If you downloaded the data and placed it into the ``glofas-computation`` directory, you can directly proceed with :ref:`computing flood footprints <compute>`.
 If not, you will have to follow the next steps to compute the input data yourself:
 
 Optional: Create Input Data Using ``setup``
@@ -88,7 +88,7 @@ Now we will execute the ``setup`` function.
 It will run two data transformation tasks.
 Both tasks are defined in the ``climada_petals/hazard/rf_glofas/setup.yml`` configuration file.
 
-* Task 1: `glofas_historical_fits`
+* Task 1: ``glofas_historical_fits``
 
   1. Download historical river discharge data from 1979 to 2021.
   2. Compute the yearly maximum for each grid cell.
@@ -100,7 +100,7 @@ Both tasks are defined in the ``climada_petals/hazard/rf_glofas/setup.yml`` conf
     :lineno-match:
     :caption: setup.yml
 
-* Task 2: `flood_maps_merge`
+* Task 2: ``flood_maps_merge``
 
   1. Load the flood hazard map GeoTIFF files.
   2. Merge them into a single dataset with ``return_period`` as new dimension.
