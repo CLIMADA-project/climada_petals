@@ -44,20 +44,10 @@ DEFAULT_REQUESTS = {
         "year": "2022",
         "month": "08",
         "day": "01",
-        "leadtime_hour": [
-            "24",
-            "48",
-            "72",
-            "96",
-            "120",
-            "144",
-            "168",
-            "192",
-            "216",
-            "240",
-        ],
+        "leadtime_hour": list(map(str, range(1, 31))),
     },
 }
+"""Default request keyword arguments to be updated by the user requests"""
 
 
 def glofas_request_single(
@@ -149,10 +139,18 @@ def glofas_request(
     ``date`` parameters and the grouping of the downloaded data depends on the type of
     ``product`` requested.
 
-    Prerequisites
-    -------------
+    Available ``products``:
+
+    - ``historical``: Historical reanalysis discharge data. ``date_from`` and ``date_to``
+      are interpreted as integer years. Data for each year is placed into a single file.
+    - ``forecast``: Forecast discharge data. ``date_from`` and ``date_to`` are
+      interpreted as ISO date format strings. Data for each day is placed into a single
+      file.
+
+    Notes
+    -----
     Downloading data from the CDS requires authentication via a user key which is granted
-    to each user upon registration.
+    to each user upon registration. Do the following **before calling this function**:
 
     - Create an account at the Copernicus Data Store website:
       https://cds.climate.copernicus.eu/
@@ -179,14 +177,6 @@ def glofas_request(
     -------
     list of Path
         Paths of the downloaded files
-
-    Available products
-    ------------------
-    - ``historical``: Historical reanalysis discharge data. ``date_from`` and ``date_to``
-      are interpreted as integer years. Data for each year is placed into a single file.
-    - ``forecast``: Forecast discharge data. ``date_from`` and ``date_to`` are
-      interpreted as ISO date format strings. Data for each day is placed into a single
-      file.
     """
     # Check if product exists
     try:

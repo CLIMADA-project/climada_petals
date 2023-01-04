@@ -1,6 +1,6 @@
 
 This is the documentation for version v\ |version|. In `CLIMADA-project <https://github.com/CLIMADA-project>`_ you will find CLIMADA's contributors, repository and scientific publications.
-The documentation for CLIMADA-python (`the core <https://github.com/CLIMADA-project/climada_python>`_) can be found `here <https://climada-python.readthedocs.io/en/latest/index.html>`_. 
+The documentation for CLIMADA-python (`the core <https://github.com/CLIMADA-project/climada_python>`_) can be found `here <https://climada-python.readthedocs.io/en/latest/index.html>`_.
 Note that all the documentations has two versions, 'latest' and 'stable', and explicit version numbers, such as 'v3.1.1', in the url path.
 'latest' is created from the 'develop' branch and has the latest changes by developers, 'stable' from the latest release.
 For more details about documentation versions, please have a look `here <https://readthedocs.org/projects/climada-petals/versions/>`_.
@@ -12,6 +12,15 @@ Installation
 ------------
 
 The details for the installation can be found `here <https://climada-python.readthedocs.io/en/stable/guide/Guide_Installation.html#Install-CLIMADA-petals-(optional)>`_.
+
+-------------
+Documentation
+-------------
+
+.. toctree::
+   :maxdepth: 1
+
+   glofas_rf
 
 ---------
 Tutorials

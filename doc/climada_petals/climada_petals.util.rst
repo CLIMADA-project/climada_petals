@@ -17,3 +17,11 @@ climada\_petals\.util\.constants module
     :undoc-members:
     :show-inheritance:
 
+CDS Glofas Downloader
+---------------------
+
+.. autofunction:: climada_petals.util.glofas_request
+
+The default configuration for each product will be updated with the ``request_kw`` from :py:func:`climada_petals.util.glofas_request`:
+
+.. autodata:: climada_petals.util.cds_glofas_downloader.DEFAULT_REQUESTS

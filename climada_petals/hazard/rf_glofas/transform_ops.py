@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional, Union, List, Mapping, Any
 from collections import deque
 from collections.abc import Iterable
-import tempfile
 
 import xarray as xr
 import numpy as np
@@ -335,7 +334,7 @@ def interpolate_space(
 
 
 @is_operation
-def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.DataArray:
+def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dataset:
     def interpolate(return_period, hazard, return_periods):
         """Linearly interpolate the hazard to a given return period
 
@@ -389,7 +388,7 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
         dask="parallelized",
         vectorize=True,
         output_dtypes=[np.float32],
-    ).rename("Flood Depth")
+    ).rename("Flood Depth").to_dataset()
 
 
 def save_file(
@@ -411,6 +410,10 @@ def save_file(
         variable. Default encoding settings are:
         ``dict(dtype="float32", zlib=True, complevel=4)``
     """
+    # Promote to Dataset for accessing the data_vars
+    if isinstance(data, xr.DataArray):
+        data = data.to_dataset()
+
     # Store encoding
     encoding = dict(dtype="float32", zlib=True, complevel=4)
     encoding.update(encoding_kwargs)
@@ -423,11 +426,74 @@ def save_file(
     data.to_netcdf(output_path, encoding=encoding)
 
 
-def finalize(*args, data, **kwargs):
-    """Store tagged nodes in files or in the DataManager depending on the user input"""
+def finalize(
+    *,
+    data: Mapping[str, Any],
+    to_file: Optional[Iterable[Union[str, Mapping[str, Any]]]] = None,
+    to_dm: Optional[Iterable[Union[str, Mapping[str, Any]]]] = None,
+    **kwargs,
+):
+    """Store tagged nodes in files or in the DataManager depending on the user input
+
+    Parameters
+    ----------
+    data : dict
+        The mapping of tagged data containers computed by the dantro transform DAG.
+    to_file : list of str or dict (optional)
+        Specs for writing data into files. If an entry is a single string, it is
+        interpreted as the data tag to write and the filename to write to. If it is a
+        ``dict``, the following items are interpreted:
+
+        * ``tag``: The data tag to write.
+        * ``filename`` (optional): The filename to write to. Defaults to the value of
+          ``tag``.
+        * ``encoding`` (dict, optional): The encoding when writing the file.
+
+        This will call :py:func:`climada_petals.hazard.rf_glofas.transform_ops.save_file`,
+        for each entry in ``to_file``.
+    to_dm : list of str or dict (optional)
+        Specs for storing data in the ``DataManager``. This requires the manager to be
+        passed as node called ``data_manager`` in the transform DAG:
+
+        .. code-block:: yaml
+
+            transform:
+              - pass: !dag_tag dm
+              tag: data_manager
+
+        If an entry in ``to_dm`` is a single string, it is interpreted as the data tag to
+        store and the name of the data entry in the ``DataManager``. If it is a ``dict``,
+        the following items are interpreted:
+
+        * ``tag``: The data tag to store.
+        * ``name`` (optional): The name of the target entry in the data manager.
+          Defaults to the value of ``tag``.
+
+    Examples
+    --------
+
+    Add the ``to_file`` and ``to_dm`` nodes to your evaluation config on the same level
+    as ``transform``:
+
+    .. code-block:: yaml
+
+        eval:
+          with_cache:
+            to_file:
+              - some_tag
+              - tag: some_other_tag
+                filename: other_tag_output
+            to_dm:
+              - some_tag
+              - tag: some_other_tag
+                name: other_tag_container
+
+            transform:
+              # ...
+    """
     # Write data to files
     output_dir = Path(kwargs["out_path"]).parent
-    for entry in kwargs.get("to_file", {}):
+    for entry in to_file if to_file is not None else {}:
         if isinstance(entry, dict):
             tag = entry["tag"]
             filename = entry.get("filename", tag)
@@ -439,7 +505,7 @@ def finalize(*args, data, **kwargs):
         save_file(data[tag], output_dir / filename, **encoding)
 
     # Store data in DataManager
-    for entry in kwargs.get("to_dm", {}):
+    for entry in to_dm if to_dm is not None else {}:
         if isinstance(entry, dict):
             tag = entry["tag"]
             name = entry.get("name", tag)

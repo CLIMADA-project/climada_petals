@@ -17,13 +17,11 @@ data_manager:
       required: True
       engine: netcdf4
 
-
     glofas_historical_gumbel_fit:
       loader: xr_dataset
       glob_str: gumbel-fit.nc
       required: True
       engine: netcdf4
-      # chunks: auto
 
 plot_manager:
   raise_exc: true
@@ -36,9 +34,9 @@ plot_manager:
 # to actually output any plots.
 # (This can also be the path to a separate file.)
 eval:
+
   # .. Shared configs .........................................................
   # ... starting with a dot: ignored by default, used only in `based_on`
-
   .shared:
     # Need to define a "plot" function ... but does not need to do anything
     module: climada_petals.hazard.rf_glofas.transform_ops
@@ -72,10 +70,6 @@ eval:
       - .shared
       - .dag.cache.use
 
-    # NOTE: Needs data_manager to be passed through the TransformationDAG
-    to_dm:
-      - flood_depth
-
     select:
       flood_maps: flood_maps
       gumbel_fits: glofas_historical_gumbel_fit
@@ -84,7 +78,6 @@ eval:
       - operation: download_glofas_discharge
         args: [forecast, "2022-08-10", "2022-08-11", 2]
         kwargs:
-          # area: [*lat_max , *lon_min , *lat_min , *lon_max ]
           countries: ["Pakistan"]
           leadtime_hour: ["24", "48", "72", "96", "120"]
           format: grib
@@ -101,7 +94,6 @@ eval:
       # Extract loc and scale from GEV fit dataset
       - getitem: [!dag_tag gumbel_fits, loc]
         tag: gev_loc
-
       - getitem: [!dag_tag gumbel_fits, scale]
         tag: gev_scale
 
@@ -141,3 +133,7 @@ eval:
       # Pass the data manager to the plot function so we can store the result in it
       - pass: !dag_tag dm
         tag: data_manager
+
+    # NOTE: Needs data_manager to be passed through the TransformationDAG
+    to_dm:
+      - flood_depth
