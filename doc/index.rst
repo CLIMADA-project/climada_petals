@@ -60,20 +60,15 @@ Jump right in:
 .. toctree::
    :caption: Tutorials
    :hidden:
-   :maxdepth: 1
+   :maxdepth: 2
 
+   Hazard <tutorial/hazard>
    tutorial/climada_engine_SupplyChain
    tutorial/climada_entity_BlackMarble
    tutorial/climada_exposures_openstreetmap
    tutorial/climada_hazard_drought
-   tutorial/climada_hazard_emulator
-   tutorial/climada_hazard_entity_Crop
-   tutorial/climada_hazard_Landslide
-   tutorial/climada_hazard_RiverFlood
-   tutorial/climada_hazard_TCForecast
-   tutorial/climada_hazard_TCSurgeBathtub
-   tutorial/climada_hazard_Wildfire
-   tutorial/climada_engine_Warn
+   Crop Production Risk <tutorial/climada_hazard_entity_Crop>
+   Warning Module <tutorial/climada_engine_Warn>
 
 
 .. toctree::
