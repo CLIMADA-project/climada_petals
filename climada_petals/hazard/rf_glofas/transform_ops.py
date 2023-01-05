@@ -1,9 +1,8 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Union, List, Mapping, Any
+from typing import Optional, Union, List, Mapping, Any, Iterable
 from collections import deque
-from collections.abc import Iterable
 
 import xarray as xr
 import numpy as np
@@ -13,6 +12,7 @@ from scipy.interpolate import interp1d
 
 from dantro.data_ops import is_operation
 from dantro.groups import OrderedDataGroup
+from dantro.containers import PassthroughContainer
 
 from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries, country_to_iso
@@ -512,4 +512,6 @@ def finalize(
         else:
             tag = entry
             name = entry
-        data["data_manager"].new_container(name, data=data[tag])
+        cont_data = data[tag]
+        Cls = PassthroughContainer if isinstance(cont_data, xr.Dataset) else None
+        data["data_manager"].new_container(name, data=cont_data, Cls=Cls)
