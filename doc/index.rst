@@ -41,6 +41,7 @@ Tutorials
    tutorial/climada_hazard_TCSurgeBathtub
    tutorial/climada_hazard_Wildfire
    tutorial/climada_engine_Warn
+   tutorial/climada_hazard_glofas_rf
 
 ----------------------
 Software documentation

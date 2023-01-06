@@ -1,0 +1,176 @@
+# Holds all information relevant for a climada evaluation
+---
+# The directory associated with the DataManager.
+# Defaults to the CLIMADA system directory
+# data_dir: ~/my_data_dir
+
+# Keyword arguments that are used to set up the DataManager and PlotManager
+data_manager:
+  out_dir: "_output"
+  out_dir_kwargs:
+    exist_ok: true
+
+  load_cfg:
+    flood_maps:
+      loader: xr_dataarray
+      glob_str: flood-maps.nc
+      required: True
+      engine: netcdf4
+
+    glofas_historical_gumbel_fit:
+      loader: xr_dataset
+      glob_str: gumbel-fit.nc
+      required: True
+      engine: netcdf4
+
+    flopros_database:
+      loader: geodataframe
+      glob_str: FLOPROS_shp_V1/FLOPROS_shp_V1.shp
+      required: True
+
+plot_manager:
+  raise_exc: true
+  out_dir: '{timestamp:}/'  # also the default
+  default_creator: base
+  shared_creator_init_kwargs:
+    default_ext: pdf
+
+# The "evaluation" routine, orchestrated by the PlotManager but not requiring
+# to actually output any plots.
+# (This can also be the path to a separate file.)
+eval:
+
+  # .. Shared configs .........................................................
+  # ... starting with a dot: ignored by default, used only in `based_on`
+  .shared:
+    # Need to define a "plot" function ... but does not need to do anything
+    module: climada_petals.hazard.rf_glofas.transform_ops
+    plot_func: finalize
+
+    # Configure the DAG framework
+    use_dag: true
+    compute_only: ~   # can also pass a list of tags here, e.g. [result]
+    dag_visualization:
+      when:
+        on_compute_success: true  # -> always saves a DAG representation plot
+
+  .dag.cache.use:
+    dag_options:
+      file_cache_defaults:
+        read:
+          enabled: true
+          load_options:
+            engine: netcdf4
+            chunks: auto
+        write:
+          enabled: true
+          allow_overwrite: false
+          min_compute_time: 10.0   # ⇒ cache used on all nodes with compute time > 10s
+          storage_options:
+            engine: netcdf4
+
+  # An evaluation task with default cache use (and some explicit cases)
+  with_cache:
+    based_on:
+      - .shared
+      - .dag.cache.use
+
+    select:
+      flood_maps: flood_maps
+      gumbel_fits: glofas_historical_gumbel_fit
+      flopros: flopros_database
+
+    transform:
+      - operation: download_glofas_discharge
+        args: [historical, 2021, null, 1]
+        kwargs:
+          countries: ["Germany", "Switzerland", "Austria"]
+          format: grib
+
+      - operation: .sel
+        args: [!dag_prev ]
+        kwargs:
+          time: !slice ["2021-07-01", "2021-07-31"]
+        tag: discharge
+
+      # Extract loc and scale from GEV fit dataset
+      - getitem: [!dag_tag gumbel_fits, loc]
+        tag: gev_loc
+      - getitem: [!dag_tag gumbel_fits, scale]
+        tag: gev_scale
+
+      # Compute the return period
+      - operation: return_period
+        args: [!dag_tag discharge, !dag_tag gev_loc, !dag_tag gev_scale]
+        tag: return_period
+        # Force reading and writing due to chunks!
+        file_cache:
+          write:
+            always: true
+          read:
+            always: true
+            load_options:
+              chunks: {latitude: -1, longitude: -1, time: 1, number: 1}
+              engine: netcdf4
+
+      # Interpolate onto finer grid
+      - operation: interpolate_space
+        args: [!dag_tag return_period , !dag_tag flood_maps]
+        tag: return_period_interpolated
+        # Force reading and writing due to chunks!
+        file_cache:
+          write:
+            always: true
+          read:
+            always: true
+            load_options:
+              chunks: {time: -1, number: -1, step: -1, select: -1, longitude: 500, latitude: 500}
+              engine: netcdf4
+
+      # Compute flood depth
+      - operation: flood_depth
+        args: [!dag_prev , !dag_tag flood_maps]
+        tag: flood_depth
+        file_cache:
+          write:
+            always: true
+          read:
+            always: true
+            load_options:
+              chunks: auto
+              engine: netcdf4
+
+      # Apply the flood protection
+      - operation: apply_flopros
+        args: [!dag_tag flopros, !dag_tag return_period_interpolated ]
+        # Force reading and writing due to chunks!
+        file_cache:
+          write:
+            always: true
+          read:
+            always: true
+            load_options:
+              chunks: {time: -1, number: -1, step: -1, select: -1, longitude: 500, latitude: 500}
+              engine: netcdf4
+
+      # Compute flood depth
+      - operation: flood_depth
+        args: [!dag_prev , !dag_tag flood_maps]
+        tag: flood_depth_flopros
+        file_cache:
+          write:
+            always: true
+          read:
+            always: true
+            load_options:
+              chunks: auto
+              engine: netcdf4
+
+      # Pass the data manager to the plot function so we can store the result in it
+      - pass: !dag_tag dm
+        tag: data_manager
+
+    # NOTE: Needs data_manager to be passed through the TransformationDAG
+    to_dm:
+      - flood_depth
+      - flood_depth_flopros
