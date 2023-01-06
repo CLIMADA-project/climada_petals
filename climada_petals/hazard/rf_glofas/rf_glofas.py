@@ -1,15 +1,16 @@
 import logging
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Union
+from typing import Union, Optional
 
 import xarray as xr
 import pandas as pd
+import geopandas as gpd
 from dask.distributed import Client
 
 import dantro as dtr
-from dantro.data_loaders import AllAvailableLoadersMixin
-from dantro.containers import XrDataContainer
+from dantro.data_loaders import AllAvailableLoadersMixin, add_loader
+from dantro.containers import XrDataContainer, PassthroughContainer
 from dantro.tools import load_yml
 
 from climada.util.constants import SYSTEM_DIR
@@ -21,6 +22,18 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_DATA_DIR = SYSTEM_DIR / "glofas-computation"
 DEFAULT_SETUP_CFG = Path(__file__).parent.absolute() / "setup.yml"
 DEFAULT_GLOFAS_CFG = Path(__file__).parent.absolute() / "rf_glofas.yml"
+
+
+class GeoDataFrameLoaderMixin:
+    """A Mixin for loading GeoDataFrames"""
+
+    @add_loader(TargetCls=PassthroughContainer)
+    def _load_geodataframe(
+        path: str, *, TargetCls: type, engine: Optional[str] = None, **kwargs
+    ):
+        """Read a file supported by geopandas and return the data"""
+        data = gpd.read_file(path, engine=engine, **kwargs)
+        return TargetCls(data=data, attrs=dict(filepath=path))
 
 
 class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):

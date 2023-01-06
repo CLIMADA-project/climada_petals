@@ -7,8 +7,10 @@ from collections import deque
 import xarray as xr
 import numpy as np
 import pandas as pd
+import geopandas as gpd
 from scipy.stats import gumbel_r
 from scipy.interpolate import interp1d
+from shapely.geometry import Point
 
 from dantro.data_ops import is_operation
 from dantro.groups import OrderedDataGroup
@@ -334,6 +336,52 @@ def interpolate_space(
 
 
 @is_operation
+def apply_flopros(
+    flopros_data: PassthroughContainer,
+    return_period: Union[xr.DataArray, xr.Dataset],
+    layer: str = "MerL_Riv",
+):
+    """Sample the FLOPROS shape file for coodinates defined by a source"""
+    # Make GeoDataframe from existing geometry
+    latitude = return_period["latitude"].values
+    longitude = return_period["longitude"].values
+    lon, lat = np.meshgrid(longitude, latitude, indexing="ij")
+    points = [Point(lo, la) for lo, la in zip(lon.flat, lat.flat)]
+    df_geometry = gpd.GeoDataFrame(geometry=points, crs="EPSG:4326")
+
+    # Merge the DataFrames, setting the FLOPROS value for each point
+    df_merged = df_geometry.sjoin(flopros_data.data, how="left", predicate="within")
+
+    # Set the layers to store
+    layers = [
+        "DL_Min_Co",
+        "DL_Max_Co",
+        "PL_Min_Co",
+        "PL_Max_Co",
+        "MerL_Riv",
+        "DL_Min_Riv",
+        "DL_Max_Riv",
+        "PL_Min_Riv",
+        "PL_Max_Riv",
+        "ModL_Riv",
+    ]
+
+    def data_array_from_layer(col_name):
+        """Create a xr.DataArray from a GeoDataFrame column"""
+        return xr.DataArray(
+            data=df_merged[col_name]
+            .to_numpy(dtype=np.float32)
+            .reshape((longitude.size, latitude.size)),
+            dims=["longitude", "latitude"],
+            coords=dict(longitude=longitude, latitude=latitude),
+        )
+
+    # Apply the FLOPROS protection
+    flopros = data_array_from_layer(layer)
+    return return_period.where(return_period > flopros)
+
+
+@is_operation
 def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dataset:
     def interpolate(return_period, hazard, return_periods):
         """Linearly interpolate the hazard to a given return period
@@ -377,18 +425,22 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
     core_dims = dims - {"longitude", "latitude"}
 
     # Perform operation
-    return xr.apply_ufunc(
-        interpolate,
-        return_period,
-        flood_maps,
-        flood_maps["return_period"],
-        input_core_dims=[list(core_dims), ["return_period"], ["return_period"]],
-        output_core_dims=[list(core_dims)],
-        exclude_dims={"return_period"},  # Add 'step' and 'number' here?
-        dask="parallelized",
-        vectorize=True,
-        output_dtypes=[np.float32],
-    ).rename("Flood Depth").to_dataset()
+    return (
+        xr.apply_ufunc(
+            interpolate,
+            return_period,
+            flood_maps,
+            flood_maps["return_period"],
+            input_core_dims=[list(core_dims), ["return_period"], ["return_period"]],
+            output_core_dims=[list(core_dims)],
+            exclude_dims={"return_period"},  # Add 'step' and 'number' here?
+            dask="parallelized",
+            vectorize=True,
+            output_dtypes=[np.float32],
+        )
+        .rename("Flood Depth")
+        .to_dataset()
+    )
 
 
 def save_file(
@@ -512,6 +564,7 @@ def finalize(
         else:
             tag = entry
             name = entry
+
         cont_data = data[tag]
         Cls = PassthroughContainer if isinstance(cont_data, xr.Dataset) else None
         data["data_manager"].new_container(name, data=cont_data, Cls=Cls)
