@@ -291,6 +291,7 @@ dependencies:
     - bitstring==4.0.1
     - bleach==5.0.1
     - coverage==7.0.4
+    - climada==3.2.0  # NOTE: Must be added here explicitly!
     - defusedxml==0.7.1
     - deprecation==2.1.0
     - descartes==1.1.0
