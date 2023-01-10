@@ -135,6 +135,8 @@ def fit_gumbel_r(
 ):
     """Fit a right-handed Gumbel distribution to the data
 
+    Parameters
+    ----------
     input_data : xr.DataArray
         The input time series to compute the distributions for. It must contain the
         dimension ``year``.
@@ -144,30 +146,41 @@ def fit_gumbel_r(
     min_samples : int
         The number of finite samples along the ``year`` dimension required for a
         successful fit. If there are fewer samples, the fit result will be NaN.
+
+    Returns
+    -------
+    xr.Dataset
+        A dataset on the same grid as the input data with variables
+
+        * ``loc``: The loc parameter of the fitted distribution (mode)
+        * ``scale``: The scale parameter of the fitted distribution
+        * ``samples``: The number of samples used to fit the distribution at this
+          coordinate
     """
 
     def fit(time_series):
         # Count finite samples
         samples = np.isfinite(time_series)
-        if np.count_nonzero(samples) < min_samples:
-            return np.nan, np.nan
+        samples_count = np.count_nonzero(samples)
+        if samples_count < min_samples:
+            return np.nan, np.nan, 0
 
         # Mask array
-        return gumbel_r.fit(time_series[samples], method=fit_method)
+        return (*gumbel_r.fit(time_series[samples], method=fit_method), samples_count)
 
     # Apply fitting
-    loc, scale = xr.apply_ufunc(
+    loc, scale, samples = xr.apply_ufunc(
         fit,
         input_data,
         input_core_dims=[["year"]],
-        output_core_dims=[[], []],
+        output_core_dims=[[], [], []],
         exclude_dims={"year"},
         vectorize=True,
         dask="parallelized",
-        output_dtypes=[np.float64, np.float64],
+        output_dtypes=[np.float64, np.float64, np.int32],
     )
 
-    return xr.Dataset(dict(loc=loc, scale=scale))
+    return xr.Dataset(dict(loc=loc, scale=scale, samples=samples))
 
 
 @is_operation
@@ -294,6 +307,10 @@ def return_period(
 
     Coordinates of the three datasets must match up to a tolerance of 1e-3 degrees. If
     they do not, an error is thrown.
+
+    Todo
+    ----
+    * Add bootstrap resampling
     """
     gev_loc = reindex(
         gev_loc, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
@@ -312,6 +329,65 @@ def return_period(
         discharge,
         gev_loc,
         gev_scale,
+        dask="parallelized",
+        output_dtypes=[np.float32],
+    ).rename("Return Period")
+
+
+@is_operation
+def return_period_resample(
+    discharge: xr.DataArray,
+    gev_loc: xr.DataArray,
+    gev_scale: xr.DataArray,
+    gev_samples: xr.DataArray,
+    bootstrap_samples: int,
+) -> xr.DataArray:
+    """Compute the return period for a discharge from a Gumbel EV distribution fit
+
+    Coordinates of the three datasets must match up to a tolerance of 1e-3 degrees. If
+    they do not, an error is thrown.
+    """
+    gev_loc = reindex(
+        gev_loc, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
+    )
+    gev_scale = reindex(
+        gev_scale, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
+    )
+    gev_samples = reindex(
+        gev_samples, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
+    )
+
+    # Compute the return period
+    def rp(dis, loc, scale):
+        return 1.0 / (1.0 - gumbel_r.cdf(dis, loc=loc, scale=scale))
+
+    # Compute the return period
+    def rp_sampling(dis, loc, scale, samples):
+        if samples < 1 or not np.isfinite(samples):
+            return np.array([np.nan] * bootstrap_samples)
+
+        dist = gumbel_r(loc, scale)
+        return np.array([
+            rp(dis, *gumbel_r.fit(dist.rvs(size=samples)))
+            for _ in range(bootstrap_samples)
+        ])
+
+    # Apply and return
+    core_dims = set(discharge.dims) - {"longitude", "latitude"}
+    return xr.apply_ufunc(
+        rp_sampling,
+        discharge,
+        gev_loc,
+        gev_scale,
+        gev_samples,
+        input_core_dims=[
+            list(core_dims),
+            list(core_dims),
+            list(core_dims),
+            list(core_dims),
+        ],
+        output_core_dims=[["sample"]],
+        vectorize=True,
         dask="parallelized",
         output_dtypes=[np.float32],
     ).rename("Return Period")

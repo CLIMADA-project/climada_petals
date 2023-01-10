@@ -11,14 +11,19 @@ import xarray as xr
 import geopandas as gpd
 from shapely.geometry import Polygon
 
+from dantro.containers import PassthroughContainer
+
 from climada_petals.hazard.rf_glofas.transform_ops import (
     download_glofas_discharge,
     return_period,
+    return_period_resample,
     interpolate_space,
     flood_depth,
     reindex,
     sel_lon_lat_slice,
     max_from_isel,
+    apply_flopros,
+    fit_gumbel_r,
 )
 
 
@@ -28,6 +33,11 @@ def cdf_mock(dis, loc, scale):
         return np.zeros_like(dis)
 
     return np.ones_like(dis)
+
+
+def fit_mock(series, _):
+    """A mock for gumbel_r.fit method. Returns min and max of the series"""
+    return np.amin(series), np.amax(series)
 
 
 def create_data_array(x, y, values, name):
@@ -181,6 +191,21 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         """Set up a random number generator"""
         self.rng = default_rng(1)
 
+    @patch("climada_petals.hazard.rf_glofas.transform_ops.gumbel_r.fit", new=fit_mock)
+    def test_fit_gumbel_r(self):
+        """Test the 'fit_gumbel_r' operation"""
+        # Dummy data
+        input_data = xr.DataArray(
+            data=[[0, 1, 2], [np.nan, 2, 3], [np.nan, np.nan, 1]],
+            coords=dict(x=[1, 2, 3], year=[2000, 2001, 2002]),
+        )
+
+        # Check result
+        res = fit_gumbel_r(input_data)
+        npt.assert_array_equal(res["loc"].values, [0, 2, np.nan])  # loc = min
+        npt.assert_array_equal(res["scale"].values, [2, 3, np.nan])  # scale = max
+        npt.assert_array_equal(res["samples"].values, [3, 2, 0])
+
     def test_max_from_isel(self):
         """Test the 'max_from_isel' operation"""
         # NOTE: Use timedelta to check support for this data type
@@ -193,9 +218,6 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         # Test how it's regularly called
         res = max_from_isel(da, "step", [slice(0, 2), [0, 3, 2]])
         npt.assert_array_equal(res["x"].values, [0])
-        # npt.assert_array_equal(
-        #     res["step"].values, [np.timedelta64(1, "D"), np.timedelta64(3, "D")]
-        # )
         npt.assert_array_equal(res["select"].values, list(range(2)))
         # NOTE: slicing with .isel is NOT inclusive (as opposed to .sel)!
         npt.assert_array_equal(res.values, [[1], [3]])
@@ -209,7 +231,7 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         )
 
     # @patch.object(gumbel_r, "cdf", new=cdf_mock)
-    @patch("climada_petals.hazard.rf_glofas.gumbel_r.cdf", new=cdf_mock)
+    @patch("climada_petals.hazard.rf_glofas.transform_ops.gumbel_r.cdf", new=cdf_mock)
     def test_return_period(self):
         """Test 'return_period' operation"""
         x = np.arange(10)
@@ -243,7 +265,7 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         da_mock.count.return_value = 0  # Mock the count
 
         # Patch the reindexing
-        with patch("climada_petals.hazard.rf_glofas.reindex", new=return_arg):
+        with patch("climada_petals.hazard.rf_glofas.transform_ops.reindex", new=return_arg):
             with self.assertRaises(ValueError) as cm:
                 return_period(discharge, da_mock, loc)
             self.assertIn("cannot align objects", str(cm.exception))
@@ -265,6 +287,17 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         npt.assert_allclose(result.values, np.ones_like(result.values))
         npt.assert_allclose(result["longitude"].values, x, atol=1e-8)
         npt.assert_allclose(result["latitude"].values, y, atol=1e-8)
+
+    def test_return_period_resample(self):
+        """Test 'return_period_resample' operation"""
+        x = np.arange(10)
+        y = np.arange(20, 10, -1)
+        values = np.outer(x, y)
+        loc = create_data_array(x, y, values, "loc")
+
+        result = return_period_resample(loc, loc, loc, loc, 5)
+        self.assertIn("sample", result.dims)
+        self.assertEqual(result.sizes["sample"], 5)
 
     def test_interpolate_space(self):
         """Test 'interpolate_space' operation"""
@@ -294,6 +327,29 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         npt.assert_array_equal(da_result["latitude"], y_diff)
         # Interpolation causes some noise, so "allclost" is enough here
         npt.assert_allclose(da_result.values, expected_values, rtol=1e-10)
+
+    def test_apply_flopros(self):
+        """Test 'apply_flopros' operation"""
+        # Create dummy data
+        return_period = create_data_array(
+            [0, 1, 2], [10, 11], [[1, 2], [1.5, 3], [1.5, 1.5]], "return_period"
+        )
+        polygons = [
+            Polygon([(0, 0), (1.5, 0), (1.5, 10.5), (0, 10.5)]),
+            Polygon([(1.5, 0), (3, 0), (3, 12), (0, 12), (0, 10.5), (1.5, 10.5)]),
+        ]
+        flopros_data = gpd.GeoDataFrame(
+            {"MerL_Riv": [1, 2]},
+            geometry=polygons,
+            crs="EPSG:4326",
+        )
+        flopros_cont = PassthroughContainer(name="flopros", data=flopros_data)
+
+        # Call the function
+        res = apply_flopros(flopros_cont, return_period)
+        npt.assert_array_equal(
+            res.values, [[np.nan, np.nan], [1.5, 3], [np.nan, np.nan]]
+        )
 
     def test_flood_depth(self):
         """Test 'flood_depth' operation"""
