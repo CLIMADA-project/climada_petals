@@ -35,7 +35,7 @@ def cdf_mock(dis, loc, scale):
     return np.ones_like(dis)
 
 
-def fit_mock(series, _):
+def fit_mock(series, method):
     """A mock for gumbel_r.fit method. Returns min and max of the series"""
     return np.amin(series), np.amax(series)
 
@@ -66,7 +66,8 @@ class TestDantroOpsGloFASDownload(unittest.TestCase):
         # Mock the 'glofas_request' function
         # NOTE: Need to patch the object where it is imported and used
         self.patch_glofas_request = patch(
-            "climada_petals.hazard.rf_glofas.glofas_request", autospec=True
+            "climada_petals.hazard.rf_glofas.transform_ops.glofas_request",
+            autospec=True,
         )
         self.glofas_request_mock = self.patch_glofas_request.start()
         self.glofas_request_mock.return_value = [
@@ -108,7 +109,10 @@ class TestDantroOpsGloFASDownload(unittest.TestCase):
         npt.assert_array_equal(ds["x"].data, [0, 1, 2])
         npt.assert_array_equal(ds.data, [[0, 1, 2], [10, 11, 12]])
 
-    @patch("climada_petals.hazard.rf_glofas.get_country_geometries", autospec=True)
+    @patch(
+        "climada_petals.hazard.rf_glofas.transform_ops.get_country_geometries",
+        autospec=True,
+    )
     def test_countries_area(self, get_country_geometries_mock):
         """Check behavior of 'countries' and 'area' kwargs"""
         get_country_geometries_mock.return_value = gpd.GeoDataFrame(
@@ -201,9 +205,10 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         )
 
         # Check result
+        # NOTE: The mock will return min for 'loc' and max for 'scale'
         res = fit_gumbel_r(input_data)
-        npt.assert_array_equal(res["loc"].values, [0, 2, np.nan])  # loc = min
-        npt.assert_array_equal(res["scale"].values, [2, 3, np.nan])  # scale = max
+        npt.assert_array_equal(res["loc"].values, [0, 2, np.nan])
+        npt.assert_array_equal(res["scale"].values, [2, 3, np.nan])
         npt.assert_array_equal(res["samples"].values, [3, 2, 0])
 
     def test_max_from_isel(self):
@@ -265,7 +270,9 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         da_mock.count.return_value = 0  # Mock the count
 
         # Patch the reindexing
-        with patch("climada_petals.hazard.rf_glofas.transform_ops.reindex", new=return_arg):
+        with patch(
+            "climada_petals.hazard.rf_glofas.transform_ops.reindex", new=return_arg
+        ):
             with self.assertRaises(ValueError) as cm:
                 return_period(discharge, da_mock, loc)
             self.assertIn("cannot align objects", str(cm.exception))
@@ -293,11 +300,23 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         x = np.arange(10)
         y = np.arange(20, 10, -1)
         values = np.outer(x, y)
-        loc = create_data_array(x, y, values, "loc")
+        arr = create_data_array(x, y, values, "arr")
 
-        result = return_period_resample(loc, loc, loc, loc, 5)
+        # Test special sample values
+        samples = arr.copy()
+        samples[0, 0] = 0
+        samples[0, 1] = np.nan
+        samples[1, 0] = np.inf
+
+        # Check result
+        result = return_period_resample(arr, arr, arr, samples, 5)
         self.assertIn("sample", result.dims)
         self.assertEqual(result.sizes["sample"], 5)
+
+        # Results should be NaN if there are no samples
+        npt.assert_array_equal(result.values[0, 0], [np.nan] * 5)
+        npt.assert_array_equal(result.values[0, 1], [np.nan] * 5)
+        npt.assert_array_equal(result.values[1, 0], [np.nan] * 5)
 
     def test_interpolate_space(self):
         """Test 'interpolate_space' operation"""
@@ -339,9 +358,7 @@ class TestDantroOpsGloFAS(unittest.TestCase):
             Polygon([(1.5, 0), (3, 0), (3, 12), (0, 12), (0, 10.5), (1.5, 10.5)]),
         ]
         flopros_data = gpd.GeoDataFrame(
-            {"MerL_Riv": [1, 2]},
-            geometry=polygons,
-            crs="EPSG:4326",
+            {"MerL_Riv": [1, 2]}, geometry=polygons, crs="EPSG:4326"
         )
         flopros_cont = PassthroughContainer(name="flopros", data=flopros_data)
 
@@ -376,10 +393,10 @@ class TestDantroOpsGloFAS(unittest.TestCase):
             coords=dict(longitude=x, latitude=x, core_dim=core_dim),
         )
 
-        da_result = flood_depth(da_return_period, da_flood_maps)
-        self.assertEqual(da_result.name, "Flood Depth")
+        ds_result = flood_depth(da_return_period, da_flood_maps)
+        self.assertIn("Flood Depth", ds_result.data_vars)
         # NOTE: Single point precision, so reduce the decimal accuracy
-        npt.assert_allclose(da_result.values, values)
+        npt.assert_allclose(ds_result["Flood Depth"].values, values)
 
         # Check NaN shortcut
         da_flood_maps = xr.DataArray(
@@ -391,7 +408,9 @@ class TestDantroOpsGloFAS(unittest.TestCase):
                 latitude=np.arange(13),
             ),
         )
-        with patch("climada_petals.hazard.rf_glofas.np.full_like") as full_like_mock:
+        with patch(
+            "climada_petals.hazard.rf_glofas.transform_ops.np.full_like"
+        ) as full_like_mock:
             full_like_mock.side_effect = lambda x, _: np.full(x.shape, 0.0)
             flood_depth(da_return_period, da_flood_maps)
             # Should have been called 100 times, one time for each lon/lat coordinate
@@ -407,7 +426,9 @@ class TestDantroOpsGloFAS(unittest.TestCase):
                 latitude=np.arange(13),
             ),
         )
-        with patch("climada_petals.hazard.rf_glofas.interp1d") as interp1d_mock:
+        with patch(
+            "climada_petals.hazard.rf_glofas.transform_ops.interp1d"
+        ) as interp1d_mock:
             interp1d_mock.return_value = lambda x: np.full_like(x, 0.0)
             flood_depth(da_return_period, da_flood_maps)
             hazard_args = np.array(

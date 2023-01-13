@@ -30,6 +30,32 @@ def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArra
     return target.sel(longitude=slice(*lon), latitude=slice(*lat))
 
 
+def rp(x, loc, scale):
+    """Compute the return period from a right-handed Gumbel distribution
+
+    All parameters can be arrays, in which case numpy broadcasting rules apply.
+
+    The return period of a sample :math:`x` from an extreme value distribution is
+    defined as :math:`(1 - \\mathrm{cdf}(x))^{-1}`, where :math:`\\mathrm{cdf}` is the
+    cumulative distribution function of said distribution.
+
+    Parameters
+    ----------
+    x : array
+        Samples for which to compute the return period
+    loc : array
+        Loc parameter of the Gumbel distribution
+    scale : array
+        Scale parameter of the distribution
+
+    Returns
+    -------
+    np.ndarray
+        The return period(s) for the input parameters
+    """
+    return 1.0 / (1.0 - gumbel_r.cdf(x, loc=loc, scale=scale))
+
+
 def reindex(
     target: xr.DataArray,
     source: xr.DataArray,
@@ -308,20 +334,28 @@ def return_period(
     Coordinates of the three datasets must match up to a tolerance of 1e-3 degrees. If
     they do not, an error is thrown.
 
-    Todo
-    ----
-    * Add bootstrap resampling
-    """
-    gev_loc = reindex(
-        gev_loc, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
-    )
-    gev_scale = reindex(
-        gev_scale, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
-    )
+    Parameters
+    ----------
+    discharge : xr.DataArray
+        The discharge values to compute the return period for
+    gev_loc : xr.DataArray
+        The loc parameters for the Gumbel EV distribution
+    gev_scale : xr.DataArray
+        The scale parameters for the Gumbel EV distribution
 
-    # Compute the return period
-    def rp(dis, loc, scale):
-        return 1.0 / (1.0 - gumbel_r.cdf(dis, loc=loc, scale=scale))
+    Returns
+    -------
+    xr.DataArray
+        The equivalent return periods for the input discharge and Gumbel EV istributions
+
+    See Also
+    --------
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp`
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.return_period_resample`
+    """
+    reindex_kwargs = dict(tolerance=1e-3, fill_value=-1, assert_no_fill_value=True)
+    gev_loc = reindex(gev_loc, discharge, **reindex_kwargs)
+    gev_scale = reindex(gev_scale, discharge, **reindex_kwargs)
 
     # Apply and return
     return xr.apply_ufunc(
@@ -342,37 +376,75 @@ def return_period_resample(
     gev_samples: xr.DataArray,
     bootstrap_samples: int,
 ) -> xr.DataArray:
-    """Compute the return period for a discharge from a Gumbel EV distribution fit
+    """Compute resampled return periods for a discharge from a Gumbel EV distribution fit
+
+    This function uses bootstrap resampling to incorporate the uncertainty in the EV
+    distribution fit. Bootstrap resampling takes the fitted distribution, draws N samples
+    from it (where N is the number of samples originally used to fit the distribution),
+    and fits a new distribution onto these samples. This "bootstrapped" distribution is
+    then used to compute the return period. Repeating this process yields an ensemble of
+    distributions that captures the uncertainty in the original distribution fit.
 
     Coordinates of the three datasets must match up to a tolerance of 1e-3 degrees. If
     they do not, an error is thrown.
+
+    Parameters
+    ----------
+    discharge : xr.DataArray
+        The discharge values to compute the return period for
+    gev_loc : xr.DataArray
+        The loc parameters for the Gumbel EV distribution
+    gev_scale : xr.DataArray
+        The scale parameters for the Gumbel EV distribution
+    gev_samples : xr.DataArray
+        The samples used to fit the Gumbel EV distribution at every point
+    bootstrap_samples : int
+        The number of bootstrap samples to compute. Increasing this will improve the
+        representation of uncertainty, but strongly increase computational costs later
+        on.
+
+    Returns
+    -------
+    xr.DataArray
+        The equivalent return periods for the input discharge and Gumbel EV
+        distributions. The data array will have an additional dimension ``sample``,
+        representing the bootstrap samples for every point.
+
+    See Also
+    --------
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp`
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.return_period`
     """
-    gev_loc = reindex(
-        gev_loc, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
-    )
-    gev_scale = reindex(
-        gev_scale, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
-    )
-    gev_samples = reindex(
-        gev_samples, discharge, tolerance=1e-3, fill_value=-1, assert_no_fill_value=True
-    )
+    reindex_kwargs = dict(tolerance=1e-3, fill_value=-1, assert_no_fill_value=True)
+    gev_loc = reindex(gev_loc, discharge, **reindex_kwargs)
+    gev_scale = reindex(gev_scale, discharge, **reindex_kwargs)
+    gev_samples = reindex(gev_samples, discharge, **reindex_kwargs)
 
     # Compute the return period
-    def rp(dis, loc, scale):
-        return 1.0 / (1.0 - gumbel_r.cdf(dis, loc=loc, scale=scale))
+    def rp_sampling(dis: np.ndarray, loc: float, scale: float, samples: int):
+        """Compute multiple return periods using bootstrap sampling
 
-    # Compute the return period
-    def rp_sampling(dis, loc, scale, samples):
+        This function does not support broadcasting on the ``loc`` and ``scale``
+        parameters.
+        """
+        # Return NaNs if we have no reliable samples
         if samples < 1 or not np.isfinite(samples):
             return np.array([np.nan] * bootstrap_samples)
 
+        # "Freeze" the distribution
         dist = gumbel_r(loc, scale)
-        return np.array([
-            rp(dis, *gumbel_r.fit(dist.rvs(size=samples)))
-            for _ in range(bootstrap_samples)
-        ])
+
+        # Resample the distribution and compute return periods from these resamples
+        return np.array(
+            [
+                rp(dis, *gumbel_r.fit(dist.rvs(size=samples)))
+                for _ in range(bootstrap_samples)
+            ]
+        )
 
     # Apply and return
+    # NOTE: 'rp_sampling' requires scalar 'loc' and 'scale' parameters, so we
+    #       define all but 'longitude' and 'latitude' dimensions as core dimensions
     core_dims = set(discharge.dims) - {"longitude", "latitude"}
     return xr.apply_ufunc(
         rp_sampling,
