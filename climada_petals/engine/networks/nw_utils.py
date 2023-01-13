@@ -160,7 +160,7 @@ def number_noservices(graph, services=['power', 'healthcare', 'education',
 
 def number_noservice_df(service, df, service_dict=service_dict()):
     """
-    Number of population having '0' in service state for a respective service
+    Number of population having '0' or '-1' in service state for a respective service
     
     Parameters
     -----------
@@ -175,9 +175,10 @@ def number_noservice_df(service, df, service_dict=service_dict()):
     -----
     same as number_noservice, just that it's performed on a df, not on the graph
     """
-    no_service = (1-df[df.ci_type=='people'][service_dict[service]])
-    pop = df[df.ci_type=='people'].counts
-    return (no_service*pop).sum()
+    return df[
+        (df.ci_type=='people')&
+        (df[service_dict()[service]<=0])
+        ].counts.sum()
 
 def number_noservices_df(df, services=['power', 'healthcare', 'education', 
                                            'telecom', 'mobility', 'water']):
