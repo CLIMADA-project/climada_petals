@@ -177,7 +177,7 @@ def number_noservice_df(service, df, service_dict=service_dict()):
     """
     return df[
         (df.ci_type=='people')&
-        (df[service_dict()[service]<=0])
+        (df[service_dict[service]<=0])
         ].counts.sum()
 
 def number_noservices_df(df, services=['power', 'healthcare', 'education', 
