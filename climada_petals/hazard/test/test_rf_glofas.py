@@ -11,6 +11,7 @@ import xarray as xr
 import geopandas as gpd
 from shapely.geometry import Polygon
 
+from dantro import DataManager
 from dantro.containers import PassthroughContainer
 
 from climada_petals.hazard.rf_glofas.transform_ops import (
@@ -25,6 +26,7 @@ from climada_petals.hazard.rf_glofas.transform_ops import (
     apply_flopros,
     fit_gumbel_r,
     save_file,
+    finalize,
 )
 
 
@@ -578,6 +580,44 @@ class TestDantroOpsSaveFile(unittest.TestCase):
             outpath, encoding=dict(foo=defaults, bar=defaults)
         )
 
+    @patch("climada_petals.hazard.rf_glofas.transform_ops.save_file")
+    def test_finalize(self, save_file_mock):
+        """Test the finalize function for the dantro pipeline"""
+        # Define inputs
+        baz = MagicMock(spec_set=xr.Dataset)
+        mngr = MagicMock(spec_set=DataManager)
+        data = dict(foo="foo_data", bar="bar_data", baz=baz, data_manager=mngr)
+        to_file = [
+            "foo",
+            dict(tag="bar", filename="bar_file"),
+            dict(tag="baz", encoding="encoding", encoding_defaults=dict(enc=True)),
+        ]
+        to_dm = ["foo", dict(tag="bar", name="bar_name"), dict(tag="baz")]
+        kwargs = dict(out_path=self.tempdir.name + "/output")
+
+        # Call the function
+        finalize(data=data, to_file=to_file, to_dm=to_dm, **kwargs)
+
+        # Assert calls
+        print(save_file_mock.call_args_list)
+        save_file_mock.assert_any_call("foo_data", Path(self.tempdir.name) / "foo", {})
+        save_file_mock.assert_any_call(
+            "bar_data", Path(self.tempdir.name) / "bar_file", {}
+        )
+        save_file_mock.assert_any_call(
+            baz, Path(self.tempdir.name) / "baz", "encoding", enc=True
+        )
+        mngr.new_container.assert_any_call("foo", data="foo_data", Cls=None)
+        mngr.new_container.assert_any_call("bar_name", data="bar_data", Cls=None)
+        mngr.new_container.assert_any_call("baz", data=baz, Cls=PassthroughContainer)
+
+        # Check things that should not work: No 'tag' in dict-like entries
+        with self.assertRaises(KeyError) as cm:
+            finalize(data=data, to_file=[dict(filename="foo")], **kwargs)
+        self.assertIn("tag", str(cm.exception))
+        with self.assertRaises(KeyError) as cm:
+            finalize(data=data, to_dm=[dict(name="foo")], **kwargs)
+        self.assertIn("tag", str(cm.exception))
 
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestDantroOpsGloFAS)
