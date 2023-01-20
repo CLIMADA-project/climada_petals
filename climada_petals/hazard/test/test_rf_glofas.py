@@ -24,6 +24,7 @@ from climada_petals.hazard.rf_glofas.transform_ops import (
     max_from_isel,
     apply_flopros,
     fit_gumbel_r,
+    save_file,
 )
 
 
@@ -297,26 +298,32 @@ class TestDantroOpsGloFAS(unittest.TestCase):
 
     def test_return_period_resample(self):
         """Test 'return_period_resample' operation"""
+        # Make more than 2 dims to check handling of 'core_dims'
         x = np.arange(10)
         y = np.arange(20, 10, -1)
-        values = np.outer(x, y)
-        arr = create_data_array(x, y, values, "arr")
+        z = np.linspace(0, 5, 11)
+        values = np.multiply.outer(np.outer(x, y), z)
+        discharge = xr.DataArray(values, coords=dict(longitude=x, latitude=y, time=z))
+        print(discharge)
+        gev = xr.DataArray(np.outer(x, y), coords=dict(longitude=x, latitude=y))
 
         # Test special sample values
-        samples = arr.copy()
+        samples = gev.copy()
         samples[0, 0] = 0
         samples[0, 1] = np.nan
         samples[1, 0] = np.inf
 
         # Check result
-        result = return_period_resample(arr, arr, arr, samples, 5)
+        result = return_period_resample(discharge, gev, gev, samples, 5)
         self.assertIn("sample", result.dims)
         self.assertEqual(result.sizes["sample"], 5)
 
         # Results should be NaN if there are no samples
-        npt.assert_array_equal(result.values[0, 0], [np.nan] * 5)
-        npt.assert_array_equal(result.values[0, 1], [np.nan] * 5)
-        npt.assert_array_equal(result.values[1, 0], [np.nan] * 5)
+        for time in z:
+            with self.subTest(time=time):
+                npt.assert_array_equal(result.sel(time=time).values[0, 0], [np.nan] * 5)
+                npt.assert_array_equal(result.sel(time=time).values[0, 1], [np.nan] * 5)
+                npt.assert_array_equal(result.sel(time=time).values[1, 0], [np.nan] * 5)
 
     def test_interpolate_space(self):
         """Test 'interpolate_space' operation"""
@@ -507,6 +514,69 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         self.assertEqual(res["latitude"][-1], 0)
         self.assertEqual(res["longitude"][0], 0)
         self.assertEqual(res["longitude"][-1], 6)
+
+
+class TestDantroOpsSaveFile(unittest.TestCase):
+    """Test case for 'save_file'"""
+
+    def setUp(self):
+        """Create a temporary directory"""
+        self.tempdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        """Delete the temporary directory"""
+        self.tempdir.cleanup()
+
+    def test_save_file(self):
+        """Test the file saving wrapper for the dantro pipeline"""
+        # Mock the dataset
+        ds = MagicMock(xr.Dataset)
+        ds.data_vars = ["foo", "bar"]
+
+        # Call the function
+        outpath = Path(self.tempdir.name) / "outfile"
+        encoding = dict(bar=dict(dtype="float64", some_setting=True))
+        encoding_defaults = dict(zlib=False, other_setting=False)
+
+        # Assert calls
+        save_file(ds, outpath, encoding, **encoding_defaults)
+        ds.to_netcdf.assert_called_once_with(
+            outpath.with_suffix(".nc"),
+            encoding=dict(
+                foo=dict(dtype="float32", zlib=False, complevel=4, other_setting=False),
+                bar=dict(
+                    dtype="float64",
+                    zlib=False,
+                    complevel=4,
+                    other_setting=False,
+                    some_setting=True,
+                ),
+            ),
+        )
+        ds.to_netcdf.reset_mock()
+
+        # Any suffix will be forwarded
+        outpath = outpath.with_suffix(".suffix")
+        defaults = dict(dtype="float32", zlib=True, complevel=4)
+        save_file(ds, outpath)
+        ds.to_netcdf.assert_called_once_with(
+            outpath, encoding=dict(foo=defaults, bar=defaults)
+        )
+
+        # KeyError for data_vars that do not exist
+        with self.assertRaises(KeyError) as cm:
+            save_file(ds, outpath, dict(baz=dict(stuff=True)))
+        self.assertIn("baz", str(cm.exception))
+        ds.to_netcdf.reset_mock()
+
+        # DataArray must be promoted
+        da = MagicMock(xr.DataArray)
+        da.to_dataset.return_value = ds
+        save_file(da, outpath)
+        da.to_dataset.assert_called_once_with()
+        ds.to_netcdf.assert_called_once_with(
+            outpath, encoding=dict(foo=defaults, bar=defaults)
+        )
 
 
 if __name__ == "__main__":

@@ -68,6 +68,9 @@ eval:
       - tag: fit
         filename: gumbel-fit.nc
         encoding:
+          samples:
+            dtype: int32
+        encoding_defaults:
           dtype: float64
 
     transform:

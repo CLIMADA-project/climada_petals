@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union, List, Mapping, Any, Iterable
 from collections import deque
+from copy import deepcopy
 
 import xarray as xr
 import numpy as np
@@ -418,7 +419,7 @@ def return_period_resample(
     reindex_kwargs = dict(tolerance=1e-3, fill_value=-1, assert_no_fill_value=True)
     gev_loc = reindex(gev_loc, discharge, **reindex_kwargs)
     gev_scale = reindex(gev_scale, discharge, **reindex_kwargs)
-    gev_samples = reindex(gev_samples, discharge, **reindex_kwargs)
+    gev_samples = reindex(gev_samples, discharge, **reindex_kwargs).astype("int32")
 
     # Compute the return period
     def rp_sampling(dis: np.ndarray, loc: float, scale: float, samples: int):
@@ -428,41 +429,36 @@ def return_period_resample(
         parameters.
         """
         # Return NaNs if we have no reliable samples
-        if samples < 1 or not np.isfinite(samples):
-            return np.array([np.nan] * bootstrap_samples)
+        finite_input = all((np.isfinite(x) for x in (loc, scale, samples)))
+        if samples < 1 or not finite_input:
+            return np.full((bootstrap_samples,) + dis.shape, np.nan)
 
-        # "Freeze" the distribution
-        dist = gumbel_r(loc, scale)
-
-        # Resample the distribution and compute return periods from these resamples
-        return np.array(
-            [
-                rp(dis, *gumbel_r.fit(dist.rvs(size=samples)))
-                for _ in range(bootstrap_samples)
-            ]
+        # TODO: Add 'method' to parameters
+        fit_params = gumbel_r.fit(
+            gumbel_r.rvs(loc=loc, scale=scale, size=samples), method="MLE"
         )
+        # Resample the distribution and compute return periods from these resamples
+        return np.array([rp(dis, *fit_params) for _ in range(bootstrap_samples)])
 
     # Apply and return
     # NOTE: 'rp_sampling' requires scalar 'loc' and 'scale' parameters, so we
     #       define all but 'longitude' and 'latitude' dimensions as core dimensions
     core_dims = set(discharge.dims) - {"longitude", "latitude"}
-    return xr.apply_ufunc(
+    ret = xr.apply_ufunc(
         rp_sampling,
         discharge,
         gev_loc,
         gev_scale,
         gev_samples,
-        input_core_dims=[
-            list(core_dims),
-            list(core_dims),
-            list(core_dims),
-            list(core_dims),
-        ],
-        output_core_dims=[["sample"]],
+        input_core_dims=[list(core_dims), [], [], []],
+        output_core_dims=[["sample"] + list(core_dims)],
         vectorize=True,
         dask="parallelized",
         output_dtypes=[np.float32],
+        dask_gufunc_kwargs=dict(output_sizes=dict(sample=bootstrap_samples)),
     ).rename("Return Period")
+    ret["sample"] = np.arange(bootstrap_samples)
+    return ret
 
 
 @is_operation
@@ -594,7 +590,8 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
 def save_file(
     data: Union[xr.Dataset, xr.DataArray],
     output_path: Union[Path, str],
-    **encoding_kwargs,
+    encoding: Optional[Mapping[str, Any]] = None,
+    **encoding_defaults,
 ):
     """Save xarray data as a file with default compression
 
@@ -605,25 +602,29 @@ def save_file(
     output_path : pathlib.Path or str
         The file path to store the data into. If it does not contain a suffix, ``.nc``
         is automatically appended. The enclosing folder must already exist.
-    encoding_kwargs
-        Optional keyword arguments for the encoding, which applies to every data
-        variable. Default encoding settings are:
-        ``dict(dtype="float32", zlib=True, complevel=4)``
+    encoding : dict (optional)
+        Encoding settings for every data variable. Will update the default settings.
+    encoding_defaults
+        Encoding settings shared by all data variables. This will update the default
+        encoding settings, which are ``dict(dtype="float32", zlib=True, complevel=4)``.
     """
     # Promote to Dataset for accessing the data_vars
     if isinstance(data, xr.DataArray):
         data = data.to_dataset()
 
     # Store encoding
-    encoding = dict(dtype="float32", zlib=True, complevel=4)
-    encoding.update(encoding_kwargs)
-    encoding = {var: encoding for var in data.data_vars}
+    default_encoding = dict(dtype="float32", zlib=True, complevel=4)
+    default_encoding.update(**encoding_defaults)
+    enc = {var: deepcopy(default_encoding) for var in data.data_vars}
+    if encoding is not None:
+        for key, settings in encoding.items():
+            enc[key].update(settings)
 
-    # Repeat encoding for each variable
+    # Sanitize output path and write file
     output_path = Path(output_path)
     if not output_path.suffix:
         output_path = output_path.with_suffix(".nc")
-    data.to_netcdf(output_path, encoding=encoding)
+    data.to_netcdf(output_path, encoding=enc)
 
 
 def finalize(
@@ -648,6 +649,8 @@ def finalize(
         * ``filename`` (optional): The filename to write to. Defaults to the value of
           ``tag``.
         * ``encoding`` (dict, optional): The encoding when writing the file.
+        * ``encoding_defaults``(dict, optional): The encoding settings shared by each
+          variable.
 
         This will call :py:func:`climada_petals.hazard.rf_glofas.transform_ops.save_file`,
         for each entry in ``to_file``.
@@ -698,11 +701,12 @@ def finalize(
             tag = entry["tag"]
             filename = entry.get("filename", tag)
             encoding = entry.get("encoding", {})
+            encoding_defaults = entry.get("encoding_defaults", {})
         else:
             tag = entry
             filename = entry
-            encoding = {}
-        save_file(data[tag], output_dir / filename, **encoding)
+            encoding, encoding_defaults = {}, {}
+        save_file(data[tag], output_dir / filename, encoding, **encoding_defaults)
 
     # Store data in DataManager
     for entry in to_dm if to_dm is not None else {}:

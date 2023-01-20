@@ -65,6 +65,11 @@ def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
     args, kwargs
         Additional (keyword) arguments passed to the ``dask.distributed.Client``
         constructor.
+
+    Example
+    -------
+    >>> with dask_client(n_workers=2, threads_per_worker=2, memory_limit="4G"):
+    ...     data_manager = dantro_transform("my_cfg.yml")
     """
     # Yield the client with the arguments, and close it afterwards
     LOGGER.info("Creating dask.distributed.Client")
