@@ -433,12 +433,16 @@ def return_period_resample(
         if samples < 1 or not finite_input:
             return np.full((bootstrap_samples,) + dis.shape, np.nan)
 
+        # Resample by drawing samples and re-fitting
+        def resample_params():
+            return gumbel_r.fit(
+                gumbel_r.rvs(loc=loc, scale=scale, size=samples),
+                method="MLE",
+            )
+
         # TODO: Add 'method' to parameters
-        fit_params = gumbel_r.fit(
-            gumbel_r.rvs(loc=loc, scale=scale, size=samples), method="MLE"
-        )
         # Resample the distribution and compute return periods from these resamples
-        return np.array([rp(dis, *fit_params) for _ in range(bootstrap_samples)])
+        return np.array([rp(dis, *resample_params()) for _ in range(bootstrap_samples)])
 
     # Apply and return
     # NOTE: 'rp_sampling' requires scalar 'loc' and 'scale' parameters, so we

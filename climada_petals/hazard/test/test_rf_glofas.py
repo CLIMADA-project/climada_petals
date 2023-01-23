@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, DEFAULT
 from pathlib import Path
 
 import numpy as np
@@ -306,7 +306,6 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         z = np.linspace(0, 5, 11)
         values = np.multiply.outer(np.outer(x, y), z)
         discharge = xr.DataArray(values, coords=dict(longitude=x, latitude=y, time=z))
-        print(discharge)
         gev = xr.DataArray(np.outer(x, y), coords=dict(longitude=x, latitude=y))
 
         # Test special sample values
@@ -326,6 +325,38 @@ class TestDantroOpsGloFAS(unittest.TestCase):
                 npt.assert_array_equal(result.sel(time=time).values[0, 0], [np.nan] * 5)
                 npt.assert_array_equal(result.sel(time=time).values[0, 1], [np.nan] * 5)
                 npt.assert_array_equal(result.sel(time=time).values[1, 0], [np.nan] * 5)
+
+        # Checks calls to 'fit' and 'rvs'
+        with patch.multiple(
+            "climada_petals.hazard.rf_glofas.transform_ops.gumbel_r",
+            fit=DEFAULT,
+            rvs=DEFAULT,
+        ) as mocks:
+            mocks["fit"].return_value = (1, 1)
+            bootstrap_samples = 2
+            return_period_resample(discharge, gev, gev, samples, bootstrap_samples)
+
+            # Test number of calls
+            # NOTE: 'samples' is zero for x=0, and not finite for one more case, hence
+            #       we subtract 11 cases
+            self.assertEqual(
+                len(mocks["fit"].call_args_list), (gev.size - 11) * bootstrap_samples
+            )
+
+            # Test that kwargs align
+            kwargs = np.array(
+                [
+                    (
+                        call_args.kwargs["loc"],
+                        call_args.kwargs["scale"],
+                        call_args.kwargs["size"],
+                    )
+                    for call_args in mocks["rvs"].call_args_list
+                ]
+            )
+            loc, scale, size = np.vsplit(kwargs.T, 3)
+            npt.assert_array_equal(loc, size)
+            npt.assert_array_equal(scale, size)
 
     def test_interpolate_space(self):
         """Test 'interpolate_space' operation"""
@@ -618,6 +649,7 @@ class TestDantroOpsSaveFile(unittest.TestCase):
         with self.assertRaises(KeyError) as cm:
             finalize(data=data, to_dm=[dict(name="foo")], **kwargs)
         self.assertIn("tag", str(cm.exception))
+
 
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestDantroOpsGloFAS)
