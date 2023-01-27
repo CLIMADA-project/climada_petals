@@ -709,8 +709,17 @@ class GraphCalcs():
         # propagate capacities down from source --> target along adj
         capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
         # functionality thesholds for recieved capacity
+        
+        # TODO: this is a quickfix for the healthcare study in MOZ, to deal
+        # with different func thresholds for the same types of cis. (Hospitals level 3 & 4 --> 0 power thresh.)
+        # delete again and think about a more general solution.
         func_thresh = np.array([thresh_func if vx['ci_type'] == target
                                 else 0 for vx in v_seq])
+        if (target=='health') & ('Level' in self.graph.vs.attribute_names):  
+            func_thresh = np.array([thresh_func if 
+                                    ((vx['ci_type'] == target) &
+                                     (vx['Level']<3)) 
+                                    else 0 for vx in v_seq])
         # boolean vector whether received capacity great enough to supply endusers
         capa_suff = (np.array(capa_rec.todense()).squeeze()>=func_thresh).astype(int)
          
