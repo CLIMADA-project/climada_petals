@@ -1,3 +1,24 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+User Interface for GloFAS River Flood Module
+"""
+
 import logging
 from pathlib import Path
 from contextlib import contextmanager
@@ -28,14 +49,18 @@ class GeoDataFrameLoaderMixin:
     """A Mixin for loading GeoDataFrames"""
 
     @add_loader(TargetCls=PassthroughContainer)
-    def _load_geodataframe(
-        path: str, *, TargetCls: type, engine: Optional[str] = None, **kwargs
+    def _load_geodataframe(  # pylint: disable=no-self-argument
+        path: str,
+        *,
+        TargetCls: type,  # pylint: disable=invalid-name
+        engine: Optional[str] = None,
+        **kwargs,
     ):
         """Read a file supported by geopandas and return the data"""
         data = gpd.read_file(path, engine=engine, **kwargs)
         return TargetCls(data=data, attrs=dict(filepath=path))
 
-
+# pylint: disable-next=too-few-public-methods
 class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
     """A DataManager that can load many different file formats"""
 
@@ -129,18 +154,18 @@ def dantro_transform(
             )
 
     # Set up DataManager
-    dm = ClimadaDataManager(data_dir, **cfg.get("data_manager", {}))
-    dm.load_from_cfg(load_cfg=cfg["data_manager"]["load_cfg"], print_tree=True)
+    data_mngr = ClimadaDataManager(data_dir, **cfg.get("data_manager", {}))
+    data_mngr.load_from_cfg(load_cfg=cfg["data_manager"]["load_cfg"], print_tree=True)
 
     # Set up the PlotManager ...
-    pm = dtr.PlotManager(dm=dm, **cfg.get("plot_manager"))
+    plot_mngr = dtr.PlotManager(dm=data_mngr, **cfg.get("plot_manager"))
 
     # ... and use it to invoke some evaluation routine
-    pm.plot_from_cfg(plots_cfg=cfg.get("eval"))
+    plot_mngr.plot_from_cfg(plots_cfg=cfg.get("eval"))
 
     # Return the DataManager
-    print(dm.tree)
-    return dm
+    print(data_mngr.tree)
+    return data_mngr
 
 
 def setup(cfg: Union[str, Path] = DEFAULT_SETUP_CFG):
@@ -228,10 +253,10 @@ def hazard_series_from_dataset(
     if not isinstance(data, xr.Dataset):
         data = xr.open_dataset(data, chunks="auto")
 
-    def create_hazard(ds: xr.Dataset) -> RiverFlood:
+    def create_hazard(dataset: xr.Dataset) -> RiverFlood:
         """Create hazard from a GloFASRiverFlood hazard dataset"""
         return RiverFlood.from_raster_xarray(
-            ds,
+            dataset,
             hazard_type="RF",
             intensity="Flood Depth",
             intensity_unit="m",
