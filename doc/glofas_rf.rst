@@ -63,11 +63,14 @@ Create Data Directory
 Download Prepared Datasets from the ETH Research Collection
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The data required for flood footprint computation has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience.
-You can download the ``gumbel-fit.nc`` and ``flood-maps.nc`` files from there.
-Place them in the data directory you created in the last section.
+The data required for flood footprint computation has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience:
 
-If you downloaded the data and placed it into the ``glofas-computation`` directory, you can directly proceed with :ref:`computing flood footprints <compute>`.
+* `Gumbel distribution fit parameters for historical GloFAS river discharge data <https://doi.org/10.3929/ethz-b-000587207>`_
+* `Flood hazard map of the World <https://doi.org/10.3929/ethz-b-000587202>`_
+
+Place the downloaded files in the ``glofas-computation`` data directory you created in the last section.
+If you did that, you can directly proceed with :ref:`computing flood footprints <compute>`.
+
 If not, you will have to follow the next steps to compute the input data yourself:
 
 Optional: Create Input Data Using ``setup``
