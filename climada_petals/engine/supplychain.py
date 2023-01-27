@@ -23,6 +23,8 @@ __all__ = ['SupplyChain']
 
 import logging
 import datetime as dt
+from pathlib import Path
+import zipfile
 from tqdm import tqdm
 import numpy as np
 import pandas as pd

@@ -9,3 +9,11 @@ climada\_petals\.engine\.supplychain module
     :undoc-members:
     :show-inheritance:
 
+climada\_petals\.engine\.warn module
+------------------------------------
+
+.. automodule:: climada_petals.engine.warn
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
