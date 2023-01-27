@@ -715,7 +715,7 @@ class GraphCalcs():
         # delete again and think about a more general solution.
         func_thresh = np.array([thresh_func if vx['ci_type'] == target
                                 else 0 for vx in v_seq])
-        if (target=='health') & ('Level' in self.graph.vs.attribute_names):  
+        if (target=='health') & ('Level' in self.graph.vs.attribute_names()):  
             func_thresh = np.array([thresh_func if 
                                     ((vx['ci_type'] == target) &
                                      (vx['Level']<3)) 
