@@ -31,7 +31,7 @@ def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArra
     return target.sel(longitude=slice(*lon), latitude=slice(*lat))
 
 
-def rp(x, loc, scale):
+def rp_comp(sample: np.ndarray, loc: np.ndarray, scale: np.ndarray):
     """Compute the return period from a right-handed Gumbel distribution
 
     All parameters can be arrays, in which case numpy broadcasting rules apply.
@@ -42,7 +42,7 @@ def rp(x, loc, scale):
 
     Parameters
     ----------
-    x : array
+    sample : array
         Samples for which to compute the return period
     loc : array
         Loc parameter of the Gumbel distribution
@@ -54,15 +54,15 @@ def rp(x, loc, scale):
     np.ndarray
         The return period(s) for the input parameters
     """
-    return 1.0 / (1.0 - gumbel_r.cdf(x, loc=loc, scale=scale))
+    return 1.0 / (1.0 - gumbel_r.cdf(sample, loc=loc, scale=scale))
 
 
 def reindex(
     target: xr.DataArray,
     source: xr.DataArray,
-    tolerance=None,
-    fill_value=np.nan,
-    assert_no_fill_value=False,
+    tolerance: Optional[float] = None,
+    fill_value: float = np.nan,
+    assert_no_fill_value: bool = False,
 ) -> xr.DataArray:
     """Reindex target to source with nearest neighbor lookup
 
@@ -75,6 +75,9 @@ def reindex(
     tolerance : float (optional)
         Maximum distance between coordinates. If it is superseded, the ``fill_value`` is
         inserted instead of the nearest neighbor value. Defaults to NaN
+    fill_value : float (optional)
+        The fill value to use if coordinates are changed by a distance of more than
+        ``tolerance``.
     assert_no_fill_value : bool (optional)
         Throw an error if fill values are found in the data after reindexing. This will
         also throw an error if the fill value is present in the ``target`` before
@@ -309,11 +312,9 @@ def download_glofas_discharge(
 @is_operation
 def max_from_isel(
     array: xr.DataArray, dim: str, selections: List[Union[Iterable, slice]]
-):
+) -> xr.DataArray:
     """Compute the maximum over several selections of an array dimension"""
-    if not all(
-        [isinstance(sel, Iterable) or isinstance(sel, slice) for sel in selections]
-    ):
+    if not all(isinstance(sel, (Iterable, slice)) for sel in selections):
         raise TypeError(
             "This function only works with iterables or slices as selection"
         )
@@ -360,7 +361,7 @@ def return_period(
 
     # Apply and return
     return xr.apply_ufunc(
-        rp,
+        rp_comp,
         discharge,
         gev_loc,
         gev_scale,
@@ -376,6 +377,7 @@ def return_period_resample(
     gev_scale: xr.DataArray,
     gev_samples: xr.DataArray,
     bootstrap_samples: int,
+    fit_method: str = "MLE",
 ) -> xr.DataArray:
     """Compute resampled return periods for a discharge from a Gumbel EV distribution fit
 
@@ -403,6 +405,9 @@ def return_period_resample(
         The number of bootstrap samples to compute. Increasing this will improve the
         representation of uncertainty, but strongly increase computational costs later
         on.
+    fit_method : str
+        Method for fitting the Gumbel EV during resampling. Available methods are the
+        Method of Moments ``MM`` or the Maximum Likelihood Estimation ``MLE`` (default).
 
     Returns
     -------
@@ -437,12 +442,13 @@ def return_period_resample(
         def resample_params():
             return gumbel_r.fit(
                 gumbel_r.rvs(loc=loc, scale=scale, size=samples),
-                method="MLE",
+                method=fit_method,
             )
 
-        # TODO: Add 'method' to parameters
         # Resample the distribution and compute return periods from these resamples
-        return np.array([rp(dis, *resample_params()) for _ in range(bootstrap_samples)])
+        return np.array(
+            [rp_comp(dis, *resample_params()) for _ in range(bootstrap_samples)]
+        )
 
     # Apply and return
     # NOTE: 'rp_sampling' requires scalar 'loc' and 'scale' parameters, so we
@@ -488,8 +494,30 @@ def apply_flopros(
     flopros_data: PassthroughContainer,
     return_period: Union[xr.DataArray, xr.Dataset],
     layer: str = "MerL_Riv",
-):
-    """Sample the FLOPROS shape file for coodinates defined by a source"""
+) -> Union[xr.DataArray, xr.Dataset]:
+    """Restrict the given return periods using FLOPROS data
+
+    The FLOPROS database describes the regional protection to river flooding based on a
+    return period. Users can choose from different database layers. For each coordinate
+    in ``return_period``, the value from the respective FLOPROS database layer is
+    selected. Any ``return_period`` lower than or equal to the FLOPROS protection value
+    is discarded and set to ``NaN``.
+
+    Parameters
+    ----------
+    flopros_data : PassthroughContainer
+        The FLOPROS data bundled into a dantro.containers.PassthroughContainer
+    return_period : xr.DataArray or xr.Dataset
+        The return periods to be restricted by the FLOPROS data
+    layer : str
+        The FLOPROS database layer to evaluate
+
+    Returns
+    -------
+    xr.DataArray or xr.Dataset
+        The ``return_period`` data with all values below the local FLOPROS protection
+        threshold set to ``NaN``.
+    """
     # Make GeoDataframe from existing geometry
     latitude = return_period["latitude"].values
     longitude = return_period["longitude"].values
@@ -500,19 +528,19 @@ def apply_flopros(
     # Merge the DataFrames, setting the FLOPROS value for each point
     df_merged = df_geometry.sjoin(flopros_data.data, how="left", predicate="within")
 
-    # Set the layers to store
-    layers = [
-        "DL_Min_Co",
-        "DL_Max_Co",
-        "PL_Min_Co",
-        "PL_Max_Co",
-        "MerL_Riv",
-        "DL_Min_Riv",
-        "DL_Max_Riv",
-        "PL_Min_Riv",
-        "PL_Max_Riv",
-        "ModL_Riv",
-    ]
+    # Available layers
+    # layers = [
+    #     "DL_Min_Co",
+    #     "DL_Max_Co",
+    #     "PL_Min_Co",
+    #     "PL_Max_Co",
+    #     "MerL_Riv",
+    #     "DL_Min_Riv",
+    #     "DL_Max_Riv",
+    #     "PL_Min_Riv",
+    #     "PL_Max_Riv",
+    #     "ModL_Riv",
+    # ]
 
     def data_array_from_layer(col_name):
         """Create a xr.DataArray from a GeoDataFrame column"""
@@ -531,6 +559,27 @@ def apply_flopros(
 
 @is_operation
 def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dataset:
+    """Compute the flood depth from a return period and flood maps.
+
+    At each lat/lon coordinate, take the return period(s) and use them to interpolate
+    the flood maps at this position in the return period dimension. Take the interpolated
+    values and return them as flood hazard footprints. Works with arbitrarily high
+    dimensions in the ``return_period`` array. Interpolation is linear.
+
+    Parameters
+    ----------
+    return_period : xr.DataArray
+        The return periods for which to compute the flood depth
+    flood_maps : xr.DataArray
+        Maps that indicate flood depth at latitude/longitude/return period coordinates.
+
+    Returns
+    -------
+    xr.Dataset
+        The flood depths for the given return periods. The dataset contains a single
+        variable ``Flood Depth`` with the same dimensions as ``return_period``.
+    """
+
     def interpolate(return_period, hazard, return_periods):
         """Linearly interpolate the hazard to a given return period
 
@@ -722,5 +771,5 @@ def finalize(
             name = entry
 
         cont_data = data[tag]
-        Cls = PassthroughContainer if isinstance(cont_data, xr.Dataset) else None
-        data["data_manager"].new_container(name, data=cont_data, Cls=Cls)
+        ContClass = PassthroughContainer if isinstance(cont_data, xr.Dataset) else None
+        data["data_manager"].new_container(name, data=cont_data, Cls=ContClass)

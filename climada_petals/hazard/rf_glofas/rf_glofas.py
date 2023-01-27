@@ -23,7 +23,7 @@ DEFAULT_DATA_DIR = SYSTEM_DIR / "glofas-computation"
 DEFAULT_SETUP_CFG = Path(__file__).parent.absolute() / "setup.yml"
 DEFAULT_GLOFAS_CFG = Path(__file__).parent.absolute() / "rf_glofas.yml"
 
-
+# pylint: disable=too-few-public-method
 class GeoDataFrameLoaderMixin:
     """A Mixin for loading GeoDataFrames"""
 
@@ -45,6 +45,7 @@ class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
     _NEW_CONTAINER_CLS = XrDataContainer
     """Which container class to use when adding new containers"""
 
+# pylint: enable=too-few-public-method
 
 @contextmanager
 def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
