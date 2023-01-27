@@ -1,5 +1,4 @@
-"""
-This file is part of CLIMADA.
+"""This file is part of CLIMADA.
 
 Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
 
