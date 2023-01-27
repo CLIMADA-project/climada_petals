@@ -19,28 +19,27 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test Supplychain class.
 """
 
-from pathlib import Path
 import unittest
 import numpy as np
+import pandas as pd
+import pymrio
 
-from climada import CONFIG
 from climada.entity.exposures.base import Exposures
 from climada.entity import ImpactFuncSet, ImpfTropCyclone
 from climada.hazard.base import Hazard
-from climada_petals.engine.supplychain import SupplyChain, WIOD_DIRECTORY
+from climada_petals.engine.supplychain import SupplyChain, MRIOT_DIRECTORY, extract_mriot_data
 from climada.util.constants import EXP_DEMO_H5
 from climada.util.api_client import Client
 from climada.util.files_handler import download_file
-
 
 class TestSupplyChain(unittest.TestCase):
     def setUp(self) -> None:
         client = Client()
         
         tf = 'WIOTtest_Nov16_ROW'
-        if not WIOD_DIRECTORY.joinpath(tf).is_file():
+        if not MRIOT_DIRECTORY.joinpath(tf).is_file():
             dsf = client.get_dataset_info(name=tf, status='test_dataset').files[0]
-            download_file(dsf.url, WIOD_DIRECTORY)
+            download_file(dsf.url, MRIOT_DIRECTORY)
 
         atl_prob_ds = client.get_dataset_info(name='atl_prob_no_name', status='test_dataset')
         _, [self.HAZ_TEST_MAT] = client.download_dataset(atl_prob_ds)
@@ -48,36 +47,43 @@ class TestSupplyChain(unittest.TestCase):
     """Testing the SupplyChain class."""
     def test_read_wiot(self):
         """Test reading of wiod table."""
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
 
-        self.assertAlmostEqual(sup.mriot_data[0, 0], 12924.1797, places=3)
-        self.assertAlmostEqual(sup.mriot_data[0, -1], 0, places=3)
-        self.assertAlmostEqual(sup.mriot_data[-1, 0], 0, places=3)
-        self.assertAlmostEqual(sup.mriot_data[-1, -1], 22.222, places=3)
+        file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
+        mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
+        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+                                    rows_data=(5,117), cols_data=(4,116))
+        mriot = pymrio.IOSystem(Z=Z, x=x)
 
-        self.assertAlmostEqual(sup.mriot_data[0, 0],
-                               sup.mriot_data[sup.reg_pos[list(sup.reg_pos)[0]][0],
-                                              sup.reg_pos[list(sup.reg_pos)[0]][0]],
+        sup = SupplyChain(mriot)
+
+        self.assertAlmostEqual(sup.mriot.Z.iloc[0, 0], 12924.1797, places=3)
+        self.assertAlmostEqual(sup.mriot.Z.iloc[0, -1], 0, places=3)
+        self.assertAlmostEqual(sup.mriot.Z.iloc[-1, 0], 0, places=3)
+        self.assertAlmostEqual(sup.mriot.Z.iloc[-1, -1], 22.222, places=3)
+
+        self.assertAlmostEqual(sup.mriot.Z.iloc[0, 0],
+                               sup.mriot.Z.loc[(sup.mriot.get_regions()[0], sup.mriot.get_sectors()[0]),
+                                               (sup.mriot.get_regions()[0], sup.mriot.get_sectors()[0])],
                                places=3)
-        self.assertAlmostEqual(sup.mriot_data[-1, -1],
-                               sup.mriot_data[sup.reg_pos[list(sup.reg_pos)[-1]][-1],
-                                              sup.reg_pos[list(sup.reg_pos)[-1]][-1]],
+        self.assertAlmostEqual(sup.mriot.Z.iloc[-1, -1],
+                               sup.mriot.Z.loc[(sup.mriot.get_regions()[-1], sup.mriot.get_sectors()[-1]),
+                                               (sup.mriot.get_regions()[-1], sup.mriot.get_sectors()[-1])],
                                places=3)
-        self.assertEqual(np.shape(sup.mriot_data), (112, 112))
-        self.assertAlmostEqual(sup.total_prod.sum(), 3533367.89439, places=3)
+        self.assertEqual(np.shape(sup.mriot.Z), (112, 112))
+        self.assertAlmostEqual(sup.mriot.x.sum().values[0], 3533367.89439, places=3)
 
-    def calc_sector_direct_impact(self):
+    def test_calc_direct_impact(self):
         """Test running direct impact calculations."""
 
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
+        file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
+        mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
+        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+                                    rows_data=(5,117), cols_data=(4,116))
+        mriot = pymrio.IOSystem(Z=Z, x=x)
+        mriot.meta.change_meta('name', 'WIOD-test')
+        mriot.unit = 'M.EUR'
+
+        sup = SupplyChain(mriot)
 
         # Tropical cyclone over Florida and Caribbean
         hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
@@ -94,101 +100,39 @@ class TestSupplyChain(unittest.TestCase):
         impf_set.append(impf_tc)
         impf_set.check()
 
-        subsecs = list(range(10))+list(range(15,25))
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec=subsecs)
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.reg_dir_imp[0], 'USA')
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, subsecs].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[subsecs].sum(), places=3)
+        impacted_secs = list(range(10))+list(range(15,25))
+        impacted_secs = sup.mriot.get_sectors()[impacted_secs].tolist()
+        sup.calc_direct_imp_mat(hazard, exp, impf_set,
+                                impacted_secs=impacted_secs)
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='manufacturing')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.reg_dir_imp[0], 'USA')
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, range(4,23)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[range(4,23)].sum(), places=3)
+        self.assertAlmostEqual(sup.direct_imp_mat.values.sum(), 21595173505075.07, places=3)
+        self.assertAlmostEqual(sup.direct_impt_aai_agg.sum(), 13413151245.388247, places=3)
+        self.assertAlmostEqual(sup.direct_imp_mat.values.sum(),
+                               sup.direct_imp_mat.loc[:, 'USA'].values.sum(),
+                                places=3)
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],),
+                                sup.direct_impt_aai_agg.shape)
+        self.assertAlmostEqual(sup.direct_impt_aai_agg.sum(),
+                                sup.direct_impt_aai_agg.loc['USA'].sum(),
+                                places=3)
+        self.assertAlmostEqual(sup.direct_imp_mat.values.sum(),
+                               sup.direct_imp_mat.loc[:, (slice(None), impacted_secs)].values.sum(), places=0)
+        self.assertAlmostEqual(sup.direct_impt_aai_agg.values.sum(),
+                               sup.direct_impt_aai_agg.loc[(slice(None), impacted_secs)].values.sum(), places=3)
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='agriculture')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:,  range(0,1)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[ range(0,1)].sum(), places=3)
-
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='mining')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, range(3,4)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[range(3,4)].sum(), places=3)
-
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='service')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, range(26,56)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[range(26,56)].sum(), places=3)
-
-    def test_calc_sector_indirect_impact(self):
+    def test_calc_indirect_impact(self):
         """Test running indirect impact calculations."""
 
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
+        file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
+        mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
+        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+                                    rows_data=(5,117), cols_data=(4,116))
+        Y = x.subtract(Z.sum(1), 0)
+        mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
+        mriot.meta.change_meta('name', 'WIOD-test')
+        mriot.unit = 'M.EUR'
+
+        sup = SupplyChain(mriot)
 
         # Tropical cyclone over Florida and Caribbean
         hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
@@ -205,44 +149,64 @@ class TestSupplyChain(unittest.TestCase):
         impf_set.append(impf_tc)
         impf_set.check()
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set)
-        sup.calc_indirect_impact(io_approach='ghosh')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.indirect_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.indirect_aai_agg.shape)
-        self.assertAlmostEqual(sup.mriot_data.shape, sup.io_data['inverse'].shape)
-        self.assertAlmostEqual(sup.io_data['risk_structure'].shape,
-                               (sup.mriot_data.shape[0], sup.mriot_data.shape[1],
-                                sup.years.shape[0]))
-        self.assertAlmostEqual('ghosh', sup.io_data['io_approach'])
+        impacted_secs = range(15,25)
+        impacted_secs = sup.mriot.get_sectors()[impacted_secs].tolist()
+        sup.calc_direct_imp_mat(hazard, exp, impf_set,
+                                impacted_secs=impacted_secs)
 
-        sup.calc_indirect_impact(io_approach='leontief')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.indirect_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.indirect_aai_agg.shape)
-        self.assertAlmostEqual(sup.mriot_data.shape, sup.io_data['inverse'].shape)
-        self.assertAlmostEqual(sup.io_data['risk_structure'].shape,
-                               (sup.mriot_data.shape[0], sup.mriot_data.shape[1],
-                                sup.years.shape[0]))
-        self.assertAlmostEqual('leontief', sup.io_data['io_approach'])
+        sup.calc_indirect_imp_mat(io_approach='ghosh')
 
-        sup.calc_indirect_impact(io_approach='eeioa')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.indirect_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.indirect_aai_agg.shape)
-        self.assertAlmostEqual(sup.mriot_data.shape, sup.io_data['inverse'].shape)
-        self.assertAlmostEqual(sup.io_data['risk_structure'].shape,
-                               (sup.mriot_data.shape[0], sup.mriot_data.shape[1],
-                                sup.years.shape[0]))
-        self.assertAlmostEqual('eeioa', sup.io_data['io_approach'])
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_impt_aai_agg.shape)
+        self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
+        self.assertAlmostEqual(sup.mriot.Z.columns[43], sup.inverse.columns[43])
+        self.assertAlmostEqual(sup.mriot.Z.index[98], sup.inverse.index[98])
 
-    def test_calc_sector_total_impact(self):
+        self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.0735, places=3)
+        self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.00064, places=3)
+
+        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 7093283110973.164, places=3)
+        self.assertAlmostEqual(sup.indirect_impt_aai_agg.sum(), 4405765907.4367485, places=3)
+
+        sup.calc_indirect_imp_mat(io_approach='leontief')
+
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_impt_aai_agg.shape)
+        self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
+        self.assertAlmostEqual(sup.mriot.Z.columns[56], sup.inverse.columns[56])
+        self.assertAlmostEqual(sup.mriot.Z.index[33], sup.inverse.index[33])
+
+        self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.01690, places=3)
+        self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
+
+        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 4460353601586.872, places=3)
+        self.assertAlmostEqual(sup.indirect_impt_aai_agg.sum(), 2770405963.7185535, places=3)
+
+        sup.calc_indirect_imp_mat(io_approach='eeioa')
+
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_impt_aai_agg.shape)
+        self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
+
+        self.assertAlmostEqual(sup.mriot.Z.columns[20], sup.inverse.columns[20])
+        self.assertAlmostEqual(sup.mriot.Z.index[15], sup.inverse.index[15])
+
+        self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.016903, places=3)
+        self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
+
+        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 13786581420801.48, places=3)
+        self.assertAlmostEqual(sup.indirect_impt_aai_agg.sum(), 8563094050.187255, places=3)
+
+    def test_calc_total_impacts(self):
         """Test running total impact calculations."""
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
+
+        file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
+        mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
+        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+                                    rows_data=(5,117), cols_data=(4,116))
+        Y = x.subtract(Z.sum(1), 0)
+        mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
+        mriot.meta.change_meta('name', 'WIOD-test')
+        mriot.unit = 'M.EUR'
+
+        sup = SupplyChain(mriot)
 
         # Tropical cyclone over Florida and Caribbean
         hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
@@ -259,13 +223,16 @@ class TestSupplyChain(unittest.TestCase):
         impf_set.append(impf_tc)
         impf_set.check()
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set)
-        sup.calc_indirect_impact(io_approach='ghosh')
-        sup.calc_total_impact()
-
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.total_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.total_aai_agg.shape)
+        impacted_secs = range(15,25)
+        impacted_secs = sup.mriot.get_sectors()[impacted_secs].tolist()
+        sup.calc_direct_imp_mat(hazard, exp, impf_set,
+                                impacted_secs=impacted_secs)
+        sup.calc_indirect_imp_mat(io_approach='ghosh')
+        sup.calc_total_imp_mat()
+        self.assertAlmostEqual(sup.total_imp_mat.values.sum(), 
+                               sup.direct_imp_mat.values.sum()+sup.indirect_imp_mat.values.sum(), places=0)
+        self.assertAlmostEqual(sup.total_impt_aai_agg.values.sum(), 
+                               sup.direct_impt_aai_agg.values.sum()+sup.indirect_impt_aai_agg.values.sum(), places=0)
 
 ## Execute Tests
 if __name__ == "__main__":
