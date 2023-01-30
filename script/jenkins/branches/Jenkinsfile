@@ -23,6 +23,7 @@ pipeline {
             sh '''#!/bin/bash
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
+            pip install pymrio
             rm -rf tests_xml/
             rm -rf coverage/
             python -m coverage run tests_runner.py unit
