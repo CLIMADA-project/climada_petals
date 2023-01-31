@@ -312,6 +312,7 @@ dependencies:
     - bitstring==4.0.1
     - bleach==6.0.0
     - cdsapi==0.5.1
+    - climada==3.2.0  # NOTE: Must be added here explicitly!
     - coverage==7.1.0
     - dantro==0.18.10
     - defusedxml==0.7.1
