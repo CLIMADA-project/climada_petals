@@ -467,7 +467,12 @@ class TCForecast(TCTracks):
         # calculate radius of maximum wind
         lat_max = np.array(msg['latitude_max'][index], dtype='float')
         lon_max = np.array(msg['longitude_max'][index], dtype='float')
-        rad = dist_approx(lat[:,None], lon[:,None], lat_max[:,None], lon_max[:,None], 'km')[0][:,0,0] / NM_TO_KM
+        rad = dist_approx(lat[:,None],
+                          lon[:,None],
+                          lat_max[:,None],
+                          lon_max[:,None],
+                          normalize=True
+                          'km')[0][:,0,0] / NM_TO_KM
 
         sid = msg['storm_id'].strip()
 
