@@ -471,8 +471,8 @@ class TCForecast(TCTracks):
                           lon[:,None],
                           lat_max[:,None],
                           lon_max[:,None],
-                          normalize=True
-                          'km')[0][:,0,0] / NM_TO_KM
+                          normalize=True,
+                          units='km')[0][:,0,0] / NM_TO_KM
 
         sid = msg['storm_id'].strip()
 
