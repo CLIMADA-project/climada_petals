@@ -50,18 +50,18 @@ Jump right in:
 
 
 .. toctree::
-   :caption: Documentation
-   :maxdepth: 1
-
-   glofas_rf
-
-
-.. toctree::
    :hidden:
 
    GitHub Repositories <https://github.com/CLIMADA-project>
    CLIMADA Core <https://climada-python.readthedocs.io/en/latest/>
    Weather and Climate Risks Group <https://wcr.ethz.ch/>
+
+
+.. toctree::
+   :caption: Documentation
+   :maxdepth: 1
+
+   glofas_rf
 
 
 .. toctree::
