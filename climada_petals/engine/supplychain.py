@@ -24,25 +24,11 @@ __all__ = ['SupplyChain']
 import logging
 from pathlib import Path
 import zipfile
-import numpy as np
-import pandas as pd
 import warnings
+import pandas as pd
+import numpy as np
 
 import pymrio
-from pymrio.tools.iodownloader import (
-    download_exiobase3,
-    download_oecd,
-    download_wiod2013
-)
-from pymrio.tools.ioparser import (
-    parse_eora26,
-    parse_exiobase1,
-    parse_exiobase2,
-    parse_exiobase3,
-    parse_oecd,
-    parse_wiod
-)
-from pymrio.tools.iomath import calc_A, calc_L, calc_x_from_L
 
 from climada import CONFIG
 from climada.util import files_handler as u_fh
@@ -57,79 +43,56 @@ WIOD_FILE_LINK = CONFIG.engine.supplychain.resources.wiod16.str()
 MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
 """Directory where Multi-Regional Input-Output Tables (MRIOT) are downloaded."""
 
-mriot_funcs = {
-            'EORA26': parse_eora26,
-            'EXIOBASE1': parse_exiobase1, 'EXIOBASE2': parse_exiobase2,
-            'EXIOBASE3': (download_exiobase3, parse_exiobase3), 'OECD': (download_oecd, parse_oecd),
-            'WIOD2013': (download_wiod2013, parse_wiod)
-            }
+calc_G = pymrio.calc_L
 
-calc_G = calc_L
-
-def extract_mriot_data(mriot_df=None, col_iso3=None, col_sectors=None,
+def parse_mriot_from_df(mriot_df=None, col_iso3=None, col_sectors=None,
                        rows_data=None, cols_data=None):
+    """Build multi-index dataframes of the transaction matrix, final demand and total
+       production from a Multi-Regional Input-Output Table dataframe.
+
+    Parameters
+    ----------
+    v : pandas.DataFrame or numpy.array
+        a row vector of the total final added-value
+    G : pandas.DataFrame or numpy.array
+        Symmetric input output Ghosh table
+    """
 
     start_row, end_row = rows_data
     start_col, end_col = cols_data
 
     sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
     regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
-    Z_multiindex = pd.MultiIndex.from_product(
+    multiindex = pd.MultiIndex.from_product(
                 [regions, sectors], names = ['region', 'sector'])
 
     Z = mriot_df.iloc[start_row:end_row, start_col:end_col].values.astype(float)
-    Z = pd.DataFrame(data = Z,
-                    index = Z_multiindex,
-                    columns = Z_multiindex
+    Z = pd.DataFrame(
+                    data = Z,
+                    index = multiindex,
+                    columns = multiindex
                     )
 
     Y = mriot_df.iloc[start_row:end_row, end_col:-1].sum(1).values.astype(float)
-    Y = pd.DataFrame(data = Y,
-                    index = Z_multiindex,
+    Y = pd.DataFrame(
+                    data = Y,
+                    index = multiindex,
                     columns = ['final demand']
                     )
 
-    # total production
     x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
-    x = pd.DataFrame(data = x,
-                    index = Z_multiindex,
+    x = pd.DataFrame(
+                    data = x,
+                    index = multiindex,
                     columns = ['total production']
                     )
 
     return Z, Y, x
 
-def download_and_extract_wiod13(year, mriot_dir=MRIOT_DIRECTORY):
-    # For the moment pymrio cannot download wiod, so we need an ad hoc function
-    wiod_dir = mriot_dir / 'WIOD'
-
-    if not wiod_dir.exists():
-        wiod_dir.mkdir()
-
-        LOGGER.info('Downloading folder with WIOD tables')
-
-        downloaded_file_name = u_fh.download_file(
-                                WIOD_FILE_LINK,
-                                download_dir=wiod_dir
-                                )
-        downloaded_file_zip_path = Path(downloaded_file_name + '.zip')
-        Path(downloaded_file_name).rename(downloaded_file_zip_path)
-
-        with zipfile.ZipFile(downloaded_file_zip_path, 'r') as zip_ref:
-            zip_ref.extractall(wiod_dir)
-
-    file_name = f'WIOT{year}_Nov16_ROW.xlsb'
-    file_loc = wiod_dir / file_name
-    mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
-
-    Z, Y, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
-                                rows_data=(5,2469), cols_data=(4,2468))
-
-    return Z, Y, x
-
 def calc_v(Z, x):
-    """Calculate value added from the Z and x matrix
+    """Calculate value added (v) from Z and x
 
-    value added (v) = industry output (x) - inter-industry inputs (sum_rows(Z))
+    value added = industry output (x) - inter-industry inputs (sum_rows(Z))
 
     Parameters
     ----------
@@ -142,20 +105,20 @@ def calc_v(Z, x):
     -------
     pandas.DataFrame or numpy.array
         Value added v as row vector
-        The type is determined by the type of Z. If DataFrame index as Z
-
     """
-    v = np.diff(np.vstack((Z.sum(0), x.T)), axis=0)
-    if type(Z) is pd.DataFrame:
-        v = pd.DataFrame(v, columns=Z.index, index=["indout"])
-    if type(v) is pd.Series:
-        v = pd.DataFrame(v)
-    if type(v) is pd.DataFrame:
-        v.index = ["indout"]
-    return v
+
+    value_added = np.diff(np.vstack((Z.sum(0), x.T)), axis=0)
+    if isinstance(Z, pd.DataFrame):
+        value_added = pd.DataFrame(value_added, columns=Z.index, index=["indout"])
+    if isinstance(value_added, pd.Series):
+        value_added = pd.DataFrame(value_added)
+    if isinstance(value_added, pd.DataFrame):
+        value_added.index = ["indout"]
+    return value_added
 
 def calc_B(Z, x):
-    """Calculate the B matrix (allocation coefficients matrix) from Z and x
+    """Calculate the B matrix (allocation coefficients matrix) 
+    from Z matrix and x vector
 
     Parameters
     ----------
@@ -173,12 +136,11 @@ def calc_B(Z, x):
 
     Notes
     -----
-    This function resembles the function "calc_A" in pymrio.tools.iomath which
-    is to derive a technical coefficients matrix, A. Here "calc_A" is adapted
-    to compute the allocation coefficients matrix B.
-
+    This function adapts pymrio.tools.iomath.calc_A to compute
+    the allocation coefficients matrix B.
     """
-    if (type(x) is pd.DataFrame) or (type(x) is pd.Series):
+
+    if isinstance(x, (pd.DataFrame, pd.Series)):
         x = x.values
     if (type(x) is not np.ndarray) and (x == 0):
         recix = 0
@@ -191,13 +153,13 @@ def calc_B(Z, x):
         recix[recix == np.inf] = 0
         recix = recix.reshape((-1, 1))
 
-    if type(Z) is pd.DataFrame:
+    if isinstance(Z, pd.DataFrame):
         return pd.DataFrame(Z.values * recix, index=Z.index, columns=Z.columns)
     else:
         return Z * recix
 
 def calc_x_from_G(G, v):
-    """Calculate the industry output x from a v vector and G
+    """Calculate the industry output x from a v vector and G matrix
 
     x = vG
 
@@ -218,16 +180,99 @@ def calc_x_from_G(G, v):
 
     Notes
     -----
-    This function resembles the function "calc_x_from_L" in pymrio.tools.iomath
-    and it is adapted for the Ghosh case.
-
+    This function adapts the function pymrio.tools.iomath.calc_x_from_L to
+    compute total output (x) from the Ghosh inverse.
     """
+
     x = v.dot(G)
-    if type(x) is pd.Series:
+    if isinstance(x, pd.Series):
         x = pd.DataFrame(x)
-    if type(x) is pd.DataFrame:
+    if isinstance(x, pd.DataFrame):
         x.columns = ["indout"]
     return x
+
+def mriot_file_name(mriot_type, mriot_year):
+    """Retrieve the original EXIOBASE3, WIOD16 or OECD21 MRIOT file name
+
+    Parameters
+    ----------
+    mriot_type : string
+    mriot_year : int
+    """
+
+    if mriot_type == 'EXIOBASE3':
+        return f"IOT_{mriot_year}_ixi.zip"
+
+    elif mriot_type == 'WIOD16':
+        return f'WIOT{mriot_year}_Nov16_ROW.xlsb'
+
+    elif mriot_type == 'OECD21':
+        return f"ICIO2021_{mriot_year}.csv"
+
+def download_mriot(mriot_type, mriot_year, download_dir):
+    """Download EXIOBASE3, WIOD16 or OECD21 MRIOT for specific years
+
+    Parameters
+    ----------
+    mriot_type : string
+    mriot_year : int
+    download_dir : pathlib.PosixPath
+    """
+
+    if mriot_type == 'EXIOBASE3':
+        # EXIOBASE3 gets a system argument. This can be ixi (ind x ind matrix)
+        # or pxp (prod x prod matrix). By default both are downloaded, we here 
+        # use only ixi for the time being.
+        pymrio.download_exiobase3(storage_folder=download_dir, system="ixi", years=[mriot_year])
+
+    elif mriot_type == 'WIOD16':
+        download_dir.mkdir(parents=True, exist_ok=True)
+        downloaded_file_name = u_fh.download_file(
+                                WIOD_FILE_LINK,
+                                download_dir=download_dir,
+                                )
+        downloaded_file_zip_path = Path(downloaded_file_name + '.zip')
+        Path(downloaded_file_name).rename(downloaded_file_zip_path)
+
+        with zipfile.ZipFile(downloaded_file_zip_path, 'r') as zip_ref:
+            zip_ref.extractall(download_dir)
+
+    elif mriot_type == 'OECD21':
+        years_groups = ["1995-1999", "2000-2004", "2005-2009", "2010-2014", "2015-2018"]
+        year_group = years_groups[int(np.floor((mriot_year - 1995) / 5))]
+
+        pymrio.download_oecd(storage_folder=download_dir, years=year_group)
+
+def parse_mriot(mriot_type, downloaded_file):
+    """ Parse EXIOBASE3, WIOD16 or OECD21 MRIOT for specific years
+
+    Parameters
+    ----------
+    mriot_type : str
+    downloaded_file : pathlib.PosixPath
+    """
+
+    if mriot_type == 'EXIOBASE3':
+        mriot = pymrio.parse_exiobase3(path=downloaded_file)
+        # no need to store A
+        mriot.A = None
+
+    elif mriot_type == 'WIOD16':
+        mriot_df = pd.read_excel(downloaded_file, engine='pyxlsb')
+
+        Z, Y, x = parse_mriot_from_df(
+                                    mriot_df, col_iso3=2, col_sectors=1,
+                                    rows_data=(5,2469), cols_data=(4,2468)
+                                    )
+
+        mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
+        mriot.unit = 'M.EUR'
+
+    elif mriot_type == 'OECD21':
+        mriot = pymrio.parse_oecd(path=downloaded_file)
+        mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
+
+    return mriot
 
 class SupplyChain:
     """SupplyChain class.
@@ -237,124 +282,111 @@ class SupplyChain:
 
     Attributes
     ----------
-    mriot : IOSystem
-        The input-output table data.
-    direct_impact : pd.DataFrame
-        Direct impact array.
-    direct_aai_agg : pd.DataFrame
-        Average annual direct impact array.
-    indirect_impact : pd.DataFrame
-        Indirect impact array.
-    indirect_aai_agg : pd.DataFrame
-        Average annual indirect impact array.
-    total_impact : pd.DataFrame
-        Total impact array.
-    total_aai_agg : pd.DataFrame
-        Average annual total impact array.
+    mriot : pymrio.IOSystem
+            An object containing all MRIOT related info (see also pymrio package):
+                mriot.Z : transaction matrix, or interindustry flows matrix
+                mriot.Y : final demand
+                mriot.x : industry or total output
+                mriot.meta : metadata
+    coeffs : pd.DataFrame
+            Technical (if Leontief, A) or allocations (if Ghosh, B) coefficients matrix
+    inverse : pd.DataFrame
+            Leontief (L) or Ghosh (G) inverse matrix
+    direct_imp_mat : pd.DataFrame
+            Direct impact for each country, sector and event
+    direct_eai : pd.DataFrame
+            Expected direct for each country and sector
+    indirect_imp_mat : pd.DataFrame
+            Indirect impact for each country, sector and event
+    indirect_eai : pd.DataFrame
+            Expected indirect impact for each country and sector
+    total_imp_mat : pd.DataFrame
+            Total impact for each country, sector and event
+    total_eai : pd.DataFrame
+            Expected total impact for each country and sector
     """
 
     def __init__(self,
                 mriot = None,
                 inverse = None,
-                coefficients = None,
+                coeffs = None,
                 direct_imp_mat = None,
-                direct_impt_aai_agg = None,
+                direct_eai = None,
                 indirect_imp_mat = None,
-                indirect_impt_aai_agg = None,
+                indirect_eai = None,
                 total_imp_mat = None,
-                total_impt_aai_agg = None
+                total_eai = None
                 ):
 
         """Initialize SupplyChain."""
         self.mriot = pymrio.IOSystem() if mriot is None else mriot
         self.inverse = pd.DataFrame([]) if inverse is None else inverse
-        self.coefficients = pd.DataFrame([]) if coefficients is None else coefficients
+        self.coeffs = pd.DataFrame([]) if coeffs is None else coeffs
         self.direct_imp_mat = pd.DataFrame([]) if direct_imp_mat is None else direct_imp_mat
-        self.direct_impt_aai_agg = pd.DataFrame([]) if direct_impt_aai_agg is None else direct_impt_aai_agg
+        self.direct_eai = pd.DataFrame([]) if direct_eai is None else direct_eai
         self.indirect_imp_mat = pd.DataFrame([]) if indirect_imp_mat is None else indirect_imp_mat
-        self.indirect_impt_aai_agg = pd.DataFrame([]) if indirect_impt_aai_agg is None else indirect_impt_aai_agg
+        self.indirect_eai = pd.DataFrame([]) if indirect_eai is None else indirect_eai
         self.total_imp_mat = pd.DataFrame([]) if total_imp_mat is None else total_imp_mat
-        self.total_impt_aai_agg = pd.DataFrame([]) if total_impt_aai_agg is None else total_impt_aai_agg
+        self.total_eai = pd.DataFrame([]) if total_eai is None else total_eai
 
     @classmethod
-    def read_mriot(cls, mriot_type, mriot_year, mriot_dir=MRIOT_DIRECTORY, file_name=None):
-        """Read multi-regional input-output tables
-        Describe all available types. EXIOBASE1, EXIOBASE2 and EORA26 needs a registration prior to download, 
-        they can be downloaded at .. .. and loaded as user provided IO tables
-    
-        year : int
+    def from_mriot(cls, mriot_type, mriot_year, mriot_dir=MRIOT_DIRECTORY, del_downloads=True):
+        """ Download and read Multi-Regional Input-Output Tables using pymrio.
+
+        Parameters
+        ----------
         mriot_type : str
-        mriot_dir : path it contains the downloaded mriot data either automatically or manually 
-        file_name : path path to zip file
-        eora26, exiobase1 and 2 need to be downloaded manually. Please make sure they are stored under 
-        ./mriot_dir/mriot_type/year.
-        'EORA26', 'EXIOBASE1', 'EXIOBASE2', 'EXIOBASE3', 'OECD', 'WIOD2013', 'USER'
-    """
+            Type of mriot table to read.
+            The three possible types are: 'EXIOBASE3', 'WIOD16', 'OECD21'
+        mriot_year : int
+            Year of MRIOT
+        mriot_dir : pathlib.PosixPath
+            Path to the MRIOT folder
+        del_downloads : bool
+            If the downloaded files are deleted after saving the parsed data. Default is True.
+            WIOD16 data and OECD21 data are downloaded as group of years
 
-        data_dir = mriot_dir / mriot_type / str(mriot_year)
-        parsed_data_dir = data_dir / 'pymrio_parsed_data'
+        Returns
+        -------
+        mriot : pymrio.IOSystem
+            An object containing all MRIOT related info (see also pymrio package):
+                mriot.Z : transaction matrix, or interindustry flows matrix
+                mriot.Y : final demand
+                mriot.x : total output
+                mriot.meta : metadata
+        """
 
-        # TODO. TEST 'EORA26', 'EXIOBASE1', 'EXIOBASE2' 'OECD'
-        if mriot_type in ['EORA26', 'EXIOBASE1', 'EXIOBASE2']:
-            parser = mriot_funcs[mriot_type]
+        # download directory and file of interest
+        downloads_dir = mriot_dir/mriot_type/'downloads'
+        downloaded_file = downloads_dir/mriot_file_name(mriot_type, mriot_year)
 
-            if not parsed_data_dir.exists():
-                if file_name is None:
-                    raise ValueError('Missing name of the downloaded mriot zip folder')
+        # parsed data directory
+        parsed_data_dir = mriot_dir/mriot_type/str(mriot_year)
 
-                file_path = data_dir / file_name
-                mriot = parser(path=file_path)
+        # if data were not downloaded nor parsed: download, parse and save parsed
+        if (not downloaded_file.exists() and not parsed_data_dir.exists()):
+            download_mriot(mriot_type, mriot_year, downloads_dir)
 
-                # save only the system and not the extension (for now)
-                mriot.save(parsed_data_dir)
+            mriot = parse_mriot(mriot_type, downloaded_file)
+            mriot.save(parsed_data_dir)
 
-            else:
-                mriot = pymrio.load(path=parsed_data_dir)
+            if del_downloads:
+                for dwn in downloads_dir.iterdir():
+                    dwn.unlink()
+                downloads_dir.rmdir()
 
-        elif mriot_type == 'EXIOBASE3':
-            downloader, parser = mriot_funcs[mriot_type]
+        # if data were downloaded but not parsed: parse and save parsed
+        elif (downloaded_file.exists() and not parsed_data_dir.exists()):
+            mriot = parse_mriot(mriot_type, downloaded_file)
+            mriot.save(parsed_data_dir)
 
-            if not parsed_data_dir.exists():
-                # EXIOBASE3 gets a system argument. This can be ixi (ind x ind matrix)
-                # or pxp (prod x prod matrix).
-                # By default both are downloaded, we here use only ixi for the time being.
-                mriot_meta = downloader(storage_folder=data_dir, system="ixi", years=[mriot_year])
-                file_name = str(mriot_meta.history[0]).split(' ')[-1]
-                file_path = data_dir / file_name
-                mriot = parser(path=file_path)
-
-                # save only the system and not the extension
-                mriot.save(parsed_data_dir)
-
-            else:
-                mriot = pymrio.load(path=parsed_data_dir)
-
-        elif mriot_type == 'WIOD':
-            Z, Y, x = download_and_extract_wiod13(mriot_year)
-
-            mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
-
-        # # TODO. It seems OECD_CONFIG in pymrio is outdated and so this crashes too. Check if 
-        # # parsing of manually downloaded files work.
-        # elif mriot_type == 'OECD':
-        #     downloader, parser = mriot_funcs[mriot_type]
-        #     if not parsed_data_dir.exists():
-        #         # OECD has different versions, 2016, 2018, 2021. pymrio default is v2021 but it treats years differently 
-        #         # so here v2018 is passed. 
-        #         mriot_meta = downloader(storage_folder=data_dir, version = "v2018"), years=year)
-        #         # to check file name
-        #         file_name = str(mriot_meta.history[0]).split(' ')[-1]
-        #         file_path = data_dir / file_name
-        #         mriot = parser(path=file_path)
-        #         # save only the system and not the extension (for now)
-        #         mriot.save(parsed_data_dir)
-        #     else:
-        #         mriot = pymrio.load(path=parsed_data_dir)
+        # if data were parsed and saved: load them
+        else:
+            mriot = pymrio.load(path=parsed_data_dir)
 
         mriot.meta.change_meta('description',
-        'Metadata for pymrio Multi Regional Input-Output Table')
+                               'Metadata for pymrio Multi Regional Input-Output Table')
         mriot.meta.change_meta('name', f'{mriot_type}-{mriot_year}')
-        mriot.unit = 'M.EUR'
 
         return cls(mriot=mriot)
 
@@ -373,16 +405,13 @@ class SupplyChain:
         hazard : Hazard
             Hazard object for impact calculation.
         exposure : Exposures
-            Exposures object for impact calculation. For WIOD tables, exposure.region_id
-            must be country names following ISO3 codes.
+            Exposures object for impact calculation.
         imp_fun_set : ImpactFuncSet
             Set of impact functions.
-        selected_subsec : str or list
-            Positions of the selected sectors. These positions can be either
-            defined by the user by passing a list of values, or by using built-in
-            sectors' aggregations for the WIOD data passing a string with possible
-            values being "service", "manufacturing", "agriculture" or "mining".
-            Default is "service".
+        impacted_secs : range, np.ndarray or list, optional
+            The directly affected sectors. If range or np.ndarray,
+            it contains the affected sectors' positions in the MRIOT.
+            If list, it contains the affected sectors' names in the MRIOT.
 
         """
         self.frequency = hazard.frequency
@@ -390,10 +419,10 @@ class SupplyChain:
 
         if impacted_secs is None:
             warnings.warn(""" No impacted sectors were specified.
-            It is assumed that the exposure is representative of all sectors in the IO table""")
+            It is assumed that the exposure is representative of all sectors in the IO table """)
             impacted_secs = self.mriot.get_sectors().tolist()
 
-        if isinstance(impacted_secs, (range, np.ndarray)):
+        elif isinstance(impacted_secs, (range, np.ndarray)):
             impacted_secs = self.mriot.get_sectors()[impacted_secs].tolist()
 
         self.direct_imp_mat = pd.DataFrame(0, index = self.event_id, columns = self.mriot.Z.columns)
@@ -427,7 +456,7 @@ class SupplyChain:
             # one country as per WIOD table.
             self.direct_imp_mat.loc[:, (mriot_reg_name, impacted_secs)] += impt_secs
 
-        self.direct_impt_aai_agg = self.direct_imp_mat.T.dot(self.frequency)
+        self.direct_eai = self.direct_imp_mat.T.dot(self.frequency)
 
     def calc_indirect_imp_mat(self, io_approach):
         """Calculate indirect impacts according to the specified input-output
@@ -436,8 +465,8 @@ class SupplyChain:
         Parameters
         ----------
         io_approach : str
-            The adopted input-output modeling approach. Possible approaches
-            are 'leontief', 'ghosh' and 'eeioa'. Default is 'gosh'.
+            The adopted input-output modeling approach. 
+            Possible choices are 'leontief', 'ghosh' and 'eeioa'.
 
         References
         ----------
@@ -456,7 +485,7 @@ class SupplyChain:
             degr_demand = direct_intensity*self.mriot.Y.values.flatten()
 
             self.indirect_imp_mat = pd.concat(
-                                            [calc_x_from_L(self.inverse, degr_demand.iloc[i])
+                                            [pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
                                             for i in range(len(self.event_id))],
                                             axis=1).T.set_index(self.event_id)
 
@@ -474,31 +503,47 @@ class SupplyChain:
                 direct_intensity.dot(self.inverse) * self.mriot.x.values.flatten()
                 )
 
-        self.indirect_impt_aai_agg = self.indirect_imp_mat.T.dot(self.frequency)
+        self.indirect_eai = self.indirect_imp_mat.T.dot(self.frequency)
 
     def calc_total_imp_mat(self):
         """Calculate total impacts summing direct and indirect impacts."""
 
         self.total_imp_mat = self.direct_imp_mat.add(self.indirect_imp_mat)
-        self.total_impt_aai_agg = self.total_imp_mat.T.dot(self.frequency)
+        self.total_eai = self.total_imp_mat.T.dot(self.frequency)
 
     def calc_matrixes(self, io_approach):
-        io_model = {'leontief': (calc_A, calc_L),
-                    'eeioa': (calc_A, calc_L),
+        """
+        Build technical coefficient and Leontief inverse matrixes (if Leontief approach) or 
+        allocation coefficients and Ghosh matrixes (if Ghosh approach).
+        """
+
+        io_model = {'leontief': (pymrio.calc_A, pymrio.calc_L),
+                    'eeioa': (pymrio.calc_A, pymrio.calc_L),
                     'ghosh': (calc_B, calc_G)}
 
         coeff_func, inv_func = io_model[io_approach]
 
-        self.coefficients = coeff_func(self.mriot.Z, self.mriot.x)
-        self.inverse = inv_func(self.coefficients)
+        self.coeffs = coeff_func(self.mriot.Z, self.mriot.x)
+        self.inverse = inv_func(self.coeffs)
 
     def conv_fac(self):
-        if self.mriot.unit == 'M.EUR':
+        """
+        Convert values in MRIOT.
+        """
+
+        unit = None
+        if isinstance(self.mriot.unit, pd.DataFrame):
+            unit = self.mriot.unit.values[0][0]
+        elif isinstance(self.mriot.unit, str):
+            unit = self.mriot.unit
+        if unit in ['M.EUR', 'Million USD']:
+            warnings.warn(f""" It is assumed that all flows are
+            expressed in {unit} """)
             conv_factor = 1e6
         else:
             conv_factor = 1
-            warnings.warn(""" No known unit has been found. 
-            It is assumed values do not need a conversion """)
+            warnings.warn(""" No known unit was provided.
+            It is assumed that values do not need to be converted """)
         return conv_factor
 
     def map_exp_to_mriot(self, exp_regid, mriot_type):
@@ -507,15 +552,7 @@ class SupplyChain:
         exp_regid must be according to ISO 3166 numeric country codes.
         """
 
-        if mriot_type == 'WIOD':
-            mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha3")
-
-            idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
-
-            if not idx_country.size > 0.:
-                mriot_reg_name = 'ROW'
-
-        elif mriot_type == 'EXIOBASE3':
+        if mriot_type == 'EXIOBASE3':
             mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha2")
             idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
 
@@ -524,10 +561,17 @@ class SupplyChain:
                 # but for now they are all catagorised as ROW.
                 mriot_reg_name = 'ROW'
 
-        # default name in meta for pymrio IOSystem
-        elif mriot_type == 'IO':
-            warnings.warn(""" No mriot_type was specified and no name conversion is applied. 
-            Formats of regions' names in exposure and IO table must be the same """)
+        elif mriot_type in ['WIOD16', 'OECD21']:
+            mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha3")
+            idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
+
+            if not idx_country.size > 0.:
+                mriot_reg_name = 'ROW'
+
+        else:
+            warnings.warn(""" For a correct calculation the format of regions' 
+            names in exposure and the IO table must match. """)
             mriot_reg_name = exp_regid
 
         return mriot_reg_name
+        

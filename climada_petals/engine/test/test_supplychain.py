@@ -26,7 +26,7 @@ import pymrio
 from climada.entity.exposures.base import Exposures
 from climada.entity import ImpactFuncSet, ImpfTropCyclone
 from climada.hazard.base import Hazard
-from climada_petals.engine.supplychain import SupplyChain, MRIOT_DIRECTORY, extract_mriot_data
+from climada_petals.engine.supplychain import SupplyChain, MRIOT_DIRECTORY, parse_mriot_from_df
 from climada.util.constants import EXP_DEMO_H5
 from climada.util.api_client import Client
 from climada.util.files_handler import download_file
@@ -49,7 +49,7 @@ class TestSupplyChain(unittest.TestCase):
 
         file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
         mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
-        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+        Z, _, x = parse_mriot_from_df(mriot_df, col_iso3=2, col_sectors=1,
                                     rows_data=(5,117), cols_data=(4,116))
         mriot = pymrio.IOSystem(Z=Z, x=x)
 
@@ -76,10 +76,10 @@ class TestSupplyChain(unittest.TestCase):
 
         file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
         mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
-        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+        Z, _, x = parse_mriot_from_df(mriot_df, col_iso3=2, col_sectors=1,
                                     rows_data=(5,117), cols_data=(4,116))
         mriot = pymrio.IOSystem(Z=Z, x=x)
-        mriot.meta.change_meta('name', 'WIOD-test')
+        mriot.meta.change_meta('name', 'WIOD16-test')
         mriot.unit = 'M.EUR'
 
         sup = SupplyChain(mriot)
@@ -105,30 +105,30 @@ class TestSupplyChain(unittest.TestCase):
                                 impacted_secs=impacted_secs)
 
         self.assertAlmostEqual(sup.direct_imp_mat.values.sum(), 21595173505075.07, places=3)
-        self.assertAlmostEqual(sup.direct_impt_aai_agg.sum(), 13413151245.388247, places=3)
+        self.assertAlmostEqual(sup.direct_eai.sum(), 13413151245.388247, places=3)
         self.assertAlmostEqual(sup.direct_imp_mat.values.sum(),
                                sup.direct_imp_mat.loc[:, 'USA'].values.sum(),
                                 places=3)
         self.assertAlmostEqual((sup.mriot.Z.shape[0],),
-                                sup.direct_impt_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_impt_aai_agg.sum(),
-                                sup.direct_impt_aai_agg.loc['USA'].sum(),
+                                sup.direct_eai.shape)
+        self.assertAlmostEqual(sup.direct_eai.sum(),
+                                sup.direct_eai.loc['USA'].sum(),
                                 places=3)
         self.assertAlmostEqual(sup.direct_imp_mat.values.sum(),
                                sup.direct_imp_mat.loc[:, (slice(None), impacted_secs)].values.sum(), places=0)
-        self.assertAlmostEqual(sup.direct_impt_aai_agg.values.sum(),
-                               sup.direct_impt_aai_agg.loc[(slice(None), impacted_secs)].values.sum(), places=3)
+        self.assertAlmostEqual(sup.direct_eai.values.sum(),
+                               sup.direct_eai.loc[(slice(None), impacted_secs)].values.sum(), places=3)
 
     def test_calc_indirect_impact(self):
         """Test running indirect impact calculations."""
 
         file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
         mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
-        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+        Z, _, x = parse_mriot_from_df(mriot_df, col_iso3=2, col_sectors=1,
                                     rows_data=(5,117), cols_data=(4,116))
         Y = x.subtract(Z.sum(1), 0)
         mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
-        mriot.meta.change_meta('name', 'WIOD-test')
+        mriot.meta.change_meta('name', 'WIOD16-test')
         mriot.unit = 'M.EUR'
 
         sup = SupplyChain(mriot)
@@ -155,7 +155,7 @@ class TestSupplyChain(unittest.TestCase):
 
         sup.calc_indirect_imp_mat(io_approach='ghosh')
 
-        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_impt_aai_agg.shape)
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_eai.shape)
         self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
         self.assertAlmostEqual(sup.mriot.Z.columns[43], sup.inverse.columns[43])
         self.assertAlmostEqual(sup.mriot.Z.index[98], sup.inverse.index[98])
@@ -164,11 +164,11 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.00064, places=3)
 
         self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 7093283110973.164, places=3)
-        self.assertAlmostEqual(sup.indirect_impt_aai_agg.sum(), 4405765907.4367485, places=3)
+        self.assertAlmostEqual(sup.indirect_eai.sum(), 4405765907.4367485, places=3)
 
         sup.calc_indirect_imp_mat(io_approach='leontief')
 
-        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_impt_aai_agg.shape)
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_eai.shape)
         self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
         self.assertAlmostEqual(sup.mriot.Z.columns[56], sup.inverse.columns[56])
         self.assertAlmostEqual(sup.mriot.Z.index[33], sup.inverse.index[33])
@@ -177,11 +177,11 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
 
         self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 4460353601586.872, places=3)
-        self.assertAlmostEqual(sup.indirect_impt_aai_agg.sum(), 2770405963.7185535, places=3)
+        self.assertAlmostEqual(sup.indirect_eai.sum(), 2770405963.7185535, places=3)
 
         sup.calc_indirect_imp_mat(io_approach='eeioa')
 
-        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_impt_aai_agg.shape)
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_eai.shape)
         self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
 
         self.assertAlmostEqual(sup.mriot.Z.columns[20], sup.inverse.columns[20])
@@ -191,18 +191,18 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
 
         self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 13786581420801.48, places=3)
-        self.assertAlmostEqual(sup.indirect_impt_aai_agg.sum(), 8563094050.187255, places=3)
+        self.assertAlmostEqual(sup.indirect_eai.sum(), 8563094050.187255, places=3)
 
     def test_calc_total_impacts(self):
         """Test running total impact calculations."""
 
         file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
         mriot_df = pd.read_excel(file_loc, engine='pyxlsb')
-        Z, _, x = extract_mriot_data(mriot_df, col_iso3=2, col_sectors=1,
+        Z, _, x = parse_mriot_from_df(mriot_df, col_iso3=2, col_sectors=1,
                                     rows_data=(5,117), cols_data=(4,116))
         Y = x.subtract(Z.sum(1), 0)
         mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
-        mriot.meta.change_meta('name', 'WIOD-test')
+        mriot.meta.change_meta('name', 'WIOD16-test')
         mriot.unit = 'M.EUR'
 
         sup = SupplyChain(mriot)
@@ -230,10 +230,11 @@ class TestSupplyChain(unittest.TestCase):
         sup.calc_total_imp_mat()
         self.assertAlmostEqual(sup.total_imp_mat.values.sum(), 
                                sup.direct_imp_mat.values.sum()+sup.indirect_imp_mat.values.sum(), places=0)
-        self.assertAlmostEqual(sup.total_impt_aai_agg.values.sum(), 
-                               sup.direct_impt_aai_agg.values.sum()+sup.indirect_impt_aai_agg.values.sum(), places=0)
+        self.assertAlmostEqual(sup.total_eai.values.sum(), 
+                               sup.direct_eai.values.sum()+sup.indirect_eai.values.sum(), places=0)
 
 ## Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestSupplyChain)
     unittest.TextTestRunner(verbosity=2).run(TESTS)
+    
