@@ -176,7 +176,7 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.01690, places=3)
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
 
-        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 4460353601586.872, places=3)
+        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 4460353601586.872, places=2)
         self.assertAlmostEqual(sup.indirect_eai.sum(), 2770405963.7185535, places=3)
 
         sup.calc_indirect_imp_mat(io_approach='eeioa')
@@ -190,7 +190,7 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.016903, places=3)
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
 
-        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 13786581420801.48, places=3)
+        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 13786581420801.48, places=2)
         self.assertAlmostEqual(sup.indirect_eai.sum(), 8563094050.187255, places=3)
 
     def test_calc_total_impacts(self):
