@@ -244,6 +244,7 @@ def remove_module_docstring(app, what, name, obj, options, lines):
         del lines[:]
 
 autodoc_member_order = "bysource"
+autodoc_mock_imports = ["dantro"]  # Issues with lower matplotlib versions
 
 def setup(app):
     app.connect("autodoc-skip-member", skip)
