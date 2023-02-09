@@ -65,6 +65,7 @@ setup(
         'pybufrkit',
         'pycountry',
         'rasterio',
+        'scikit-image',
         'scikit-learn',
         'statsmodels',
         'tables',
