@@ -25,6 +25,7 @@ import pymrio
 
 from climada.entity.exposures.base import Exposures
 from climada.entity import ImpactFuncSet, ImpfTropCyclone
+from climada.engine.impact_calc import ImpactCalc
 from climada.hazard.base import Hazard
 from climada_petals.engine.supplychain import SupplyChain, MRIOT_DIRECTORY, parse_mriot_from_df
 from climada.util.constants import EXP_DEMO_H5
@@ -71,7 +72,7 @@ class TestSupplyChain(unittest.TestCase):
         self.assertEqual(np.shape(sup.mriot.Z), (112, 112))
         self.assertAlmostEqual(sup.mriot.x.sum().values[0], 3533367.89439, places=3)
 
-    def test_calc_direct_impact(self):
+    def test_direct_production_impacts(self):
         """Test running direct impact calculations."""
 
         file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
@@ -101,25 +102,31 @@ class TestSupplyChain(unittest.TestCase):
 
         impacted_secs = list(range(10))+list(range(15,25))
         impacted_secs = sup.mriot.get_sectors()[impacted_secs].tolist()
-        sup.calc_direct_imp_mat(hazard, exp, impf_set,
-                                impacted_secs=impacted_secs)
+        imp = ImpactCalc(exp, impf_set, hazard)
+        impact = imp.impact()
 
-        self.assertAlmostEqual(sup.direct_imp_mat.values.sum(), 21595173505075.07, places=3)
-        self.assertAlmostEqual(sup.direct_eai.sum(), 13413151245.388247, places=3)
-        self.assertAlmostEqual(sup.direct_imp_mat.values.sum(),
-                               sup.direct_imp_mat.loc[:, 'USA'].values.sum(),
+        sup.calc_secs_stock_exp_imp(exp, impact, impacted_secs)
+
+        sup.calc_direct_production_impacts(impact)
+
+        self.assertAlmostEqual(sup.dir_prod_impt_mat.values.sum(), 21595173505075.07, places=3)
+        self.assertAlmostEqual(sup.dir_prod_impt_eai.sum(), 13413151245.388247, places=3)
+        self.assertAlmostEqual(sup.dir_prod_impt_mat.values.sum(),
+                               sup.dir_prod_impt_mat.loc[:, 'USA'].values.sum(),
                                 places=3)
         self.assertAlmostEqual((sup.mriot.Z.shape[0],),
-                                sup.direct_eai.shape)
-        self.assertAlmostEqual(sup.direct_eai.sum(),
-                                sup.direct_eai.loc['USA'].sum(),
+                                sup.dir_prod_impt_eai.shape)
+        self.assertAlmostEqual(sup.dir_prod_impt_eai.sum(),
+                                sup.dir_prod_impt_eai.loc['USA'].sum(),
                                 places=3)
-        self.assertAlmostEqual(sup.direct_imp_mat.values.sum(),
-                               sup.direct_imp_mat.loc[:, (slice(None), impacted_secs)].values.sum(), places=0)
-        self.assertAlmostEqual(sup.direct_eai.values.sum(),
-                               sup.direct_eai.loc[(slice(None), impacted_secs)].values.sum(), places=3)
+        self.assertAlmostEqual(sup.dir_prod_impt_mat.values.sum(),
+                               sup.dir_prod_impt_mat.loc[:, (slice(None), impacted_secs)].values.sum(), 
+                               places=0)
+        self.assertAlmostEqual(sup.dir_prod_impt_eai.values.sum(),
+                               sup.dir_prod_impt_eai.loc[(slice(None), impacted_secs)].values.sum(), 
+                               places=3)
 
-    def test_calc_indirect_impact(self):
+    def test_indirect_production_impact(self):
         """Test running indirect impact calculations."""
 
         file_loc = MRIOT_DIRECTORY / 'WIOTtest_Nov16_ROW.xlsb'
@@ -150,12 +157,14 @@ class TestSupplyChain(unittest.TestCase):
 
         impacted_secs = range(15,25)
         impacted_secs = sup.mriot.get_sectors()[impacted_secs].tolist()
-        sup.calc_direct_imp_mat(hazard, exp, impf_set,
-                                impacted_secs=impacted_secs)
+        imp = ImpactCalc(exp, impf_set, hazard)
+        impact = imp.impact()
 
-        sup.calc_indirect_imp_mat(io_approach='ghosh')
+        sup.calc_secs_stock_exp_imp(exp, impact, impacted_secs)
 
-        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_eai.shape)
+        sup.calc_indirect_production_impacts(impact, io_approach='ghosh')
+
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indir_prod_impt_eai.shape)
         self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
         self.assertAlmostEqual(sup.mriot.Z.columns[43], sup.inverse.columns[43])
         self.assertAlmostEqual(sup.mriot.Z.index[98], sup.inverse.index[98])
@@ -163,12 +172,12 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.0735, places=3)
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.00064, places=3)
 
-        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 7093283110973.164, places=3)
-        self.assertAlmostEqual(sup.indirect_eai.sum(), 4405765907.4367485, places=3)
+        self.assertAlmostEqual(sup.indir_prod_impt_mat.values.sum(), 7093283110973.164, places=3)
+        self.assertAlmostEqual(sup.indir_prod_impt_eai.sum(), 4405765907.4367485, places=3)
 
-        sup.calc_indirect_imp_mat(io_approach='leontief')
+        sup.calc_indirect_production_impacts(impact, io_approach='leontief')
 
-        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_eai.shape)
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indir_prod_impt_eai.shape)
         self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
         self.assertAlmostEqual(sup.mriot.Z.columns[56], sup.inverse.columns[56])
         self.assertAlmostEqual(sup.mriot.Z.index[33], sup.inverse.index[33])
@@ -176,12 +185,12 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.01690, places=3)
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
 
-        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 4460353601586.872, places=2)
-        self.assertAlmostEqual(sup.indirect_eai.sum(), 2770405963.7185535, places=3)
+        self.assertAlmostEqual(sup.indir_prod_impt_mat.values.sum(), 4460353601586.872, places=2)
+        self.assertAlmostEqual(sup.indir_prod_impt_eai.sum(), 2770405963.7185535, places=3)
 
-        sup.calc_indirect_imp_mat(io_approach='eeioa')
+        sup.calc_indirect_production_impacts(impact, io_approach='eeioa')
 
-        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indirect_eai.shape)
+        self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indir_prod_impt_eai.shape)
         self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse.shape)
 
         self.assertAlmostEqual(sup.mriot.Z.columns[20], sup.inverse.columns[20])
@@ -190,8 +199,8 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.016903, places=3)
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.0057, places=3)
 
-        self.assertAlmostEqual(sup.indirect_imp_mat.values.sum(), 13786581420801.48, places=2)
-        self.assertAlmostEqual(sup.indirect_eai.sum(), 8563094050.187255, places=3)
+        self.assertAlmostEqual(sup.indir_prod_impt_mat.values.sum(), 13786581420801.48, places=2)
+        self.assertAlmostEqual(sup.indir_prod_impt_eai.sum(), 8563094050.187255, places=3)
 
     def test_calc_total_impacts(self):
         """Test running total impact calculations."""
@@ -224,14 +233,15 @@ class TestSupplyChain(unittest.TestCase):
 
         impacted_secs = range(15,25)
         impacted_secs = sup.mriot.get_sectors()[impacted_secs].tolist()
-        sup.calc_direct_imp_mat(hazard, exp, impf_set,
-                                impacted_secs=impacted_secs)
-        sup.calc_indirect_imp_mat(io_approach='ghosh')
-        sup.calc_total_imp_mat()
-        self.assertAlmostEqual(sup.total_imp_mat.values.sum(), 
-                               sup.direct_imp_mat.values.sum()+sup.indirect_imp_mat.values.sum(), places=0)
-        self.assertAlmostEqual(sup.total_eai.values.sum(), 
-                               sup.direct_eai.values.sum()+sup.indirect_eai.values.sum(), places=0)
+        imp = ImpactCalc(exp, impf_set, hazard)
+        impact = imp.impact()
+
+        sup.calc_production_impacts(impact, exp, impacted_secs=impacted_secs, io_approach='ghosh')
+
+        self.assertAlmostEqual(sup.tot_prod_impt_mat.values.sum(), 
+                               sup.indir_prod_impt_mat.values.sum()+sup.dir_prod_impt_mat.values.sum(), places=0)
+        self.assertAlmostEqual(sup.tot_prod_impt_eai.values.sum(), 
+                               sup.indir_prod_impt_eai.values.sum()+sup.dir_prod_impt_eai.values.sum(), places=0)
 
 ## Execute Tests
 if __name__ == "__main__":
