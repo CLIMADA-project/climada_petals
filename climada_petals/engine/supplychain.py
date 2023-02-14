@@ -435,6 +435,8 @@ class SupplyChain:
         self.dir_prod_impt_mat = self.shock_intensity*self.mriot.x.values.flatten()*self.conv_fac()
         self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(impact.frequency)
 
+    # consider savign results in a dict {io_approach: results} so one can run and save various
+    # model without reloading the IOT
     def calc_indirect_production_impacts(self, impact, io_approach):
         """Calculate indirect production impacts according to the specified input-output appraoch.
 
