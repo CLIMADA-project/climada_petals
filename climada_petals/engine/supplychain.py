@@ -30,6 +30,12 @@ import numpy as np
 
 import pymrio
 
+# SJ : FYI I know there is a way to make these imports conditional on boario package being installed
+from boario.extended_models import ARIOClimadaModel
+from boario.event import Event, EventKapitalRebuild, EventKapitalRecover
+from boario.simulation import Simulation
+from boario.indicators import Indicators
+
 from climada import CONFIG
 from climada.util import files_handler as u_fh
 import climada.util.coordinates as u_coord
@@ -44,7 +50,7 @@ MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
 calc_G = pymrio.calc_L
 
 def parse_mriot_from_df(mriot_df=None, col_iso3=None, col_sectors=None,
-                       rows_data=None, cols_data=None):
+                        rows_data=None, cols_data=None, row_fd_cats=None):
     """Build multi-index dataframes of the transaction matrix, final demand and total
        production from a Multi-Regional Input-Output Table dataframe.
 
@@ -61,8 +67,13 @@ def parse_mriot_from_df(mriot_df=None, col_iso3=None, col_sectors=None,
 
     sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
     regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
+    # SJ: I had to add this, as I require final demand per region
+    fd_cats = mriot_df.iloc[row_fd_cats, end_col:-1].unique()
     multiindex = pd.MultiIndex.from_product(
                 [regions, sectors], names = ['region', 'sector'])
+
+    multiindex_final_demand = pd.MultiIndex.from_product(
+                [regions, fd_cats], names = ['region', 'category'])
 
     Z = mriot_df.iloc[start_row:end_row, start_col:end_col].values.astype(float)
     Z = pd.DataFrame(
@@ -71,11 +82,11 @@ def parse_mriot_from_df(mriot_df=None, col_iso3=None, col_sectors=None,
                     columns = multiindex
                     )
 
-    Y = mriot_df.iloc[start_row:end_row, end_col:-1].sum(1).values.astype(float)
+    Y = mriot_df.iloc[start_row:end_row, end_col:-1].values.astype(float)
     Y = pd.DataFrame(
                     data = Y,
                     index = multiindex,
-                    columns = ['final demand']
+                    columns = multiindex_final_demand
                     )
 
     x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
@@ -84,6 +95,11 @@ def parse_mriot_from_df(mriot_df=None, col_iso3=None, col_sectors=None,
                     index = multiindex,
                     columns = ['total production']
                     )
+
+    # SJ: Just set negative values in Y to 0 and recalc system
+    if (Y.sum(axis=1) < 0).any():
+        LOGGER.debug("Found negatives values in total final demand, setting them to 0 and recomputing production vector")
+        Y.loc[Y.sum(axis=1) < 0] = Y.loc[Y.sum(axis=1) < 0].clip(lower=0)
 
     return Z, Y, x
 
@@ -115,7 +131,7 @@ def calc_v(Z, x):
     return value_added
 
 def calc_B(Z, x):
-    """Calculate the B matrix (allocation coefficients matrix) 
+    """Calculate the B matrix (allocation coefficients matrix)
     from Z matrix and x vector
 
     Parameters
@@ -206,7 +222,7 @@ def mriot_file_name(mriot_type, mriot_year):
 
     elif mriot_type == 'OECD21':
         return f"ICIO2021_{mriot_year}.csv"
-    
+
     else:
         raise ValueError('Unknown MRIOT type')
 
@@ -222,7 +238,7 @@ def download_mriot(mriot_type, mriot_year, download_dir):
 
     if mriot_type == 'EXIOBASE3':
         # EXIOBASE3 gets a system argument. This can be ixi (ind x ind matrix)
-        # or pxp (prod x prod matrix). By default both are downloaded, we here 
+        # or pxp (prod x prod matrix). By default both are downloaded, we here
         # use only ixi for the time being.
         pymrio.download_exiobase3(storage_folder=download_dir, system="ixi", years=[mriot_year])
 
@@ -262,7 +278,7 @@ def parse_mriot(mriot_type, downloaded_file):
         mriot_df = pd.read_excel(downloaded_file, engine='pyxlsb')
 
         Z, Y, x = parse_mriot_from_df(
-                                    mriot_df, col_iso3=2, col_sectors=1,
+                                    mriot_df, col_iso3=2, col_sectors=1, row_fd_cats=2,
                                     rows_data=(5,2469), cols_data=(4,2468)
                                     )
 
@@ -393,8 +409,8 @@ class SupplyChain:
 
     def calc_secs_stock_exp_imp(self, exposure, impact, impacted_secs):
         """TODO: better docstring
-        This function needs to return an object equivalent to self.direct_imp_mat starting from 
-        a standard CLIMADA impact calculation. Will call this object self.impacts_to_sectors. 
+        This function needs to return an object equivalent to self.direct_imp_mat starting from
+        a standard CLIMADA impact calculation. Will call this object self.impacts_to_sectors.
         This object will also compute a sector exposure.
         """
 
@@ -457,8 +473,8 @@ class SupplyChain:
         [3] Kitzes, J., An Introduction to Environmentally-Extended Input-Output
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
-
-        self.calc_matrixes(io_approach=io_approach)
+        if io_approach in ["leontief","ghosh","eeioa"]:
+            self.calc_matrixes(io_approach=io_approach)
 
         # find a better place to locate conv_fac, once and for all cases
         if io_approach == 'leontief':
@@ -482,6 +498,63 @@ class SupplyChain:
             self.indir_prod_impt_mat = pd.DataFrame(
                 self.shock_intensity.dot(self.inverse) * self.mriot.x.values.flatten()
                 )*self.conv_fac()
+
+        elif io_approach == 'boario_aggregated':
+            # SJ : this can probably be done elsewhere and/or better
+            # But right now it makes sure that x, Y, Z and A are present and coherent.
+            # In particular it recalc x in case Y had negative values
+            self.mriot.reset_full()
+            self.mriot.calc_all()
+
+            # Temp fix for unset mriot.unit
+            # SJ : Loading mriot from saved file doesn't set unit. And it is required by boario (I can change that, but I think it is better if we set it properly)
+            if self.mriot.unit is None:
+                self.mriot.unit = "M. EUR"
+
+            model = ARIOClimadaModel(self.mriot,
+                                     self.stock_exp,
+                                     # here are the parameters values that are set by default (Just as a reminder of what is present)
+                                     order_type="alt", # "alt" | "noalt"
+                                     alpha_base=1.0,
+                                     alpha_max=1.25,
+                                     alpha_tau=365,
+                                     rebuild_tau=60,
+                                     main_inv_dur=90, # Inventory duration
+                                     monetary_unit=10**6, # Most MRIOT are in Millions
+                                     psi_param=0.90, # can also be given as "0_90"
+                                     inventory_restoration_tau=60,
+                                     register_stocks=False,
+                                     # You can add kwargs. At the moment only
+                                     # "infinite_inventories_sect" a list or index of
+                                     # sectors for which you want input stock
+                                     # infinite instead of main_inv_dur
+                                     # (e.g. hotels and restaurants)
+                                     )
+
+            sim = Simulation(model,
+                             register_stocks=False,
+                             n_temporal_units_to_sim=impact.date[-1]-impact.date[0]+365, # SJ: Simulation ends one year after last event.
+                             separate_sims = False,
+                             boario_output_dir = "/tmp/boario", # This needs to be set !
+                             results_dir_name="results"
+                             )
+
+            events_list = [EventKapitalRecover(self.stock_imp.iloc[i],
+                                               recovery_time = 30,
+                                               recovery_function="linear",
+                                               occurrence = (impact.date[i]-impact.date[0] + 1),  # SJ: We make the first event happen on day 1 (at 0 might make trouble)
+                                               duration = 1,
+                                               ) for i in range(len(self.stock_imp))]
+            for ev in events_list:
+                sim.add_event(ev)
+
+            sim.loop()
+
+            # SJ: I still have to implement the results to put in self.indir_prod_impt_mat
+
+        elif io_approach == 'boario_separated':
+            pass
+            #"WIP"
 
         self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(impact.frequency)
 
@@ -513,7 +586,7 @@ class SupplyChain:
 
     def calc_matrixes(self, io_approach):
         """
-        Build technical coefficient and Leontief inverse matrixes (if Leontief approach) or 
+        Build technical coefficient and Leontief inverse matrixes (if Leontief approach) or
         allocation coefficients and Ghosh matrixes (if Ghosh approach).
         """
 
@@ -567,9 +640,8 @@ class SupplyChain:
                 mriot_reg_name = 'ROW'
 
         else:
-            warnings.warn(""" For a correct calculation the format of regions' 
+            warnings.warn(""" For a correct calculation the format of regions'
             names in exposure and the IO table must match. """)
             mriot_reg_name = exp_regid
 
         return mriot_reg_name
-        
