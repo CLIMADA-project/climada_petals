@@ -203,7 +203,8 @@ class TCForecast(TCTracks):
             # Connect to the directory
             con.cwd(remote_dir)
 
-            # Filter to files with 'tropical_cyclone' in the name: each file is a forecast ensemble for one event
+            # Filter to files with 'tropical_cyclone' in the name: each file
+            # is a forecast ensemble for one event
             remotefiles_temp = fnmatch.filter(con.nlst(), '*tropical_cyclone*')
             # Filter to forecast ensemble files only
             remotefiles = fnmatch.filter(remotefiles_temp, '*ECEP*')
@@ -283,7 +284,8 @@ class TCForecast(TCTracks):
             n_ens = len(ens_no)
     
             # See documentation for link to ensemble types
-            # Sometimes only one value is given instead of an array and it needs to be reproduced across all tracks
+            # Sometimes only one value is given instead of an array and it needs
+            # to be reproduced across all tracks
             ens_type = ec.codes_get_array(bufr, 'ensembleForecastType')
             if len(ens_type) == 1:
                 ens_type = np.repeat(ens_type, n_ens)
@@ -295,24 +297,28 @@ class TCForecast(TCTracks):
             wnd_init_temp = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
             latmax_init_temp = ec.codes_get_array(bufr, '#3#latitude')
             lonmax_init_temp = ec.codes_get_array(bufr, '#3#longitude')
-    
+
             # check dimension of the variables, and replace missing value with NaN
             lat_init = self._check_variable(lat_init_temp, n_ens, varname="Latitude at time 0")
             lon_init = self._check_variable(lon_init_temp, n_ens, varname="Longitude at time 0")
             pre_init = self._check_variable(pre_init_temp, n_ens, varname="Pressure at time 0")
-            wnd_init = self._check_variable(wnd_init_temp, n_ens, varname="Maximum 10m wind at time 0")
-            latmax_init = self._check_variable(latmax_init_temp, n_ens, varname="Latitude of max 10m wind at time 0")
-            lonmax_init = self._check_variable(lonmax_init_temp, n_ens, varname="Longitude of max 10m wind at time 0")
-    
+            wnd_init = self._check_variable(wnd_init_temp, n_ens,
+                                            varname="Maximum 10m wind at time 0")
+            latmax_init = self._check_variable(latmax_init_temp, n_ens,
+                                               varname="Latitude of max 10m wind at time 0")
+            lonmax_init = self._check_variable(lonmax_init_temp, n_ens,
+                                               varname="Longitude of max 10m wind at time 0")
+
             # Create dictionaries of lists to store output for each variable.
-            # Each dict entry is an ensemble member, and it contains a list of forecast values by timestep
+            # Each dict entry is an ensemble member, and it contains a list of
+            # forecast values by timestep
             latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(n_ens)}
             longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(n_ens)}
             pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(n_ens)}
             max_wind = {ind_ens: np.array(wnd_init[ind_ens]) for ind_ens in range(n_ens)}
             latitudemax = {ind_ens: np.array(latmax_init[ind_ens]) for ind_ens in range(n_ens)}
             longitudemax = {ind_ens: np.array(lonmax_init[ind_ens]) for ind_ens in range(n_ens)}
-    
+
             # getting the forecasted storms
             timesteps_int = [0 for x in range(n_timestep)]
             for ind_timestep in range(1, n_timestep):
@@ -346,15 +352,18 @@ class TCForecast(TCTracks):
                     lonmax_temp = ec.codes_get_array(bufr, "#%d#longitude" % rank3)
                 else:
                     raise ValueError('unexpected meteorologicalAttributeSignificance=', significance)
-    
+
                 # check dimension of the variables, and replace missing value with NaN
                 lat = self._check_variable(lat_temp, n_ens, varname="Latitude at time "+str(ind_timestep))
                 lon = self._check_variable(lon_temp, n_ens, varname="Longitude at time "+str(ind_timestep))
                 pre = self._check_variable(pre_temp, n_ens, varname="Pressure at time "+str(ind_timestep))
-                wnd = self._check_variable(wnd_temp, n_ens, varname="Maximum 10m wind at time "+str(ind_timestep))
-                latmax = self._check_variable(latmax_temp, n_ens, varname="Latitude of max 10m wind at time "+str(ind_timestep))
-                lonmax = self._check_variable(lonmax_temp, n_ens, varname="Longitude of max 10m wind at time "+str(ind_timestep))
-    
+                wnd = self._check_variable(wnd_temp, n_ens,
+                                           varname="Maximum 10m wind at time "+str(ind_timestep))
+                latmax = self._check_variable(latmax_temp, n_ens,
+                                              varname="Latitude of max 10m wind at time "+str(ind_timestep))
+                lonmax = self._check_variable(lonmax_temp, n_ens,
+                                              varname="Longitude of max 10m wind at time "+str(ind_timestep))
+
                 # appending values into dictionaries
                 for ind_ens in range(n_ens):
                     latitude[ind_ens] = np.append(latitude[ind_ens], lat[ind_ens])
@@ -363,7 +372,7 @@ class TCForecast(TCTracks):
                     max_wind[ind_ens] = np.append(max_wind[ind_ens], wnd[ind_ens])
                     latitudemax[ind_ens] = np.append(latitudemax[ind_ens], latmax[ind_ens])
                     longitudemax[ind_ens] = np.append(longitudemax[ind_ens], lonmax[ind_ens])
-    
+
             # storing information into a dictionary
             msg = {
                 # subset forecast data
@@ -374,24 +383,24 @@ class TCForecast(TCTracks):
                 'longitude_max': longitudemax,
                 'pressure': pressure,
                 'timestamp': timesteps_int,
-    
+
                 # subset metadata
                 'wmo_longname': ec.codes_get(bufr, 'longStormName').strip(),
                 'storm_id': sid,
                 'ens_type': ens_type,
                 'ens_number': ens_no,
             }
-    
+
             if id_no is None:
                 id_no = timestamp_origin.item().strftime('%Y%m%d%H') + \
                         str(np.random.randint(1e3, 1e4))
-    
+
             orig_centre = ec.codes_get(bufr, 'centre')
             if orig_centre == 98:
                 provider = 'ECMWF'
             else:
                 provider = 'BUFR code ' + str(orig_centre)
-    
+
             for i in range(n_ens):
                 name = msg['wmo_longname']
                 track = self._subset_to_track(
