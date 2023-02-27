@@ -42,7 +42,10 @@ __all__ = ['SYSTEM_DIR',
            'EXP_DEMO_H5',
            'WS_DEMO_NC']
 
-from climada.util.constants import *
+from climada.util.constants import (DEMO_DIR, SYSTEM_DIR, ENT_DEMO_TODAY, ENT_DEMO_FUTURE,
+        HAZ_DEMO_MAT, HAZ_DEMO_FL, ENT_TEMPLATE_XLS, HAZ_TEMPLATE_XLS, ONE_LAT_KM, EARTH_RADIUS_KM,
+        GLB_CENTROIDS_MAT, GLB_CENTROIDS_NC, ISIMIP_GPWV3_NATID_150AS, NATEARTH_CENTROIDS,
+        RIVER_FLOOD_REGIONS_CSV, TC_ANDREW_FL, HAZ_DEMO_H5, EXP_DEMO_H5, WS_DEMO_NC)
 
 
 HAZ_DEMO_FLDDPH = DEMO_DIR.joinpath('flddph_2000_DEMO.nc')
@@ -55,18 +58,6 @@ DEMO_GDP2ASSET = DEMO_DIR.joinpath('gdp2asset_CHE_exposure.nc')
 """Exposure demo file for GDP2Asset"""
 
 
-"""
-dictionary for the generation of the correct download api-address at
-geofabrik.de, relating ISO3-country codes to the region & written-out name.
-Adapted from the GitHub repo osm_clipper (https://github.com/ElcoK/osm_clipper)
-Used by OSMRaw().get_data_geofabrik().
-
-Note: A few small countries will be downloaded as a multi-country file, as
-indicated in the comments.
-
-Note: "special" ISO-3 codes - Canary Islands (IC), Asian part of Russia (RUS-A),
-European part of Russia (RUS-E)
-"""
 DICT_GEOFABRIK = {
    'AFG' : ('asia','afghanistan'),
    'ALB' : ('europe','albania'),
@@ -261,28 +252,19 @@ DICT_GEOFABRIK = {
    'URY' : ('south-america', 'uruguay'),
    'VEN' : ('south-america', 'venezuela'),
 }
-
 """
-nested dictionary that contains collections of relevant columns (osm_keys) and
-key - value pairs (osm_query) to extract critical infrastructure data from an
-osm.pbf file, via the function OSM_FileQuery().retrieve_cis()
+dictionary for the generation of the correct download api-address at
+geofabrik.de, relating ISO3-country codes to the region & written-out name.
+Adapted from the GitHub repo osm_clipper (https://github.com/ElcoK/osm_clipper)
+Used by OSMRaw().get_data_geofabrik().
 
-Currently implemented for:
-    * educational facilities,
-    * electric power,
-    * food supply,
-    * healthcare facilities,
-    * natural gas infrastructure,
-    * oil infrastructure,
-    * road,
-    * rail,
-    * telecommunications,
-    * water supply,
-    * wastewater.
+Note: A few small countries will be downloaded as a multi-country file, as
+indicated in the comments.
 
-Note: If modified, make sure that key exists in osm.config file, under the
-respective geometry/-ies.
+Note: "special" ISO-3 codes - Canary Islands (IC), Asian part of Russia (RUS-A),
+European part of Russia (RUS-E)
 """
+
 DICT_CIS_OSM =  {
         'education' : {
             'osm_keys' : ['amenity','building','name'],
@@ -386,3 +368,24 @@ DICT_CIS_OSM =  {
                               shop='grocery' or shop='general' or
                               shop='bakery'"""}
                               }
+"""
+nested dictionary that contains collections of relevant columns (osm_keys) and
+key - value pairs (osm_query) to extract critical infrastructure data from an
+osm.pbf file, via the function OSM_FileQuery().retrieve_cis()
+
+Currently implemented for:
+    * educational facilities,
+    * electric power,
+    * food supply,
+    * healthcare facilities,
+    * natural gas infrastructure,
+    * oil infrastructure,
+    * road,
+    * rail,
+    * telecommunications,
+    * water supply,
+    * wastewater.
+
+Note: If modified, make sure that key exists in osm.config file, under the
+respective geometry/-ies.
+"""
