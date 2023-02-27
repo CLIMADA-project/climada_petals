@@ -255,7 +255,7 @@ def hazard_series_from_dataset(
 
     def create_hazard(dataset: xr.Dataset) -> RiverFlood:
         """Create hazard from a GloFASRiverFlood hazard dataset"""
-        return RiverFlood.from_raster_xarray(
+        return RiverFlood.from_xarray_raster(
             dataset,
             hazard_type="RF",
             intensity="Flood Depth",
