@@ -774,7 +774,7 @@ class GraphCalcs():
 
 class Graph(GraphCalcs):
     """
-    creates a graph object from the
+    creates a graph object 
     """
 
     def __init__(self, network, directed=False):
