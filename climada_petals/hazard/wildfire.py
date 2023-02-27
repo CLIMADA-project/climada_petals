@@ -155,12 +155,12 @@ class WildFire(Hazard):
         centroids : Centroids, optional
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
-            
+
         Returns
         ----------
         haz : WildFire instance
         """
-        
+
         haz = cls()
 
         # read and initialize data
@@ -194,7 +194,7 @@ class WildFire(Hazard):
         LOGGER.info('Computing intensity of %s fires.',
                     np.unique(df_firms.event_id).size)
         haz._calc_brightness(df_firms, centroids, res_centr)
-        
+
         return haz
 
     def set_hist_fire_FIRMS(self, *args, **kwargs):
@@ -245,7 +245,7 @@ class WildFire(Hazard):
         keep_all_fires : bool, optional
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
-            
+
         Returns
         ----------
         haz : WildFire instance
@@ -331,14 +331,14 @@ class WildFire(Hazard):
         haz.intensity = haz.intensity.tocsr()
         haz.fraction = haz.intensity.copy()
         haz.fraction.data.fill(1.0)
-        
+
         return haz
 
     def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
             """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
             LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
                            "Use WildFire.from_hist_fire_seasons_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__        
+            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False):

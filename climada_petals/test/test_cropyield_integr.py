@@ -48,7 +48,7 @@ class TestIntegr(unittest.TestCase):
         haz_new.centroids.set_region_id()
 
         exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
-                                                bbox=bbox, yearrange=(2001, 2005), scenario='flexible', unit='t/y', 
+                                                bbox=bbox, yearrange=(2001, 2005), scenario='flexible', unit='t/y',
                                                 crop='whe', irr='firr')
         exp = value_to_usd(exp, INPUT_DIR, yearrange=(2000, 2018))
         exp.assign_centroids(haz, threshold=20)
