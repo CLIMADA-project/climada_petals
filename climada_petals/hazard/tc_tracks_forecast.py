@@ -39,6 +39,7 @@ import pandas as pd
 import tqdm
 import xarray as xr
 # climada dependencies
+from climada import CONFIG
 from climada.hazard.tc_tracks import (
     BASIN_ENV_PRESSURE,
     CAT_NAMES,
@@ -49,9 +50,7 @@ from climada.hazard.tc_tracks import (
 from climada.util.files_handler import get_file_names
 
 # declare constants
-ECMWF_FTP = 'dissemination.ecmwf.int'
-ECMWF_USER = 'wmo'
-ECMWF_PASS = 'essential'
+ECMWF_FTP = CONFIG.hazard.tc_tracks_forecast.resources.ecmwf
 
 BASINS = {
     'W': 'W - North West Pacific',
@@ -186,8 +185,9 @@ class TCForecast(TCTracks):
         -------
         [filelike]
         """
-        con = ftplib.FTP(host=ECMWF_FTP, user=ECMWF_USER, passwd=ECMWF_PASS)
-
+        con = ftplib.FTP(host=ECMWF_FTP.host.str(),
+                         user=ECMWF_FTP.user.str(),
+                         passwd=ECMWF_FTP.passwd.str())
         try:
             if remote_dir is None:
                 # Read list of directories on the FTP server
@@ -208,7 +208,7 @@ class TCForecast(TCTracks):
 
             if len(remotefiles) == 0:
                 msg = 'No tracks found at ftp://{}/{}'
-                msg.format(ECMWF_FTP, remote_dir)
+                msg.format(ECMWF_FTP.host.dir(), remote_dir)
                 raise FileNotFoundError(msg)
 
             localfiles = []
