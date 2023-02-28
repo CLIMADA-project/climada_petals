@@ -384,6 +384,9 @@ class SupplyChain:
         # if data were parsed and saved: load them
         else:
             mriot = pymrio.load(path=parsed_data_dir)
+            # TODO: check unit in WIOD is not saved
+            if mriot_type == 'WIOD16':
+                mriot.unit = 'M.EUR'
 
         mriot.meta.change_meta('description',
                                'Metadata for pymrio Multi Regional Input-Output Table')
@@ -391,7 +394,7 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_secs_stock_exp_imp(self, exposure, impact, impacted_secs):
+    def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs):
         """TODO: better docstring
         This function needs to return an object equivalent to self.direct_imp_mat starting from 
         a standard CLIMADA impact calculation. Will call this object self.impacts_to_sectors. 
@@ -406,14 +409,15 @@ class SupplyChain:
         elif isinstance(impacted_secs, (range, np.ndarray)):
             impacted_secs = self.mriot.get_sectors()[impacted_secs].tolist()
 
-        self.stock_exp = pd.DataFrame(0, index=['total_value'], columns=self.mriot.Z.columns)
-        self.stock_imp = pd.DataFrame(0, index=impact.event_id, columns=self.mriot.Z.columns)
+        self.secs_stock_exp = pd.DataFrame(0, index=['total_value'], columns=self.mriot.Z.columns)
+        self.secs_stock_imp = pd.DataFrame(0, index=impact.event_id, columns=self.mriot.Z.columns)
 
         mriot_type = self.mriot.meta.name.split('-')[0]
 
         for exp_regid in exposure.gdf.region_id.unique():
             exp_bool = exposure.gdf.region_id == exp_regid
             tot_value_reg_id = exposure.gdf[exp_bool].value.sum()
+            # consider using impact.impact_reg_agg when merged
             tot_imp_reg_id = impact.imp_mat[:, np.where(exp_bool)[0]].sum(1)
 
             mriot_reg_name = self.map_exp_to_mriot(exp_regid, mriot_type)
@@ -423,19 +427,26 @@ class SupplyChain:
 
             # Overall sectorial stock exposure and impact are distributed among subsectors
             # proportionally to their their own contribution to overall sectorial production:
-            self.stock_exp.loc[:, (mriot_reg_name, impacted_secs)] = tot_value_reg_id*secs_prod_ratio
             # Sum needed below in case of many ROWs, which are aggregated into one country as per WIOD table.
-            self.stock_imp.loc[:, (mriot_reg_name, impacted_secs)] += tot_imp_reg_id*secs_prod_ratio
+            self.secs_stock_exp.loc[:, (mriot_reg_name, impacted_secs)] += tot_value_reg_id*secs_prod_ratio
+            self.secs_stock_imp.loc[:, (mriot_reg_name, impacted_secs)] += tot_imp_reg_id*secs_prod_ratio
 
-        self.shock_intensity = self.stock_imp.divide(self.stock_exp.values).fillna(0)
+        self.secs_stock_shock= self.secs_stock_imp.divide(self.secs_stock_exp.values).fillna(0)
 
-    def calc_direct_production_impacts(self, impact):
+    def calc_direct_production_impacts(self, impact, stock_to_prod_shock=None):
         """Calculate direct production impacts."""
 
-        self.dir_prod_impt_mat = self.shock_intensity*self.mriot.x.values.flatten()*self.conv_fac()
+        if stock_to_prod_shock is None:
+            stock_to_prod_shock = np.repeat(1, self.mriot.x.shape[0])
+
+        prod_shock = self.secs_stock_shock*stock_to_prod_shock
+        # if prod shock ends up being larger than one (so more than the total production is lost)
+        # then it becomes one. This can only happen if stock_to_prod_shock are too large.
+        prod_shock[prod_shock > 1] = 1
+        self.dir_prod_impt_mat = self.mriot.x.values.flatten()*prod_shock*self.conv_fac()
         self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(impact.frequency)
 
-    # consider savign results in a dict {io_approach: results} so one can run and save various
+    # TODO: Consider saving results in a dict {io_approach: results} so one can run and save various
     # model without reloading the IOT
     def calc_indirect_production_impacts(self, impact, io_approach):
         """Calculate indirect production impacts according to the specified input-output appraoch.
@@ -462,7 +473,7 @@ class SupplyChain:
 
         # find a better place to locate conv_fac, once and for all cases
         if io_approach == 'leontief':
-            degr_demand = self.shock_intensity*self.mriot.Y.values.flatten()*self.conv_fac()
+            degr_demand = self.secs_stock_shock*self.mriot.Y.values.flatten()*self.conv_fac()
 
             self.indir_prod_impt_mat = pd.concat(
                                             [pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
@@ -471,7 +482,7 @@ class SupplyChain:
 
         elif io_approach == 'ghosh':
             value_added = calc_v(self.mriot.Z, self.mriot.x)
-            degr_value_added = self.shock_intensity*value_added.values*self.conv_fac()
+            degr_value_added = self.secs_stock_shock*value_added.values*self.conv_fac()
 
             self.indir_prod_impt_mat = pd.concat(
                                             [calc_x_from_G(self.inverse, degr_value_added.iloc[i])
@@ -480,7 +491,7 @@ class SupplyChain:
 
         elif io_approach == 'eeioa':
             self.indir_prod_impt_mat = pd.DataFrame(
-                self.shock_intensity.dot(self.inverse) * self.mriot.x.values.flatten()
+                self.secs_stock_shock.dot(self.inverse) * self.mriot.x.values.flatten()
                 )*self.conv_fac()
 
         self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(impact.frequency)
@@ -505,7 +516,7 @@ class SupplyChain:
             If list, it contains the affected sectors' names in the MRIOT.
         """
 
-        self.calc_secs_stock_exp_imp(exposure, impact, impacted_secs)
+        self.calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
 
         self.calc_direct_production_impacts(impact)
         self.calc_indirect_production_impacts(impact, io_approach)

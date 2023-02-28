@@ -105,7 +105,7 @@ class TestSupplyChain(unittest.TestCase):
         imp = ImpactCalc(exp, impf_set, hazard)
         impact = imp.impact()
 
-        sup.calc_secs_stock_exp_imp(exp, impact, impacted_secs)
+        sup.calc_secs_exp_imp_shock(exp, impact, impacted_secs)
 
         sup.calc_direct_production_impacts(impact)
 
@@ -160,7 +160,7 @@ class TestSupplyChain(unittest.TestCase):
         imp = ImpactCalc(exp, impf_set, hazard)
         impact = imp.impact()
 
-        sup.calc_secs_stock_exp_imp(exp, impact, impacted_secs)
+        sup.calc_secs_exp_imp_shock(exp, impact, impacted_secs)
 
         sup.calc_indirect_production_impacts(impact, io_approach='ghosh')
 
