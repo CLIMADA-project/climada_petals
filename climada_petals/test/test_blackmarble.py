@@ -24,8 +24,7 @@ import numpy as np
 from cartopy.io import shapereader
 
 from climada_petals.entity.exposures.black_marble import BlackMarble
-from climada.entity.exposures.litpop.nightlight import load_nightlight_nasa, \
-    load_nightlight_noaa, NOAA_BORDER
+from climada.entity.exposures.litpop.nightlight import NOAA_BORDER
 from climada.entity.exposures.litpop import nightlight as nl_utils
 import climada.util.coordinates as u_coord
 
@@ -37,7 +36,7 @@ class Test2013(unittest.TestCase):
         ent = BlackMarble()
         with self.assertLogs('climada.util.finance', level='INFO') as cm:
             ent.set_countries(country_name, 2013, res_km=1)
-        self.assertIn('GDP ESP 2013: 1.355e+12.', cm.output[0])
+        self.assertIn('GDP ESP 2013: 1.356e+12.', cm.output[0])
         self.assertIn('Income group ESP 2013: 4.', cm.output[1])
 
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
