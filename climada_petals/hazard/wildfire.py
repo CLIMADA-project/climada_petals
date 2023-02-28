@@ -198,10 +198,10 @@ class WildFire(Hazard):
         return haz
 
     def set_hist_fire_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
+        """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
 
     @classmethod
     def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
@@ -335,10 +335,10 @@ class WildFire(Hazard):
         return haz
 
     def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_seasons_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
+        """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_seasons_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False):
