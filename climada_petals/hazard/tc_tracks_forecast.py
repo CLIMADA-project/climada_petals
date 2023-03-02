@@ -108,12 +108,10 @@ class TCForecast(TCTracks):
     ----------
     data : list of xarray.Dataset
         Same as in parent class, adding the following attributes
-        - ensemble_member (int)
-        - is_ensemble (bool; if False, the simulation is a high resolution
-                       deterministic run)
-        - run_datetime (numpy.datetime64): timepoint of the initialisation of
-            the numerical weather prediction run
-
+            - ensemble_member (int)
+            - is_ensemble (bool; if False, the simulation is a high resolution deterministic run)
+            - run_datetime (numpy.datetime64): timepoint of the initialisation of the numerical
+              weather prediction run
     """
 
     def fetch_ecmwf(self, path=None, files=None, target_dir=None, remote_dir=None):
@@ -407,11 +405,12 @@ class TCForecast(TCTracks):
     def write_hdf5(self, file_name, complevel=5):
         """Write TC tracks in NetCDF4-compliant HDF5 format. This method
         overrides the method of the base class.
+
         Parameters
         ----------
         file_name: str or Path
             Path to a new HDF5 file. If it exists already, the file is overwritten.
-        complevel : int
+        complevel : int, optional
             Specifies a compression level (0-9) for the zlib compression of the data.
             A value of 0 or None disables compression. Default: 5
         """
@@ -431,11 +430,14 @@ class TCForecast(TCTracks):
 
     @classmethod
     def from_hdf5(cls, file_name):
-        """Create new TCTracks object from a NetCDF4-compliant HDF5 file
-        Parameters. This method overrides the method of the base class.
+        """Create new TCTracks object from a NetCDF4-compliant HDF5 file.
+        This method overrides the method of the base class.
+
+        Parameters
         ----------
         file_name : str or Path
             Path to a file that has been generated with `TCForecast.write_hdf`.
+
         Returns
         -------
         tracks : TCForecast
@@ -562,16 +564,20 @@ class TCForecast(TCTracks):
             raise ValueError
 
     @classmethod
-    def read_cxml(cls, cxml_path: str, xsl_path: str = None):
+    def read_cxml(cls, cxml_path: str, xsl_path: str=None):
         """Reads a cxml (cyclone xml) file and returns a class instance.
+
+        Parameters
         ----------
         cxml_path : str
             Path to the cxml file
-        xsl_path : str
-            Path to the xsl tranformation file needed to read the cxml data
+        xsl_path : str, optional
+            Path to the xsl tranformation file needed to read the cxml data.
+            Default: None
+
         Returns
         -------
-        tracks : TCForecast
+        TCForecast
             TCTracks with data from the given cxml file.
         """
         df = cls._cxml_to_df(cxml_path=cxml_path, xsl_path=xsl_path)
