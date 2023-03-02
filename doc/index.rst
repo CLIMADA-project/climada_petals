@@ -58,6 +58,13 @@ Jump right in:
 
 
 .. toctree::
+   :caption: API Reference
+   :hidden:
+
+   Python Modules <climada_petals/climada_petals>
+
+
+.. toctree::
    :caption: Tutorials
    :hidden:
    :maxdepth: 2
@@ -76,7 +83,6 @@ Jump right in:
    :hidden:
    :maxdepth: 1
 
-   Python Modules <climada_petals/climada_petals>
    README <misc/README>
    List of Authors <misc/AUTHORS>
    Contribution Guide <https://climada-python.readthedocs.io/en/latest/misc/CONTRIBUTING.html>
