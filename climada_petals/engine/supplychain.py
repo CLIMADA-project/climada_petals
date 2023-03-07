@@ -532,8 +532,6 @@ class SupplyChain:
                              register_stocks=False,
                              n_temporal_units_to_sim = impact.date[-1]-impact.date[0]+365, # SJ: Simulation ends one year after last event.
                              separate_sims = False,
-                             boario_output_dir = "/tmp/boario", # This needs to be set !
-                             results_dir_name="results"
                              )
 
             events_list = [EventKapitalRecover(self.stock_imp.iloc[i] * model.monetary_factor,
