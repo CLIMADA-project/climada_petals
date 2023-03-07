@@ -31,6 +31,7 @@ import xarray as xr
 import skimage
 
 from climada.util.plot import geo_scatter_categorical
+from climada.util.coordinates import get_resolution as u_get_resolution
 
 LOGGER = logging.getLogger(__name__)
 
@@ -461,10 +462,11 @@ class Warn:
         return single_map
 
     @staticmethod
-    def zeropadding(lat, lon, val):
+    def zeropadding(lat, lon, val, res_rel_error=0.01):
         """Produces a rectangle shaped map from a non-rectangular map (e.g., country). Therefore,
         a rectangular around the countries' boundary is shaped and padded with zeros where no values
-        are defined.
+        are defined. This only works if the lat lon values of the non-rectangular map can be accurately
+        represented on a grid with a regular resolution.
 
         Parameters
         ----------
@@ -474,6 +476,10 @@ class Warn:
             Longitudes of values of map.
         val : list
             Values of quantity of interest at every coordinate given.
+        res_rel_error : float
+            defines the relative error in terms of grid resolution by which the lat lon values
+            of the returned coord_rec can maximally differ from the provided lat lon values.
+            Default: 0.01
 
         Returns
         ----------
@@ -485,13 +491,39 @@ class Warn:
         """
         lat = np.round(lat, decimals=12)
         lon = np.round(lon, decimals=12)
+        
+        grid_res_lon, grid_res_lat = u_get_resolution(lon, lat)
+        # check if lat and lon can be represented accurately enough
+        # with a grid with grid resolution grid_res_lat and grid_res_lon
+        check_lat = (
+            (np.mod(np.diff(np.sort(np.unique(lon))-lon.min()), grid_res_lon).max())
+            <
+            (grid_res_lon * res_rel_error)
+            )
+        check_lon = (
+            (np.mod(np.diff(np.sort(np.unique(lon))-lon.min()), grid_res_lon).max())
+            <
+            (grid_res_lon * res_rel_error)
+            )
+        if not check_lon or not check_lat:
+            raise ValueError('The provided lat and lon values cannot be ' +
+                             'represented accurately enough by a regular ' +
+                             'grid. Provide different lat and lon or ' +
+                             'change res_rel_error.')
+        un_y = np.arange(
+            lat.min(),
+            lat.max()+abs(grid_res_lat),
+            abs(grid_res_lat)
+            )
+        un_x = np.arange(
+            lon.min(),
+            lon.max()+abs(grid_res_lon),
+            abs(grid_res_lon)
+            )
 
-        un_y = np.sort(np.unique(lat))
-        un_x = np.sort(np.unique(lon))
-
-        i = ((lat - min(lat)) / abs(un_y[1] - un_y[0])).astype(int)
-        j = ((lon - min(lon)) / abs(un_x[1] - un_x[0])).astype(int)
-        map_rec = np.zeros((len(np.unique(lat)), len(np.unique(lon))))
+        i = ((lat - min(lat)) / abs(grid_res_lat)).astype(int)
+        j = ((lon - min(lon)) / abs(grid_res_lon)).astype(int)
+        map_rec = np.zeros((len(un_y), len(un_x)))
         map_rec[i, j] = val
 
         xx, yy = np.meshgrid(un_x, un_y)
