@@ -9,7 +9,7 @@ pipeline {
           steps {
             sh '''#!/bin/bash
             export PATH=$PATH:$CONDAPATH
-            source activate petals_env
+            source activate 
             rm -f pylint.log
             pylint -ry climada_petals | tee pylint.log'''
 
@@ -23,6 +23,8 @@ pipeline {
             sh '''#!/bin/bash
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
+            mamba install rioxarray
+            pip install cdsapi dantro
             rm -rf tests_xml/
             rm -rf coverage/
             python -m coverage run tests_runner.py unit
