@@ -129,7 +129,7 @@ todo_include_todos = True
 
 # The theme to use for HTML and HTML Help pages.  Major themes that come with
 # Sphinx are currently 'default' and 'sphinxdoc'.
-html_theme = 'sphinx_book_theme'
+html_theme = "sphinx_book_theme"
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -201,6 +201,8 @@ htmlhelp_basename = 'climada_petalsdoc'
 
 # -- Options for LaTeX output --------------------------------------------------
 
+latex_engine = "xelatex"
+
 # The paper size ('letter' or 'a4').
 #latex_paper_size = 'letter'
 
@@ -250,7 +252,7 @@ def setup(app):
     app.connect("autodoc-skip-member", skip)
     app.connect("autodoc-process-docstring", remove_module_docstring)
 
-    # Pass to the app if this is executed on ReadTheDocs
+    # Pass to the app if we are building this on ReadTheDocs
     on_rtd = True if (os.environ.get('READTHEDOCS') == 'True') else False
     app.add_config_value('readthedocs', on_rtd, 'env')
 
