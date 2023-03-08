@@ -35,7 +35,7 @@ from climada.util.files_handler import download_file
 class TestSupplyChain(unittest.TestCase):
     def setUp(self) -> None:
         client = Client()
-        
+
         tf = 'WIOTtest_Nov16_ROW'
         if not MRIOT_DIRECTORY.joinpath(tf).is_file():
             dsf = client.get_dataset_info(name=tf, status='test_dataset').files[0]
