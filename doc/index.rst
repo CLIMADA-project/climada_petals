@@ -83,6 +83,7 @@ Jump right in:
    tutorial/climada_hazard_drought
    Crop Production Risk <tutorial/climada_hazard_entity_Crop>
    Warning Module <tutorial/climada_engine_Warn>
+   tutorial/climada_hazard_glofas_rf
 
 
 .. toctree::
