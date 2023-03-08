@@ -514,8 +514,9 @@ class Warn:
         The categories are shared among all subplots, i.e. are obtained from
         np.unique(array_sub).
         Eg.:
-            array_sub = [[1, 2, 1.0, 2], [1, 2, 'a', 'a']]
-            -> categories mapping is [[0, 2, 1, 2], [0, 2, 3, 3]]
+
+        >>> array_sub = [[1, 2, 1.0, 2], [1, 2, 'a', 'a']]
+        >>> -> category mapping is [[0, 2, 1, 2], [0, 2, 3, 3]]
 
         Same category: 1 and '1'
         Different categories: 1 and 1.0

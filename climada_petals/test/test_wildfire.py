@@ -87,7 +87,7 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[7, 18821], 312.8)
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
         self.assertAlmostEqual(wf.fraction.max(), 1.0)
-        self.assertAlmostEqual(wf.fraction.min(), 0.0)    
+        self.assertAlmostEqual(wf.fraction.min(), 0.0)
 
     def test_hist_fire_season_firms_pass(self):
         """ Test set_hist_event_year_set """
@@ -112,7 +112,7 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
         self.assertAlmostEqual(wf.fraction.max(), 1.0)
         self.assertAlmostEqual(wf.fraction.min(), 0.0)
-        
+
     def test_from_hist_fire_season_firms_pass(self):
         """ Test set_hist_event_year_set """
         wf = WildFire()

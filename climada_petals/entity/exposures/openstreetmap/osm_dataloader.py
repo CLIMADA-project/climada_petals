@@ -367,7 +367,7 @@ class OSMFileQuery:
         constraint_dict = {
             'osm_keys' : osm_keys,
             'osm_query' : osm_query}
-        
+
         driver = ogr.GetDriverByName('OSM')
         data = driver.Open(self.osm_path)
         query = self._query_builder(geo_type, constraint_dict)
@@ -448,7 +448,7 @@ class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
 
-    area: tuple (xmin, ymin, xmax, ymax), list [xmin, ymin, xmax, ymax] 
+    area: tuple (xmin, ymin, xmax, ymax), list [xmin, ymin, xmax, ymax]
         or shapely.geometry.Polygon
     query: str
         must be of format '["key"]' or '["key"="value"]', etc.
@@ -493,7 +493,7 @@ class OSMApiQuery:
                 return api.query(query_clause)
             except overpy.exception.OverpassTooManyRequests:
                 if waiting_period < end_of_patience:
-                    LOGGER.warning("""Too many Overpass API requests - 
+                    LOGGER.warning("""Too many Overpass API requests -
                                    trying again in {waiting_period} seconds """)
                 else:
                     raise Exception("Overpass API is consistently unavailable")

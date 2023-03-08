@@ -101,18 +101,18 @@ class RiverFlood(Hazard):
         years : int list
             years that are considered
 
-        
+
         Returns
         -------
         haz : RiverFlood instance
-        
+
         Raises
         ------
         NameError
         """
-        
+
         haz = cls()
-        
+
         if years is None:
             years = [2000]
         if dph_path is None:
@@ -246,7 +246,7 @@ class RiverFlood(Hazard):
                                               flood_dph.time[i].dt.month,
                                               flood_dph.time[i].dt.day).toordinal()
                                   for i in event_index])
-            
+
         return haz
 
     def set_from_nc(self, *args, **kwargs):
@@ -254,7 +254,7 @@ class RiverFlood(Hazard):
         LOGGER.warning("The use of RiverFlood.set_from_nc is deprecated."
                        "Use LowFlow.from_nc instead.")
         self.__dict__ = RiverFlood.from_nc(*args, **kwargs).__dict__
-        
+
     def _select_event(self, time, years):
         """
         Selects events only in specific years and returns corresponding event
