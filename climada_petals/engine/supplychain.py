@@ -520,7 +520,7 @@ class SupplyChain:
                                  rebuild_tau = 60,
                                  main_inv_dur = 90,
                                  monetary_factor = 10**6,
-                                 temporal_units_by_step = 4,                 # SJ: Setting this to e.g. 5 can improve efficiency (computes only 1 every 5 steps)
+                                 temporal_units_by_step = 1,                 # SJ: Setting this to e.g. 5 can improve efficiency (computes only 1 every 5 steps)
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
                                  inventory_dict = None,
@@ -569,7 +569,7 @@ class SupplyChain:
                                  rebuild_tau = 60,
                                  main_inv_dur = 90,
                                  monetary_factor = 10**6,
-                                 temporal_units_by_step = 4,                 # SJ: Setting this to e.g. 5 can improve efficiency (computes only 1 every 5 steps)
+                                 temporal_units_by_step = 1,                 # SJ: Setting this to e.g. 5 can improve efficiency (computes only 1 every 5 steps)
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
                                  inventory_dict = None,
