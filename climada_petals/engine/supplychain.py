@@ -520,7 +520,7 @@ class SupplyChain:
                                  rebuild_tau = 60,
                                  main_inv_dur = 90,
                                  monetary_factor = 10**6,
-                                 temporal_units_by_step = 1,                 # SJ: Setting this to e.g. 5 can improve efficiency (computes only 1 every 5 steps)
+                                 temporal_units_by_step = 4,                 # SJ: Setting this to e.g. 5 can improve efficiency (computes only 1 every 5 steps)
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
                                  inventory_dict = None,
@@ -549,11 +549,59 @@ class SupplyChain:
             # impact.date[-1]-impact.date[0]+365 rows, each representing a simulated day
             # and (region,sector) multiindex columns. The values are the mean daily level of production in model.monetary_factor (ie 10^6 by default)
             # /!\ Note that the column of the result is in lexicographic order (contrary to self.stock_imp for instance)
-            self.indir_prod_impt_mat = pd.DataFrame(sim.production_evolution, columns=model.industries)
+            self.indir_prod_impt_mat = pd.DataFrame(sim.production_evolution, columns=model.industries).interpolate()
 
         elif io_approach == 'boario_separated':
-            pass
-            #"WIP"
+            self.mriot.reset_full()
+            self.mriot.calc_all()
+
+            # Temp fix for unset mriot.unit
+            # SJ : Loading mriot from saved file doesn't set unit. And it is required by boario (I can change that, but I think it is better if we set it properly)
+            if self.mriot.unit is None:
+                self.mriot.unit = "M. EUR"
+
+            model = ARIOPsiModel(pym_mrio=self.mriot,
+                                 # SJ: here are the parameters values that are set by default (Just as a reminder of what is present)
+                                 order_type = "alt",
+                                 alpha_base = 1.0,
+                                 alpha_max = 1.25,
+                                 alpha_tau = 365,
+                                 rebuild_tau = 60,
+                                 main_inv_dur = 90,
+                                 monetary_factor = 10**6,
+                                 temporal_units_by_step = 4,                 # SJ: Setting this to e.g. 5 can improve efficiency (computes only 1 every 5 steps)
+                                 iotable_year_to_temporal_unit_factor = 365,
+                                 infinite_inventories_sect = None,
+                                 inventory_dict = None,
+                                 kapital_vector = self.stock_exp,
+                                 kapital_to_VA_dict = None,
+                                 )
+
+            sim = Simulation(model,
+                             register_stocks=False,
+                             n_temporal_units_to_sim = impact.date[-1]-impact.date[0]+365, # SJ: Simulation ends one year after last event.
+                             separate_sims = False,
+                             )
+
+            events_list = [EventKapitalRecover(self.stock_imp.iloc[i] * model.monetary_factor,
+                                               recovery_time = 30,
+                                               recovery_function="linear",
+                                               occurrence = (impact.date[i]-impact.date[0] + 1),  # SJ: We make the first event happen on day 1 (at 0 might make trouble)
+                                               duration = 1,
+                                               ) for i in range(len(self.stock_imp))]
+
+            indir_prod_impt_df_list = []
+            for ev in events_list:
+                sim.add_event(ev)
+                sim.loop()
+                indir_prod_impt_df_list.append(pd.DataFrame(sim.production_evolution.copy(), columns=model.industries).interpolate())
+                sim.reset_sim_full()
+
+            # SJ : After the following line, self.indir_prod_impt_mat contains a *list* of pd.DataFrame with
+            # impact.date[-1]-impact.date[0]+365 rows, each representing a simulated day
+            # and (region,sector) multiindex columns. The values are the mean daily level of production in model.monetary_factor (ie 10^6 by default)
+            # /!\ Note that the column of the result is in lexicographic order (contrary to self.stock_imp for instance)
+            self.indir_prod_impt_mat = indir_prod_impt_df_list
 
         if io_approach not in ["boario_aggregated","boario_separated"]:
             self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(impact.frequency)
