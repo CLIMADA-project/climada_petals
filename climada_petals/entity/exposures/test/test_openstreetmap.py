@@ -83,14 +83,14 @@ class TestOSMRaw(unittest.TestCase):
         """test extract_from_bbox"""
         pass
 
-    def test_extract_from_poly(self):
-        """test extract_from_poly"""
+    def get_data_planetextract(self):
+        """test get_data_planetextract """
         pass
-    
-    def test_extract_from_shapes(self):
-        """test extract_from_shapes"""
+
+    def test_get_data_fileextract(self):
+        """test get_data_fileextract"""
         pass
-        
+
 class TestOSMFileQuery(unittest.TestCase):
     """Test OSMFileQuery class"""
 
@@ -106,14 +106,14 @@ class TestOSMFileQuery(unittest.TestCase):
                            'osm_query' : """highway='primary'"""}
         q1 = OSM_FQ._query_builder('points', constraint_dict1)
         self.assertEqual(q1, "SELECT osm_id,highway FROM points WHERE highway='primary'")
-        
+
     def test_retrieve(self):
         OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
         gdf = OSM_FQ.retrieve('lines', ['highway'], 'highway')
-        
+
         self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'geometry'])
-        
-        
+
+
     def test_retrieve_cis(self):
         OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
         gdf = OSM_FQ.retrieve_cis('road')
@@ -121,7 +121,7 @@ class TestOSMFileQuery(unittest.TestCase):
         self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'man_made', 'public_transport', 'bus', 'name',
        'geometry'])
 
-        
+
 class TestOSMApiQuery(unittest.TestCase):
     """Test OSMApiQuery class"""
 

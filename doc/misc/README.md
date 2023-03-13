@@ -1,7 +1,3 @@
-[![DOI](https://zenodo.org/badge/112729129.svg)](https://zenodo.org/badge/latestdoi/112729129)
-[![Build Status](http://ied-wcr-jenkins.ethz.ch/buildStatus/icon?job=petals_branches/develop)](http://ied-wcr-jenkins.ethz.ch/job/petals_branches/)
-[![Documentation build status](https://img.shields.io/readthedocs/climada-petals.svg?style=flat-square)](https://readthedocs.org/projects/climada-petals/builds/)
-
 # CLIMADA
 
 CLIMADA stands for **CLIM**ate **ADA**ptation and is a probabilistic natural catastrophe impact model, that also calculates averted damage (benefit) thanks to adaptation measures of any kind (from grey to green infrastructure, behavioural, etc.).

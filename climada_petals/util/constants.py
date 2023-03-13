@@ -42,7 +42,10 @@ __all__ = ['SYSTEM_DIR',
            'EXP_DEMO_H5',
            'WS_DEMO_NC']
 
-from climada.util.constants import *
+from climada.util.constants import (DEMO_DIR, SYSTEM_DIR, ENT_DEMO_TODAY, ENT_DEMO_FUTURE,
+        HAZ_DEMO_MAT, HAZ_DEMO_FL, ENT_TEMPLATE_XLS, HAZ_TEMPLATE_XLS, ONE_LAT_KM, EARTH_RADIUS_KM,
+        GLB_CENTROIDS_MAT, GLB_CENTROIDS_NC, ISIMIP_GPWV3_NATID_150AS, NATEARTH_CENTROIDS,
+        RIVER_FLOOD_REGIONS_CSV, TC_ANDREW_FL, HAZ_DEMO_H5, EXP_DEMO_H5, WS_DEMO_NC)
 
 
 HAZ_DEMO_FLDDPH = DEMO_DIR.joinpath('flddph_2000_DEMO.nc')
@@ -283,6 +286,7 @@ Currently implemented for:
 Note: If modified, make sure that key exists in osm.config file, under the
 respective geometry/-ies.
 """
+
 DICT_CIS_OSM =  {
         'education' : {
             'osm_keys' : ['amenity','building','name'],

@@ -100,7 +100,7 @@ class WildFire(Hazard):
 
     @dataclass
     class ProbaParams():
-        """ DataClass as container for parameters for generation of
+        """ Dataclass as container for parameters for generation of
         probabilistic events.
 
         PLEASE BE AWARE: Parameter values did not undergo any calibration.
@@ -110,7 +110,7 @@ class WildFire(Hazard):
         blurr_steps : int, default = 4
             steps with exponential decay for fire propagation matrix
         prop_proba : float, default = 0.21
-        max_it_propa : float, default = 500000
+        max_it_propa : int, default = 500000
         """
         blurr_steps: int = 4
         prop_proba: float = 0.21
@@ -155,12 +155,12 @@ class WildFire(Hazard):
         centroids : Centroids, optional
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
-            
+
         Returns
         ----------
         haz : WildFire instance
         """
-        
+
         haz = cls()
 
         # read and initialize data
@@ -194,14 +194,14 @@ class WildFire(Hazard):
         LOGGER.info('Computing intensity of %s fires.',
                     np.unique(df_firms.event_id).size)
         haz._calc_brightness(df_firms, centroids, res_centr)
-        
+
         return haz
 
     def set_hist_fire_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
+        """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
 
     @classmethod
     def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
@@ -245,7 +245,7 @@ class WildFire(Hazard):
         keep_all_fires : bool, optional
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
-            
+
         Returns
         ----------
         haz : WildFire instance
@@ -331,14 +331,14 @@ class WildFire(Hazard):
         haz.intensity = haz.intensity.tocsr()
         haz.fraction = haz.intensity.copy()
         haz.fraction.data.fill(1.0)
-        
+
         return haz
 
     def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_seasons_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__        
+        """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_seasons_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False):

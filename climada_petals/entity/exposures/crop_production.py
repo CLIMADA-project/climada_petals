@@ -725,11 +725,12 @@ def value_to_kcal(exp_cp, biomass=True):
     ----------
     exp_cp : CropProduction
         CropProduction exposure object with units tonnes per year ('t/y')
-    biomass : bool (optional)
+    biomass : bool, optional
         if true, KCAL_PER_TON['biomass'] is used (default,
         for FAO normalized crop production). If False, KCAL_PER_TON['drymatter']
         is used (best for crop model output in dry matter, default for
-        raw crop model output)
+        raw crop model output).
+        Default: True
 
     Returns
     -------
@@ -758,10 +759,10 @@ def value_to_usd(exp_cp, input_dir=None, yearrange=None):
     ----------
     exp_cp : CropProduction
         CropProduction exposure object with units tonnes per year ('t/y')
-    input_dir : Path or str (optional)
+    input_dir : Path or str, optional
         directory containing the input (FAO pricing) data,
         default: {CONFIG.exposures.crop_production.local_data}/Input/Exposure
-    yearrange : np.array (optional)
+    yearrange : np.array, optional
         year range for prices, can also be set to a single year
         Default is set to the arbitrary time range (2000, 2018)
         The data is available for the years 1991-2018
