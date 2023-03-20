@@ -25,4 +25,4 @@ This PR fixes #
 
 [contrib]: https://github.com/CLIMADA-project/climada_python/blob/main/CONTRIBUTING.md
 [testing]: https://climada-python.readthedocs.io/en/latest/guide/Guide_Continuous_Integration_and_Testing.html
-[linter]: https://climada-python.readthedocs.io/en/stable/guide/Guide_Continuous_Integration_and_Testing.html#3.C.--Static-Code-Analysis
+[linter]: https://climada-python.readthedocs.io/en/latest/guide/Guide_Continuous_Integration_and_Testing.html#Static-Code-Analysis
