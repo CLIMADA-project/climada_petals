@@ -10,7 +10,7 @@ This PR fixes #
 - [ ] Correct target branch selected (if unsure, select `develop`)
 - [ ] Descriptive pull request title added
 - [ ] Source branch up-to-date with target branch
-- [ ] [Documentation](https://climada-python.readthedocs.io/en/latest/guide/Guide_PythonDos-n-Donts.html#2.--Commenting-&-Documenting) updated
+- [ ] [Documentation](https://climada-python.readthedocs.io/en/latest/guide/Guide_PythonDos-n-Donts.html#Commenting-&-Documenting) updated
 - [ ] [Tests][testing] updated
 - [ ] [Tests][testing] passing
 - [ ] No new [linter issues][linter]
