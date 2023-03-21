@@ -533,7 +533,8 @@ class OSMFileQuery:
                          geometry - perhaps key is unknown.""")
 
         return gpd.GeoDataFrame(
-            features, columns=['osm_id', *constraint_dict['osm_keys'], 'geometry'])
+            features, columns=['osm_id', *constraint_dict['osm_keys'], 'geometry'],
+            crs='epsg:4326')
 
     def retrieve_cis(self, ci_type):
         """
@@ -613,7 +614,8 @@ class OSMApiQuery:
     
         return None
 
-    def _insistent_osm_api_query(self, query_clause, read_chunk_size=100000, end_of_patience=127):
+    def _insistent_osm_api_query(self, query_clause, read_chunk_size=100000,
+                                 end_of_patience=127):
         """Runs a single Overpass API query through overpy.Overpass.query.
         In case of failure it tries again after an ever increasing waiting period.
         If the waiting period surpasses a given limit an exception is raised.
