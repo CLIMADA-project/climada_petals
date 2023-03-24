@@ -33,6 +33,7 @@ import geopandas as gpd
 from scipy.stats import gumbel_r
 from scipy.interpolate import interp1d
 from shapely.geometry import Point
+import xesmf as xe
 
 from dantro.data_ops import is_operation
 from dantro.groups import OrderedDataGroup
@@ -508,6 +509,25 @@ def interpolate_space(
         method=method,
         kwargs=dict(fill_value=None),  # Extrapolate
     )
+
+
+@is_operation
+def regrid(
+    return_period: xr.DataArray,
+    flood_maps: xr.DataArray,
+    method: str = "bilinear",
+) -> xr.DataArray:
+    """Regrid the return period onto the flood maps grid"""
+    # Select lon/lat for flood maps
+    flood_maps = sel_lon_lat_slice(flood_maps, return_period)
+
+    # Perform regridding
+    regridder = xe.Regridder(
+        return_period.to_dataset(name="data"),
+        flood_maps.to_dataset(name="data"),
+        method=method,
+    )
+    return regridder(return_period).rename(return_period.name)
 
 
 @is_operation

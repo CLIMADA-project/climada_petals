@@ -19,6 +19,7 @@ from climada_petals.hazard.rf_glofas.transform_ops import (
     return_period,
     return_period_resample,
     interpolate_space,
+    regrid,
     flood_depth,
     reindex,
     sel_lon_lat_slice,
@@ -359,8 +360,8 @@ class TestDantroOpsGloFAS(unittest.TestCase):
             npt.assert_array_equal(scale, size)
 
     def test_interpolate_space(self):
-        """Test 'interpolate_space' operation"""
-        x = np.arange(4)
+        """Test 'interpolate_space' and 'regrid' operations"""
+        x = np.arange(4.0)
         y = np.flip(x)
         x_diff = x * 0.9
         y_diff = y * 0.8
@@ -381,11 +382,20 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         xx_diff, yy_diff = np.meshgrid(x_diff, y_diff, indexing="xy")
         expected_values = xx_diff + yy_diff
 
+        def _assert_result(result, rtol=1e-10, atol=1e-10):
+            """Check if result is as expected"""
+            npt.assert_array_equal(result["longitude"], x_diff)
+            npt.assert_array_equal(result["latitude"], y_diff)
+            # Interpolation causes some noise, so "allclose" is enough here
+            npt.assert_allclose(result.values, expected_values, rtol=rtol, atol=atol)
+
+        # 'interpolate_space'
         da_result = interpolate_space(da_values, da_coords)
-        npt.assert_array_equal(da_result["longitude"], x_diff)
-        npt.assert_array_equal(da_result["latitude"], y_diff)
-        # Interpolation causes some noise, so "allclost" is enough here
-        npt.assert_allclose(da_result.values, expected_values, rtol=1e-10)
+        _assert_result(da_result)
+
+        # 'regrid'
+        da_result = regrid(da_values, da_coords)
+        _assert_result(da_result, rtol=2e-5)  # Regridding has lower accuracy
 
     def test_apply_flopros(self):
         """Test 'apply_flopros' operation"""
