@@ -440,9 +440,13 @@ class SupplyChain:
             stock_to_prod_shock = np.repeat(1, self.mriot.x.shape[0])
 
         prod_shock = self.secs_stock_shock*stock_to_prod_shock
-        # if prod shock ends up being larger than one (so more than the total production is lost)
-        # then it becomes one. This can only happen if stock_to_prod_shock are too large.
-        prod_shock[prod_shock > 1] = 1
+        if prod_shock.sum(0).max() > 1:
+            warnings.warn(
+                """ Consider changing the provided provided stock-to-production losses ratios,
+            as some of them lead to production losses in some sectors to exceed the maximum sectorial 
+            production. For these sectors, total production loss is assumed."""
+            )
+            prod_shock[prod_shock > 1] = 1
         self.dir_prod_impt_mat = self.mriot.x.values.flatten()*prod_shock*self.conv_fac()
         self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(impact.frequency)
 
@@ -501,7 +505,8 @@ class SupplyChain:
         self.tot_prod_impt_mat = self.dir_prod_impt_mat.add(self.indir_prod_impt_mat)
         self.tot_prod_impt_eai = self.tot_prod_impt_mat.T.dot(impact.frequency)
 
-    def calc_production_impacts(self, impact, exposure, impacted_secs=None, io_approach=None):
+    def calc_production_impacts(self, impact, exposure, impacted_secs=None, 
+                                io_approach=None, stock_to_prod_shock=None):
         """Calculate direct, indirect and total production impacts.
 
         Parameters
@@ -518,7 +523,7 @@ class SupplyChain:
 
         self.calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
 
-        self.calc_direct_production_impacts(impact)
+        self.calc_direct_production_impacts(impact, stock_to_prod_shock)
         self.calc_indirect_production_impacts(impact, io_approach)
         self.calc_total_production_impacts(impact)
 
