@@ -38,7 +38,7 @@ class ImpfSetHeat(ImpactFunc, ImpactFuncSet):
         self.haz_type = haz_type
 
     @classmethod
-    def from_pandas_list(cls, pd_list_rr):
+    def from_pandas_list(cls, pd_list_rr, heat=True):
         """ This function sets the impact functions set for heat mortality.
         For heat mortality, impact functions refer to the relativ risk (RR)
         of dying at a given temperature.
@@ -72,8 +72,53 @@ class ImpfSetHeat(ImpactFunc, ImpactFuncSet):
             Impf.intensity = dat.temp
             Impf.mdd = dat.RRfit-1
             Impf.paa = np.ones(len(Impf.intensity))
-            Impf.haz_type = 'Heat'
+            if heat:
+                Impf.haz_type = 'Heat'
+                min_ind = np.where(dat.RRfit==dat.RRfit.min())[0][0]
+                Impf.mdd.iloc[0:min_ind] = 0.
+            else: Impf.haz_type = 'Cold'
 
             Impf_set.append(Impf)
 
         return Impf_set
+
+    @classmethod
+    def from_pandas(cls, df_rr, impf_i=None):
+        """ This function sets the impact functions set for heat mortality.
+        For heat mortality, impact functions refer to the relativ risk (RR)
+        of dying at a given temperature.
+
+        These impact functions can be calculated using quasi-Poisson regression
+        time series analyses with distributed lag nonlinear models (DLNM).
+        A R-tutorial is available at https://pubmed.ncbi.nlm.nih.gov/30829832/
+        (Vicedo-Cabrera et al. 2019, DOI: 10.1097/EDE.0000000000000982)
+
+        Parameters
+        ----------
+        pd_list_RR : list
+            list of pandas dataframes. List needs to be in line with
+            lat/lon arrays of exposure and hazard. Each pd.dataframe()
+            must contain a column 'temp' and 'RRfit'.
+
+        Returns
+        -------
+        Impf : climada.entity.impact_func.ImpfHeat instance
+
+        """
+        Impf_set = ImpactFuncSet()
+        Impf = cls()
+
+        if impf_i is not None:
+            Impf.id = impf_i
+        else: Impf.id = 1
+        Impf.name = "Relativ risk for"
+        Impf.intensity_unit = "C"
+        Impf.intensity = df_rr.temp
+        Impf.mdd = df_rr.RRfit-1
+        Impf.paa = np.ones(len(Impf.intensity))
+        Impf.haz_type = 'Heat'
+
+        Impf_set.append(Impf)
+
+        return Impf_set
+

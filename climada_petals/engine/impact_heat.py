@@ -78,7 +78,7 @@ class ImpactHeat(Impact, ImpactFreqCurve):
         n_years = int(imp_mat.shape[0]/365)
 
         # impacts are calculated for each day & exposure. Correct values are
-        # there for on the diagonal of the tile of each daily array
+        # therefor on the diagonal of the tile of each daily array
         year_stack = np.stack(np.vsplit(
             np.concatenate(np.hsplit(imp_mat, n_loc), axis=0),
             n_loc*n_years), axis=2)

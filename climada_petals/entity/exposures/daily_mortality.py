@@ -97,6 +97,59 @@ class DailyMortality(Exposures):
         exp.check()
 
         return exp
+    
+    @classmethod
+    def from_pandas(cls, df, lat, lon, impf_i=None):
+        """ Set up exposure from daily mortality time series
+
+        Parameters
+        ----------
+        pd_list : list
+            list of pandas dataframes. List needs to be in line with
+            lat/lon arrays. Each pd.dataframe() must contain a column 'date'
+            and 'deaths'.
+        lat : np.array()
+            Array of latitudes
+        lon : np.array()
+            Array of longitudes
+
+        Returns
+        -------
+        exp : Exposure instance with daily mortality
+                The category_id refers to the day-of-year
+
+        """
+
+
+        exp_loc = pd.DataFrame(columns = ['value', 'latitude', 'longitude',
+                                         'impf_', 'category_id'])
+        # calculate mean daily mortality
+        mort_clean = _clean_data_to_365day_year(df)
+        n_years = int(mort_clean.shape[0]/365)
+        mort_doy = np.reshape(mort_clean.deaths.values, (n_years, 365))
+        mort_doy_mean = np.nanmean(mort_doy,0)
+
+        # fill expsure dataframe
+        exp_loc['value'] = mort_doy_mean
+        exp_loc['latitude'] = np.repeat(lat, 365)
+        exp_loc['longitude'] = np.repeat(lon, 365)
+        if impf_i is not None:
+            exp_loc['impf_'] = impf_i
+        else: exp_loc['impf_'] = 1
+        exp_loc['category_id'] = np.arange(1, 366)
+
+        exp_loc.reset_index()
+        # create expsure
+        exp = Exposures(exp_loc)
+        exp.set_geometry_points()
+        tag = Tag()
+        tag.description = 'Mean daily mortality counts for each location. \
+                            category_id refers to the doy-of-year.'
+        exp.tag=tag,
+        exp.value_unit='# lives'
+        exp.check()
+
+        return exp
 
 def _remove_leap_days(data):
     date_series = pd.to_datetime(data.date)
