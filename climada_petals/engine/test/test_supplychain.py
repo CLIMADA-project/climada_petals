@@ -238,13 +238,14 @@ class TestSupplyChain(unittest.TestCase):
 
         sup.calc_production_impacts(impact, exp, impacted_secs=impacted_secs, io_approach='ghosh')
 
-        self.assertAlmostEqual(sup.tot_prod_impt_mat.values.sum(), 
-                               sup.indir_prod_impt_mat.values.sum()+sup.dir_prod_impt_mat.values.sum(), places=0)
-        self.assertAlmostEqual(sup.tot_prod_impt_eai.values.sum(), 
-                               sup.indir_prod_impt_eai.values.sum()+sup.dir_prod_impt_eai.values.sum(), places=0)
+        self.assertAlmostEqual(sup.tot_prod_impt_mat.values.sum(),
+                               sup.indir_prod_impt_mat.values.sum()+sup.dir_prod_impt_mat.values.sum(),
+                               places=0)
+        self.assertAlmostEqual(sup.tot_prod_impt_eai.values.sum(),
+                               sup.indir_prod_impt_eai.values.sum()+sup.dir_prod_impt_eai.values.sum(),
+                               places=0)
 
 ## Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestSupplyChain)
     unittest.TextTestRunner(verbosity=2).run(TESTS)
-    

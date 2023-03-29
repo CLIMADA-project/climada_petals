@@ -440,7 +440,7 @@ class SupplyChain:
             stock_to_prod_shock = np.repeat(1, self.mriot.x.shape[0])
 
         prod_shock = self.secs_stock_shock*stock_to_prod_shock
-        if prod_shock.sum(0).max() > 1:
+        if not np.all(prod_shock <= 1):
             warnings.warn(
                 """ Consider changing the provided provided stock-to-production losses ratios,
             as some of them lead to production losses in some sectors to exceed the maximum sectorial 
