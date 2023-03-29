@@ -62,6 +62,13 @@ Jump right in:
    :maxdepth: 1
 
    glofas_rf
+   
+
+.. toctree::
+   :caption: API Reference
+   :hidden:
+
+   Python Modules <climada_petals/climada_petals>
 
 
 .. toctree::
@@ -76,6 +83,7 @@ Jump right in:
    tutorial/climada_hazard_drought
    Crop Production Risk <tutorial/climada_hazard_entity_Crop>
    Warning Module <tutorial/climada_engine_Warn>
+   tutorial/climada_hazard_glofas_rf
 
 
 .. toctree::
@@ -83,7 +91,6 @@ Jump right in:
    :hidden:
    :maxdepth: 1
 
-   Python Modules <climada_petals/climada_petals>
    README <misc/README>
    List of Authors <misc/AUTHORS>
    Contribution Guide <https://climada-python.readthedocs.io/en/latest/misc/CONTRIBUTING.html>
