@@ -23,8 +23,7 @@ pipeline {
             sh '''#!/bin/bash
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
-            mamba install rioxarray dantro xesmf matplotlib>3.4
-            pip install cdsapi
+            pip install cdsapi dantro matplotlib>3.4
             rm -rf tests_xml/
             rm -rf coverage/
             python -m coverage run tests_runner.py unit
