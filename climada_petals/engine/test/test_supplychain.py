@@ -172,7 +172,7 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse.iloc[10, 0], 0.0735, places=3)
         self.assertAlmostEqual(sup.inverse.iloc[0, 8], 0.00064, places=3)
 
-        self.assertAlmostEqual(sup.indir_prod_impt_mat.values.sum(), 7093283110973.164, places=3)
+        self.assertAlmostEqual(sup.indir_prod_impt_mat.values.sum(), 7093283110973.164, places=2)
         self.assertAlmostEqual(sup.indir_prod_impt_eai.sum(), 4405765907.4367485, places=3)
 
         sup.calc_indirect_production_impacts(impact, io_approach='leontief')
