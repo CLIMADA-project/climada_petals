@@ -44,7 +44,7 @@ DEFAULT_DATA_DIR = SYSTEM_DIR / "glofas-computation"
 DEFAULT_SETUP_CFG = Path(__file__).parent.absolute() / "setup.yml"
 DEFAULT_GLOFAS_CFG = Path(__file__).parent.absolute() / "rf_glofas.yml"
 
-# pylint: disable=too-few-public-method
+# pylint: disable=too-few-public-methods
 class GeoDataFrameLoaderMixin:
     """A Mixin for loading GeoDataFrames"""
 
@@ -60,7 +60,6 @@ class GeoDataFrameLoaderMixin:
         data = gpd.read_file(path, engine=engine, **kwargs)
         return TargetCls(data=data, attrs=dict(filepath=path))
 
-# pylint: disable-next=too-few-public-methods
 class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
     """A DataManager that can load many different file formats"""
 
@@ -70,7 +69,7 @@ class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
     _NEW_CONTAINER_CLS = XrDataContainer
     """Which container class to use when adding new containers"""
 
-# pylint: enable=too-few-public-method
+# pylint: enable=too-few-public-methods
 
 @contextmanager
 def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
