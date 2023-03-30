@@ -666,4 +666,5 @@ if __name__ == "__main__":
     TESTS.addTests(
         unittest.TestLoader().loadTestsFromTestCase(TestDantroOpsGloFASDownload)
     )
+    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestDantroOpsSaveFile))
     unittest.TextTestRunner(verbosity=2).run(TESTS)
