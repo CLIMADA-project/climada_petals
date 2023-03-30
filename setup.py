@@ -76,6 +76,7 @@ setup(
         'tabulate',
         'tqdm',
         'xarray',
+        'xesmf',
         'xlrd',
         'xlsxwriter',
         'xmlrunner'
