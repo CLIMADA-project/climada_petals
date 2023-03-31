@@ -23,6 +23,7 @@ pipeline {
             sh '''#!/bin/bash
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
+            mamba install xesmf -c conda-forge -y
             pip install cdsapi dantro matplotlib>3.4 rioxarray ruamel.yaml
             rm -rf tests_xml/
             rm -rf coverage/
