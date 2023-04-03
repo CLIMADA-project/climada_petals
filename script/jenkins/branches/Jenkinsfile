@@ -24,7 +24,7 @@ pipeline {
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
             mamba install xesmf -c conda-forge -y
-            pip install --upgrade cdsapi dantro matplotlib>3.4 rioxarray ruamel.yaml
+            pip install --upgrade cdsapi dantro matplotlib==3.5.* rioxarray ruamel.yaml
             rm -rf tests_xml/
             rm -rf coverage/
             python -m coverage run tests_runner.py unit
