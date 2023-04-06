@@ -60,7 +60,11 @@ class GeoDataFrameLoaderMixin:
         data = gpd.read_file(path, engine=engine, **kwargs)
         return TargetCls(data=data, attrs=dict(filepath=path))
 
-class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
+
+# pylint: disable-next=too-few-public-methods
+class ClimadaDataManager(
+    AllAvailableLoadersMixin, GeoDataFrameLoaderMixin, dtr.DataManager
+):
     """A DataManager that can load many different file formats"""
 
     _HDF5_DSET_DEFAULT_CLS = XrDataContainer
@@ -69,7 +73,9 @@ class ClimadaDataManager(AllAvailableLoadersMixin, dtr.DataManager):
     _NEW_CONTAINER_CLS = XrDataContainer
     """Which container class to use when adding new containers"""
 
+
 # pylint: enable=too-few-public-methods
+
 
 @contextmanager
 def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
