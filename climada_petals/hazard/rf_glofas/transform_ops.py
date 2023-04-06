@@ -644,6 +644,9 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
         #       be sane.
         hazard = np.nan_to_num(hazard)
 
+        # Handle infinite return periods
+        return_period = np.clip(return_period, a_min=1, a_max=np.max(return_periods))
+
         # Use extrapolation and have 0.0 as minimum value
         ret = interp1d(
             return_periods,
