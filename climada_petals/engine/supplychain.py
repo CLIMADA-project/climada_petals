@@ -356,8 +356,8 @@ class SupplyChain:
         mriot_dir : pathlib.PosixPath
             Path to the MRIOT folder
         del_downloads : bool
-            If the downloaded files are deleted after saving the parsed data. Default is True.
-            WIOD16 data and OECD21 data are downloaded as group of years
+            If the downloaded files are deleted after saving the parsed data. Default is
+            True. WIOD16 data and OECD21 data are downloaded as group of years
 
         Returns
         -------
@@ -409,15 +409,15 @@ class SupplyChain:
 
     def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs):
         """TODO: better docstring
-        This function needs to return an object equivalent to self.direct_imp_mat starting from
-        a standard CLIMADA impact calculation. Will call this object self.impacts_to_sectors.
-        This object will also compute a sector exposure.
+        This function needs to return an object equivalent to self.direct_imp_mat
+        starting from a standard CLIMADA impact calculation. Will call this object
+        self.impacts_to_sectors. This object will also compute a sector exposure.
         """
 
         if impacted_secs is None:
             warnings.warn(
-                """ No impacted sectors were specified.
-            It is assumed that the exposure is representative of all sectors in the IO table """
+                "No impacted sectors were specified. It is assumed that the exposure is "
+                "representative of all sectors in the IO table"
             )
             impacted_secs = self.mriot.get_sectors().tolist()
 
@@ -444,9 +444,10 @@ class SupplyChain:
             secs_prod = self.mriot.x.loc[(mriot_reg_name, impacted_secs), :]
             secs_prod_ratio = (secs_prod / secs_prod.sum()).values.flatten()
 
-            # Overall sectorial stock exposure and impact are distributed among subsectors
-            # proportionally to their their own contribution to overall sectorial production:
-            # Sum needed below in case of many ROWs, which are aggregated into one country as per WIOD table.
+            # Overall sectorial stock exposure and impact are distributed among
+            # subsectors proportionally to their their own contribution to overall
+            # sectorial production: Sum needed below in case of many ROWs, which are
+            # aggregated into one country as per WIOD table.
             self.secs_stock_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_value_reg_id * secs_prod_ratio
             )
@@ -467,9 +468,10 @@ class SupplyChain:
         prod_shock = self.secs_stock_shock * stock_to_prod_shock
         if not np.all(prod_shock <= 1):
             warnings.warn(
-                """ Consider changing the provided provided stock-to-production losses ratios,
-            as some of them lead to production losses in some sectors to exceed the maximum sectorial 
-            production. For these sectors, total production loss is assumed."""
+                "Consider changing the provided provided stock-to-production losses "
+                "ratios, as some of them lead to production losses in some sectors to "
+                "exceed the maximum sectorial production. For these sectors, total "
+                "production loss is assumed."
             )
             prod_shock[prod_shock > 1] = 1
         self.dir_prod_impt_mat = (
@@ -477,10 +479,11 @@ class SupplyChain:
         )
         self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(impact.frequency)
 
-    # TODO: Consider saving results in a dict {io_approach: results} so one can run and save various
-    # model without reloading the IOT
+    # TODO: Consider saving results in a dict {io_approach: results} so one can run and
+    # save various model without reloading the IOT
     def calc_indirect_production_impacts(self, impact, io_approach):
-        """Calculate indirect production impacts according to the specified input-output appraoch.
+        """Calculate indirect production impacts according to the specified input-output
+        appraoch.
 
         Parameters
         ----------
@@ -576,8 +579,8 @@ class SupplyChain:
 
     def calc_matrixes(self, io_approach):
         """
-        Build technical coefficient and Leontief inverse matrixes (if Leontief approach) or
-        allocation coefficients and Ghosh matrixes (if Ghosh approach).
+        Build technical coefficient and Leontief inverse matrixes (if Leontief approach)
+        or allocation coefficients and Ghosh matrixes (if Ghosh approach).
         """
 
         io_model = {
@@ -606,8 +609,8 @@ class SupplyChain:
         else:
             conv_factor = 1
             warnings.warn(
-                """ No known unit was provided.
-            It is assumed that values do not need to be converted """
+                "No known unit was provided. It is assumed that values do not need to "
+                "be converted."
             )
         return conv_factor
 
@@ -635,8 +638,8 @@ class SupplyChain:
 
         else:
             warnings.warn(
-                """ For a correct calculation the format of regions'
-            names in exposure and the IO table must match. """
+                "For a correct calculation the format of regions' names in exposure and "
+                "the IO table must match."
             )
             mriot_reg_name = exp_regid
 
