@@ -498,9 +498,9 @@ class Warn:
         # check if lat and lon can be represented accurately enough
         # with a grid with grid resolution grid_res_lat and grid_res_lon
         check_lat = (
-            (np.mod(np.diff(np.sort(np.unique(lon))-lon.min()), grid_res_lon).max())
+            (np.mod(np.diff(np.sort(np.unique(lat))-lat.min()), grid_res_lat).max())
             <
-            (grid_res_lon * res_rel_error)
+            (grid_res_lat * res_rel_error)
             )
         check_lon = (
             (np.mod(np.diff(np.sort(np.unique(lon))-lon.min()), grid_res_lon).max())
