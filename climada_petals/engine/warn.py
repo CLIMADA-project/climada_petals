@@ -528,8 +528,9 @@ class Warn:
         map_rec = np.zeros((len(un_y), len(un_x)))
         map_rec[i, j] = val
 
-        xx, yy = np.meshgrid(un_x, un_y)
-        coord_rec = np.vstack((yy.flatten(), xx.flatten())).transpose()
+        coord_rec = np.vstack(
+            [ar.flatten() for ar in np.meshgrid(un_y, un_x)]
+            ).transpose()
 
         return map_rec, coord_rec
 
