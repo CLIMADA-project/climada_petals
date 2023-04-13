@@ -463,8 +463,10 @@ class Warn:
 
     @staticmethod
     def zeropadding(lat, lon, val, res_rel_error=0.01):
-        """Produces a rectangle shaped map from a non-rectangular map (e.g., country). Therefore,
-        a rectangular around the countries' boundary is shaped and padded with zeros where no values
+        """Produces a rectangular shaped map from a non-rectangular map (e.g., country). For this, 
+        a regular grid is created in the rectangle enclosing the non-rectangular map. The values are 
+        mapped onto the regular grid according to their coordinates. The regular gird is filled with 
+        zeros where no values are defined.
         are defined. This only works if the lat lon values of the non-rectangular map can be accurately
         represented on a grid with a regular resolution.
 
