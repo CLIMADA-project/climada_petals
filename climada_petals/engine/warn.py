@@ -463,12 +463,12 @@ class Warn:
 
     @staticmethod
     def zeropadding(lat, lon, val, res_rel_error=0.01):
-        """Produces a rectangular shaped map from a non-rectangular map (e.g., country). For this, 
-        a regular grid is created in the rectangle enclosing the non-rectangular map. The values are 
-        mapped onto the regular grid according to their coordinates. The regular gird is filled with 
+        """Produces a rectangular shaped map from a non-rectangular map (e.g., country). For this,
+        a regular grid is created in the rectangle enclosing the non-rectangular map. The values are
+        mapped onto the regular grid according to their coordinates. The regular gird is filled with
         zeros where no values are defined.
-        are defined. This only works if the lat lon values of the non-rectangular map can be accurately
-        represented on a grid with a regular resolution.
+        are defined. This only works if the lat lon values of the non-rectangular map can be
+        accurately represented on a grid with a regular resolution.
 
         Parameters
         ----------
@@ -493,7 +493,7 @@ class Warn:
         """
         lat = np.round(lat, decimals=12)
         lon = np.round(lon, decimals=12)
-        
+
         grid_res_lon, grid_res_lat = u_get_resolution(lon, lat)
         # check if lat and lon can be represented accurately enough
         # with a grid with grid resolution grid_res_lat and grid_res_lon
