@@ -498,14 +498,14 @@ class Warn:
         # check if lat and lon can be represented accurately enough
         # with a grid with grid resolution grid_res_lat and grid_res_lon
         check_lat = (
-            (np.mod(np.diff(np.sort(np.unique(lat))-lat.min()), grid_res_lat).max())
+            np.abs(np.mod(np.diff(np.sort(np.unique(lat))-lat.min()), grid_res_lat).max())
             <
-            (grid_res_lat * res_rel_error)
+            np.abs(grid_res_lat * res_rel_error)
             )
         check_lon = (
-            (np.mod(np.diff(np.sort(np.unique(lon))-lon.min()), grid_res_lon).max())
+            np.abs(np.mod(np.diff(np.sort(np.unique(lon))-lon.min()), grid_res_lon).max())
             <
-            (grid_res_lon * res_rel_error)
+            np.abs(grid_res_lon * res_rel_error)
             )
         if not check_lon or not check_lat:
             raise ValueError('The provided lat and lon values cannot be ' +
