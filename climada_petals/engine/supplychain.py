@@ -140,7 +140,7 @@ def calc_B(Z, x):
             # Ignore devide by zero warning, we set to 0 afterwards
             warnings.filterwarnings("ignore", message="divide by zero")
             recix = 1 / x
-        recix[recix.isinf()] = 0
+        recix[np.isinf(recix)] = 0
 
     if isinstance(Z, pd.DataFrame):
         return pd.DataFrame(Z.to_numpy() * recix, index=Z.index, columns=Z.columns)
