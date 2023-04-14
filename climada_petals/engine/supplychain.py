@@ -137,9 +137,8 @@ def calc_B(Z, x):
         recix = 0
     else:
         with warnings.catch_warnings():
-            # catch the divide by zero warning
-            # we deal wit that by setting to 0 afterwards
-            warnings.simplefilter("ignore")
+            # Ignore devide by zero warning, we set to 0 afterwards
+            warnings.filterwarnings("ignore", message="divide by zero")
             recix = 1 / x
         recix[recix.isinf()] = 0
 
