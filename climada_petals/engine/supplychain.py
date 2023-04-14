@@ -274,8 +274,9 @@ def parse_mriot(mriot_type, downloaded_file):
         mriot = pymrio.parse_oecd(path=downloaded_file)
         mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
 
+    else:
+        raise RuntimeError(f"Unknown mriot_type: {mriot_type}")
     return mriot
-
 
 class SupplyChain:
     """SupplyChain class.
@@ -540,6 +541,9 @@ class SupplyChain:
                 )
                 * self.conv_fac()
             )
+
+        else:
+            raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
         self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(impact.frequency)
 
