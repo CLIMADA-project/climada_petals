@@ -475,7 +475,7 @@ class SupplyChain:
             )
             prod_shock[prod_shock > 1] = 1
         self.dir_prod_impt_mat = (
-            self.mriot.x.values.flatten() * prod_shock * self.conv_fac()
+            self.mriot.x.values.flatten() * prod_shock * self.conversion_factor()
         )
         self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(impact.frequency)
 
@@ -503,12 +503,12 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        self.calc_matrixes(io_approach=io_approach)
+        self.calc_matrices(io_approach=io_approach)
 
-        # find a better place to locate conv_fac, once and for all cases
+        # find a better place to locate conversion_factor, once and for all cases
         if io_approach == "leontief":
             degr_demand = (
-                self.secs_stock_shock * self.mriot.Y.values.flatten() * self.conv_fac()
+                self.secs_stock_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
             )
 
             self.indir_prod_impt_mat = pd.concat(
@@ -522,7 +522,7 @@ class SupplyChain:
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
             degr_value_added = (
-                self.secs_stock_shock * value_added.values * self.conv_fac()
+                self.secs_stock_shock * value_added.values * self.conversion_factor()
             )
 
             self.indir_prod_impt_mat = pd.concat(
@@ -539,7 +539,7 @@ class SupplyChain:
                     self.secs_stock_shock.dot(self.inverse)
                     * self.mriot.x.values.flatten()
                 )
-                * self.conv_fac()
+                * self.conversion_factor()
             )
 
         else:
@@ -580,7 +580,7 @@ class SupplyChain:
         self.calc_indirect_production_impacts(impact, io_approach)
         self.calc_total_production_impacts(impact)
 
-    def calc_matrixes(self, io_approach):
+    def calc_matrices(self, io_approach):
         """
         Build technical coefficient and Leontief inverse matrixes (if Leontief approach)
         or allocation coefficients and Ghosh matrixes (if Ghosh approach).
@@ -597,7 +597,7 @@ class SupplyChain:
         self.coeffs = coeff_func(self.mriot.Z, self.mriot.x)
         self.inverse = inv_func(self.coeffs)
 
-    def conv_fac(self):
+    def conversion_factor(self):
         """
         Convert values in MRIOT.
         """
@@ -608,14 +608,14 @@ class SupplyChain:
         elif isinstance(self.mriot.unit, str):
             unit = self.mriot.unit
         if unit in ["M.EUR", "Million USD"]:
-            conv_factor = 1e6
+            conversion_factor = 1e6
         else:
-            conv_factor = 1
+            conversion_factor = 1
             warnings.warn(
                 "No known unit was provided. It is assumed that values do not need to "
                 "be converted."
             )
-        return conv_factor
+        return conversion_factor
 
     def map_exp_to_mriot(self, exp_regid, mriot_type):
         """
