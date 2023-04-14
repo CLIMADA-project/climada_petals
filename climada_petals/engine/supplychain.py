@@ -132,7 +132,7 @@ def calc_B(Z, x):
     """
 
     if isinstance(x, (pd.DataFrame, pd.Series)):
-        x = x.values
+        x = x.to_numpy()
     if (type(x) is not np.ndarray) and (x == 0):
         recix = 0
     else:
@@ -141,11 +141,10 @@ def calc_B(Z, x):
             # we deal wit that by setting to 0 afterwards
             warnings.simplefilter("ignore")
             recix = 1 / x
-        recix[recix == np.inf] = 0
-        recix = recix.reshape((-1, 1))
+        recix[recix.isinf()] = 0
 
     if isinstance(Z, pd.DataFrame):
-        return pd.DataFrame(Z.values * recix, index=Z.index, columns=Z.columns)
+        return pd.DataFrame(Z.to_numpy() * recix, index=Z.index, columns=Z.columns)
     else:
         return Z * recix
 
@@ -436,7 +435,7 @@ class SupplyChain:
         for exp_regid in exposure.gdf.region_id.unique():
             exp_bool = exposure.gdf.region_id == exp_regid
             tot_value_reg_id = exposure.gdf[exp_bool].value.sum()
-            # consider using impact.impact_reg_agg when merged
+            # consider using impact.impact_reg_agg when merged - anyway check for the presence of imp_mat
             tot_imp_reg_id = impact.imp_mat[:, np.where(exp_bool)[0]].sum(1)
 
             mriot_reg_name = self.map_exp_to_mriot(exp_regid, mriot_type)
