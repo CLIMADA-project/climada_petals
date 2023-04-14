@@ -333,6 +333,9 @@ class TestWarn(unittest.TestCase):
         self.assertEqual(reduced_matrix[0, 2], 2)
         self.assertEqual(reduced_matrix[2, 2], 6)
         self.assertEqual(np.sum(reduced_matrix), np.sum(data))
+        self.assertEqual(reduced_matrix.size*2, coord.size)
+        np.testing.assert_array_equal(np.unique(coord[:,1]), np.arange(0,3,1))
+        np.testing.assert_array_equal(np.unique(coord[:,1]), np.arange(0,3,1))
 
     def test_zeropadding_island(self):
         row = np.array([1, 1, 8, 9])
@@ -345,6 +348,9 @@ class TestWarn(unittest.TestCase):
         self.assertEqual(reduced_matrix[0, 0], 20)
         self.assertEqual(reduced_matrix[8, 5], 32)
         self.assertEqual(np.sum(reduced_matrix), np.sum(data))
+        self.assertEqual(reduced_matrix.size*2, coord.size)
+        np.testing.assert_array_equal(np.unique(coord[:,0]), np.arange(1,10,1))
+        np.testing.assert_array_equal(np.unique(coord[:,1]), np.arange(3,9,1))
 
     def test_zeropadding_resolution_error(self):
         row = np.array([0, 0, 1.125, 2.3333, 2.3333, 2.3333])
