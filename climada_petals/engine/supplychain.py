@@ -314,10 +314,10 @@ class SupplyChain:
         mriot=None,
         inverse=None,
         coeffs=None,
-        direct_imp_mat=None,
-        direct_eai=None,
-        indirect_imp_mat=None,
-        indirect_eai=None,
+        dir_prod_impt_mat=None,
+        dir_prod_impt_eai=None,
+        indir_prod_impt_mat=None,
+        indir_prod_impt_eai=None,
         total_imp_mat=None,
         total_eai=None,
     ):
@@ -326,14 +326,14 @@ class SupplyChain:
         self.mriot = pymrio.IOSystem() if mriot is None else mriot
         self.inverse = pd.DataFrame([]) if inverse is None else inverse
         self.coeffs = pd.DataFrame([]) if coeffs is None else coeffs
-        self.direct_imp_mat = (
-            pd.DataFrame([]) if direct_imp_mat is None else direct_imp_mat
+        self.dir_prod_impt_mat = (
+            pd.DataFrame([]) if dir_prod_impt_mat is None else dir_prod_impt_mat
         )
-        self.direct_eai = pd.DataFrame([]) if direct_eai is None else direct_eai
-        self.indirect_imp_mat = (
-            pd.DataFrame([]) if indirect_imp_mat is None else indirect_imp_mat
+        self.dir_prod_impt_eai = pd.DataFrame([]) if dir_prod_impt_eai is None else dir_prod_impt_eai
+        self.indir_prod_impt_mat = (
+            pd.DataFrame([]) if indir_prod_impt_mat is None else indir_prod_impt_mat
         )
-        self.indirect_eai = pd.DataFrame([]) if indirect_eai is None else indirect_eai
+        self.indir_prod_impt_eai = pd.DataFrame([]) if indir_prod_impt_eai is None else indir_prod_impt_eai
         self.total_imp_mat = (
             pd.DataFrame([]) if total_imp_mat is None else total_imp_mat
         )
