@@ -458,7 +458,7 @@ class SupplyChain:
             self.secs_stock_exp.values
         ).fillna(0)
 
-    def calc_direct_production_impacts(self, impact, stock_to_prod_shock=None):
+    def calc_direct_production_impacts(self, stock_to_prod_shock=None):
         """Calculate direct production impacts."""
 
         if stock_to_prod_shock is None:
@@ -476,17 +476,16 @@ class SupplyChain:
         self.dir_prod_impt_mat = (
             self.mriot.x.values.flatten() * prod_shock * self.conversion_factor()
         )
-        self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(impact.frequency)
 
     # TODO: Consider saving results in a dict {io_approach: results} so one can run and
     # save various model without reloading the IOT
-    def calc_indirect_production_impacts(self, impact, io_approach):
+    def calc_indirect_production_impacts(self, event_ids, io_approach):
         """Calculate indirect production impacts according to the specified input-output
         appraoch.
 
         Parameters
         ----------
-        impact : climada.engine.Impact
+        event_ids : climada.engine.Impact
         exposures : climada.entity.Exposures
         io_approach : str
             The adopted input-output modeling approach.
@@ -513,10 +512,10 @@ class SupplyChain:
             self.indir_prod_impt_mat = pd.concat(
                 [
                     pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
-                    for i in range(len(impact.event_id))
+                    for i in range(len(event_ids))
                 ],
                 axis=1,
-            ).T.set_index(impact.event_id)
+            ).T.set_index(event_ids)
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
@@ -527,10 +526,10 @@ class SupplyChain:
             self.indir_prod_impt_mat = pd.concat(
                 [
                     calc_x_from_G(self.inverse, degr_value_added.iloc[i])
-                    for i in range(len(impact.event_id))
+                    for i in range(len(event_ids))
                 ],
                 axis=1,
-            ).T.set_index(impact.event_id)
+            ).T.set_index(event_ids)
 
         elif io_approach == "eeioa":
             self.indir_prod_impt_mat = (
@@ -544,12 +543,9 @@ class SupplyChain:
         else:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
-        self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(impact.frequency)
-
-    def calc_total_production_impacts(self, impact):
+    def calc_total_production_impacts(self):
         """Calculate total production impacts."""
         self.tot_prod_impt_mat = self.dir_prod_impt_mat.add(self.indir_prod_impt_mat)
-        self.tot_prod_impt_eai = self.tot_prod_impt_mat.T.dot(impact.frequency)
 
     def calc_production_impacts(
         self,
@@ -575,9 +571,19 @@ class SupplyChain:
 
         self.calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
 
-        self.calc_direct_production_impacts(impact, stock_to_prod_shock)
-        self.calc_indirect_production_impacts(impact, io_approach)
-        self.calc_total_production_impacts(impact)
+        self.calc_direct_production_impacts(stock_to_prod_shock)
+        self.calc_indirect_production_impacts(impact.event_id, io_approach)
+        self.calc_total_production_impacts()
+
+    def calc_production_eai(self, frequencies):
+        if self.dir_prod_impt_eai:
+            self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(frequencies)
+
+        if self.indir_prod_impt_eai:
+            self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(frequencies)
+
+        if tot_prod_impt_mat:
+            self.tot_prod_impt_eai = self.tot_prod_impt_mat.T.dot(frequencies)
 
     def calc_matrices(self, io_approach):
         """
