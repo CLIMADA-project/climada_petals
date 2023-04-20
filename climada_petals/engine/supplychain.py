@@ -97,8 +97,10 @@ def parse_mriot_from_df(mriot_df=None, col_iso3=None, col_sectors=None,
                     )
 
     # SJ: Just set negative values in Y to 0 and recalc system
+    # TODO: make it maybe a common check
     if (Y.sum(axis=1) < 0).any():
-        LOGGER.debug("Found negatives values in total final demand, setting them to 0 and recomputing production vector")
+        LOGGER.debug("Found negatives values in total final demand,"
+                     "setting them to 0 and recomputing production vector")
         Y.loc[Y.sum(axis=1) < 0] = Y.loc[Y.sum(axis=1) < 0].clip(lower=0)
 
     return Z, Y, x
@@ -552,11 +554,16 @@ class SupplyChain:
             self.indir_prod_impt_mat = pd.DataFrame(sim.production_evolution, columns=model.industries).interpolate()
 
         elif io_approach == 'boario_separated':
+            # TODO: copy self.inverse into mriot.A
+
             self.mriot.reset_full()
             self.mriot.calc_all()
 
             # Temp fix for unset mriot.unit
-            # SJ : Loading mriot from saved file doesn't set unit. And it is required by boario (I can change that, but I think it is better if we set it properly)
+            # SJ : Loading mriot from saved file doesn't set unit. 
+            # And it is required by boario (I can change that, but 
+            # I think it is better if we set it properly)
+            # TODO: initiate unit to empty string when there is not unit
             if self.mriot.unit is None:
                 self.mriot.unit = "M. EUR"
 
