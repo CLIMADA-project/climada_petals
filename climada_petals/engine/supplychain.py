@@ -485,7 +485,7 @@ class SupplyChain:
 
         Parameters
         ----------
-        event_ids : climada.engine.Impact
+        event_ids : np.array
         exposures : climada.entity.Exposures
         io_approach : str
             The adopted input-output modeling approach.
@@ -576,13 +576,13 @@ class SupplyChain:
         self.calc_total_production_impacts()
 
     def calc_production_eai(self, frequencies):
-        if self.dir_prod_impt_eai:
+        if not self.dir_prod_impt_mat is None:
             self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(frequencies)
 
-        if self.indir_prod_impt_eai:
+        if not self.indir_prod_impt_mat is None:
             self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(frequencies)
 
-        if tot_prod_impt_mat:
+        if not self.tot_prod_impt_mat is None:
             self.tot_prod_impt_eai = self.tot_prod_impt_mat.T.dot(frequencies)
 
     def calc_matrices(self, io_approach):

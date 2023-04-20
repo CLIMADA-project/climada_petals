@@ -304,7 +304,7 @@ class TestSupplyChain(unittest.TestCase):
             impact, exp, impacted_secs=impacted_secs, io_approach="ghosh"
         )
 
-        sup.calc_production_eai(impact.frequencies)
+        sup.calc_production_eai(impact.frequency)
 
         self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.dir_prod_impt_eai.shape)
         self.assertAlmostEqual((sup.mriot.Z.shape[0],), sup.indir_prod_impt_eai.shape)
