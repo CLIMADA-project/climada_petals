@@ -106,7 +106,7 @@ class LowFlow(Hazard):
     clus_thresh_xy : int
         maximum spatial grid cell distance in number of cells
         to be counted as connected points during clustering, default = 2
-    min_samples : 1
+    min_samples : int
         Minimum amount of data points in one cluster to consider as event,
         default = 1.
     date_start : np.array(int)

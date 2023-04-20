@@ -60,7 +60,7 @@ class TestRelativeCropyield(unittest.TestCase):
         hist_mean = haz.calc_mean(np.array([2001, 2005]))
 
         self.assertEqual(haz.intensity_def, 'Yearly Yield')
-        
+
         haz_new = rel_yield_to_int(haz, hist_mean)
         self.assertEqual(haz_new.intensity_def, 'Relative Yield')
 
@@ -76,7 +76,7 @@ class TestRelativeCropyield(unittest.TestCase):
         haz = RelativeCropyield.from_isimip_netcdf(input_dir=INPUT_DIR, yearrange=(2001, 2005), ag_model='lpjml',
                                 cl_model='ipsl-cm5a-lr', scenario='historical', soc='2005soc',
                                 co2='co2', crop='whe', irr='noirr', fn_str_var=FN_STR_DEMO)
-        
+
         haz_new = percentile_to_int(haz)
         self.assertEqual(haz_new.intensity_def, 'Percentile')
 
