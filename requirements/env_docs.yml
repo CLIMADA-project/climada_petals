@@ -8,8 +8,8 @@ dependencies:
   - ipython
   - ipykernel
   - mccabe>=0.6
-  - nbconda
-  - nbconda_kernels
+  - nb_conda
+  - nb_conda_kernels
   - pandoc
   - sphinx>=2.0
   - pip
