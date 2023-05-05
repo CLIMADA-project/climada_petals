@@ -577,8 +577,9 @@ class SupplyChain:
             # And it is required by boario (I can change that, but 
             # I think it is better if we set it properly)
             # TODO: initiate unit to empty string when there is not unit
-            if self.mriot.unit is None:
-                self.mriot.unit = "M. EUR"
+            # SJ : Not required anymore
+            # if self.mriot.unit is None:
+            #     self.mriot.unit = "M. EUR"
 
             # call ARIOPsiModel with default params
             model = ARIOPsiModel(pym_mrio=self.mriot,
@@ -593,8 +594,10 @@ class SupplyChain:
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
                                  inventory_dict = None,
-                                 kapital_vector = self.stock_exp,
-                                 kapital_to_VA_dict = None,
+                                 productive_capital_vector = self.secs_stock_exp,
+                                 productive_capital_to_VA_dict = None,
+                                 psi_param=0.80,
+                                 inventory_restoration_tau=60
                                  )
 
             # run simulation up to one year after the last event
@@ -604,16 +607,16 @@ class SupplyChain:
                              separate_sims = False,
                              )
 
-            events_list = [EventKapitalRecover(self.secs_stock_imp.iloc[i] * model.monetary_factor,
+            events_list = [EventKapitalRecover(impact=self.secs_stock_imp.iloc[i],
                                                recovery_time = 30,
                                                recovery_function="linear",
+                                               households_impact=[],
                                                occurrence = (dates[i]-dates[0]+1),
                                                duration = 1,
                                                ) for i in range(len(self.secs_stock_imp))]
 
             if io_approach == 'boario_aggregated':
-                for ev in events_list:
-                    sim.add_event(ev)
+                sim.add_events(events_list)
 
                 sim.loop()
 
@@ -623,16 +626,14 @@ class SupplyChain:
                 # production in model.monetary_factor (ie 10^6 by default)
                 # /!\ Note that the column of the result is in lexicographic order (contrary to 
                 # self.stock_imp for instance)
-                self.indir_prod_impt_mat = pd.DataFrame(sim.production_evolution, 
-                                                        columns=model.industries).interpolate()
+                self.indir_prod_impt_mat = sim.production_realised.copy()
 
             else: #'boario_separated'
                 indir_prod_impt_df_list = []
                 for ev in events_list:
                     sim.add_event(ev)
                     sim.loop()
-                    indir_prod_impt_df_list.append(pd.DataFrame(sim.production_evolution.copy(), 
-                                                                columns=model.industries).interpolate())
+                    indir_prod_impt_df_list.append(sim.production_realised.copy())
                     sim.reset_sim_full()
 
                 # SJ : After the following line, self.indir_prod_impt_mat contains a *list* of pd.DataFrame with
