@@ -19,6 +19,7 @@ dependencies:
     - markdown
     - myst-parser    
     - nbformat
+    - nbsphinx
     - pylint
     - readthedocs-sphinx-ext>=2.1
     - sphinx-markdown-tables
