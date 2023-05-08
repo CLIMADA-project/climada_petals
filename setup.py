@@ -16,7 +16,7 @@ extra_files = [str(here / 'climada_petals/conf/climada.conf')]
 setup(
     name='climada_petals',
 
-    version='3.2.0',
+    version='3.2.0-dev',
 
     description='CLIMADA in Python',
 
@@ -34,7 +34,7 @@ setup(
         #   5 - Production/Stable
         'Development Status :: 4 - Beta',
         'Topic :: Climate Adaptation',
-        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ],
 
     keywords='climate adaptation',
@@ -42,38 +42,8 @@ setup(
     packages=find_packages(where='.'),
 
     install_requires=[
-        'bottleneck',
         'climada',
-        'cartopy',
-        'cfgrib',
-        'contextily',
-        'dask',
-        'deprecation',
-        'geopandas',
-        'h5py',
-        'haversine',
-        'matplotlib',
-        'netcdf4',
-        'numba',
-        'overpy',
-        'pandas',
-        'pandas-datareader',
-        'pathos',
-        'peewee',
-        'pillow',
-        'pint',
-        'pybufrkit',
-        'pycountry',
-        'rasterio',
-        'scikit-learn',
-        'statsmodels',
-        'tables',
-        'tabulate',
-        'tqdm',
-        'xarray',
-        'xlrd',
-        'xlsxwriter',
-        'xmlrunner'
+        'scikit-image',
     ],
 
     package_data={'': extra_files},
