@@ -84,5 +84,6 @@ Jump right in:
    :maxdepth: 1
 
    README <misc/README>
+   Changelog <misc/CHANGELOG>
    List of Authors <misc/AUTHORS>
    Contribution Guide <https://climada-python.readthedocs.io/en/latest/misc/CONTRIBUTING.html>
