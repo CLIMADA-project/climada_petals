@@ -21,6 +21,7 @@ setup(
     description='CLIMADA in Python',
 
     long_description=long_description,
+    long_description_content_type='text/markdown',
 
     url='https://github.com/davidnbresch/climada_python',
 
