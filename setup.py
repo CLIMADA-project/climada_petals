@@ -16,7 +16,7 @@ extra_files = [str(here / 'climada_petals/conf/climada.conf')]
 setup(
     name='climada_petals',
 
-    version='3.2.0-dev',
+    version='3.3.0',
 
     description='CLIMADA in Python',
 
