@@ -16,12 +16,12 @@ Its purpose is generating different types of hazards and more specialized applic
 .. attention::
 
    CLIMADA Petals builds on top of CLIMADA Core and is **not** a standalone module.
-   Before you start working with Petals, please check out the documentation of the `CLIMADA Core <https://climada-python.readthedocs.io/en/latest/>`_ module, in particular the `installation instructions <https://climada-python.readthedocs.io/en/latest/guide/Guide_Installation.html>`_.
+   Before you start working with Petals, please check out the documentation of the `CLIMADA Core <https://climada-python.readthedocs.io/en/latest/>`_ module, in particular the `installation instructions <https://climada-python.readthedocs.io/en/latest/guide/install.html>`_.
 
 Jump right in:
 
 * :doc:`README <misc/README>`
-* `Installation (Core and Petals) <https://climada-python.readthedocs.io/en/latest/guide/Guide_Installation.html>`_
+* `Installation (Core and Petals) <https://climada-python.readthedocs.io/en/latest/guide/install.html>`_
 * `GitHub Repository <https://github.com/CLIMADA-project/climada_petals>`_
 * :doc:`Module Reference <climada_petals/climada_petals>`
 
