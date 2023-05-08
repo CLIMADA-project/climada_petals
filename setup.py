@@ -7,11 +7,11 @@ from setuptools import setup, find_packages
 here = Path(__file__).parent.absolute()
 
 # Get the long description from the README file
-with open(here.joinpath('doc', 'misc', 'README.md'), encoding='utf-8') as f:
+with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
     long_description = f.read()
 
 # Add configuration files
-extra_files = [str(here / 'climada_petals/conf/climada.conf')]
+extra_files = [str(here / 'climada_petals/conf/climada.conf'), str(here / 'doc/misc/README.md')]
 
 setup(
     name='climada_petals',
