@@ -7,11 +7,11 @@ from setuptools import setup, find_packages
 here = Path(__file__).parent.absolute()
 
 # Get the long description from the README file
-with open(here.joinpath('README.md'), encoding='utf-8') as f:
+with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
     long_description = f.read()
 
 # Add configuration files
-extra_files = [str(here / 'climada_petals/conf/climada.conf')]
+extra_files = [str(here / 'climada_petals/conf/climada.conf'), str(here / 'doc/misc/README.md')]
 
 setup(
     name='climada_petals',
@@ -21,6 +21,7 @@ setup(
     description='CLIMADA in Python',
 
     long_description=long_description,
+    long_description_content_type='text/markdown',
 
     url='https://github.com/davidnbresch/climada_python',
 
@@ -33,8 +34,10 @@ setup(
         #   4 - Beta
         #   5 - Production/Stable
         'Development Status :: 4 - Beta',
-        'Topic :: Climate Adaptation',
         'Programming Language :: Python :: 3.9',
+        'Topic :: Scientific/Engineering :: Atmospheric Science',
+        'Topic :: Scientific/Engineering :: GIS',
+        'Topic :: Scientific/Engineering :: Mathematics',
     ],
 
     keywords='climate adaptation',
