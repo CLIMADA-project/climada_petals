@@ -30,7 +30,6 @@ import numpy as np
 
 import pymrio
 
-# SJ : FYI I know there is a way to make these imports conditional on boario package being installed
 from boario.extended_models import ARIOPsiModel
 from boario.event import EventKapitalRecover
 from boario.simulation import Simulation
@@ -68,7 +67,6 @@ def parse_mriot_from_df(
 
     sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
     regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
-    # SJ: I had to add this, as I require final demand per region
     fd_cats = mriot_df.iloc[row_fd_cats, end_col:-1].unique()
     multiindex = pd.MultiIndex.from_product(
         [regions, sectors], names=["region", "sector"]
@@ -90,15 +88,7 @@ def parse_mriot_from_df(
     x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
     x = pd.DataFrame(data=x, index=multiindex, columns=["total production"])
 
-    # SJ: Just set negative values in Y to 0 and recalc system
-    # TODO: make it maybe a common check
-    if (Y.sum(axis=1) < 0).any():
-        LOGGER.debug("Found negatives values in total final demand,"
-                     "setting them to 0 and recomputing production vector")
-        Y.loc[Y.sum(axis=1) < 0] = Y.loc[Y.sum(axis=1) < 0].clip(lower=0)
-
     return Z, Y, x
-
 
 def calc_v(Z, x):
     """Calculate value added (v) from Z and x
@@ -289,7 +279,15 @@ def parse_mriot(mriot_type, downloaded_file):
         )
 
         mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
-        mriot.unit = "M.EUR"
+        multiindex_unit = pd.MultiIndex.from_product(
+                [mriot.get_regions(), mriot.get_sectors()],
+                names = ['region', 'sector']
+                )
+        mriot.unit = pd.DataFrame(
+                    data = np.repeat(["M.EUR"], len(multiindex_unit)),
+                    index = multiindex_unit,
+                    columns = ["unit"]
+                    )
 
     elif mriot_type == "OECD21":
         mriot = pymrio.parse_oecd(path=downloaded_file)
@@ -329,6 +327,9 @@ class SupplyChain:
             Total production impact for each country, sector and event
     tot_prod_impt_eai : pd.DataFrame
             Expected total production impact for each country and sector
+    sim: boario simulation instance
+    events_w_imp_id : ids of events leading to impacts
+    events_w_imp_date : dates of events leading to impacts
     """
 
     def __init__(
@@ -417,9 +418,20 @@ class SupplyChain:
         # if data were parsed and saved: load them
         else:
             mriot = pymrio.load(path=parsed_data_dir)
-            # TODO: check unit in WIOD is not saved
-            if mriot_type == "WIOD16":
-                mriot.unit = "M.EUR"
+
+        # aggregate ROWs for EXIOBASE:
+        if mriot_type == 'EXIOBASE3':
+            agg_regions = mriot.get_regions().tolist()[:-5] + ['ROW']*5
+            mriot = mriot.aggregate(region_agg = agg_regions)
+
+        # Check if negative demand - this happens when the
+        # "Changes in Inventory (CII)" demand category is
+        # larger than the sum of all other categories
+        if (mriot.Y.sum(axis=1) < 0).any():
+            LOGGER.debug("Found negatives values in total final demand,"
+                        "setting them to 0 and recomputing production vector")
+            mriot.Y.loc[mriot.Y.sum(axis=1) < 0] = mriot.Y.loc[mriot.Y.sum(axis=1) < 0].clip(lower=0)
+            mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
 
         mriot.meta.change_meta(
             "description", "Metadata for pymrio Multi Regional Input-Output Table"
@@ -461,8 +473,8 @@ class SupplyChain:
             tot_imp_reg_id = impact.imp_mat[:, np.where(exp_bool)[0]].sum(1)
 
             mriot_reg_name = self.map_exp_to_mriot(exp_regid, mriot_type)
-
             secs_prod = self.mriot.x.loc[(mriot_reg_name, impacted_secs), :]
+
             secs_prod_ratio = (secs_prod / secs_prod.sum()).values.flatten()
 
             # Overall sectorial stock exposure and impact are distributed among
@@ -475,6 +487,11 @@ class SupplyChain:
             self.secs_stock_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_imp_reg_id * secs_prod_ratio
             )
+
+        events_w_imp_bool = self.secs_stock_imp.sum(1)!=0
+        self.secs_stock_imp = self.secs_stock_imp[events_w_imp_bool]
+        self.events_w_imp_id = impact.event_id[events_w_imp_bool]
+        self.events_w_imp_date = impact.date[events_w_imp_bool]
 
         self.secs_stock_shock = self.secs_stock_imp.divide(
             self.secs_stock_exp.values
@@ -501,14 +518,12 @@ class SupplyChain:
 
     # TODO: Consider saving results in a dict {io_approach: results} so one can run and
     # save various model without reloading the IOT
-    def calc_indirect_production_impacts(self, event_ids, dates, io_approach):
+    def calc_indirect_production_impacts(self, io_approach):
         """Calculate indirect production impacts according to the specified input-output
         appraoch.
 
         Parameters
         ----------
-        event_ids : np.array
-        exposures : climada.entity.Exposures
         io_approach : str
             The adopted input-output modeling approach.
             Possible choices are 'leontief', 'ghosh' and 'eeioa'.
@@ -523,9 +538,9 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
+        n_events = self.events_w_imp_id.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
-        # find a better place to locate conversion_factor, once and for all cases
         if io_approach == "leontief":
             degr_demand = (
                 self.secs_stock_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
@@ -534,10 +549,10 @@ class SupplyChain:
             self.indir_prod_impt_mat = pd.concat(
                 [
                     pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
-                    for i in range(len(event_ids))
+                    for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(event_ids)
+            ).T.set_index(self.events_w_imp_id)
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
@@ -548,10 +563,10 @@ class SupplyChain:
             self.indir_prod_impt_mat = pd.concat(
                 [
                     calc_x_from_G(self.inverse, degr_value_added.iloc[i])
-                    for i in range(len(event_ids))
+                    for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(event_ids)
+            ).T.set_index(self.events_w_imp_id)
 
         elif io_approach == "eeioa":
             self.indir_prod_impt_mat = (
@@ -563,33 +578,19 @@ class SupplyChain:
             )
 
         elif io_approach in ['boario_aggregated', 'boario_separated']:
-            # TODO: copy self.inverse into mriot.A
-            # SJ : this can probably be done elsewhere and/or better
-            # But right now it makes sure that x, Y, Z and A are present and coherent.
-            # In particular it recalc x in case Y had negative values
+
             self.mriot.A = self.coeffs
             self.mriot.L = self.inverse
-            # self.mriot.reset_full()
-            # self.mriot.calc_all()
-
-            # Temp fix for unset mriot.unit
-            # SJ : Loading mriot from saved file doesn't set unit. 
-            # And it is required by boario (I can change that, but 
-            # I think it is better if we set it properly)
-            # TODO: initiate unit to empty string when there is not unit
-            # SJ : Not required anymore
-            # if self.mriot.unit is None:
-            #     self.mriot.unit = "M. EUR"
 
             # call ARIOPsiModel with default params
-            model = ARIOPsiModel(pym_mrio=self.mriot,
+            model = ARIOPsiModel(self.mriot,
                                  order_type = "alt",
                                  alpha_base = 1.0,
                                  alpha_max = 1.25,
                                  alpha_tau = 365,
                                  rebuild_tau = 60,
                                  main_inv_dur = 90,
-                                 monetary_factor = 10**6,
+                                 monetary_factor = self.conversion_factor(),
                                  temporal_units_by_step = 1,
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
@@ -601,9 +602,10 @@ class SupplyChain:
                                  )
 
             # run simulation up to one year after the last event
-            sim = Simulation(model,
+            self.sim = Simulation(
+                             model,
                              register_stocks=False,
-                             n_temporal_units_to_sim = dates[-1]-dates[0]+365,
+                             n_temporal_units_to_sim = self.events_w_imp_date[-1]-self.events_w_imp_date[0]+365,
                              separate_sims = False,
                              )
 
@@ -611,37 +613,30 @@ class SupplyChain:
                                                recovery_time = 30,
                                                recovery_function="linear",
                                                households_impact=[],
-                                               occurrence = (dates[i]-dates[0]+1),
+                                               occurrence = (self.events_w_imp_date[i]-self.events_w_imp_date[0]+1),
                                                duration = 1,
-                                               ) for i in range(len(self.secs_stock_imp))]
+                                               ) for i in range(n_events)]
 
             if io_approach == 'boario_aggregated':
-                sim.add_events(events_list)
+                self.sim.add_events(events_list)
 
-                sim.loop()
-
-                # SJ : After the following line, self.indir_prod_impt_mat contains a pd.DataFrame with
-                # impact.date[-1]-impact.date[0]+365 rows, each representing a simulated day
-                # and (region,sector) multiindex columns. The values are the mean daily level of 
-                # production in model.monetary_factor (ie 10^6 by default)
-                # /!\ Note that the column of the result is in lexicographic order (contrary to 
-                # self.stock_imp for instance)
-                self.indir_prod_impt_mat = sim.production_realised.copy()
+                self.sim.loop()
+                self.indir_prod_impt_mat = self.sim.production_realised.copy()[
+                                                    self.secs_stock_imp.columns
+                                                    ]*self.conversion_factor()
 
             else: #'boario_separated'
                 indir_prod_impt_df_list = []
                 for ev in events_list:
-                    sim.add_event(ev)
-                    sim.loop()
-                    indir_prod_impt_df_list.append(sim.production_realised.copy())
-                    sim.reset_sim_full()
+                    self.sim.add_event(ev)
+                    self.sim.loop()
+                    indir_prod_impt_df_list.append(
+                        self.sim.production_realised.copy()[
+                            self.secs_stock_imp.columns
+                            ]*self.conversion_factor()
+                        )
+                    self.sim.reset_sim_full()
 
-                # SJ : After the following line, self.indir_prod_impt_mat contains a *list* of pd.DataFrame with
-                # impact.date[-1]-impact.date[0]+365 rows, each representing a simulated day
-                # and (region,sector) multiindex columns. The values are the mean daily level of 
-                # production in model.monetary_factor (ie 10^6 by default)
-                # /!\ Note that the column of the result is in lexicographic order (contrary to 
-                # self.stock_imp for instance)
                 self.indir_prod_impt_mat = indir_prod_impt_df_list
 
         else:
@@ -676,7 +671,7 @@ class SupplyChain:
         self.calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
 
         self.calc_direct_production_impacts(stock_to_prod_shock)
-        self.calc_indirect_production_impacts(impact.event_id, io_approach)
+        self.calc_indirect_production_impacts(io_approach)
         self.calc_total_production_impacts()
 
     def calc_production_eai(self, frequencies):
@@ -739,25 +734,24 @@ class SupplyChain:
 
         if mriot_type == "EXIOBASE3":
             mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha2")
-            idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
-
-            if not idx_country.size > 0.0:
-                # EXIOBASE3 in fact contains five ROW regions,
-                # but for now they are all catagorised as ROW.
-                mriot_reg_name = "ROW"
 
         elif mriot_type in ["WIOD16", "OECD21"]:
             mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha3")
-            idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
-
-            if not idx_country.size > 0.0:
-                mriot_reg_name = "ROW"
 
         else:
             warnings.warn(
                 "For a correct calculation the format of regions' names in exposure and "
                 "the IO table must match."
             )
-            mriot_reg_name = exp_regid
+            return exp_regid
+
+        idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
+
+        if (not idx_country.size > 0.0) and (mriot_type == "OECD21"):
+            raise ValueError(
+                f"OECD21 does not contain info on {mriot_reg_name} neither has a ROW region"
+                )
+        elif not idx_country.size > 0.0:
+            mriot_reg_name = "ROW"
 
         return mriot_reg_name
