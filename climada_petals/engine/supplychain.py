@@ -615,7 +615,7 @@ class SupplyChain:
                         separate_sims = False,
                              )
 
-            events_list = [EventKapitalRecover(
+            events_list = [EventKapitalRecover.from_series(
                                     impact=self.secs_imp.iloc[i],
                                     recovery_time = 30,
                                     recovery_function="linear",
