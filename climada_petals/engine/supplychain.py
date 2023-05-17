@@ -374,8 +374,11 @@ class SupplyChain:
         # if data were parsed and saved: load them
         else:
             mriot = pymrio.load(path=parsed_data_dir)
-            if mriot_type == "WIOD16":
-                mriot.unit = "M.EUR"
+
+        # aggregate ROWs for EXIOBASE:
+        if mriot_type == 'EXIOBASE3':
+            agg_regions = mriot.get_regions().tolist()[:-5] + ['ROW']*5
+            mriot = mriot.aggregate(region_agg = agg_regions)
 
         mriot.meta.change_meta(
             "description", "Metadata for pymrio Multi Regional Input-Output Table"
@@ -436,8 +439,8 @@ class SupplyChain:
             self.secs_stock_exp.values
         ).fillna(0)
 
-    # TODO: Consider saving results in a dict {io_approach: results} so one can run and
-    # save various model without reloading the IOT
+# rearrange shock factor and change names
+
     def calc_supplychain_impacts(self, io_approach, exposure=None, impact=None, 
                                  impacted_secs=None):
         """Calculate indirect production impacts according to the specified input-output
