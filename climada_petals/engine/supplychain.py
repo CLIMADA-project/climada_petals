@@ -307,6 +307,7 @@ class SupplyChain:
     supchain_imp : dict
             Dictionary of supply chain impact for each country, 
             sector, event and io_approach
+    events_id : ids of events
     """
 
     def __init__(self,mriot=None):
@@ -438,6 +439,7 @@ class SupplyChain:
                 tot_imp_reg_id * secs_prod_ratio
             )
 
+        self.events_id = impact.event_id
         self.secs_shock = self.secs_imp.divide(
             self.secs_exp.values
         ).fillna(0) * shock_factor
@@ -454,14 +456,16 @@ class SupplyChain:
 # update tutorial
 # check that both boario and sup chain work
 
-    def calc_supplychain_impacts(self, io_approach, exposure=None, impact=None, 
+    def calc_supplychain_impacts(self, 
+                                 io_approach, 
+                                 exposure=None, 
+                                 impact=None, 
                                  impacted_secs=None):
         """Calculate indirect production impacts according to the specified input-output
         approach.
 
         Parameters
         ----------
-        event_ids : np.array
         exposures : climada.entity.Exposures
         io_approach : str
             The adopted input-output modeling approach.
@@ -477,6 +481,7 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
+        n_events = self.events_id.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
         if self.secs_shock is None:
@@ -491,10 +496,10 @@ class SupplyChain:
             self.supchain_imp.update({io_approach : pd.concat(
                 [
                     pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
-                    for i in range(len(event_ids))
+                    for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(event_ids)})
+            ).T.set_index(self.events_id)})
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
@@ -505,10 +510,10 @@ class SupplyChain:
             self.supchain_imp.update({io_approach : pd.concat(
                 [
                     calc_x_from_G(self.inverse, degr_value_added.iloc[i])
-                    for i in range(len(event_ids))
+                    for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(event_ids)})
+            ).T.set_index(self.events_id)})
 
         elif io_approach == "eeioa":
             self.supchain_imp.update({io_approach : (
