@@ -554,25 +554,24 @@ class SupplyChain:
 
         if mriot_type == "EXIOBASE3":
             mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha2")
-            idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
-
-            if not idx_country.size > 0.0:
-                # EXIOBASE3 in fact contains five ROW regions,
-                # but for now they are all catagorised as ROW.
-                mriot_reg_name = "ROW"
 
         elif mriot_type in ["WIOD16", "OECD21"]:
             mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha3")
-            idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
-
-            if not idx_country.size > 0.0:
-                mriot_reg_name = "ROW"
 
         else:
             warnings.warn(
                 "For a correct calculation the format of regions' names in exposure and "
                 "the IO table must match."
             )
-            mriot_reg_name = exp_regid
+            return exp_regid
+
+        idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
+
+        if (not idx_country.size > 0.0) and (mriot_type == "OECD21"):
+            raise ValueError(
+                f"OECD21 does not contain info on {mriot_reg_name} neither has a ROW region"
+                )
+        elif not idx_country.size > 0.0:
+            mriot_reg_name = "ROW"
 
         return mriot_reg_name
