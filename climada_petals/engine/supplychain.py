@@ -267,7 +267,16 @@ def parse_mriot(mriot_type, downloaded_file):
         )
 
         mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
-        mriot.unit = "M.EUR"
+
+        multiindex_unit = pd.MultiIndex.from_product(
+                [mriot.get_regions(), mriot.get_sectors()],
+                names = ['region', 'sector']
+                )
+        mriot.unit = pd.DataFrame(
+                    data = np.repeat(["M.EUR"], len(multiindex_unit)),
+                    index = multiindex_unit,
+                    columns = ["unit"]
+                    )
 
     elif mriot_type == "OECD21":
         mriot = pymrio.parse_oecd(path=downloaded_file)
@@ -292,52 +301,22 @@ class SupplyChain:
                 mriot.x : industry or total output
                 mriot.meta : metadata
     coeffs : pd.DataFrame
-            Technical (if Leontief, A) or allocations (if Ghosh, B) coefficients matrix
+            Technical (if Leontief, A) or allocation (if Ghosh, B) coefficients matrix
     inverse : pd.DataFrame
             Leontief (L) or Ghosh (G) inverse matrix
-    dir_prod_impt_mat : pd.DataFrame
-            Direct production impact for each country, sector and event
-    dir_prod_impt_eai : pd.DataFrame
-            Expected direct production impact for each country and sector
-    indir_prod_impt_mat : pd.DataFrame
-            Indirect production impact for each country, sector and event
-    indir_prod_impt_mat : pd.DataFrame
-            Expected indirect production impact for each country and sector
-    tot_prod_impt_mat : pd.DataFrame
-            Total production impact for each country, sector and event
-    tot_prod_impt_eai : pd.DataFrame
-            Expected total production impact for each country and sector
+    supchain_imp : dict
+            Dictionary of supply chain impact for each country, 
+            sector, event and io_approach
     """
 
-    def __init__(
-        self,
-        mriot=None,
-        inverse=None,
-        coeffs=None,
-        dir_prod_impt_mat=None,
-        dir_prod_impt_eai=None,
-        indir_prod_impt_mat=None,
-        indir_prod_impt_eai=None,
-        total_imp_mat=None,
-        total_eai=None,
-    ):
+    def __init__(self,mriot=None):
 
         """Initialize SupplyChain."""
         self.mriot = pymrio.IOSystem() if mriot is None else mriot
-        self.inverse = pd.DataFrame([]) if inverse is None else inverse
-        self.coeffs = pd.DataFrame([]) if coeffs is None else coeffs
-        self.dir_prod_impt_mat = (
-            pd.DataFrame([]) if dir_prod_impt_mat is None else dir_prod_impt_mat
-        )
-        self.dir_prod_impt_eai = pd.DataFrame([]) if dir_prod_impt_eai is None else dir_prod_impt_eai
-        self.indir_prod_impt_mat = (
-            pd.DataFrame([]) if indir_prod_impt_mat is None else indir_prod_impt_mat
-        )
-        self.indir_prod_impt_eai = pd.DataFrame([]) if indir_prod_impt_eai is None else indir_prod_impt_eai
-        self.total_imp_mat = (
-            pd.DataFrame([]) if total_imp_mat is None else total_imp_mat
-        )
-        self.total_eai = pd.DataFrame([]) if total_eai is None else total_eai
+        self.secs_stock_shock = pd.DataFrame([])
+        self.supchain_imp = {}
+        self.inverse = {}
+        self.coeffs = {}
 
     @classmethod
     def from_mriot(
@@ -395,7 +374,6 @@ class SupplyChain:
         # if data were parsed and saved: load them
         else:
             mriot = pymrio.load(path=parsed_data_dir)
-            # TODO: check unit in WIOD is not saved
             if mriot_type == "WIOD16":
                 mriot.unit = "M.EUR"
 
@@ -458,30 +436,12 @@ class SupplyChain:
             self.secs_stock_exp.values
         ).fillna(0)
 
-    def calc_direct_production_impacts(self, stock_to_prod_shock=None):
-        """Calculate direct production impacts."""
-
-        if stock_to_prod_shock is None:
-            stock_to_prod_shock = np.repeat(1, self.mriot.x.shape[0])
-
-        prod_shock = self.secs_stock_shock * stock_to_prod_shock
-        if not np.all(prod_shock <= 1):
-            warnings.warn(
-                "Consider changing the provided provided stock-to-production losses "
-                "ratios, as some of them lead to production losses in some sectors to "
-                "exceed the maximum sectorial production. For these sectors, total "
-                "production loss is assumed."
-            )
-            prod_shock[prod_shock > 1] = 1
-        self.dir_prod_impt_mat = (
-            self.mriot.x.values.flatten() * prod_shock * self.conversion_factor()
-        )
-
     # TODO: Consider saving results in a dict {io_approach: results} so one can run and
     # save various model without reloading the IOT
-    def calc_indirect_production_impacts(self, event_ids, io_approach):
+    def calc_supplychain_impacts(self, io_approach, exposure=None, impact=None, 
+                                 impacted_secs=None):
         """Calculate indirect production impacts according to the specified input-output
-        appraoch.
+        approach.
 
         Parameters
         ----------
@@ -503,19 +463,22 @@ class SupplyChain:
 
         self.calc_matrices(io_approach=io_approach)
 
+        if self.secs_stock_shock is None:
+            calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
+
         # find a better place to locate conversion_factor, once and for all cases
         if io_approach == "leontief":
             degr_demand = (
                 self.secs_stock_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
             )
 
-            self.indir_prod_impt_mat = pd.concat(
+            self.supchain_imp.update({io_approach : pd.concat(
                 [
                     pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
                     for i in range(len(event_ids))
                 ],
                 axis=1,
-            ).T.set_index(event_ids)
+            ).T.set_index(event_ids)})
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
@@ -523,67 +486,25 @@ class SupplyChain:
                 self.secs_stock_shock * value_added.values * self.conversion_factor()
             )
 
-            self.indir_prod_impt_mat = pd.concat(
+            self.supchain_imp.update({io_approach : pd.concat(
                 [
                     calc_x_from_G(self.inverse, degr_value_added.iloc[i])
                     for i in range(len(event_ids))
                 ],
                 axis=1,
-            ).T.set_index(event_ids)
+            ).T.set_index(event_ids)})
 
         elif io_approach == "eeioa":
-            self.indir_prod_impt_mat = (
+            self.supchain_imp.update({io_approach : (
                 pd.DataFrame(
                     self.secs_stock_shock.dot(self.inverse)
                     * self.mriot.x.values.flatten()
                 )
                 * self.conversion_factor()
-            )
+            )})
 
         else:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
-
-    def calc_total_production_impacts(self):
-        """Calculate total production impacts."""
-        self.tot_prod_impt_mat = self.dir_prod_impt_mat.add(self.indir_prod_impt_mat)
-
-    def calc_production_impacts(
-        self,
-        impact,
-        exposure,
-        impacted_secs=None,
-        io_approach=None,
-        stock_to_prod_shock=None,
-    ):
-        """Calculate direct, indirect and total production impacts.
-
-        Parameters
-        ----------
-        impact : Impact
-            Impact object with stocks impacts.
-        exposure : Exposures
-            Exposures object for impact calculation.
-        impacted_secs : range, np.ndarray or list, optional
-            The directly affected sectors. If range or np.ndarray,
-            it contains the affected sectors' positions in the MRIOT.
-            If list, it contains the affected sectors' names in the MRIOT.
-        """
-
-        self.calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
-
-        self.calc_direct_production_impacts(stock_to_prod_shock)
-        self.calc_indirect_production_impacts(impact.event_id, io_approach)
-        self.calc_total_production_impacts()
-
-    def calc_production_eai(self, frequencies):
-        if not self.dir_prod_impt_mat is None:
-            self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(frequencies)
-
-        if not self.indir_prod_impt_mat is None:
-            self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(frequencies)
-
-        if not self.tot_prod_impt_mat is None:
-            self.tot_prod_impt_eai = self.tot_prod_impt_mat.T.dot(frequencies)
 
     def calc_matrices(self, io_approach):
         """
@@ -599,8 +520,8 @@ class SupplyChain:
 
         coeff_func, inv_func = io_model[io_approach]
 
-        self.coeffs = coeff_func(self.mriot.Z, self.mriot.x)
-        self.inverse = inv_func(self.coeffs)
+        self.coeffs.update({io_approach: coeff_func(self.mriot.Z, self.mriot.x)})
+        self.inverse.update({io_approach: inv_func(self.coeffs)})
 
     def conversion_factor(self):
         """
