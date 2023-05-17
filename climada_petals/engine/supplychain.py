@@ -387,7 +387,7 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs):
+    def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs, shock_factor=None):
         """TODO: better docstring
         This function needs to return an object equivalent to self.direct_imp_mat
         starting from a standard CLIMADA impact calculation. Will call this object
@@ -404,10 +404,13 @@ class SupplyChain:
         elif isinstance(impacted_secs, (range, np.ndarray)):
             impacted_secs = self.mriot.get_sectors()[impacted_secs].tolist()
 
-        self.secs_stock_exp = pd.DataFrame(
+        if shock_factor is None:
+            shock_factor = np.repeat(1, self.mriot.x.shape[0])
+
+        self.secs_exp = pd.DataFrame(
             0, index=["total_value"], columns=self.mriot.Z.columns
         )
-        self.secs_stock_imp = pd.DataFrame(
+        self.secs_imp = pd.DataFrame(
             0, index=impact.event_id, columns=self.mriot.Z.columns
         )
 
@@ -428,18 +431,28 @@ class SupplyChain:
             # subsectors proportionally to their their own contribution to overall
             # sectorial production: Sum needed below in case of many ROWs, which are
             # aggregated into one country as per WIOD table.
-            self.secs_stock_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
+            self.secs_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_value_reg_id * secs_prod_ratio
             )
-            self.secs_stock_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
+            self.secs_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_imp_reg_id * secs_prod_ratio
             )
 
-        self.secs_stock_shock = self.secs_stock_imp.divide(
-            self.secs_stock_exp.values
-        ).fillna(0)
+        self.secs_shock = self.secs_imp.divide(
+            self.secs_exp.values
+        ).fillna(0) * shock_factor
 
-# rearrange shock factor and change names
+        if not np.all(self.secs_shock <= 1):
+            warnings.warn(
+                "Consider changing the provided provided stock-to-production losses "
+                "ratios, as some of them lead to production losses in some sectors to "
+                "exceed the maximum sectorial production. For these sectors, total "
+                "production loss is assumed."
+            )
+            self.secs_shock[self.secs_shock > 1] = 1
+
+# update tutorial
+# check that both boario and sup chain work
 
     def calc_supplychain_impacts(self, io_approach, exposure=None, impact=None, 
                                  impacted_secs=None):
@@ -466,13 +479,13 @@ class SupplyChain:
 
         self.calc_matrices(io_approach=io_approach)
 
-        if self.secs_stock_shock is None:
+        if self.secs_shock is None:
             calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
 
         # find a better place to locate conversion_factor, once and for all cases
         if io_approach == "leontief":
             degr_demand = (
-                self.secs_stock_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
+                self.secs_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
             )
 
             self.supchain_imp.update({io_approach : pd.concat(
@@ -486,7 +499,7 @@ class SupplyChain:
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
             degr_value_added = (
-                self.secs_stock_shock * value_added.values * self.conversion_factor()
+                self.secs_shock * value_added.values * self.conversion_factor()
             )
 
             self.supchain_imp.update({io_approach : pd.concat(
@@ -500,7 +513,7 @@ class SupplyChain:
         elif io_approach == "eeioa":
             self.supchain_imp.update({io_approach : (
                 pd.DataFrame(
-                    self.secs_stock_shock.dot(self.inverse)
+                    self.secs_shock.dot(self.inverse)
                     * self.mriot.x.values.flatten()
                 )
                 * self.conversion_factor()
