@@ -440,11 +440,17 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs):
+    def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs, shock_factor=None):
         """TODO: better docstring
         This function needs to return an object equivalent to self.direct_imp_mat
         starting from a standard CLIMADA impact calculation. Will call this object
         self.impacts_to_sectors. This object will also compute a sector exposure.
+
+        shock_factor: np.array
+            By default, shocks to production are equivalent to the ratio between stock impact 
+            and exposure. For all sectors, shock_factor regulates whether this needs to 
+            attenuate (factors<1) or amplify (factors>1). Default value is None which implies 
+            factors for all sectors are = 1.
         """
 
         if impacted_secs is None:
@@ -457,10 +463,10 @@ class SupplyChain:
         elif isinstance(impacted_secs, (range, np.ndarray)):
             impacted_secs = self.mriot.get_sectors()[impacted_secs].tolist()
 
-        self.secs_stock_exp = pd.DataFrame(
+        self.secs_exp = pd.DataFrame(
             0, index=["total_value"], columns=self.mriot.Z.columns
         )
-        self.secs_stock_imp = pd.DataFrame(
+        self.secs_imp = pd.DataFrame(
             0, index=impact.event_id, columns=self.mriot.Z.columns
         )
 
@@ -481,39 +487,39 @@ class SupplyChain:
             # subsectors proportionally to their their own contribution to overall
             # sectorial production: Sum needed below in case of many ROWs, which are
             # aggregated into one country as per WIOD table.
-            self.secs_stock_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
+            self.secs_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_value_reg_id * secs_prod_ratio
             )
-            self.secs_stock_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
+            self.secs_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_imp_reg_id * secs_prod_ratio
             )
 
-        events_w_imp_bool = self.secs_stock_imp.sum(1)!=0
-        self.secs_stock_imp = self.secs_stock_imp[events_w_imp_bool]
+        events_w_imp_bool = self.secs_imp.sum(1)!=0
+        self.secs_imp = self.secs_imp[events_w_imp_bool]
         self.events_w_imp_id = impact.event_id[events_w_imp_bool]
         self.events_w_imp_date = impact.date[events_w_imp_bool]
 
-        self.secs_stock_shock = self.secs_stock_imp.divide(
-            self.secs_stock_exp.values
-        ).fillna(0)
+        if shock_factor is None:
+            shock_factor = np.repeat(1, self.mriot.x.shape[0])
 
-    def calc_direct_production_impacts(self, stock_to_prod_shock=None):
-        """Calculate direct production impacts."""
+        self.secs_shock = self.secs_imp.divide(
+            self.secs_exp.values
+        ).fillna(0) * shock_factor
 
-        if stock_to_prod_shock is None:
-            stock_to_prod_shock = np.repeat(1, self.mriot.x.shape[0])
-
-        prod_shock = self.secs_stock_shock * stock_to_prod_shock
-        if not np.all(prod_shock <= 1):
+        if not np.all(self.secs_shock <= 1):
             warnings.warn(
                 "Consider changing the provided provided stock-to-production losses "
                 "ratios, as some of them lead to production losses in some sectors to "
                 "exceed the maximum sectorial production. For these sectors, total "
                 "production loss is assumed."
             )
-            prod_shock[prod_shock > 1] = 1
+            self.secs_shock[self.secs_shock > 1] = 1
+
+    def calc_direct_production_impacts(self):
+        """Calculate direct production impacts."""
+
         self.dir_prod_impt_mat = (
-            self.mriot.x.values.flatten() * prod_shock * self.conversion_factor()
+            self.mriot.x.values.flatten() * self.secs_shock * self.conversion_factor()
         )
 
     # TODO: Consider saving results in a dict {io_approach: results} so one can run and
@@ -543,7 +549,7 @@ class SupplyChain:
 
         if io_approach == "leontief":
             degr_demand = (
-                self.secs_stock_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
+                self.secs_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
             )
 
             self.indir_prod_impt_mat = pd.concat(
@@ -557,7 +563,7 @@ class SupplyChain:
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
             degr_value_added = (
-                self.secs_stock_shock * value_added.values * self.conversion_factor()
+                self.secs_shock * value_added.values * self.conversion_factor()
             )
 
             self.indir_prod_impt_mat = pd.concat(
@@ -571,7 +577,7 @@ class SupplyChain:
         elif io_approach == "eeioa":
             self.indir_prod_impt_mat = (
                 pd.DataFrame(
-                    self.secs_stock_shock.dot(self.inverse)
+                    self.secs_shock.dot(self.inverse)
                     * self.mriot.x.values.flatten()
                 )
                 * self.conversion_factor()
@@ -595,7 +601,7 @@ class SupplyChain:
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
                                  inventory_dict = None,
-                                 productive_capital_vector = self.secs_stock_exp,
+                                 productive_capital_vector = self.secs_exp,
                                  productive_capital_to_VA_dict = None,
                                  psi_param=0.80,
                                  inventory_restoration_tau=60
@@ -603,26 +609,32 @@ class SupplyChain:
 
             # run simulation up to one year after the last event
             self.sim = Simulation(
-                             model,
-                             register_stocks=False,
-                             n_temporal_units_to_sim = self.events_w_imp_date[-1]-self.events_w_imp_date[0]+365,
-                             separate_sims = False,
+                        model,
+                        register_stocks=False,
+                        n_temporal_units_to_sim = self.events_w_imp_date[-1]-self.events_w_imp_date[0]+365,
+                        separate_sims = False,
                              )
 
-            events_list = [EventKapitalRecover(impact=self.secs_stock_imp.iloc[i],
-                                               recovery_time = 30,
-                                               recovery_function="linear",
-                                               households_impact=[],
-                                               occurrence = (self.events_w_imp_date[i]-self.events_w_imp_date[0]+1),
-                                               duration = 1,
-                                               ) for i in range(n_events)]
+            events_list = [EventKapitalRecover(
+                                    impact=self.secs_imp.iloc[i],
+                                    recovery_time = 30,
+                                    recovery_function="linear",
+                                    households_impact=[],
+                                    occurrence = (self.events_w_imp_date[i]-self.events_w_imp_date[0]+1),
+                                    duration = 1,
+                                    # TODO: it is assumed that exposure/impacts are expressed with full 
+                                    # values, deal with cases where CLIMADA exposure is expressed in K, 
+                                    # M or Bn
+                                    event_monetary_factor = 1,
+                                    ) for i in range(n_events)
+                            ]
 
             if io_approach == 'boario_aggregated':
                 self.sim.add_events(events_list)
 
                 self.sim.loop()
                 self.indir_prod_impt_mat = self.sim.production_realised.copy()[
-                                                    self.secs_stock_imp.columns
+                                                    self.secs_imp.columns
                                                     ]*self.conversion_factor()
 
             else: #'boario_separated'
@@ -632,7 +644,7 @@ class SupplyChain:
                     self.sim.loop()
                     indir_prod_impt_df_list.append(
                         self.sim.production_realised.copy()[
-                            self.secs_stock_imp.columns
+                            self.secs_imp.columns
                             ]*self.conversion_factor()
                         )
                     self.sim.reset_sim_full()
