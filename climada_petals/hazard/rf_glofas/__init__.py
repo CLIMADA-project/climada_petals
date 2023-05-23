@@ -19,4 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Export functions of the GloFAS River Flood Module
 """
 
+import esmpy  # pylint: disable=unused-import
+# importing esmpy initializes the ESMFMKFILE environment variable necessary for importing xesmf
+
 from .rf_glofas import setup, dantro_transform, dask_client, hazard_series_from_dataset
