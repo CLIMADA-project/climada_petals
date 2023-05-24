@@ -388,8 +388,8 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs, shock_factor=None):
-        """TODO: better docstring
+    def calc_shock_to_sectors(self, exposure, impact, impacted_secs=None, shock_factor=None):
+        """Calculate exposure, impact and shock at the sectorial level.
         This function needs to return an object equivalent to self.direct_imp_mat
         starting from a standard CLIMADA impact calculation. Will call this object
         self.impacts_to_sectors. This object will also compute a sector exposure.
@@ -408,20 +408,28 @@ class SupplyChain:
         if shock_factor is None:
             shock_factor = np.repeat(1, self.mriot.x.shape[0])
 
+        events_w_imp_bool = np.asarray(impact.imp_mat.sum(1)!=0).flatten()
+
         self.secs_exp = pd.DataFrame(
-            0, index=["total_value"], columns=self.mriot.Z.columns
+            0, 
+            index=["total_value"], 
+            columns=self.mriot.Z.columns
         )
         self.secs_imp = pd.DataFrame(
-            0, index=impact.event_id, columns=self.mriot.Z.columns
+            0, 
+            index=impact.event_id[events_w_imp_bool], 
+            columns=self.mriot.Z.columns
         )
+        self.secs_imp.index = self.secs_imp.index.set_names('event_id')
 
         mriot_type = self.mriot.meta.name.split("-")[0]
 
         for exp_regid in exposure.gdf.region_id.unique():
             exp_bool = exposure.gdf.region_id == exp_regid
             tot_value_reg_id = exposure.gdf[exp_bool].value.sum()
-            # consider using impact.impact_reg_agg when merged - anyway check for the presence of imp_mat
-            tot_imp_reg_id = impact.imp_mat[:, np.where(exp_bool)[0]].sum(1)
+            # TODO: consider using impact.impact_reg_agg when merged 
+            # - anyway check for the presence of imp_mat
+            tot_imp_reg_id = impact.imp_mat[events_w_imp_bool][:,exp_bool].sum(1)
 
             mriot_reg_name = self.map_exp_to_mriot(exp_regid, mriot_type)
 
@@ -439,7 +447,6 @@ class SupplyChain:
                 tot_imp_reg_id * secs_prod_ratio
             )
 
-        self.events_id = impact.event_id
         self.secs_shock = self.secs_imp.divide(
             self.secs_exp.values
         ).fillna(0) * shock_factor
@@ -456,10 +463,10 @@ class SupplyChain:
 # update tutorial
 # check that both boario and sup chain work
 
-    def calc_supplychain_impacts(self, 
-                                 io_approach, 
-                                 exposure=None, 
-                                 impact=None, 
+    def calc_supplychain_impacts(self,
+                                 io_approach,
+                                 exposure=None,
+                                 impact=None,
                                  impacted_secs=None):
         """Calculate indirect production impacts according to the specified input-output
         approach.
@@ -481,25 +488,25 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        n_events = self.events_id.shape[0]
+        n_events = self.secs_shock.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
         if self.secs_shock is None:
-            calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
+            self.calc_shock_to_sectors(exposure, impact, impacted_secs)
 
         # find a better place to locate conversion_factor, once and for all cases
         if io_approach == "leontief":
             degr_demand = (
-                self.secs_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
+                self.secs_shock * self.mriot.Y.sum(1) * self.conversion_factor()
             )
 
             self.supchain_imp.update({io_approach : pd.concat(
                 [
-                    pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
+                    pymrio.calc_x_from_L(self.inverse[io_approach], degr_demand.iloc[i])
                     for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(self.events_id)})
+            ).T.set_index(self.secs_shock.index)})
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
@@ -509,16 +516,16 @@ class SupplyChain:
 
             self.supchain_imp.update({io_approach : pd.concat(
                 [
-                    calc_x_from_G(self.inverse, degr_value_added.iloc[i])
+                    calc_x_from_G(self.inverse[io_approach], degr_value_added.iloc[i])
                     for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(self.events_id)})
+            ).T.set_index(self.secs_shock.index)})
 
         elif io_approach == "eeioa":
             self.supchain_imp.update({io_approach : (
                 pd.DataFrame(
-                    self.secs_shock.dot(self.inverse)
+                    self.secs_shock.dot(self.inverse[io_approach])
                     * self.mriot.x.values.flatten()
                 )
                 * self.conversion_factor()
@@ -542,7 +549,7 @@ class SupplyChain:
         coeff_func, inv_func = io_model[io_approach]
 
         self.coeffs.update({io_approach: coeff_func(self.mriot.Z, self.mriot.x)})
-        self.inverse.update({io_approach: inv_func(self.coeffs)})
+        self.inverse.update({io_approach: inv_func(self.coeffs[io_approach])})
 
     def conversion_factor(self):
         """
