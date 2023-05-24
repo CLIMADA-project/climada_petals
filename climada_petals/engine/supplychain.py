@@ -460,14 +460,11 @@ class SupplyChain:
             )
             self.secs_shock[self.secs_shock > 1] = 1
 
-# update tutorial
-# check that both boario and sup chain work
-
-    def calc_supplychain_impacts(self,
-                                 io_approach,
-                                 exposure=None,
-                                 impact=None,
-                                 impacted_secs=None):
+    def calc_impacts(self,
+                    io_approach,
+                    exposure=None,
+                    impact=None,
+                    impacted_secs=None):
         """Calculate indirect production impacts according to the specified input-output
         approach.
 
