@@ -3,5 +3,4 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - climada=3.3
-  - scikit-image=0.19
+  - scikit-image>=0.19
