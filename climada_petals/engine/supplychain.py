@@ -427,8 +427,6 @@ class SupplyChain:
         for exp_regid in exposure.gdf.region_id.unique():
             exp_bool = exposure.gdf.region_id == exp_regid
             tot_value_reg_id = exposure.gdf[exp_bool].value.sum()
-            # TODO: consider using impact.impact_reg_agg when merged 
-            # - anyway check for the presence of imp_mat
             tot_imp_reg_id = impact.imp_mat[events_w_imp_bool][:,exp_bool].sum(1)
 
             mriot_reg_name = self.map_exp_to_mriot(exp_regid, mriot_type)
@@ -459,6 +457,23 @@ class SupplyChain:
                 "production loss is assumed."
             )
             self.secs_shock[self.secs_shock > 1] = 1
+
+    def calc_matrices(self, io_approach):
+        """
+        Build technical coefficient and Leontief inverse matrixes (if Leontief approach)
+        or allocation coefficients and Ghosh matrixes (if Ghosh approach).
+        """
+
+        io_model = {
+            "leontief": (pymrio.calc_A, pymrio.calc_L),
+            "eeioa": (pymrio.calc_A, pymrio.calc_L),
+            "ghosh": (calc_B, calc_G),
+        }
+
+        coeff_func, inv_func = io_model[io_approach]
+
+        self.coeffs.update({io_approach: coeff_func(self.mriot.Z, self.mriot.x)})
+        self.inverse.update({io_approach: inv_func(self.coeffs[io_approach])})
 
     def calc_impacts(self,
                     io_approach,
@@ -530,23 +545,6 @@ class SupplyChain:
 
         else:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
-
-    def calc_matrices(self, io_approach):
-        """
-        Build technical coefficient and Leontief inverse matrixes (if Leontief approach)
-        or allocation coefficients and Ghosh matrixes (if Ghosh approach).
-        """
-
-        io_model = {
-            "leontief": (pymrio.calc_A, pymrio.calc_L),
-            "eeioa": (pymrio.calc_A, pymrio.calc_L),
-            "ghosh": (calc_B, calc_G),
-        }
-
-        coeff_func, inv_func = io_model[io_approach]
-
-        self.coeffs.update({io_approach: coeff_func(self.mriot.Z, self.mriot.x)})
-        self.inverse.update({io_approach: inv_func(self.coeffs[io_approach])})
 
     def conversion_factor(self):
         """
