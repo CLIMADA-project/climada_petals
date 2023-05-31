@@ -310,7 +310,7 @@ class SupplyChain:
     events_id : ids of events
     """
 
-    def __init__(self,mriot=None):
+    def __init__(self, mriot=None):
 
         """Initialize SupplyChain."""
         self.mriot = pymrio.IOSystem() if mriot is None else mriot
@@ -411,13 +411,13 @@ class SupplyChain:
         events_w_imp_bool = np.asarray(impact.imp_mat.sum(1)!=0).flatten()
 
         self.secs_exp = pd.DataFrame(
-            0, 
-            index=["total_value"], 
+            0,
+            index=["total_value"],
             columns=self.mriot.Z.columns
         )
         self.secs_imp = pd.DataFrame(
-            0, 
-            index=impact.event_id[events_w_imp_bool], 
+            0,
+            index=impact.event_id[events_w_imp_bool],
             columns=self.mriot.Z.columns
         )
         self.secs_imp.index = self.secs_imp.index.set_names('event_id')
@@ -587,11 +587,7 @@ class SupplyChain:
 
         idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
 
-        if (not idx_country.size > 0.0) and (mriot_type == "OECD21"):
-            raise ValueError(
-                f"OECD21 does not contain info on {mriot_reg_name} neither has a ROW region"
-                )
-        elif not idx_country.size > 0.0:
+        if not idx_country.size > 0.0:
             mriot_reg_name = "ROW"
 
         return mriot_reg_name
