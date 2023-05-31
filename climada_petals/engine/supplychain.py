@@ -44,41 +44,6 @@ MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
 calc_G = pymrio.calc_L
 
 
-def parse_mriot_from_df(
-    mriot_df=None, col_iso3=None, col_sectors=None, rows_data=None, cols_data=None
-):
-    """Build multi-index dataframes of the transaction matrix, final demand and total
-       production from a Multi-Regional Input-Output Table dataframe.
-
-    Parameters
-    ----------
-    v : pandas.DataFrame or numpy.array
-        a row vector of the total final added-value
-    G : pandas.DataFrame or numpy.array
-        Symmetric input output Ghosh table
-    """
-
-    start_row, end_row = rows_data
-    start_col, end_col = cols_data
-
-    sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
-    regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
-    multiindex = pd.MultiIndex.from_product(
-        [regions, sectors], names=["region", "sector"]
-    )
-
-    Z = mriot_df.iloc[start_row:end_row, start_col:end_col].values.astype(float)
-    Z = pd.DataFrame(data=Z, index=multiindex, columns=multiindex)
-
-    Y = mriot_df.iloc[start_row:end_row, end_col:-1].sum(1).values.astype(float)
-    Y = pd.DataFrame(data=Y, index=multiindex, columns=["final demand"])
-
-    x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
-    x = pd.DataFrame(data=x, index=multiindex, columns=["total production"])
-
-    return Z, Y, x
-
-
 def calc_v(Z, x):
     """Calculate value added (v) from Z and x
 
@@ -95,6 +60,11 @@ def calc_v(Z, x):
     -------
     pandas.DataFrame or numpy.array
         Value added v as row vector
+
+    Notes
+    -----
+    This function adapts pymrio.tools.iomath.calc_x to compute
+    value added (v).
     """
 
     value_added = np.diff(np.vstack((Z.sum(0), x.T)), axis=0)
@@ -182,13 +152,61 @@ def calc_x_from_G(G, v):
     return x
 
 
+def parse_mriot_from_df(
+    mriot_df=None, col_iso3=None, col_sectors=None, rows_data=None, cols_data=None
+):
+    """Build multi-index dataframes of the transaction matrix, final demand and total
+       production from a Multi-Regional Input-Output Table dataframe.
+
+    Parameters
+    ----------
+    mriot_df : pandas.DataFrame
+        The Multi-Regional Input-Output Table
+    col_iso3 : int
+        Column's position of regions' iso names
+    col_sectors : int
+        Column's position of sectors' names
+    rows_data : (int, int)
+        Tuple of integers with positions of rows 
+        containing the MRIOT data
+    cols_data : (int, int)
+        Tuple of integers with positions of columns 
+        containing the MRIOT data
+    """
+
+    start_row, end_row = rows_data
+    start_col, end_col = cols_data
+
+    sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
+    regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
+    multiindex = pd.MultiIndex.from_product(
+        [regions, sectors], names=["region", "sector"]
+    )
+
+    Z = mriot_df.iloc[start_row:end_row, start_col:end_col].values.astype(float)
+    Z = pd.DataFrame(data=Z, index=multiindex, columns=multiindex)
+
+    Y = mriot_df.iloc[start_row:end_row, end_col:-1].sum(1).values.astype(float)
+    Y = pd.DataFrame(data=Y, index=multiindex, columns=["final demand"])
+
+    x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
+    x = pd.DataFrame(data=x, index=multiindex, columns=["total production"])
+
+    return Z, Y, x
+
+
 def mriot_file_name(mriot_type, mriot_year):
     """Retrieve the original EXIOBASE3, WIOD16 or OECD21 MRIOT file name
 
     Parameters
     ----------
-    mriot_type : string
+    mriot_type : str
     mriot_year : int
+
+    Returns
+    -------
+    str
+        name of MRIOT file
     """
 
     if mriot_type == "EXIOBASE3":
@@ -205,13 +223,21 @@ def mriot_file_name(mriot_type, mriot_year):
 
 
 def download_mriot(mriot_type, mriot_year, download_dir):
-    """Download EXIOBASE3, WIOD16 or OECD21 MRIOT for specific years
+    """Download EXIOBASE3, WIOD16 or OECD21 Multi-Regional Input Output Tables 
+    for specific years. 
 
     Parameters
     ----------
-    mriot_type : string
+    mriot_type : str
     mriot_year : int
     download_dir : pathlib.PosixPath
+
+    Notes
+    -----
+    The download of EXIOBASE3 and OECD21 tables makes use of pymrio functions.
+    The download of WIOD16 tables requires ad-hoc functions, since the
+    related pymrio functions were broken at the time of implementation
+    of this function.
     """
 
     if mriot_type == "EXIOBASE3":
@@ -248,6 +274,13 @@ def parse_mriot(mriot_type, downloaded_file):
     ----------
     mriot_type : str
     downloaded_file : pathlib.PosixPath
+
+    Notes
+    -----
+    The parsing of EXIOBASE3 and OECD21 tables makes use of pymrio functions.
+    The parsing of WIOD16 tables requires ad-hoc functions, since the
+    related pymrio functions were broken at the time of implementation
+    of this function.
     """
 
     if mriot_type == "EXIOBASE3":
@@ -286,6 +319,7 @@ def parse_mriot(mriot_type, downloaded_file):
         raise RuntimeError(f"Unknown mriot_type: {mriot_type}")
     return mriot
 
+
 class SupplyChain:
     """SupplyChain class.
 
@@ -300,43 +334,71 @@ class SupplyChain:
                 mriot.Y : final demand
                 mriot.x : industry or total output
                 mriot.meta : metadata
-    coeffs : pd.DataFrame
-            Technical (if Leontief, A) or allocation (if Ghosh, B) coefficients matrix
-    inverse : pd.DataFrame
-            Leontief (L) or Ghosh (G) inverse matrix
+    secs_exp : pd.DataFrame
+            Exposure dataframe of each country/sector in the MRIOT. Columns are the 
+            same as the chosen MRIOT.
+    secs_imp : pd.DataFrame
+            Impact dataframe for the directly affected countries/sectors for each event. 
+            Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
+    secs_shock : pd.DataFrame
+            Shocks (i.e. impact / exposure) dataframe for the directly affected countries/sectors
+            for each event. Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
+    inverse : dict
+            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if 
+            approach is ghosh) inverse matrix.
+    coeffs : dict
+            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            and values the Technical (A, if approach is leontief or eeioa) or allocation 
+            (B, if approach is ghosh) coefficients matrix.
     supchain_imp : dict
-            Dictionary of supply chain impact for each country, 
-            sector, event and io_approach
-    events_id : ids of events
+            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            and values dataframes of indirect impacts to countries/sectors for each event.
+            For each dataframe, columns are the same as the chosen MRIOT and rows are the 
+            hazard events' ids.
     """
 
-    def __init__(self, mriot=None):
+    def __init__(self, mriot):
 
-        """Initialize SupplyChain."""
-        self.mriot = pymrio.IOSystem() if mriot is None else mriot
+        """Initialize SupplyChain.
+
+        Parameters
+        ----------
+        mriot : pymrio.IOSystem
+                An object containing all MRIOT related info (see also pymrio package):
+                    mriot.Z : transaction matrix, or interindustry flows matrix
+                    mriot.Y : final demand
+                    mriot.x : industry or total output
+                    mriot.meta : metadata
+        """
+
+        self.mriot = mriot
+        self.secs_exp = None
+        self.secs_imp = None
         self.secs_shock = None
-        self.supchain_imp = {}
-        self.inverse = {}
-        self.coeffs = {}
+        self.inverse = dict()
+        self.coeffs = dict()
+        self.supchain_imp = dict()
 
     @classmethod
     def from_mriot(
         cls, mriot_type, mriot_year, mriot_dir=MRIOT_DIRECTORY, del_downloads=True
     ):
-        """Download and read Multi-Regional Input-Output Tables using pymrio.
+        """Download, parse and read WIOD16, EXIOBASE3, or OECD21 Multi-Regional 
+        Input-Output Tables.
 
         Parameters
         ----------
         mriot_type : str
-            Type of mriot table to read.
+            Type of mriot table to use.
             The three possible types are: 'EXIOBASE3', 'WIOD16', 'OECD21'
         mriot_year : int
             Year of MRIOT
         mriot_dir : pathlib.PosixPath
-            Path to the MRIOT folder
+            Path to the MRIOT folder. Default is CLIMADA storing directory.
         del_downloads : bool
             If the downloaded files are deleted after saving the parsed data. Default is
-            True. WIOD16 data and OECD21 data are downloaded as group of years
+            True. WIOD16 and OECD21 data are downloaded as group of years.
 
         Returns
         -------
@@ -388,11 +450,33 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_shock_to_sectors(self, exposure, impact, impacted_secs=None, shock_factor=None):
+    def calc_shock_to_sectors(self, 
+                              exposure, 
+                              impact, 
+                              impacted_secs=None, 
+                              shock_factor=None
+                              ):
         """Calculate exposure, impact and shock at the sectorial level.
-        This function needs to return an object equivalent to self.direct_imp_mat
-        starting from a standard CLIMADA impact calculation. Will call this object
-        self.impacts_to_sectors. This object will also compute a sector exposure.
+        This function translate spatially-distrubted exposure and impact 
+        information into exposure and impact of MRIOT's country/sectors and 
+        for each hazard event.
+
+        Parameters
+        ----------
+        exposure : climada.entity.Exposure
+            CLIMADA Exposure object of direct impact calculation
+        impact : climada.engine.Impact
+            CLIMADA Impact object of direct impact calculation
+        impacted_secs : (range, np.ndarray, str, list)
+            Information regarding the impacted sectors. This can be provided
+            as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
+            or as sector names (as string or list).
+        shock_factor : np.array
+            It has lenght equal to the number of sectors. For each sector, it defined to
+            what extent the fraction of indirect losses differs from the one of direct
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock 
+            factors for all sectors are equal to 1, i.e., that production and direct losses 
+            fractions are the same.
         """
 
         if impacted_secs is None:
@@ -462,9 +546,15 @@ class SupplyChain:
             self.secs_shock[self.secs_shock > 1] = 1
 
     def calc_matrices(self, io_approach):
-        """
-        Build technical coefficient and Leontief inverse matrixes (if Leontief approach)
-        or allocation coefficients and Ghosh matrixes (if Ghosh approach).
+        """Build technical coefficient and Leontief inverse matrixes 
+        (if leontief or eeioa approach) or allocation coefficients and 
+        Ghosh matrixes (if ghosh approach).
+
+        Parameters
+        ----------
+        io_approach : str
+            The adopted input-output modeling approach.
+            Possible choices are 'leontief', 'ghosh' and 'eeioa'.
         """
 
         io_model = {
@@ -483,15 +573,28 @@ class SupplyChain:
                     exposure=None,
                     impact=None,
                     impacted_secs=None):
-        """Calculate indirect production impacts according to the specified input-output
-        approach.
+        """Calculate indirect production impacts based on to the 
+        chosen input-output approach.
 
         Parameters
         ----------
-        exposures : climada.entity.Exposures
         io_approach : str
             The adopted input-output modeling approach.
             Possible choices are 'leontief', 'ghosh' and 'eeioa'.
+        exposure : climada.entity.Exposure
+            CLIMADA Exposure object of direct impact calculation. Default is None.
+        impact : climada.engine.Impact
+            CLIMADA Impact object of direct impact calculation. Default is None.
+        impacted_secs : (range, np.ndarray, str, list)
+            Information regarding the impacted sectors. This can be provided
+            as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
+            or as sector names (as string or list). Default is None.
+        shock_factor : np.array
+            It has lenght equal to the number of sectors. For each sector, it defined to
+            what extent the fraction of indirect losses differs from the one of direct
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock 
+            factors for all sectors are equal to 1, i.e., that production and direct losses 
+            fractions are the same. Default is None.
 
         References
         ----------
@@ -509,7 +612,6 @@ class SupplyChain:
             self.calc_shock_to_sectors(exposure, impact, impacted_secs)
         
         n_events = self.secs_shock.shape[0]
-        # find a better place to locate conversion_factor, once and for all cases
         if io_approach == "leontief":
             degr_demand = (
                 self.secs_shock * self.mriot.Y.sum(1) * self.conversion_factor()
@@ -551,7 +653,8 @@ class SupplyChain:
 
     def conversion_factor(self):
         """
-        Convert values in MRIOT.
+        Conversion factor based on unit specified in the
+        Multi-Regional Input-Output Table.
         """
 
         unit = None
@@ -571,8 +674,8 @@ class SupplyChain:
 
     def map_exp_to_mriot(self, exp_regid, mriot_type):
         """
-        Map regions names in exposure into Input-output regions names.
-        exp_regid must be according to ISO 3166 numeric country codes.
+        Map regions names in exposure into Input-Output regions names.
+        exp_regid must follow ISO 3166 numeric country codes.
         """
 
         if mriot_type == "EXIOBASE3":
