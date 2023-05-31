@@ -405,6 +405,9 @@ class SupplyChain:
         elif isinstance(impacted_secs, (range, np.ndarray)):
             impacted_secs = self.mriot.get_sectors()[impacted_secs].tolist()
 
+        elif isinstance(impacted_secs, str):
+            impacted_secs = [impacted_secs]
+
         if shock_factor is None:
             shock_factor = np.repeat(1, self.mriot.x.shape[0])
 
