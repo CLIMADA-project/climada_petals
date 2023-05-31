@@ -314,7 +314,7 @@ class SupplyChain:
 
         """Initialize SupplyChain."""
         self.mriot = pymrio.IOSystem() if mriot is None else mriot
-        self.secs_stock_shock = pd.DataFrame([])
+        self.secs_shock = None
         self.supchain_imp = {}
         self.inverse = {}
         self.coeffs = {}
@@ -503,12 +503,12 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        n_events = self.secs_shock.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
         if self.secs_shock is None:
             self.calc_shock_to_sectors(exposure, impact, impacted_secs)
-
+        
+        n_events = self.secs_shock.shape[0]
         # find a better place to locate conversion_factor, once and for all cases
         if io_approach == "leontief":
             degr_demand = (
