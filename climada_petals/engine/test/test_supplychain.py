@@ -184,19 +184,6 @@ class TestSupplyChain(unittest.TestCase):
         self.assertEqual(np.shape(sup.mriot.Z), (112, 112))
         self.assertAlmostEqual(sup.mriot.x.sum().values[0], 3533367.89439, places=3)
 
-    def test_conversion_factor(self):
-        mriot = build_mriot()
-        sup = SupplyChain(mriot)
-
-        self.assertEqual(sup.conversion_factor(), 1)
-
-        # M.EUR or Million USD
-        sup.mriot.unit = 'M.EUR'
-        self.assertEqual(sup.conversion_factor(), 1e6)
-
-        sup.mriot.unit = 'Million USD'
-        self.assertEqual(sup.conversion_factor(), 1e6)
-
     def test_map_exp_to_mriot(self):
         mriot_iso3 = build_mriot()
         sup_iso3 = SupplyChain(mriot_iso3)
@@ -365,7 +352,7 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse[io_approach].iloc[0, 8], 0.00064, places=3)
 
         self.assertAlmostEqual(
-            sup.supchain_imp[io_approach].values.sum(), 7093283110973.164, places=2
+            sup.supchain_imp[io_approach].values.sum(), 7093283.110973164, places=2
         )
 
         io_approach = "leontief"
@@ -379,7 +366,7 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse[io_approach].iloc[0, 8], 0.0057, places=3)
 
         self.assertAlmostEqual(
-            sup.supchain_imp[io_approach].values.sum(), 4460353601586.872, places=2
+            sup.supchain_imp[io_approach].values.sum(), 4460353.601586872, places=2
         )
 
         io_approach = "eeioa"
@@ -394,7 +381,7 @@ class TestSupplyChain(unittest.TestCase):
         self.assertAlmostEqual(sup.inverse[io_approach].iloc[0, 8], 0.0057, places=3)
 
         self.assertAlmostEqual(
-            sup.supchain_imp[io_approach].values.sum(), 13786581420801.48, places=2
+            sup.supchain_imp[io_approach].values.sum(), 13786581.420801481, places=2
         )
 
 ## Execute Tests
