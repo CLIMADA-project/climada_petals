@@ -650,27 +650,6 @@ class SupplyChain:
         else:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
-    # def conversion_factor(self):
-    #     """
-    #     Conversion factor based on unit specified in the
-    #     Multi-Regional Input-Output Table.
-    #     """
-
-    #     unit = None
-    #     if isinstance(self.mriot.unit, pd.DataFrame):
-    #         unit = self.mriot.unit.values[0][0]
-    #     elif isinstance(self.mriot.unit, str):
-    #         unit = self.mriot.unit
-    #     if unit in ["M.EUR", "Million USD"]:
-    #         conversion_factor = 1e6
-    #     else:
-    #         conversion_factor = 1
-    #         warnings.warn(
-    #             "No known unit was provided. It is assumed that values do not need to "
-    #             "be converted."
-    #         )
-    #     return conversion_factor
-
     def map_exp_to_mriot(self, exp_regid, mriot_type):
         """
         Map regions names in exposure into Input-Output regions names.
