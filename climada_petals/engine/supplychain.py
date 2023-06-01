@@ -610,11 +610,11 @@ class SupplyChain:
 
         if self.secs_shock is None:
             self.calc_shock_to_sectors(exposure, impact, impacted_secs)
-        
+
         n_events = self.secs_shock.shape[0]
         if io_approach == "leontief":
             degr_demand = (
-                self.secs_shock * self.mriot.Y.sum(1) * self.conversion_factor()
+                self.secs_shock * self.mriot.Y.sum(1)
             )
 
             self.supchain_imp.update({io_approach : pd.concat(
@@ -628,7 +628,7 @@ class SupplyChain:
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
             degr_value_added = (
-                self.secs_shock * value_added.values * self.conversion_factor()
+                self.secs_shock * value_added.values
             )
 
             self.supchain_imp.update({io_approach : pd.concat(
@@ -645,32 +645,31 @@ class SupplyChain:
                     self.secs_shock.dot(self.inverse[io_approach])
                     * self.mriot.x.values.flatten()
                 )
-                * self.conversion_factor()
             )})
 
         else:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
-    def conversion_factor(self):
-        """
-        Conversion factor based on unit specified in the
-        Multi-Regional Input-Output Table.
-        """
+    # def conversion_factor(self):
+    #     """
+    #     Conversion factor based on unit specified in the
+    #     Multi-Regional Input-Output Table.
+    #     """
 
-        unit = None
-        if isinstance(self.mriot.unit, pd.DataFrame):
-            unit = self.mriot.unit.values[0][0]
-        elif isinstance(self.mriot.unit, str):
-            unit = self.mriot.unit
-        if unit in ["M.EUR", "Million USD"]:
-            conversion_factor = 1e6
-        else:
-            conversion_factor = 1
-            warnings.warn(
-                "No known unit was provided. It is assumed that values do not need to "
-                "be converted."
-            )
-        return conversion_factor
+    #     unit = None
+    #     if isinstance(self.mriot.unit, pd.DataFrame):
+    #         unit = self.mriot.unit.values[0][0]
+    #     elif isinstance(self.mriot.unit, str):
+    #         unit = self.mriot.unit
+    #     if unit in ["M.EUR", "Million USD"]:
+    #         conversion_factor = 1e6
+    #     else:
+    #         conversion_factor = 1
+    #         warnings.warn(
+    #             "No known unit was provided. It is assumed that values do not need to "
+    #             "be converted."
+    #         )
+    #     return conversion_factor
 
     def map_exp_to_mriot(self, exp_regid, mriot_type):
         """
