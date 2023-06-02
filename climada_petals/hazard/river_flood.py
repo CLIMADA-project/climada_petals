@@ -24,13 +24,17 @@ __all__ = ['RiverFlood']
 import logging
 import datetime as dt
 import copy
+from collections.abc import Iterable
 from pathlib import Path
+
 import numpy as np
 import scipy as sp
 import xarray as xr
 import pandas as pd
 import geopandas as gpd
 from rasterio.warp import Resampling
+from shapely.geometry import Polygon, MultiPolygon
+
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV
 import climada.util.coordinates as u_coord
 from climada.hazard.base import Hazard
@@ -169,7 +173,7 @@ class RiverFlood(Hazard):
                                     files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
-                                    geometry=cntry_geom)
+                                    geometry=cntry_geom.geoms)
                     # self.centroids.set_meta_to_lat_lon()
                 else:
                     cntry_geom = u_coord.get_land_geometry(countries)
@@ -179,13 +183,18 @@ class RiverFlood(Hazard):
                                     files_intensity=[dph_path],
                                     files_fraction=[frc_path],
                                     band=bands.tolist(),
-                                    geometry=cntry_geom)
+                                    geometry=cntry_geom.geoms)
                     # self.centroids.set_meta_to_lat_lon()
 
         elif shape:
             shapes = gpd.read_file(shape)
 
             rand_geom = shapes.geometry[0]
+
+            if isinstance(rand_geom, MultiPolygon):
+                rand_geom = rand_geom.geoms
+            elif isinstance(rand_geom, Polygon) or not isinstance(rand_geom, Iterable):
+                rand_geom = [rand_geom]
 
             # TODO: replace this call to `set_raster` with a call to `from_raster` when
             # replacing `set_from_nc` with a @classmethod `from_nc`
