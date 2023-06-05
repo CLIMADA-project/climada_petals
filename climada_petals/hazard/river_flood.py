@@ -189,7 +189,6 @@ class RiverFlood(Hazard):
                                   files_fraction=[frc_path],
                                   band=bands.tolist(),
                                   geometry=rand_geom)
-            return
 
         elif not centroids:
             # centroids as raster
