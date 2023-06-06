@@ -601,7 +601,7 @@ class SupplyChain:
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
                                  inventory_dict = None,
-                                 productive_capital_vector = self.secs_exp,
+                                 productive_capital_vector = self.secs_exp / self.conversion_factor(),
                                  productive_capital_to_VA_dict = None,
                                  psi_param=0.80,
                                  inventory_restoration_tau=60
