@@ -6,7 +6,7 @@ mamba env create -n petals_env -f ~/jobs/climada_install_env/workspace/requireme
 mamba env update -n petals_env -f requirements/env_climada.yml
 
 conda activate petals_env
-pip install -e ~/jobs/climada_install_env/workspace/[dev]
-
+pip install -e ~/jobs/climada_install_env/workspace/[test]
+python -m pip install -e "./[test]"
 make install_test
 conda deactivate
