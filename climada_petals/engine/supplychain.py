@@ -622,10 +622,7 @@ class SupplyChain:
                                     households_impact=[],
                                     occurrence = (self.events_w_imp_date[i]-self.events_w_imp_date[0]+1),
                                     duration = 1,
-                                    # TODO: it is assumed that exposure/impacts are expressed with full 
-                                    # values, deal with cases where CLIMADA exposure is expressed in K, 
-                                    # M or Bn
-                                    event_monetary_factor = 1,
+                                    event_monetary_factor = self.conversion_factor(),
                                     ) for i in range(n_events)
                             ]
 
@@ -635,7 +632,7 @@ class SupplyChain:
                 self.sim.loop()
                 self.indir_prod_impt_mat = self.sim.production_realised.copy()[
                                                     self.secs_imp.columns
-                                                    ]*self.conversion_factor()
+                                                    ]
 
             else: #'boario_separated'
                 indir_prod_impt_df_list = []
