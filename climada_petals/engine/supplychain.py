@@ -346,31 +346,34 @@ class SupplyChain:
                 mriot.x : industry or total output
                 mriot.meta : metadata
     secs_exp : pd.DataFrame
-            Exposure dataframe of each country/sector in the MRIOT. Columns are the 
+            Exposure dataframe of each country/sector in the MRIOT. Columns are the
             same as the chosen MRIOT.
     secs_imp : pd.DataFrame
-            Impact dataframe for the directly affected countries/sectors for each event. 
+            Impact dataframe for the directly affected countries/sectors for each event.
             Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
     secs_shock : pd.DataFrame
             Shocks (i.e. impact / exposure) dataframe for the directly affected countries/sectors
             for each event. Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
     inverse : dict
             Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
-            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if 
+            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if
             approach is ghosh) inverse matrix.
     coeffs : dict
             Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
-            and values the Technical (A, if approach is leontief or eeioa) or allocation 
+            and values the Technical (A, if approach is leontief or eeioa) or allocation
             (B, if approach is ghosh) coefficients matrix.
+    sim: boario.simulation.Simulation
+            Boario's simulation object. Only relevant when io_approach in "boario_aggregated" or
+            "boario_disaggregated". Default is None.
+    events_date: np.array
+            Integer date corresponding to the proleptic Gregorian ordinal, where January 1 of year
+            1 has ordinal 1 (ordinal format of datetime library) of events leading to impact.
+            Deafult is None.
     supchain_imp : dict
             Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
             and values dataframes of indirect impacts to countries/sectors for each event.
             For each dataframe, columns are the same as the chosen MRIOT and rows are the 
             hazard events' ids.
-    ??
-    sim: boario simulation instance
-    events_w_imp_id : ids of events leading to impacts
-    events_w_imp_date : dates of events leading to impacts
     """
 
     def __init__(self, mriot):
@@ -391,6 +394,8 @@ class SupplyChain:
         self.secs_exp = None
         self.secs_imp = None
         self.secs_shock = None
+        self.sim = None
+        self.events_date = None
         self.inverse = dict()
         self.coeffs = dict()
         self.supchain_imp = dict()
@@ -520,6 +525,7 @@ class SupplyChain:
             shock_factor = np.repeat(1, self.mriot.x.shape[0])
 
         events_w_imp_bool = np.asarray(impact.imp_mat.sum(1)!=0).flatten()
+        self.events_date = impact.date[events_w_imp_bool]
 
         self.secs_exp = pd.DataFrame(
             0,
@@ -585,6 +591,8 @@ class SupplyChain:
             "leontief": (pymrio.calc_A, pymrio.calc_L),
             "eeioa": (pymrio.calc_A, pymrio.calc_L),
             "ghosh": (calc_B, calc_G),
+            "boario_aggregated": (pymrio.calc_A, pymrio.calc_L),
+            "boario_separated": (pymrio.calc_A, pymrio.calc_L)
         }
 
         coeff_func, inv_func = io_model[io_approach]
@@ -630,7 +638,7 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        n_events = self.events_w_imp_id.shape[0]
+        n_events = self.secs_shock.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
         if self.secs_shock is None:
@@ -674,8 +682,8 @@ class SupplyChain:
 
         elif io_approach in ['boario_aggregated', 'boario_separated']:
 
-            self.mriot.A = self.coeffs
-            self.mriot.L = self.inverse
+            self.mriot.A = self.coeffs[io_approach]
+            self.mriot.L = self.inverse[io_approach]
 
             # call ARIOPsiModel with default params
             model = ARIOPsiModel(self.mriot,
@@ -690,6 +698,8 @@ class SupplyChain:
                                  iotable_year_to_temporal_unit_factor = 365,
                                  infinite_inventories_sect = None,
                                  inventory_dict = None,
+                                 # productive capital vector needs to be in MRIOT, self.secs_exp's unit
+                                 # needs to be 1 (i.e., plain EUR or USD)
                                  productive_capital_vector = self.secs_exp / self.conversion_factor(),
                                  productive_capital_to_VA_dict = None,
                                  psi_param=0.80,
@@ -700,45 +710,69 @@ class SupplyChain:
             self.sim = Simulation(
                         model,
                         register_stocks=False,
-                        n_temporal_units_to_sim = self.events_w_imp_date[-1]-self.events_w_imp_date[0]+365,
-                        separate_sims = False,
-                             )
+                        n_temporal_units_to_sim = (self.events_date[-1]-self.events_date[0]+365),
+                        separate_sims = False
+                        )
 
             events_list = [EventKapitalRecover.from_series(
                                     impact=self.secs_imp.iloc[i],
                                     recovery_time = 30,
                                     recovery_function="linear",
                                     households_impact=[],
-                                    occurrence = (self.events_w_imp_date[i]-self.events_w_imp_date[0]+1),
+                                    occurrence = (self.events_date[i]-self.events_date[0]+1),
                                     duration = 1,
-                                    event_monetary_factor = self.conversion_factor(),
-                                    ) for i in range(n_events)
-                            ]
+                                    # here we pass the unit of the impact self.secs_imp, which like self.secs_exp
+                                    # is 1 (i.e., plain EUR or USD). Boario takes place of the conversion, as results
+                                    # will then be in MRIOT unit (e.g., M EUR)
+                                    event_monetary_factor = 1
+                        ) for i in range(n_events)
+            ]
 
             if io_approach == 'boario_aggregated':
                 self.sim.add_events(events_list)
-
                 self.sim.loop()
-                self.indir_prod_impt_mat = self.sim.production_realised.copy()[
-                                                    self.secs_imp.columns
-                                                    ]
+                self.supchain_imp.update({
+                    io_approach : self.sim.production_realised.copy()[
+                        self.secs_imp.columns]
+                })
 
             else: #'boario_separated'
-                indir_prod_impt_df_list = []
+                supchain_imp = []
                 for ev in events_list:
                     self.sim.add_event(ev)
                     self.sim.loop()
-                    indir_prod_impt_df_list.append(
+                    supchain_imp.append(
                         self.sim.production_realised.copy()[
-                            self.secs_imp.columns
-                            ]*self.conversion_factor()
+                            self.secs_imp.columns]
                         )
                     self.sim.reset_sim_full()
 
-                self.indir_prod_impt_mat = indir_prod_impt_df_list
-
+                self.supchain_imp.update({
+                    io_approach : supchain_imp
+                })
         else:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
+
+    def conversion_factor(self):
+        """
+        Conversion factor based on unit specified in the
+        Multi-Regional Input-Output Table.
+        """
+
+        unit = None
+        if isinstance(self.mriot.unit, pd.DataFrame):
+            unit = self.mriot.unit.values[0][0]
+        elif isinstance(self.mriot.unit, str):
+            unit = self.mriot.unit
+        if unit in ["M.EUR", "Million USD"]:
+            conversion_factor = 1e6
+        else:
+            conversion_factor = 1
+            warnings.warn(
+                "No known unit was provided. It is assumed that values do not need to "
+                "be converted."
+            )
+        return conversion_factor
 
     def map_exp_to_mriot(self, exp_regid, mriot_type):
         """
