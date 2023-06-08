@@ -531,7 +531,7 @@ class TCForecast(TCTracks):
         )
 
         # according to specs always num-num-letter
-        track['basin'] = ('time', np.full_like(track.time, sid[2], dtype='<U2'))
+        track['basin'] = ('time', np.full_like(track.time, sid[2], dtype=str))
 
         if sid[2] == 'X':
             LOGGER.info(

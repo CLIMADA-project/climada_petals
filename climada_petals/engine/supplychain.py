@@ -47,49 +47,6 @@ MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
 
 calc_G = pymrio.calc_L
 
-def parse_mriot_from_df(
-        mriot_df=None, col_iso3=None, col_sectors=None, 
-        rows_data=None, cols_data=None, row_fd_cats=None
-        ):
-    """Build multi-index dataframes of the transaction matrix, final demand and total
-       production from a Multi-Regional Input-Output Table dataframe.
-
-    Parameters
-    ----------
-    v : pandas.DataFrame or numpy.array
-        a row vector of the total final added-value
-    G : pandas.DataFrame or numpy.array
-        Symmetric input output Ghosh table
-    """
-
-    start_row, end_row = rows_data
-    start_col, end_col = cols_data
-
-    sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
-    regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
-    fd_cats = mriot_df.iloc[row_fd_cats, end_col:-1].unique()
-    multiindex = pd.MultiIndex.from_product(
-        [regions, sectors], names=["region", "sector"]
-    )
-
-    multiindex_final_demand = pd.MultiIndex.from_product(
-                [regions, fd_cats], names = ['region', 'category'])
-
-    Z = mriot_df.iloc[start_row:end_row, start_col:end_col].values.astype(float)
-    Z = pd.DataFrame(data=Z, index=multiindex, columns=multiindex)
-
-    Y = mriot_df.iloc[start_row:end_row, end_col:-1].values.astype(float)
-    Y = pd.DataFrame(
-                    data = Y,
-                    index = multiindex,
-                    columns = multiindex_final_demand
-                    )
-
-    x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
-    x = pd.DataFrame(data=x, index=multiindex, columns=["total production"])
-
-    return Z, Y, x
-
 def calc_v(Z, x):
     """Calculate value added (v) from Z and x
 
@@ -106,6 +63,11 @@ def calc_v(Z, x):
     -------
     pandas.DataFrame or numpy.array
         Value added v as row vector
+
+    Notes
+    -----
+    This function adapts pymrio.tools.iomath.calc_x to compute
+    value added (v).
     """
 
     value_added = np.diff(np.vstack((Z.sum(0), x.T)), axis=0)
@@ -193,13 +155,69 @@ def calc_x_from_G(G, v):
     return x
 
 
+def parse_mriot_from_df(
+        mriot_df=None, col_iso3=None, col_sectors=None,
+        rows_data=None, cols_data=None, row_fd_cats=None
+    ):
+    """Build multi-index dataframes of the transaction matrix, final demand and total
+       production from a Multi-Regional Input-Output Table dataframe.
+
+    Parameters
+    ----------
+    mriot_df : pandas.DataFrame
+        The Multi-Regional Input-Output Table
+    col_iso3 : int
+        Column's position of regions' iso names
+    col_sectors : int
+        Column's position of sectors' names
+    rows_data : (int, int)
+        Tuple of integers with positions of rows
+        containing the MRIOT data
+    cols_data : (int, int)
+        Tuple of integers with positions of columns
+        containing the MRIOT data
+    """
+
+    start_row, end_row = rows_data
+    start_col, end_col = cols_data
+
+    sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
+    regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
+    fd_cats = mriot_df.iloc[row_fd_cats, end_col:-1].unique()
+    multiindex = pd.MultiIndex.from_product(
+        [regions, sectors], names=["region", "sector"]
+    )
+
+    multiindex_final_demand = pd.MultiIndex.from_product(
+                [regions, fd_cats], names = ['region', 'category'])
+
+    Z = mriot_df.iloc[start_row:end_row, start_col:end_col].values.astype(float)
+    Z = pd.DataFrame(data=Z, index=multiindex, columns=multiindex)
+
+    Y = mriot_df.iloc[start_row:end_row, end_col:-1].values.astype(float)
+    Y = pd.DataFrame(
+                    data = Y,
+                    index = multiindex,
+                    columns = multiindex_final_demand
+                    )
+
+    x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
+    x = pd.DataFrame(data=x, index=multiindex, columns=["total production"])
+
+    return Z, Y, x
+
 def mriot_file_name(mriot_type, mriot_year):
     """Retrieve the original EXIOBASE3, WIOD16 or OECD21 MRIOT file name
 
     Parameters
     ----------
-    mriot_type : string
+    mriot_type : str
     mriot_year : int
+
+    Returns
+    -------
+    str
+        name of MRIOT file
     """
 
     if mriot_type == "EXIOBASE3":
@@ -216,13 +234,21 @@ def mriot_file_name(mriot_type, mriot_year):
 
 
 def download_mriot(mriot_type, mriot_year, download_dir):
-    """Download EXIOBASE3, WIOD16 or OECD21 MRIOT for specific years
+    """Download EXIOBASE3, WIOD16 or OECD21 Multi-Regional Input Output Tables 
+    for specific years. 
 
     Parameters
     ----------
-    mriot_type : string
+    mriot_type : str
     mriot_year : int
     download_dir : pathlib.PosixPath
+
+    Notes
+    -----
+    The download of EXIOBASE3 and OECD21 tables makes use of pymrio functions.
+    The download of WIOD16 tables requires ad-hoc functions, since the
+    related pymrio functions were broken at the time of implementation
+    of this function.
     """
 
     if mriot_type == "EXIOBASE3":
@@ -259,6 +285,13 @@ def parse_mriot(mriot_type, downloaded_file):
     ----------
     mriot_type : str
     downloaded_file : pathlib.PosixPath
+
+    Notes
+    -----
+    The parsing of EXIOBASE3 and OECD21 tables makes use of pymrio functions.
+    The parsing of WIOD16 tables requires ad-hoc functions, since the
+    related pymrio functions were broken at the time of implementation
+    of this function.
     """
 
     if mriot_type == "EXIOBASE3":
@@ -297,6 +330,7 @@ def parse_mriot(mriot_type, downloaded_file):
         raise RuntimeError(f"Unknown mriot_type: {mriot_type}")
     return mriot
 
+
 class SupplyChain:
     """SupplyChain class.
 
@@ -311,75 +345,75 @@ class SupplyChain:
                 mriot.Y : final demand
                 mriot.x : industry or total output
                 mriot.meta : metadata
-    coeffs : pd.DataFrame
-            Technical (if Leontief, A) or allocations (if Ghosh, B) coefficients matrix
-    inverse : pd.DataFrame
-            Leontief (L) or Ghosh (G) inverse matrix
-    dir_prod_impt_mat : pd.DataFrame
-            Direct production impact for each country, sector and event
-    dir_prod_impt_eai : pd.DataFrame
-            Expected direct production impact for each country and sector
-    indir_prod_impt_mat : pd.DataFrame
-            Indirect production impact for each country, sector and event
-    indir_prod_impt_mat : pd.DataFrame
-            Expected indirect production impact for each country and sector
-    tot_prod_impt_mat : pd.DataFrame
-            Total production impact for each country, sector and event
-    tot_prod_impt_eai : pd.DataFrame
-            Expected total production impact for each country and sector
+    secs_exp : pd.DataFrame
+            Exposure dataframe of each country/sector in the MRIOT. Columns are the 
+            same as the chosen MRIOT.
+    secs_imp : pd.DataFrame
+            Impact dataframe for the directly affected countries/sectors for each event. 
+            Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
+    secs_shock : pd.DataFrame
+            Shocks (i.e. impact / exposure) dataframe for the directly affected countries/sectors
+            for each event. Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
+    inverse : dict
+            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if 
+            approach is ghosh) inverse matrix.
+    coeffs : dict
+            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            and values the Technical (A, if approach is leontief or eeioa) or allocation 
+            (B, if approach is ghosh) coefficients matrix.
+    supchain_imp : dict
+            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            and values dataframes of indirect impacts to countries/sectors for each event.
+            For each dataframe, columns are the same as the chosen MRIOT and rows are the 
+            hazard events' ids.
+    ??
     sim: boario simulation instance
     events_w_imp_id : ids of events leading to impacts
     events_w_imp_date : dates of events leading to impacts
     """
 
-    def __init__(
-        self,
-        mriot=None,
-        inverse=None,
-        coeffs=None,
-        dir_prod_impt_mat=None,
-        dir_prod_impt_eai=None,
-        indir_prod_impt_mat=None,
-        indir_prod_impt_eai=None,
-        total_imp_mat=None,
-        total_eai=None,
-    ):
+    def __init__(self, mriot):
 
-        """Initialize SupplyChain."""
-        self.mriot = pymrio.IOSystem() if mriot is None else mriot
-        self.inverse = pd.DataFrame([]) if inverse is None else inverse
-        self.coeffs = pd.DataFrame([]) if coeffs is None else coeffs
-        self.dir_prod_impt_mat = (
-            pd.DataFrame([]) if dir_prod_impt_mat is None else dir_prod_impt_mat
-        )
-        self.dir_prod_impt_eai = pd.DataFrame([]) if dir_prod_impt_eai is None else dir_prod_impt_eai
-        self.indir_prod_impt_mat = (
-            pd.DataFrame([]) if indir_prod_impt_mat is None else indir_prod_impt_mat
-        )
-        self.indir_prod_impt_eai = pd.DataFrame([]) if indir_prod_impt_eai is None else indir_prod_impt_eai
-        self.total_imp_mat = (
-            pd.DataFrame([]) if total_imp_mat is None else total_imp_mat
-        )
-        self.total_eai = pd.DataFrame([]) if total_eai is None else total_eai
+        """Initialize SupplyChain.
+
+        Parameters
+        ----------
+        mriot : pymrio.IOSystem
+                An object containing all MRIOT related info (see also pymrio package):
+                    mriot.Z : transaction matrix, or interindustry flows matrix
+                    mriot.Y : final demand
+                    mriot.x : industry or total output
+                    mriot.meta : metadata
+        """
+
+        self.mriot = mriot
+        self.secs_exp = None
+        self.secs_imp = None
+        self.secs_shock = None
+        self.inverse = dict()
+        self.coeffs = dict()
+        self.supchain_imp = dict()
 
     @classmethod
     def from_mriot(
         cls, mriot_type, mriot_year, mriot_dir=MRIOT_DIRECTORY, del_downloads=True
     ):
-        """Download and read Multi-Regional Input-Output Tables using pymrio.
+        """Download, parse and read WIOD16, EXIOBASE3, or OECD21 Multi-Regional 
+        Input-Output Tables.
 
         Parameters
         ----------
         mriot_type : str
-            Type of mriot table to read.
+            Type of mriot table to use.
             The three possible types are: 'EXIOBASE3', 'WIOD16', 'OECD21'
         mriot_year : int
             Year of MRIOT
         mriot_dir : pathlib.PosixPath
-            Path to the MRIOT folder
+            Path to the MRIOT folder. Default is CLIMADA storing directory.
         del_downloads : bool
             If the downloaded files are deleted after saving the parsed data. Default is
-            True. WIOD16 data and OECD21 data are downloaded as group of years
+            True. WIOD16 and OECD21 data are downloaded as group of years.
 
         Returns
         -------
@@ -440,17 +474,33 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_secs_exp_imp_shock(self, exposure, impact, impacted_secs, shock_factor=None):
-        """TODO: better docstring
-        This function needs to return an object equivalent to self.direct_imp_mat
-        starting from a standard CLIMADA impact calculation. Will call this object
-        self.impacts_to_sectors. This object will also compute a sector exposure.
+    def calc_shock_to_sectors(self, 
+                              exposure, 
+                              impact, 
+                              impacted_secs=None, 
+                              shock_factor=None
+                              ):
+        """Calculate exposure, impact and shock at the sectorial level.
+        This function translate spatially-distrubted exposure and impact 
+        information into exposure and impact of MRIOT's country/sectors and 
+        for each hazard event.
 
-        shock_factor: np.array
-            By default, shocks to production are equivalent to the ratio between stock impact 
-            and exposure. For all sectors, shock_factor regulates whether this needs to 
-            attenuate (factors<1) or amplify (factors>1). Default value is None which implies 
-            factors for all sectors are = 1.
+        Parameters
+        ----------
+        exposure : climada.entity.Exposure
+            CLIMADA Exposure object of direct impact calculation
+        impact : climada.engine.Impact
+            CLIMADA Impact object of direct impact calculation
+        impacted_secs : (range, np.ndarray, str, list)
+            Information regarding the impacted sectors. This can be provided
+            as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
+            or as sector names (as string or list).
+        shock_factor : np.array
+            It has lenght equal to the number of sectors. For each sector, it defined to
+            what extent the fraction of indirect losses differs from the one of direct
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock 
+            factors for all sectors are equal to 1, i.e., that production and direct losses 
+            fractions are the same.
         """
 
         if impacted_secs is None:
@@ -463,20 +513,32 @@ class SupplyChain:
         elif isinstance(impacted_secs, (range, np.ndarray)):
             impacted_secs = self.mriot.get_sectors()[impacted_secs].tolist()
 
+        elif isinstance(impacted_secs, str):
+            impacted_secs = [impacted_secs]
+
+        if shock_factor is None:
+            shock_factor = np.repeat(1, self.mriot.x.shape[0])
+
+        events_w_imp_bool = np.asarray(impact.imp_mat.sum(1)!=0).flatten()
+
         self.secs_exp = pd.DataFrame(
-            0, index=["total_value"], columns=self.mriot.Z.columns
+            0,
+            index=["total_value"],
+            columns=self.mriot.Z.columns
         )
         self.secs_imp = pd.DataFrame(
-            0, index=impact.event_id, columns=self.mriot.Z.columns
+            0,
+            index=impact.event_id[events_w_imp_bool],
+            columns=self.mriot.Z.columns
         )
+        self.secs_imp.index = self.secs_imp.index.set_names('event_id')
 
         mriot_type = self.mriot.meta.name.split("-")[0]
 
         for exp_regid in exposure.gdf.region_id.unique():
             exp_bool = exposure.gdf.region_id == exp_regid
             tot_value_reg_id = exposure.gdf[exp_bool].value.sum()
-            # consider using impact.impact_reg_agg when merged - anyway check for the presence of imp_mat
-            tot_imp_reg_id = impact.imp_mat[:, np.where(exp_bool)[0]].sum(1)
+            tot_imp_reg_id = impact.imp_mat[events_w_imp_bool][:,exp_bool].sum(1)
 
             mriot_reg_name = self.map_exp_to_mriot(exp_regid, mriot_type)
             secs_prod = self.mriot.x.loc[(mriot_reg_name, impacted_secs), :]
@@ -494,14 +556,6 @@ class SupplyChain:
                 tot_imp_reg_id * secs_prod_ratio
             )
 
-        events_w_imp_bool = self.secs_imp.sum(1)!=0
-        self.secs_imp = self.secs_imp[events_w_imp_bool]
-        self.events_w_imp_id = impact.event_id[events_w_imp_bool]
-        self.events_w_imp_date = impact.date[events_w_imp_bool]
-
-        if shock_factor is None:
-            shock_factor = np.repeat(1, self.mriot.x.shape[0])
-
         self.secs_shock = self.secs_imp.divide(
             self.secs_exp.values
         ).fillna(0) * shock_factor
@@ -515,24 +569,56 @@ class SupplyChain:
             )
             self.secs_shock[self.secs_shock > 1] = 1
 
-    def calc_direct_production_impacts(self):
-        """Calculate direct production impacts."""
-
-        self.dir_prod_impt_mat = (
-            self.mriot.x.values.flatten() * self.secs_shock * self.conversion_factor()
-        )
-
-    # TODO: Consider saving results in a dict {io_approach: results} so one can run and
-    # save various model without reloading the IOT
-    def calc_indirect_production_impacts(self, io_approach):
-        """Calculate indirect production impacts according to the specified input-output
-        appraoch.
+    def calc_matrices(self, io_approach):
+        """Build technical coefficient and Leontief inverse matrixes 
+        (if leontief or eeioa approach) or allocation coefficients and 
+        Ghosh matrixes (if ghosh approach).
 
         Parameters
         ----------
         io_approach : str
             The adopted input-output modeling approach.
             Possible choices are 'leontief', 'ghosh' and 'eeioa'.
+        """
+
+        io_model = {
+            "leontief": (pymrio.calc_A, pymrio.calc_L),
+            "eeioa": (pymrio.calc_A, pymrio.calc_L),
+            "ghosh": (calc_B, calc_G),
+        }
+
+        coeff_func, inv_func = io_model[io_approach]
+
+        self.coeffs.update({io_approach: coeff_func(self.mriot.Z, self.mriot.x)})
+        self.inverse.update({io_approach: inv_func(self.coeffs[io_approach])})
+
+    def calc_impacts(self,
+                    io_approach,
+                    exposure=None,
+                    impact=None,
+                    impacted_secs=None):
+        """Calculate indirect production impacts based on to the 
+        chosen input-output approach.
+
+        Parameters
+        ----------
+        io_approach : str
+            The adopted input-output modeling approach.
+            Possible choices are 'leontief', 'ghosh' and 'eeioa'.
+        exposure : climada.entity.Exposure
+            CLIMADA Exposure object of direct impact calculation. Default is None.
+        impact : climada.engine.Impact
+            CLIMADA Impact object of direct impact calculation. Default is None.
+        impacted_secs : (range, np.ndarray, str, list)
+            Information regarding the impacted sectors. This can be provided
+            as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
+            or as sector names (as string or list). Default is None.
+        shock_factor : np.array
+            It has lenght equal to the number of sectors. For each sector, it defined to
+            what extent the fraction of indirect losses differs from the one of direct
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock 
+            factors for all sectors are equal to 1, i.e., that production and direct losses 
+            fractions are the same. Default is None.
 
         References
         ----------
@@ -547,41 +633,44 @@ class SupplyChain:
         n_events = self.events_w_imp_id.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
+        if self.secs_shock is None:
+            self.calc_shock_to_sectors(exposure, impact, impacted_secs)
+
+        n_events = self.secs_shock.shape[0]
         if io_approach == "leontief":
             degr_demand = (
-                self.secs_shock * self.mriot.Y.values.flatten() * self.conversion_factor()
+                self.secs_shock * self.mriot.Y.sum(1)
             )
 
-            self.indir_prod_impt_mat = pd.concat(
+            self.supchain_imp.update({io_approach : pd.concat(
                 [
-                    pymrio.calc_x_from_L(self.inverse, degr_demand.iloc[i])
+                    pymrio.calc_x_from_L(self.inverse[io_approach], degr_demand.iloc[i])
                     for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(self.events_w_imp_id)
+            ).T.set_index(self.secs_shock.index)})
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
             degr_value_added = (
-                self.secs_shock * value_added.values * self.conversion_factor()
+                self.secs_shock * value_added.values
             )
 
-            self.indir_prod_impt_mat = pd.concat(
+            self.supchain_imp.update({io_approach : pd.concat(
                 [
-                    calc_x_from_G(self.inverse, degr_value_added.iloc[i])
+                    calc_x_from_G(self.inverse[io_approach], degr_value_added.iloc[i])
                     for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(self.events_w_imp_id)
+            ).T.set_index(self.secs_shock.index)})
 
         elif io_approach == "eeioa":
-            self.indir_prod_impt_mat = (
+            self.supchain_imp.update({io_approach : (
                 pd.DataFrame(
-                    self.secs_shock.dot(self.inverse)
+                    self.secs_shock.dot(self.inverse[io_approach])
                     * self.mriot.x.values.flatten()
                 )
-                * self.conversion_factor()
-            )
+            )})
 
         elif io_approach in ['boario_aggregated', 'boario_separated']:
 
@@ -651,94 +740,10 @@ class SupplyChain:
         else:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
-    def calc_total_production_impacts(self):
-        """Calculate total production impacts."""
-        self.tot_prod_impt_mat = self.dir_prod_impt_mat.add(self.indir_prod_impt_mat)
-
-    def calc_production_impacts(
-        self,
-        impact,
-        exposure,
-        impacted_secs=None,
-        io_approach=None,
-        stock_to_prod_shock=None,
-    ):
-        """Calculate direct, indirect and total production impacts.
-
-        Parameters
-        ----------
-        impact : Impact
-            Impact object with stocks impacts.
-        exposure : Exposures
-            Exposures object for impact calculation.
-        impacted_secs : range, np.ndarray or list, optional
-            The directly affected sectors. If range or np.ndarray,
-            it contains the affected sectors' positions in the MRIOT.
-            If list, it contains the affected sectors' names in the MRIOT.
-        """
-
-        self.calc_secs_exp_imp_shock(exposure, impact, impacted_secs)
-
-        self.calc_direct_production_impacts(stock_to_prod_shock)
-        self.calc_indirect_production_impacts(io_approach)
-        self.calc_total_production_impacts()
-
-    def calc_production_eai(self, frequencies):
-
-        if not self.dir_prod_impt_mat is None:
-            self.dir_prod_impt_eai = self.dir_prod_impt_mat.T.dot(frequencies)
-
-        if io_approach not in ["boario_aggregated", "boario_separated"]:
-        #TODO: assess how to calc ind and tot eai for boario cases
-            if not self.indir_prod_impt_mat is None:
-                self.indir_prod_impt_eai = self.indir_prod_impt_mat.T.dot(frequencies)
-
-            if not self.tot_prod_impt_mat is None:
-                self.tot_prod_impt_eai = self.tot_prod_impt_mat.T.dot(frequencies)
-
-    def calc_matrices(self, io_approach):
-        """
-        Build technical coefficient and Leontief inverse matrixes (if Leontief approach) or
-        allocation coefficients and Ghosh matrixes (if Ghosh approach).
-        """
-
-        io_model = {
-            "leontief": (pymrio.calc_A, pymrio.calc_L),
-            "eeioa": (pymrio.calc_A, pymrio.calc_L),
-            "ghosh": (calc_B, calc_G),
-            "boario_aggregated": (pymrio.calc_A, pymrio.calc_L),
-            "boario_separated": (pymrio.calc_A, pymrio.calc_L)
-        }
-
-        coeff_func, inv_func = io_model[io_approach]
-
-        self.coeffs = coeff_func(self.mriot.Z, self.mriot.x)
-        self.inverse = inv_func(self.coeffs)
-
-    def conversion_factor(self):
-        """
-        Convert values in MRIOT.
-        """
-
-        unit = None
-        if isinstance(self.mriot.unit, pd.DataFrame):
-            unit = self.mriot.unit.values[0][0]
-        elif isinstance(self.mriot.unit, str):
-            unit = self.mriot.unit
-        if unit in ["M.EUR", "Million USD"]:
-            conversion_factor = 1e6
-        else:
-            conversion_factor = 1
-            warnings.warn(
-                "No known unit was provided. It is assumed that values do not need to "
-                "be converted."
-            )
-        return conversion_factor
-
     def map_exp_to_mriot(self, exp_regid, mriot_type):
         """
-        Map regions names in exposure into Input-output regions names.
-        exp_regid must be according to ISO 3166 numeric country codes.
+        Map regions names in exposure into Input-Output regions names.
+        exp_regid must follow ISO 3166 numeric country codes.
         """
 
         if mriot_type == "EXIOBASE3":
@@ -756,11 +761,7 @@ class SupplyChain:
 
         idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
 
-        if (not idx_country.size > 0.0) and (mriot_type == "OECD21"):
-            raise ValueError(
-                f"OECD21 does not contain info on {mriot_reg_name} neither has a ROW region"
-                )
-        elif not idx_country.size > 0.0:
+        if not idx_country.size > 0.0:
             mriot_reg_name = "ROW"
 
         return mriot_reg_name
