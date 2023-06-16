@@ -24,34 +24,33 @@ import pandas as pd
 import pymrio
 
 from climada.entity.exposures.base import Exposures
-from climada.entity import ImpactFuncSet, ImpfTropCyclone
-from climada.engine.impact_calc import Impact, ImpactCalc
-from climada.hazard.base import Hazard
+from climada.engine.impact_calc import Impact
 from climada_petals.engine.supplychain import (
     SupplyChain,
     MRIOT_DIRECTORY,
     parse_mriot_from_df,
 )
-from climada.util.constants import DEF_CRS, EXP_DEMO_H5
+from climada.util.constants import DEF_CRS
 from climada.util.api_client import Client
 from climada.util.files_handler import download_file
 from scipy import sparse
 
 def build_mriot(iso='iso3'):
     """
-    This example of Multi-Regional Input-Output Table is inspired by the book:
-    Miller, R. E., & Blair, P. D. (2009). Input-Output Analysis: Foundations and Extensions, 
-    Second Edition. 784. pgg. 97-101.
+    This is an hypothetical Multi-Regional Input-Output Table adapted from the one in:
+    M. P. Timmer et al. “An Illustrated User Guide to the World Input–Output
+    Database: the Case of Global Automotive Production”. In: Review of International
+    Economics 23.3 (2015), pp. 575–605.
     """
 
     idx_names = ['regions', 'sectors']
-    _sectors = ['Nat. Res.', 'Manuf. & Const.', 'Services']
+    _sectors = ['Services', 'Nat. Res.', 'Manuf. & Const.']
 
     if iso == 'iso3':
-        _regions = ['USA', 'CHN', 'ROW']
+        _regions = ['USA', 'ROW']
 
     elif iso == 'iso2':
-        _regions = ['US', 'CH', 'ROW']
+        _regions = ['US', 'ROW']
 
     _Z_multiindex = pd.MultiIndex.from_product(
 	                [_regions, _sectors],
@@ -63,15 +62,12 @@ def build_mriot(iso='iso3'):
         names = idx_names
         )
 
-    _Z_data = np.array([[1724, 6312, 406, 188, 1206, 86, 14, 49, 4],
-                        [2381, 18458, 2987, 301, 3331, 460, 39, 234, 57],
-                        [709, 3883, 1811, 64, 432, 138, 5, 23, 5],
-                        [149, 656, 42, 3564, 8828, 806, 103, 178, 15],
-                        [463, 3834, 571, 3757, 34931, 5186, 202, 140, 268],
-                        [49, 297, 99, 1099, 6613, 2969, 31, 163, 62],
-                        [9, 51, 3, 33, 254, 18, 1581, 3154, 293],
-                        [32, 272, 41, 123, 1062, 170, 1225, 6704, 1733],
-                        [4, 25, 7, 25, 168, 47, 425, 2145, 1000]])
+    _Z_data = np.array([[634, 41, 1, 2241, 271, 3],
+                        [29, 62, 2, 311, 128, 1],
+                        [9, 1, 735, 3574, 311, 947],
+                        [813, 123, 724, 20813, 11113, 594],
+                        [490, 83, 796, 8196, 26678, 905],
+                        [85, 9, 334, 1411, 1315, 1769]])
 
     Z = pd.DataFrame(
                 data = _Z_data,
@@ -79,15 +75,16 @@ def build_mriot(iso='iso3'):
                 columns = _Z_multiindex
                 )
 
-    _X_data = np.array([16651, 49563, 15011, 27866, 
-                        81253, 23667, 11661, 21107, 8910]).reshape(9,1)
+    _X_data = np.array([4911, 797, 5963, 49398, 
+                        93669, 6259]).reshape(6,1)
     X = pd.DataFrame(
                 data = _X_data,
                 index = _Z_multiindex,
                 columns = ['total production']
                 )
 
-    _Y_data = X - Z.sum(1).values.reshape(9,1)
+    _Y_data = np.array([1721, 264, 385, 15218, 
+                        56522, 1337]).reshape(6,1)
 
     Y = pd.DataFrame(
 	            data=_Y_data,
@@ -104,13 +101,13 @@ def build_mriot(iso='iso3'):
 
 def dummy_exp_imp():
     " Generate dummy exposure and impacts "
-    lat = np.array([1, 2, 3])
-    lon = np.array([1.5, 2.5, 3.5])
+    lat = np.array([1, 3])
+    lon = np.array([1.5, 3.5])
     exp = Exposures(crs=DEF_CRS)
     exp.gdf['longitude'] = lon
     exp.gdf['latitude'] = lat
-    exp.gdf['value'] = np.array([50., 100., 80])
-    exp.gdf["region_id"] = [840, 156, 608] # USA, CHN, PHL (ROW)
+    exp.gdf['value'] = np.array([150., 80.])
+    exp.gdf["region_id"] = [840, 608] # USA, PHL (ROW)
 
     imp = Impact(
         event_id=np.arange(2) + 10,
@@ -119,15 +116,15 @@ def dummy_exp_imp():
         coord_exp=np.vstack([lon, lat]).T,
         crs=DEF_CRS,
         unit="USD",
-        eai_exp=np.array([1.16, 1.16, 1.16]),
-        at_event=np.array([3, 90]),
+        eai_exp=np.array([6, 4.33]),
+        at_event=np.array([55, 35]),
         frequency=np.array([1 / 6, 1 / 30]),
         frequency_unit="1/month",
-        aai_agg=3.47,
+        aai_agg=10.34,
 
         imp_mat=sparse.csr_matrix(
-            np.array([[1, 1, 1],
-                      [30, 30, 30]]))
+            np.array([[30, 25],
+                      [30, 5]]))
         )
 
     return exp, imp
@@ -244,20 +241,19 @@ class TestSupplyChain(unittest.TestCase):
         # Test sec exposure, impact and shock for one country (e.g. USA) and all sectors
         reg_id = 840
         reg_iso3 = 'USA'
+        frac_per_sec = sup.mriot.x.loc[reg_iso3].values.T / sup.mriot.x.loc[reg_iso3].sum().values
 
         # Test sectorial exposure
         exp_cnt = exp.gdf[exp.gdf.region_id == reg_id].value.sum()
-        frac_exp_per_sec = sup.mriot.x.loc[reg_iso3].values.T / sup.mriot.x.loc[reg_iso3].sum().values
-        expected_secs_exp = exp_cnt * frac_exp_per_sec
+        expected_secs_exp = exp_cnt * frac_per_sec
 
         np.testing.assert_array_equal(
             sup.secs_exp[reg_iso3].values, expected_secs_exp
         )
 
         # Test sectorial impact
-        imp_cnt = imp.imp_mat.todense()[:, exp.gdf.region_id == reg_id]
-        frac_imp_per_sec = sup.mriot.x.loc[reg_iso3].values.T / sup.mriot.x.loc[reg_iso3].sum().values
-        expected_secs_imp = imp_cnt * frac_imp_per_sec
+        imp_cnt = imp.imp_mat.todense()[:,exp.gdf.region_id == reg_id]
+        expected_secs_imp = imp_cnt * frac_per_sec
 
         np.testing.assert_array_equal(
             sup.secs_imp[reg_iso3].values, expected_secs_imp
@@ -271,7 +267,7 @@ class TestSupplyChain(unittest.TestCase):
         )
 
         # Test sectorial shock with user-defined shock factor
-        shock_factor = pd.DataFrame(np.array([1,2,3,4,5,6,7,8,9])*0.1, 
+        shock_factor = pd.DataFrame(np.array([1,2,3,4,5,6])*0.1,
                                     index=sup.mriot.x.index)
         sup.calc_shock_to_sectors(exp, imp, shock_factor = shock_factor.values.flatten())
 
@@ -306,83 +302,62 @@ class TestSupplyChain(unittest.TestCase):
     def test_calc_impacts(self):
         """Test running indirect impact calculations."""
 
-        file_loc = MRIOT_DIRECTORY / "WIOTtest_Nov16_ROW.xlsb"
-        mriot_df = pd.read_excel(file_loc, engine="pyxlsb")
-        Z, _, x = parse_mriot_from_df(
-            mriot_df, col_iso3=2, col_sectors=1, rows_data=(5, 117), cols_data=(4, 116)
-        )
-        Y = x.subtract(Z.sum(1), 0)
-        mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
-        mriot.meta.change_meta("name", "WIOD16-test")
-        mriot.unit = "M.EUR"
-
+        mriot = build_mriot()
         sup = SupplyChain(mriot)
 
-        # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
+        # take one mriot type that supports iso-3
+        sup.mriot.meta.change_meta("name", "WIOD16-2011")
 
-        # Read demo entity values
-        # Set the entity default file to the demo one
-        exp = Exposures.from_hdf5(EXP_DEMO_H5)
-        exp.check()
-        exp.gdf.region_id = 840 # USA
-        exp.assign_centroids(hazard)
+        # apply 20 % shock to Service sector in the USA
+        shock = pd.DataFrame(
+                            np.array([[0.2, 0, 0, 0, 0, 0]]),
+                            columns=sup.mriot.x.index
+                            )
+        sup.secs_shock = shock
 
-        impf_tc = ImpfTropCyclone.from_emanuel_usa()
-        impf_set = ImpactFuncSet()
-        impf_set.append(impf_tc)
-        impf_set.check()
+        # calc prod losses according to ghosh
+        sup.calc_impacts(io_approach="ghosh")
 
-        impacted_secs = range(15, 25)
-        impacted_secs = sup.mriot.get_sectors()[impacted_secs].tolist()
-        imp = ImpactCalc(exp, impf_set, hazard)
-        impact = imp.impact()
+        # manually build a 20% loss in value added
+        # to the USA service sector
+        delta_v = np.array([570., 0, 0, 0, 0, 0])
 
-        io_approach = "ghosh"
-        sup.calc_impacts(io_approach=io_approach,
-                         exposure=exp,
-                         impact=impact,
-                         impacted_secs=impacted_secs)
+        # the expected shock is then the dot product
+        # of the value added loss and the ghosh inverse
+        expected_prod_loss = delta_v.dot(sup.inverse['ghosh'])
 
-        self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse[io_approach].shape)
-        self.assertAlmostEqual(sup.mriot.Z.columns[43], sup.inverse[io_approach].columns[43])
-        self.assertAlmostEqual(sup.mriot.Z.index[98], sup.inverse[io_approach].index[98])
+        np.testing.assert_array_equal(
+            sup.supchain_imp['ghosh'].round(0).values.flatten(), 
+            expected_prod_loss.round(0)
+            )
 
-        self.assertAlmostEqual(sup.inverse[io_approach].iloc[10, 0], 0.0735, places=3)
-        self.assertAlmostEqual(sup.inverse[io_approach].iloc[0, 8], 0.00064, places=3)
+        # calc prod losses according to leontief
+        sup.calc_impacts(io_approach="leontief")
 
-        self.assertAlmostEqual(
-            sup.supchain_imp[io_approach].values.sum(), 7093283.110973164, places=2
-        )
+        # manually build a 20% loss in demand
+        # to the USA service sector
+        delta_y = np.array([344., 0, 0, 0, 0, 0])
 
-        io_approach = "leontief"
-        sup.calc_impacts(io_approach=io_approach)
- 
-        self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse[io_approach].shape)
-        self.assertAlmostEqual(sup.mriot.Z.columns[56], sup.inverse[io_approach].columns[56])
-        self.assertAlmostEqual(sup.mriot.Z.index[33], sup.inverse[io_approach].index[33])
+        # the expected shock is then the dot product
+        # of the demand loss and the leontief inverse
+        expected_prod_loss = sup.inverse['leontief'].dot(delta_y)
 
-        self.assertAlmostEqual(sup.inverse[io_approach].iloc[10, 0], 0.01690, places=3)
-        self.assertAlmostEqual(sup.inverse[io_approach].iloc[0, 8], 0.0057, places=3)
+        np.testing.assert_array_equal(
+            sup.supchain_imp['leontief'].round(0).values.flatten(),
+            expected_prod_loss.round(0)
+            )
 
-        self.assertAlmostEqual(
-            sup.supchain_imp[io_approach].values.sum(), 4460353.601586872, places=2
-        )
+        # total intensity vector: elements are the sector-specific
+        # indirect risks per unit sector output
+        tot_int_vec = shock.dot(sup.inverse['leontief'])
+        expected_prod_loss = sup.mriot.x.values.flatten() * tot_int_vec.values[0]
 
-        io_approach = "eeioa"
-        sup.calc_impacts(io_approach=io_approach)
+        sup.calc_impacts(io_approach="eeioa")
 
-        self.assertAlmostEqual(sup.mriot.Z.shape, sup.inverse[io_approach].shape)
-
-        self.assertAlmostEqual(sup.mriot.Z.columns[20], sup.inverse[io_approach].columns[20])
-        self.assertAlmostEqual(sup.mriot.Z.index[15], sup.inverse[io_approach].index[15])
-
-        self.assertAlmostEqual(sup.inverse[io_approach].iloc[10, 0], 0.016903, places=3)
-        self.assertAlmostEqual(sup.inverse[io_approach].iloc[0, 8], 0.0057, places=3)
-
-        self.assertAlmostEqual(
-            sup.supchain_imp[io_approach].values.sum(), 13786581.420801481, places=2
-        )
+        np.testing.assert_array_equal(
+            sup.supchain_imp['eeioa'].round(0).values.flatten(),
+            expected_prod_loss.round(0)
+            )
 
 ## Execute Tests
 if __name__ == "__main__":
