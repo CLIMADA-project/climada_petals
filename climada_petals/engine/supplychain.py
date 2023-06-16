@@ -608,7 +608,7 @@ class SupplyChain:
                     shock_factor=None,
                     boario_aggregate='agg',
                     boario_type='recovery',
-                    **kwargs
+                    boario_params=None
                     ):
         """Calculate indirect production impacts based on to the 
         chosen input-output approach.
@@ -639,6 +639,11 @@ class SupplyChain:
         boario_type: str
             The chosen boario type. Possible choices are 'recovery', 'rebuild' and 
             'production_shock'. Only meangingful when io_approach='boario'.Default 'recovery'.
+        boario_params: dict
+            Dictionary containing parameters to instantiate boario's ARIOPsiModel (key 'model'), 
+            Simulation (key 'sim') and Event (key 'event') classes. Parameters instantiating
+            each class need to be stored in a dictionary, e.g., {'model': {}, 'sim': {}, 'event': {}}.
+            Only meangingful when io_approach='boario'. Default is None.
 
         References
         ----------
@@ -705,14 +710,14 @@ class SupplyChain:
                                  # needs to be 1 (i.e., plain EUR or USD)
                                  productive_capital_vector = self.secs_exp / self.conversion_factor(),
                                  monetary_factor = self.conversion_factor(),
-                                 **kwargs
+                                 **boario_params['model']
                                  )
 
             # run simulation up to one year after the last event
             self.sim = Simulation(
                         model,
                         n_temporal_units_to_sim = (self.events_date[-1]-self.events_date[0]+365),
-                        **kwargs
+                        **boario_params['sim']
                         )
 
             if boario_type == 'recovery':
@@ -723,7 +728,7 @@ class SupplyChain:
                                         # is 1 (i.e., plain EUR or USD). Boario takes place of the conversion, as results
                                         # will then be in MRIOT unit (e.g., M EUR)
                                         event_monetary_factor = 1,
-                                        **kwargs
+                                        **boario_params['event']
                             ) for i in range(n_events)
                 ]
 
@@ -735,7 +740,7 @@ class SupplyChain:
                                         # is 1 (i.e., plain EUR or USD). Boario takes place of the conversion, as results
                                         # will then be in MRIOT unit (e.g., M EUR)
                                         event_monetary_factor = 1,
-                                        **kwargs
+                                        **boario_params['event']
                             ) for i in range(n_events)
                 ]
 
@@ -743,7 +748,7 @@ class SupplyChain:
                 events_list = [EventArbitraryProd.from_series(
                                         impact=self.secs_shock.iloc[i],
                                         occurrence = (self.events_date[i]-self.events_date[0]+1),
-                                        **kwargs
+                                        **boario_params['event']
                             ) for i in range(n_events)
                 ]
 
