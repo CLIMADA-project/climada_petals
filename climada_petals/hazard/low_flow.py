@@ -38,9 +38,9 @@ from shapely.geometry import Point
 from scipy import sparse
 
 from climada.hazard.base import Hazard
-from climada.hazard.tag import Tag as TagHazard
 from climada.hazard.centroids import Centroids
 import climada.util.coordinates as u_coord
+from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -305,13 +305,11 @@ class LowFlow(Hazard):
         if not keep_dis_data:
             self.lowflow_df = None
         self.set_frequency(yearrange=yearrange)
-        self.tag = TagHazard(haz_type=HAZ_TYPE, file_name=\
-                             f'{gh_model}_{cl_model}_*_{scenario}_{soc}_{fn_str_var}_*.nc', \
-                             description= f'yearrange: {yearrange[0]}-{yearrange[0]} ' +\
-                                          f'({scenario}, {soc}), ' +\
-                                          f'reference: {yearrange_ref[0]}-{yearrange_ref[0]} ' +\
-                                          f'({scenario_ref}, {soc_ref})'
-                             )
+        self.tag = Tag(file_name=f'{gh_model}_{cl_model}_*_{scenario}_{soc}_{fn_str_var}_*.nc',
+                       description=f'yearrange: {yearrange[0]}-{yearrange[0]} '
+                                   f'({scenario}, {soc}), '
+                                   f'reference: {yearrange_ref[0]}-{yearrange_ref[0]} '
+                                   f'({scenario_ref}, {soc_ref})')
 
     def _intensity_loop(self, uniq_ev, coord, res_centr, num_centr):
         """Compute intensity and populate intensity matrix.
@@ -389,7 +387,6 @@ class LowFlow(Hazard):
         num_centr = centroids.size
         res_centr = self._centroids_resolution(centroids)
 
-        self.tag = TagHazard(HAZ_TYPE)
         self.units = 'days'  # days below threshold
         self.centroids = centroids
 

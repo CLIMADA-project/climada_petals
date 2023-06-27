@@ -26,10 +26,10 @@ import pandas as pd
 import numpy as np
 
 from climada import CONFIG
-from climada.entity.tag import Tag
 from climada.entity.exposures.base import Exposures, INDICATOR_IMPF
 from climada.util.files_handler import download_file
 from climada.util.constants import SYSTEM_DIR
+from climada.util.tag import Tag
 import climada.util.coordinates as u_coord
 
 logging.root.setLevel(logging.DEBUG)
@@ -170,17 +170,14 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
                 region_id[i] = u_coord.country_to_iso(country_id.iloc[i], "numeric")
         self.gdf['region_id'] = region_id
         self.ref_year = 2005
-        self.tag = Tag()
-        self.tag.description = ("SPAM agrar exposure for variable "
-                                + spam_v + " and technology " + spam_t)
+        self.tag = Tag(description=f"SPAM agrar exposure for variable {spam_v}"
+                                   f" and technology {spam_t}",
+                       file_name=f"{FILENAME_SPAM}_{spam_v}_{spam_t}.csv")
 
         # if impact id variation iiv = 1, assign different damage function ID
         # per technology type.
         self._set_impf(spam_t, haz_type)
 
-        self.tag.file_name = (FILENAME_SPAM + '_' + spam_v + '_' + spam_t + '.csv')
-#        self.tag.shape = cntry_info[2]
-        #self.tag.country = cntry_info[1]
         if spam_v in ('A', 'H'):
             self.value_unit = 'Ha'
         elif spam_v == 'Y':
