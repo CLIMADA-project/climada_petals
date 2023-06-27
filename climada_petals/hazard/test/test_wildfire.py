@@ -226,7 +226,7 @@ class TestMethodsFirms(unittest.TestCase):
         wf._calc_brightness(firms, DEF_CENTROIDS[0], DEF_CENTROIDS[1])
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
+        self.assertEqual(wf.haz_type, 'WFsingle')
         self.assertEqual(wf.tag.description, '')
         self.assertEqual(wf.units, 'K')
         self.assertEqual(wf.centroids.size, 19454)
