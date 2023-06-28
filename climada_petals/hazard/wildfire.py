@@ -37,7 +37,6 @@ import numba
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
 from climada.util.constants import ONE_LAT_KM
-from climada.util.tag import Tag
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
 
