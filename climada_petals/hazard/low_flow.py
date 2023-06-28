@@ -89,6 +89,7 @@ INTENSITY_STEP = 300
 """max. number of events to be written to hazard.intensity matrix at once
 (avoid memory usage spike)"""
 
+
 class LowFlow(Hazard):
     """Contains river low flow events (surface water scarcity).
     The intensity of the hazard is number of days below a threshold (defined as
@@ -121,11 +122,10 @@ class LowFlow(Hazard):
         default = 0.5°
     """
 
-    clus_thresh_t = 1 # Default = 1: months with intensity<min_intensity interrupt event
-    clus_thresh_xy = 2 # Default = 2: allows 1 cell gap and diagonal connection
-    min_samples = 1 # Default = 1: no filtering of small events with this default
-    resolution = .5 # Default = .5: in agreement with resolution of data from ISIMIP 1-3
-
+    clus_thresh_t = 1  # Default = 1: months with intensity<min_intensity interrupt event
+    clus_thresh_xy = 2  # Default = 2: allows 1 cell gap and diagonal connection
+    min_samples = 1  # Default = 1: no filtering of small events with this default
+    resolution = .5  # Default = .5: in agreement with resolution of data from ISIMIP 1-3
 
     def __init__(self, pool=None):
         """Empty constructor."""
@@ -272,15 +272,15 @@ class LowFlow(Hazard):
             centroids = centroids_import
         haz.identify_clusters()
         haz.set_intensity_from_clusters(centroids, min_intensity, min_number_cells,
-                                 yearrange, yearrange_ref, gh_model, cl_model,
-                                 scenario, scenario_ref, soc, soc_ref, fn_str_var, keep_dis_data)
+                                        yearrange, yearrange_ref, gh_model, cl_model,
+                                        scenario, scenario_ref, soc, soc_ref, fn_str_var, keep_dis_data)
         return haz
 
     def set_intensity_from_clusters(self, centroids=None, min_intensity=1, min_number_cells=1,
-                            yearrange=TARGET_YEARRANGE, yearrange_ref=REFERENCE_YEARRANGE,
-                            gh_model=None, cl_model=None,
-                            scenario='historical', scenario_ref='historical', soc='histsoc',
-                            soc_ref='histsoc', fn_str_var=FN_STR_VAR, keep_dis_data=False):
+                                    yearrange=TARGET_YEARRANGE, yearrange_ref=REFERENCE_YEARRANGE,
+                                    gh_model=None, cl_model=None,
+                                    scenario='historical', scenario_ref='historical', soc='histsoc',
+                                    soc_ref='histsoc', fn_str_var=FN_STR_VAR, keep_dis_data=False):
         """ Build low flow hazards with events from clustering and centroids and
         (re)set attributes.
         """
@@ -340,7 +340,7 @@ class LowFlow(Hazard):
         steps = list(np.arange(0, len(uniq_ev) - 1, INTENSITY_STEP)) + [len(uniq_ev)]
         if len(steps) == 1:
             intensity_list = [self._intensity_one_cluster(tree_centr, cl_id, res_centr, num_centr)
-                  for cl_id in uniq_ev]
+                              for cl_id in uniq_ev]
             return sparse.csr_matrix(intensity_list)
         # step_range: list of tuples containing the unique IDs to be written to
         # the intensity matrix in one step
@@ -349,7 +349,7 @@ class LowFlow(Hazard):
             intensity_list = []
             for cl_id in stp:
                 intensity_list.append(
-                 self._intensity_one_cluster(tree_centr, cl_id, res_centr, num_centr))
+                    self._intensity_one_cluster(tree_centr, cl_id, res_centr, num_centr))
             if not idx:
                 intensity_mat = sparse.lil_matrix(intensity_list)
             else:
@@ -373,8 +373,10 @@ class LowFlow(Hazard):
             # set event date to date of maximum intensity (ndays)
             self.date[ev_idx] = self.lowflow_df[self.lowflow_df.cluster_id == ev_id]\
                 .groupby('dtime')['ndays'].sum().idxmax()
-            self.date_start[ev_idx] = self.lowflow_df[self.lowflow_df.cluster_id == ev_id].dtime.min()
-            self.date_end[ev_idx] = self.lowflow_df[self.lowflow_df.cluster_id == ev_id].dtime.max()
+            self.date_start[ev_idx] = self.lowflow_df[self.lowflow_df.cluster_id == ev_id]\
+                .dtime.min()
+            self.date_end[ev_idx] = self.lowflow_df[self.lowflow_df.cluster_id == ev_id]\
+                .dtime.max()
 
     def events_from_clusters(self, centroids):
         """Initiate hazard events from connected clusters found in self.lowflow_df
@@ -441,8 +443,8 @@ class LowFlow(Hazard):
         # Compute clus_id: cluster identifier inside cons_id
         for cluster_vars in [('lat', 'lon'), ('lat', 'dt_month'), ('lon', 'dt_month')]:
             self.lowflow_df = self._df_clustering(self.lowflow_df, cluster_vars,
-                                            self.resolution, self.clus_thresh_xy,
-                                            self.clus_thresh_t, self.min_samples)
+                                                  self.resolution, self.clus_thresh_xy,
+                                                  self.clus_thresh_t, self.min_samples)
 
         self.lowflow_df = unique_clusters(self.lowflow_df)
         return self.lowflow_df
@@ -485,7 +487,7 @@ class LowFlow(Hazard):
         lowflow_df[clus_id_var] = np.zeros(len(lowflow_df), dtype=int) - 1
 
         data_iter = lowflow_df[lowflow_df['iter_ev']][[iter_var, cluster_vars[0], cluster_vars[1],
-                                           'cons_id', clus_id_var]]
+                                                       'cons_id', clus_id_var]]
 
         if 'dt_month' in clus_id_var:
             # transform month count in accordance with spatial resolution
@@ -529,8 +531,8 @@ class LowFlow(Hazard):
             if np.sum(haz_tmp.intensity[i_event] > 0) < min_number_cells or \
                     np.max(haz_tmp.intensity[i_event]) < min_intensity:
                 haz_tmp.orig[i_event] = 0.
-        haz_tmp = haz_tmp.select(orig=True) # select events with orig == 1
-        haz_tmp.orig = haz_tmp.orig_tmp # reset orig
+        haz_tmp = haz_tmp.select(orig=True)  # select events with orig == 1
+        haz_tmp.orig = haz_tmp.orig_tmp  # reset orig
         del haz_tmp.orig_tmp
         haz_tmp.event_id = np.arange(1, len(haz_tmp.event_id) + 1).astype(int)
         return haz_tmp
@@ -632,6 +634,7 @@ class LowFlow(Hazard):
                                        temp_data['ndays'].values)
         return intensity_cl
 
+
 def _init_centroids(dis_xarray, centr_res_factor=1):
     """Get centroids from the firms dataset and refactor them.
 
@@ -686,31 +689,39 @@ def unique_clusters(lowflow_df):
         if np.isnan(c_lat_lon):
             lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon, 'cluster_id'] = -1
         else:
-            if len(lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon, 'cluster_id'].unique()) == 1 \
-                    and -1 in lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon, 'cluster_id'].unique():
+            if len(lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon,
+                                  'cluster_id'].unique()) == 1 \
+                    and -1 in lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon,
+                                             'cluster_id'].unique():
                 idc += 1
                 current = idc
             else:
-                current = max(lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon, 'cluster_id'].unique())
+                current = max(lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon,
+                                             'cluster_id'].unique())
             lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon, 'cluster_id'] = current
 
-            for c_lat_dt_month in lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon, 'c_lat_dt_month'].unique():
+            for c_lat_dt_month in lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon,
+                                                 'c_lat_dt_month'].unique():
                 if not np.isnan(c_lat_dt_month):
-                    lowflow_df.loc[lowflow_df.c_lat_dt_month == c_lat_dt_month, 'cluster_id'] = current
-            for c_lon_dt_month in lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon, 'c_lon_dt_month'].unique():
+                    lowflow_df.loc[lowflow_df.c_lat_dt_month == c_lat_dt_month,
+                                   'cluster_id'] = current
+            for c_lon_dt_month in lowflow_df.loc[lowflow_df.c_lat_lon == c_lat_lon,
+                                                 'c_lon_dt_month'].unique():
                 if not np.isnan(c_lon_dt_month):
-                    lowflow_df.loc[lowflow_df.c_lon_dt_month == c_lon_dt_month, 'cluster_id'] = current
+                    lowflow_df.loc[lowflow_df.c_lon_dt_month == c_lon_dt_month,
+                                   'cluster_id'] = current
 
     lowflow_df.loc[np.isnan(lowflow_df.c_lon_dt_month), 'cluster_id'] = -1
     lowflow_df.loc[np.isnan(lowflow_df.c_lat_dt_month), 'cluster_id'] = -1
     lowflow_df.cluster_id = lowflow_df.cluster_id.astype(int)
     return lowflow_df
 
+
 def data_preprocessing_percentile(percentile, yearrange, yearrange_ref,
-                                   input_dir, gh_model, cl_model, scenario,
-                                   scenario_ref, soc, soc_ref, fn_str_var, bbox,
-                                   min_days_per_month, keep_dis_data, yearchunks,
-                                   mask_threshold):
+                                  input_dir, gh_model, cl_model, scenario,
+                                  scenario_ref, soc, soc_ref, fn_str_var, bbox,
+                                  min_days_per_month, keep_dis_data, yearchunks,
+                                  mask_threshold):
     """load data and reference data and calculate monthly percentiles
     then extract intensity based on days below threshold
     returns geopandas dataframe
@@ -761,6 +772,7 @@ def data_preprocessing_percentile(percentile, yearrange, yearrange_ref,
     dataf = dataf.sort_values(['lat', 'lon', 'dtime'], ascending=[True, True, True])
     return dataf.reset_index(drop=True), centroids
 
+
 def _read_and_combine_nc(yearrange, input_dir, gh_model, cl_model, scenario,
                          soc, fn_str_var, bbox, yearchunks):
     """Import and combine data from nc files
@@ -786,7 +798,7 @@ def _read_and_combine_nc(yearrange, input_dir, gh_model, cl_model, scenario,
             bias_corr = 'ewembi'
 
         filepath = Path(input_dir,
-            f'{gh_model}_{cl_model}_{bias_corr}_{scenario}_{soc}_{fn_str_var}_{yearchunk}.nc')
+                f'{gh_model}_{cl_model}_{bias_corr}_{scenario}_{soc}_{fn_str_var}_{yearchunk}.nc')
         if not filepath.is_file():
             raise FileNotFoundError(f'Netcdf file not found: {filepath}')
         if first_file:
@@ -798,6 +810,7 @@ def _read_and_combine_nc(yearrange, input_dir, gh_model, cl_model, scenario,
     # set negative discharge values to zero (debugging of input data):
     dis_xarray.dis.values[dis_xarray.dis.values < 0] = 0
     return dis_xarray
+
 
 def _read_single_nc(filename, yearrange, bbox):
     """Import data from single nc file, return as xarray
@@ -820,21 +833,21 @@ def _read_single_nc(filename, yearrange, bbox):
     try:
         if not bbox:
             return dis_xarray.sel(time=slice(dt.datetime(yearrange[0], 1, 1),
-                                       dt.datetime(yearrange[-1], 12, 31)))
+                                             dt.datetime(yearrange[-1], 12, 31)))
         lon_min, lat_min, lon_max, lat_max = bbox
         return dis_xarray.sel(lon=slice(lon_min, lon_max), lat=slice(lat_max, lat_min),
-                        time=slice(dt.datetime(yearrange[0], 1, 1),
-                                   dt.datetime(yearrange[-1], 12, 31)))
+                              time=slice(dt.datetime(yearrange[0], 1, 1),
+                                         dt.datetime(yearrange[-1], 12, 31)))
     except TypeError:
         # fix date format if not datetime
         if not bbox:
             dis_xarray = dis_xarray.sel(time=slice(cftime.DatetimeNoLeap(yearrange[0], 1, 1),
-                                       cftime.DatetimeNoLeap(yearrange[-1], 12, 31)))
+                                                   cftime.DatetimeNoLeap(yearrange[-1], 12, 31)))
         else:
             lon_min, lat_min, lon_max, lat_max = bbox
             dis_xarray = dis_xarray.sel(lon=slice(lon_min, lon_max), lat=slice(lat_max, lat_min),
-                            time=slice(cftime.DatetimeNoLeap(yearrange[0], 1, 1),
-                                       cftime.DatetimeNoLeap(yearrange[-1], 12, 31)))
+                                        time=slice(cftime.DatetimeNoLeap(yearrange[0], 1, 1),
+                                                   cftime.DatetimeNoLeap(yearrange[-1], 12, 31)))
         datetimeindex = dis_xarray.indexes['time'].to_datetimeindex()
         dis_xarray['time'] = datetimeindex
     return dis_xarray
@@ -861,6 +874,7 @@ def _xarray_reduce(dis_xarray, fun=None, percentile=None):
     if fun[0] == 'p':
         return dis_xarray.reduce(np.nanpercentile, dim='time', q=percentile)
     return None
+
 
 def _split_bbox(bbox, width=BBOX_WIDTH):
     """split bounding box into squares, return new set of bounding boxes
@@ -896,6 +910,7 @@ def _split_bbox(bbox, width=BBOX_WIDTH):
             bbox_list.append([lons[ilon], lats[ilat], lons[ilon+1], lats[ilat+1]])
     return bbox_list
 
+
 def _compute_threshold_grid(percentile, yearrange_ref, input_dir, gh_model, cl_model,
                             scenario, soc, fn_str_var, bbox, yearchunks,
                             mask_threshold=None, keep_dis_data=False):
@@ -928,8 +943,8 @@ def _compute_threshold_grid(percentile, yearrange_ref, input_dir, gh_model, cl_m
     # loop over coordinate bounding boxes to save memory:
     for box in bbox:
         dis_xarray = _read_and_combine_nc(yearrange_ref, input_dir, gh_model, cl_model,
-                                    scenario, soc, fn_str_var, box, yearchunks)
-        if dis_xarray.dis.data.size: # only if data is not empty
+                                          scenario, soc, fn_str_var, box, yearchunks)
+        if dis_xarray.dis.data.size:  # only if data is not empty
             p_grid_list += [_xarray_reduce(dis_xarray, fun='p', percentile=percentile)]
             # only compute mean_grid if required by user or mask_threshold:
             if keep_dis_data or (mask_threshold and True in ['mean' in x for x in mask_threshold]):
@@ -954,6 +969,7 @@ def _compute_threshold_grid(percentile, yearrange_ref, input_dir, gh_model, cl_m
     if keep_dis_data:
         return p_grid, mean_grid
     return p_grid, None
+
 
 def _days_below_threshold_per_month(dis_xarray, threshold_grid, mean_ref,
                                     min_days_per_month, keep_dis_data):
@@ -990,6 +1006,7 @@ def _days_below_threshold_per_month(dis_xarray, threshold_grid, mean_ref,
         data_threshold['relative_dis'] = data_low['dis']
     return data_threshold.where(data_threshold['ndays'] > 0)
 
+
 def _xarray_to_geopandas(dis_xarray):
     """create GeoDataFrame from xarray with NaN values dropped
     Note: Could this function be a candidate for climada.util in the future?
@@ -1013,6 +1030,7 @@ def _xarray_to_geopandas(dis_xarray):
     dataf['dt_month'] = dataf['time'].apply(lambda x: x.year * 12 + x.month)
     return gpd.GeoDataFrame(dataf, geometry=[Point(x, y) for x, y in zip(dataf['lon'],
                                                                          dataf['lat'])])
+
 
 @numba.njit
 def _fill_intensity(num_centr, ind, index_uni, lat_lon_cpy, intensity_raw):
