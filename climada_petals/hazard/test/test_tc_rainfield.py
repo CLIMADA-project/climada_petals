@@ -53,8 +53,8 @@ class TestReader(unittest.TestCase):
         tc_haz = TCRain._from_track(tc_track.data[0], CENTR_TEST_BRB)
 
         self.assertEqual(tc_haz.haz_type, 'TR')
-        self.assertEqual(tc_haz.tag.description, '')
-        self.assertEqual(tc_haz.tag.file_name, 'IBTrACS: 1951239N12334')
+        self.assertEqual(tc_haz.tag.description, [])
+        self.assertEqual(tc_haz.tag.file_name, ['IBTrACS: 1951239N12334'])
         self.assertEqual(tc_haz.units, 'mm')
         self.assertEqual(tc_haz.centroids.size, 296)
         self.assertEqual(tc_haz.event_id.size, 1)
@@ -114,8 +114,7 @@ class TestReader(unittest.TestCase):
 
         self.assertEqual(tc_haz.haz_type, 'TR')
         self.assertEqual(tc_haz.tag.description, [])
-        self.assertEqual(tc_haz.tag.file_name, ['IBTrACS: 1951239N12334',
-                                                'IBTrACS: 1951239N12334'])
+        self.assertEqual(tc_haz.tag.file_name, ['IBTrACS: 1951239N12334'])
         self.assertEqual(tc_haz.units, 'mm')
         self.assertEqual(tc_haz.centroids.size, 296)
         self.assertEqual(tc_haz.event_id.size, 1)

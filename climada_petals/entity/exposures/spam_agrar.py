@@ -199,28 +199,22 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         iiv = 0
         if spam_t == 'TA':
             self.gdf[INDICATOR_IMPF + haz_type] = 1
-            self.tag.description = self.tag.description + '. '\
-            + 'all technologies together, ie complete crop'
+            self.tag.append(Tag(description='all technologies together, ie complete crop'))
         elif spam_t == 'TI':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'irrigated portion of crop'
+            self.tag.append(Tag(description='irrigated portion of crop'))
         elif spam_t == 'TH':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 2 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed high inputs portion of crop'
+            self.tag.append(Tag(description='rainfed high inputs portion of crop'))
         elif spam_t == 'TL':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 3 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed low inputs portion of crop'
+            self.tag.append(Tag(description='rainfed low inputs portion of crop'))
         elif spam_t == 'TS':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 4 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed subsistence portion of crop'
+            self.tag.append(Tag(description='rainfed subsistence portion of crop'))
         elif spam_t == 'TR':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 5 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed portion of crop (= TA - TI)'
+            self.tag.append(Tag(description='rainfed portion of crop (= TA - TI)'))
         else:
             self.gdf[INDICATOR_IMPF + haz_type] = 1
         self.set_geometry_points()

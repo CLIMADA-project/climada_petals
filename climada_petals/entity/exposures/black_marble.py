@@ -100,15 +100,15 @@ class BlackMarble(Exposures):
         nightlight, coord_nl, fn_nl, res_fact, res_km = get_nightlight(
             ref_year, cntry_info, res_km, from_hr)
 
-        tag = Tag(file_name=fn_nl)
         bkmrbl_list = []
 
+        description = ""
         for cntry_iso, cntry_val in cntry_info.items():
 
             bkmrbl_list.append(
                 self._set_one_country(cntry_val, nightlight, coord_nl, res_fact, res_km,
                                       cntry_admin1[cntry_iso], **kwargs).gdf)
-            tag.description += ("{} {:d} GDP: {:.3e} income group: {:d} \n").\
+            description += ("{} {:d} GDP: {:.3e} income group: {:d} \n").\
                 format(cntry_val[1], cntry_val[3], cntry_val[4], cntry_val[5])
 
         Exposures.__init__(
@@ -116,7 +116,7 @@ class BlackMarble(Exposures):
             data=Exposures.concat(bkmrbl_list).gdf,
             crs=DEF_CRS,
             ref_year=ref_year,
-            tag=tag,
+            tag=Tag(file_name=fn_nl, description=description),
             value_unit='USD'
         )
 
