@@ -28,10 +28,10 @@ import pandas as pd
 import h5py
 from matplotlib import pyplot as plt
 
-from climada.entity.tag import Tag
-import climada.util.coordinates as u_coord
 from climada import CONFIG
 from climada.entity import Exposures, INDICATOR_IMPF
+from climada.util.tag import Tag
+import climada.util.coordinates as u_coord
 
 logging.root.setLevel(logging.DEBUG)
 LOGGER = logging.getLogger(__name__)
@@ -363,11 +363,9 @@ class CropProduction(Exposures):
             value_tmp = np.squeeze(area_crop[irr_val]*hist_mean_dict[irr_val][idx_mean])
             value_tmp = np.nan_to_num(value_tmp) # replace NaN by 0.0
             exp.gdf['value'] += value_tmp
-        exp.tag = Tag()
-
-        exp.tag.description = ("Crop production exposure from ISIMIP " +
-                                (CROP_NAME[crop])['print'] + ' ' +
-                                irr + ' ' + str(yearrange[0]) + '-' + str(yearrange[-1]))
+        exp.tag = Tag(description="Crop production exposure from ISIMIP"
+                                  f" {CROP_NAME[crop]['print']} {irr}"
+                                  f" {yearrange[0]} {yearrange[-1]}")
         exp.value_unit = 't/y' # input unit, will be reset below if required by user
         exp.crop = crop
         exp.ref_year = yearrange
@@ -486,11 +484,8 @@ class CropProduction(Exposures):
         exp.gdf['value'] = np.multiply(data_area.values, data_yield.values).flatten()
 
         exp.crop = crop_type
-        exp.tag = Tag()
-        exp.tag.description = ("Annual crop production from " + var_area +
-                               " and " + var_yield + " for " + exp.crop +
-                               " from files " + filename_area + " and " +
-                               filename_yield)
+        exp.tag = Tag(description=f"Annual crop production from {var_area} and {var_yield} for"
+                                  f" {exp.crop} from files {filename_area} and {filename_yield}")
         exp.value_unit = 't/y'
         try:
             rows, cols, ras_trans = u_coord.pts_to_raster_meta(
@@ -1038,8 +1033,8 @@ def normalize_with_fao_cp(exp_firr, exp_noirr, input_dir=None,
         elif 'kcal' in unit or 'kcal' in exp_firr.value_unit:
             exp_firr.set_value_to_kcal(biomass=True)
 
-    exp_firr_norm.tag.description = exp_firr_norm.tag.description+' normalized'
-    exp_noirr_norm.tag.description = exp_noirr_norm.tag.description+' normalized'
+    exp_firr_norm.tag.description = exp_firr_norm.tag.description.append('normalized')
+    exp_noirr_norm.tag.description = exp_noirr_norm.tag.description.append('normalized')
 
     if return_data:
         return country_list, ratio, exp_firr_norm, exp_noirr_norm, \

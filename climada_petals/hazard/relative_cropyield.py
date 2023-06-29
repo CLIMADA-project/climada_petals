@@ -235,7 +235,6 @@ class RelativeCropyield(Hazard):
         [lonmin, latmin, lonmax, latmax] = bbox
         haz = cls.from_raster([str(Path(input_dir, filename))], band=id_bands,
                               geometry=list([shapely.geometry.box(lonmin, latmin, lonmax, latmax)]))
-        haz.tag.haz_type = HAZ_TYPE
         haz.intensity_def = INT_DEF
         haz.intensity.data[np.isnan(haz.intensity.data)] = 0.0
         haz.intensity.todense()
