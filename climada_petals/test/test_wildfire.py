@@ -39,7 +39,7 @@ class TestWildFire(unittest.TestCase):
         wf.set_hist_fire_FIRMS(TEST_FIRMS)
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
+        self.assertEqual(wf.haz_type, 'WFsingle')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 13)))
         self.assertTrue(np.allclose(wf.date,
@@ -67,7 +67,7 @@ class TestWildFire(unittest.TestCase):
         wf = wf.from_hist_fire_FIRMS(TEST_FIRMS)
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
+        self.assertEqual(wf.haz_type, 'WFsingle')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 13)))
         self.assertTrue(np.allclose(wf.date,
@@ -94,7 +94,7 @@ class TestWildFire(unittest.TestCase):
         wf = WildFire()
         wf.set_hist_fire_seasons_FIRMS(TEST_FIRMS)
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
@@ -118,7 +118,7 @@ class TestWildFire(unittest.TestCase):
         wf = WildFire()
         wf = wf.from_hist_fire_seasons_FIRMS(TEST_FIRMS)
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
@@ -165,7 +165,7 @@ class TestWildFire(unittest.TestCase):
         wf = WildFire.from_hist_fire_FIRMS(TEST_FIRMS)
         wf.summarize_fires_to_seasons()
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
