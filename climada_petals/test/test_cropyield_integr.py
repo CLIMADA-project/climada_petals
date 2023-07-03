@@ -67,7 +67,7 @@ class TestIntegr(unittest.TestCase):
         impact_manual = haz_new.select(event_names=['2002'], reg_id=276).intensity.multiply(exp_manual)
         dif = (impact_manual - impact.imp_mat).data
 
-        self.assertEqual(haz_new.tag.haz_type, 'RC')
+        self.assertEqual(haz_new.haz_type, 'RC')
         self.assertEqual(haz_new.size, 5)
         self.assertEqual(haz_new.centroids.size, 1092)
         self.assertAlmostEqual(haz_new.intensity.mean(), -2.0489097e-08, places=0)
