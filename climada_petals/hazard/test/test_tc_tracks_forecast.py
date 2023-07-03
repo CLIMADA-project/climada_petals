@@ -60,6 +60,7 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].lat[2], -27.)
         self.assertEqual(forecast.data[0].lon[2], 73.5)
         self.assertEqual(forecast.data[1].time_step[2], 6)
+        self.assertEqual(forecast.data[1].time_step.dtype, np.float64)
         self.assertEqual(forecast.data[1].max_sustained_wind[2], 14.9)
         self.assertEqual(forecast.data[0].central_pressure[1], 1000.)
         self.assertAlmostEqual(forecast.data[0].radius_max_wind[1],
@@ -96,7 +97,7 @@ class TestECMWF(unittest.TestCase):
                 [forecast.data[ind_i].name
                  for ind_i in np.arange(122)]
                 ),
-            np.array(['70E', '70W', '71E', '71W', '72W'], dtype='<U3')
+            np.array(['70E', '70W', '71E', '71W', '72W'], dtype=str)
             )
 
 
@@ -116,7 +117,7 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].time_step[2], 1.)
 
     def test_hdf5_io(self):
-        """Test writting and reading hdf5 TCTracks instances"""
+        """Test writing and reading hdf5 TCTracks instances"""
         tc_track = TCForecast()
         tc_track.fetch_ecmwf(files=TEST_BUFR_FILES)
         path = DATA_DIR.joinpath("tc_tracks_forecast.h5")
@@ -184,6 +185,7 @@ class TestCXML(unittest.TestCase):
             forecast.data[2].run_datetime,
             pd.Timestamp('2022-03-02 12:00:00+0000', tz='UTC'),
         )
+        self.assertEqual(forecast.data[1].time_step.dtype, np.float64)
         self.assertTrue(forecast.data[4].is_ensemble)
 
     def test_custom_xsl(self):
