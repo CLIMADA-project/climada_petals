@@ -60,6 +60,7 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].lat[2], -27.)
         self.assertEqual(forecast.data[0].lon[2], 73.5)
         self.assertEqual(forecast.data[1].time_step[2], 6)
+        self.assertEqual(forecast.data[1].time_step.dtype, np.float64)
         self.assertEqual(forecast.data[1].max_sustained_wind[2], 14.9)
         self.assertEqual(forecast.data[0].central_pressure[1], 1000.)
         self.assertEqual(forecast.data[0]['time.year'][1], 2020)
@@ -177,6 +178,7 @@ class TestCXML(unittest.TestCase):
             forecast.data[2].run_datetime,
             pd.Timestamp('2022-03-02 12:00:00+0000', tz='UTC'),
         )
+        self.assertEqual(forecast.data[1].time_step.dtype, np.float64)
         self.assertTrue(forecast.data[4].is_ensemble)
 
     def test_custom_xsl(self):

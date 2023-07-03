@@ -518,8 +518,8 @@ class TCForecast(TCTracks):
 
         # can only make latlon coords after dropna
         track = track.set_coords(['lat', 'lon'])
-        track['time_step'] = track.ts_int - \
-            track.ts_int.shift({'time': 1}, fill_value=0)
+        track['time_step'] = (track.ts_int - \
+            track.ts_int.shift({'time': 1}, fill_value=0)).astype(float)
 
         track = track.drop_vars(['ts_int'])
 
