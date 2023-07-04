@@ -1220,7 +1220,10 @@ def _windprofile(
     ndarray of shape (npositions, ncentroids)
     """
     if matlab_ref_mode:
-        si_track = si_track.copy()
+        # Following formula (2) and the remark in Section 3 of Emanuel & Rotunno (2011), the
+        # Coriolis parameter is chosen to be 5e-5 (independent of latitude) in the MATLAB
+        # implementation.
+        si_track = si_track.copy(deep=True)
         si_track["cp"].values[:] = 5e-5
     return _compute_angular_windspeeds(
         si_track, d_centr, close_centr, model, cyclostrophic=cyclostrophic,
@@ -1562,7 +1565,7 @@ def _qs_from_t_diff_level(
 
 def _qs_from_t_same_level(
     p_ref: float,
-    c: np.ndarray,
+    temps: np.ndarray,
     gradient: bool = False,
     matlab_ref_mode: bool = False,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
