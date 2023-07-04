@@ -814,7 +814,6 @@ def _track_to_si_with_q_and_shear(
             si_track["vmax"].values,
             pres_in,
             pres_out,
-            cap_heat_air=cap_heat_air,
             matlab_ref_mode=matlab_ref_mode,
         ))
 
