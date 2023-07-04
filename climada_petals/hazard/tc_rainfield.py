@@ -564,11 +564,11 @@ def _compute_rain_sparse(
     rainrates_sparse = None
     if store_rainrates:
         n_reachable_coastal_centr = reachable_coastal_centr_idx.size
-        indices = np.zeros((npositions, n_reachable_coastal_centr, 2), dtype=np.int64)
-        indices[:, :, 0] = 2 * reachable_coastal_centr_idx[None]
-        indices[:, :, 1] = 2 * reachable_coastal_centr_idx[None] + 1
-        indices = indices.ravel()
-        indptr = np.arange(npositions + 1) * n_reachable_coastal_centr * 2
+        indices = np.broadcast_to(
+            reachable_coastal_centr_idx[None],
+            (npositions, n_reachable_coastal_centr),
+        ).ravel()
+        indptr = np.arange(npositions + 1) * n_reachable_coastal_centr
         rainrates_sparse = sparse.csr_matrix((rainrates.ravel(), indices, indptr),
                                               shape=rainrates_shape)
         rainrates_sparse.eliminate_zeros()
