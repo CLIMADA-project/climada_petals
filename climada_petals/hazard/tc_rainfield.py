@@ -37,6 +37,7 @@ from climada.hazard.trop_cyclone import (
     _close_centroids,
     _compute_angular_windspeeds,
     _track_to_si,
+    GRADIENT_LEVEL_TO_SURFACE_WINDS,
     H_TO_S,
     KM_TO_M,
     KN_TO_MS,
@@ -551,7 +552,9 @@ def _compute_rain_sparse(
     reachable_coastal_centr_idx = coastal_idx[reachable_centr_idx]
     npositions = rainrates.shape[0]
 
+    # obtain total rainfall in mm by multiplying by time step size (in hours) and summing up
     intensity = (rainrates * track["time_step"].values[:, None]).sum(axis=0)
+
     intensity[intensity < intensity_thres] = 0
     intensity_sparse = sparse.csr_matrix(
         (intensity, reachable_coastal_centr_idx, [0, intensity.size]),
