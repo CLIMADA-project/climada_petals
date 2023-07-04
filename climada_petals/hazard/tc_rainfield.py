@@ -790,11 +790,7 @@ def _track_to_si_with_q_and_shear(
     q_900 : float, optional
         If the track data does not include "t600" values, assume this constant value of saturation
         specific humidity (in gm/gm) at 900 hPa. Default: 0.01
-    cap_heat_air : float, optional
-        Isobaric specific heat of dry air (in J/(kg*K)). The value depends on env. conditions and
-        lies, for example, between 1003 (for 0 °C) and 1012 (typical room conditions). Used in the
-        computation of Q900 from T600 (if available). Default: 1005
-    matlab_mode : bool, optional
+    matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
     kwargs : dict
         Additional kwargs are ignored.
@@ -812,14 +808,14 @@ def _track_to_si_with_q_and_shear(
     else:
         # MATLAB computes Q at 950 hPa instead of 900 hPa (which is used in Lu et al. 2018)
         pres_in = 600
-        pres_out = 950 if matlab_mode else 900
+        pres_out = 950 if matlab_ref_mode else 900
         si_track["q900"] = ("time", _qs_from_t_diff_level(
             track["t600"].values,
             si_track["vmax"].values,
             pres_in,
             pres_out,
             cap_heat_air=cap_heat_air,
-            matlab_mode=matlab_mode,
+            matlab_ref_mode=matlab_ref_mode,
         ))
 
     if "ushear" in track.variables:
@@ -836,7 +832,7 @@ def _track_to_si_with_q_and_shear(
         # MATLAB implementation uses 1.5 m/s.
         si_track["vdrift"] = xr.zeros_like(si_track["v850"])
         si_track["vdrift"].values[:, 0] = (
-            (1.5 if matlab_mode else 2.5)
+            (1.5 if matlab_ref_mode else 2.5)
             * si_track.attrs["latsign"]
             * np.cos(np.radians(si_track["lat"].values))
         )
