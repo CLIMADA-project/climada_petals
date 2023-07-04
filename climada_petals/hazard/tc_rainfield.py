@@ -24,7 +24,8 @@ __all__ = ['TCRain']
 import datetime as dt
 import itertools
 import logging
-from typing import Optional, Tuple, List
+from pathlib import Path
+from typing import Optional, Tuple, List, Union
 
 import numpy as np
 import pathos.pools
@@ -33,10 +34,13 @@ import xarray as xr
 
 from climada.hazard import Hazard, TCTracks, TropCyclone, Centroids
 from climada.hazard.trop_cyclone import (
-    _track_to_si,
     _close_centroids,
+    _compute_angular_windspeeds,
+    _track_to_si,
+    H_TO_S,
     KM_TO_M,
     KN_TO_MS,
+    MODEL_VANG,
 )
 from climada.util import ureg
 import climada.util.constants as u_const
@@ -58,12 +62,61 @@ DEF_INTENSITY_THRES = 0.1
 DEF_MAX_MEMORY_GB = 8
 """Default value of the memory limit (in GB) for rain computations (in each thread)."""
 
-MODEL_RAIN = {'R-CLIPER': 0}
+MODEL_RAIN = {'R-CLIPER': 0, 'TCR': 1}
 """Enumerate different parametric TC rain models."""
 
 D_TO_H = (1.0 * ureg.days).to(ureg.hours).magnitude
 IN_TO_MM = (1.0 * ureg.inches).to(ureg.millimeters).magnitude
+M_TO_MM = (1.0 * ureg.meter).to(ureg.millimeter).magnitude
 """Unit conversion factors for JIT functions that can't use ureg"""
+
+H_TROP = 4000
+"""Depth (in m) of lower troposphere"""
+
+DELTA_T_TROPOPAUSE = 100
+"""Difference between surface and tropopause temperature (in K): T_s - T_t"""
+
+T_ICE_K = 273.16
+"""Freezing temperatur of water (in K), for conversion between K and °C"""
+
+L_EVAP_WATER = 2.5e6
+"""Latent heat of the evaporation of water (in J/kg)"""
+
+M_WATER = 18.01528
+"""Molar mass of water vapor (in g/mol)"""
+
+M_DRY_AIR = 28.9634
+"""Molar mass of dry air (in g/mol)"""
+
+R_GAS = 8.3144621
+"""Molar gas constant (in J / molK)"""
+
+R_DRY_AIR = 1000 * R_GAS / M_DRY_AIR
+"""Specific gas constant of dry air (in J / kgK)"""
+
+RHO_A_OVER_RHO_L = 0.00117
+"""Density of water vapor divided by density of liquid water"""
+
+ELEVATION_FILE_SRTM15 = u_const.SYSTEM_DIR / "srtm15_v2.3_300as.tif"
+"""Topography (land surface elevation) raster data
+
+Upscaled to 300 arc-seconds from original SRTM15+ data (tiled, 'index.vrt') using "gdalwarp":
+
+$ gdalwarp index.vrt -tr 0.083333333333333 -0.083333333333333 -r average \
+    -co COMPRESS=DEFLATE srtm15_v2.3_300as.tif
+"""
+
+C_DRAG_FILE_ERA5 = u_const.SYSTEM_DIR / "era-5_C_Drag500-corrected.tif"
+"""Drag coefficient (bottom friction) raster data
+
+Derived from ERA-5 'forecast_surface_roughness' (fsr) variable at 0.25° resolution.
+"""
+
+ELEVATION_FILE_MAT = u_const.SYSTEM_DIR / "mat_bathymetry_high.tif"
+"""Topography (land surface elevation) raster data, 0 over oceans"""
+
+C_DRAG_FILE_MAT = u_const.SYSTEM_DIR / "mat_C_Drag500-corrected.tif"
+"""Drag coefficient (bottom friction) raster data"""
 
 class TCRain(Hazard):
     """
@@ -161,6 +214,7 @@ class TCRain(Hazard):
         pool: Optional[pathos.pools.ProcessPool] = None,
         description: str = '',
         model: str = 'R-CLIPER',
+        model_kwargs: Optional[dict] = None,
         ignore_distance_to_coast: bool = False,
         store_rainrates: bool = False,
         metric: str = "equirect",
@@ -197,8 +251,11 @@ class TCRain(Hazard):
         description : str, optional
             Description of the event set. Default: "".
         model : str, optional
-            Parametric rain model to use: only "R-CLIPER" is currently implemented.
-            Default: "R-CLIPER".
+            Parametric rain model to use: "R-CLIPER" (faster and requires less inputs, but
+            much less accurate, statistical approach), "TCR" (physics-based approach, requires
+            non-standard along-track variables). Default: "R-CLIPER".
+        model_kwargs: dict, optional
+            If given, forward these kwargs to the selected model. Default: None
         ignore_distance_to_coast : boolean, optional
             If True, centroids far from coast are not ignored. Default: False.
         store_rainrates : boolean, optional
@@ -275,6 +332,7 @@ class TCRain(Hazard):
                 itertools.repeat(centroids, num_tracks),
                 itertools.repeat(coastal_idx, num_tracks),
                 itertools.repeat(model, num_tracks),
+                itertools.repeat(model_kwargs, num_tracks),
                 itertools.repeat(store_rainrates, num_tracks),
                 itertools.repeat(metric, num_tracks),
                 itertools.repeat(intensity_thres, num_tracks),
@@ -291,7 +349,8 @@ class TCRain(Hazard):
                     last_perc = perc
                 tc_haz_list.append(
                     cls._from_track(track, centroids, coastal_idx,
-                                    model=model, store_rainrates=store_rainrates,
+                                    model=model, model_kwargs=model_kwargs,
+                                    store_rainrates=store_rainrates,
                                     metric=metric, intensity_thres=intensity_thres,
                                     max_dist_eye_km=max_dist_eye_km,
                                     max_memory_gb=max_memory_gb))
@@ -314,6 +373,7 @@ class TCRain(Hazard):
         centroids: Centroids,
         coastal_idx: np.ndarray,
         model: str = 'R-CLIPER',
+        model_kwargs: Optional[dict] = None,
         store_rainrates: bool = False,
         metric: str = "equirect",
         intensity_thres: float = DEF_INTENSITY_THRES,
@@ -332,8 +392,11 @@ class TCRain(Hazard):
         coastal_idx : np.ndarray
             Indices of centroids close to coast.
         model : str, optional
-            Parametric rain model to use: only "R-CLIPER" is currently implemented.
-            Default: "R-CLIPER".
+            Parametric rain model to use: "R-CLIPER" (faster and requires less inputs, but
+            much less accurate, statistical approach), "TCR" (physics-based approach, requires
+            non-standard along-track variables). Default: "R-CLIPER".
+        model_kwargs: dict, optional
+            If given, forward these kwargs to the selected model. Default: None
         store_rainrates : boolean, optional
             If True, store rain rates (in mm/h). Default: False.
         metric : str, optional
@@ -358,6 +421,7 @@ class TCRain(Hazard):
             centroids=centroids,
             coastal_idx=coastal_idx,
             model=model,
+            model_kwargs=model_kwargs,
             store_rainrates=store_rainrates,
             metric=metric,
             intensity_thres=intensity_thres,
@@ -393,6 +457,7 @@ def _compute_rain_sparse(
     centroids: Centroids,
     coastal_idx: np.ndarray,
     model: str = 'R-CLIPER',
+    model_kwargs: Optional[dict] = None,
     store_rainrates: bool = False,
     metric: str = "equirect",
     intensity_thres: float = DEF_INTENSITY_THRES,
@@ -410,8 +475,11 @@ def _compute_rain_sparse(
     coastal_idx : np.ndarray
         Indices of centroids close to coast.
     model : str, optional
-        Parametric rain model to use: only "R-CLIPER" is currently implemented.
-        Default: "R-CLIPER".
+        Parametric rain model to use: "R-CLIPER" (faster and requires less inputs, but
+        much less accurate, statistical approach), "TCR" (physics-based approach, requires
+        non-standard along-track variables). Default: "R-CLIPER".
+    model_kwargs: dict, optional
+        If given, forward these kwargs to the selected model. Default: None
     store_rainrates : boolean, optional
         If True, store rain rates. Default: False.
     metric : str, optional
@@ -463,6 +531,7 @@ def _compute_rain_sparse(
             centroids,
             coastal_idx,
             model=model,
+            model_kwargs=model_kwargs,
             store_rainrates=store_rainrates,
             metric=metric,
             intensity_thres=intensity_thres,
@@ -471,7 +540,12 @@ def _compute_rain_sparse(
         )
 
     rainrates, reachable_centr_idx = compute_rain(
-        track, coastal_centr, mod_id, metric=metric, max_dist_eye_km=max_dist_eye_km,
+        track,
+        coastal_centr,
+        mod_id,
+        model_kwargs=model_kwargs,
+        metric=metric,
+        max_dist_eye_km=max_dist_eye_km,
         max_memory_gb=0.8 * max_memory_gb,
     )
     reachable_coastal_centr_idx = coastal_idx[reachable_centr_idx]
@@ -545,6 +619,7 @@ def compute_rain(
     track: xr.Dataset,
     centroids: np.ndarray,
     model: int,
+    model_kwargs: Optional[dict] = None,
     metric: str = "equirect",
     max_dist_eye_km: float = DEF_MAX_DIST_EYE_KM,
     max_memory_gb: float = DEF_MAX_MEMORY_GB,
@@ -563,6 +638,8 @@ def compute_rain(
         Centroids that are not within reach of the track are ignored.
     model : int
         TC rain model selection according to MODEL_RAIN.
+    model_kwargs: dict, optional
+        If given, forward these kwargs to the selected model. Default: None
     metric : str, optional
         Specify an approximation method to use for earth distances: "equirect" (faster) or
         "geosphere" (more accurate). See `dist_approx` function in `climada.util.coordinates`.
@@ -581,13 +658,15 @@ def compute_rain(
     reachable_centr_idx : np.ndarray of shape (nreachable,)
         List of indices of input centroids within reach of the TC track.
     """
+    model_kwargs = {} if model_kwargs is None else model_kwargs
+
     # start with the assumption that no centroids are within reach
     npositions = track.sizes["time"]
     reachable_centr_idx = np.zeros((0,), dtype=np.int64)
     rainrates = np.zeros((npositions, 0), dtype=np.float64)
 
     # convert track variables to SI units
-    si_track = _track_to_si(track, metric=metric)
+    si_track = _track_to_si_with_q_and_shear(track, **model_kwargs)
 
     # normalize longitude values (improves performance of `dist_approx` and `_close_centroids`)
     u_coord.lon_normalize(centroids[:, 1], center=si_track.attrs["mid_lon"])
@@ -621,18 +700,19 @@ def compute_rain(
             n_chunks, track, centroids, model, metric=metric, max_dist_eye_km=max_dist_eye_km,
         )
 
-    # compute distances (in m) to all centroids
-    [d_centr] = u_coord.dist_approx(
-        si_track["lat"].values[None], si_track["lon"].values[None],
-        track_centr[None, :, 0], track_centr[None, :, 1],
-        log=False, normalize=False, method=metric, units="m")
+    d_centr = _centr_distances(si_track, track_centr, metric=metric, **model_kwargs)
 
     # exclude centroids that are too far from or too close to the eye
-    close_centr_msk = (d_centr <= max_dist_eye_km * KM_TO_M) & (d_centr > 1)
+    close_centr_msk = (d_centr[""] <= max_dist_eye_km * KM_TO_M) & (d_centr[""] > 1)
     if not np.any(close_centr_msk):
         return rainrates, reachable_centr_idx
 
-    rainrates = _rcliper(si_track, d_centr, close_centr_msk)
+    if model == MODEL_RAIN["R-CLIPER"]:
+        rainrates = _rcliper(si_track, d_centr[""], close_centr_msk, **model_kwargs)
+    elif model == MODEL_RAIN["TCR"]:
+        rainrates = _tcr(si_track, centroids, d_centr, close_centr_msk, **model_kwargs)
+    else:
+        raise NotImplementedError
     [reachable_centr_idx] = track_centr_msk.nonzero()
     return rainrates, reachable_centr_idx
 
@@ -686,7 +766,137 @@ def _compute_rain_chunked(
         rainrates[chunk_start:chunk_end + 1, inv] = arr[offset:, :]
     return rainrates, reachable_centr_idx
 
-def _rcliper(si_track, d_centr, close_centr):
+def _track_to_si_with_q_and_shear(
+    track: xr.Dataset,
+    q_900: float = 0.01,
+    matlab_ref_mode: bool = False,
+    **kwargs,
+) -> xr.Dataset:
+    """Convert track data to SI units and add Q (humidity) and vshear variables
+
+    If the track data set does not contain the "q900" variable, but "t600", we compute the humidity
+    assuming a moist adiabatic lapse rate (see `_qs_from_t_diff_level`).
+
+    If the track data set does not contain the "vshear" variable, but "v850", we compute the wind
+    shear based on the Beta Advection Model (BAM):
+
+      v_trans = 0.8 * v850 + 0.2 * v250 + v_beta
+      => 5 * (v_trans - v_beta - v850) v250 - v850 =: v_shear
+
+    Paramaters
+    ----------
+    track : xr.Dataset
+        TC track data.
+    q_900 : float, optional
+        If the track data does not include "t600" values, assume this constant value of saturation
+        specific humidity (in gm/gm) at 900 hPa. Default: 0.01
+    cap_heat_air : float, optional
+        Isobaric specific heat of dry air (in J/(kg*K)). The value depends on env. conditions and
+        lies, for example, between 1003 (for 0 °C) and 1012 (typical room conditions). Used in the
+        computation of Q900 from T600 (if available). Default: 1005
+    matlab_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+    kwargs : dict
+        Additional kwargs are ignored.
+
+    Returns
+    -------
+    xr.Dataset
+    """
+    si_track = _track_to_si(track)
+
+    if "q900" in track.variables:
+        si_track["q900"] = track["q900"].copy()
+    elif "t600" not in track.variables:
+        si_track["q900"] = ("time", np.full_like(si_track["lat"].values, q_900))
+    else:
+        # MATLAB computes Q at 950 hPa instead of 900 hPa (which is used in Lu et al. 2018)
+        pres_in = 600
+        pres_out = 950 if matlab_mode else 900
+        si_track["q900"] = ("time", _qs_from_t_diff_level(
+            track["t600"].values,
+            si_track["vmax"].values,
+            pres_in,
+            pres_out,
+            cap_heat_air=cap_heat_air,
+            matlab_mode=matlab_mode,
+        ))
+
+    if "ushear" in track.variables:
+        si_track["vshear"] = (["time", "component"], (
+            np.stack([track[f"{d}shear"].values.copy() for d in ["v", "u"]], axis=1)
+        ))
+    elif "u850" in track.variables:
+        si_track["v850"] = (["time", "component"], (
+            np.stack([track[f"{d}850"].values.copy() for d in ["v", "u"]], axis=1)
+        ))
+
+        # We set v_drift (or v_beta) to be a 2.5 m/s drift in meridional direction (away from the
+        # equator), which seems to be common in the literature (e.g. Emanuel et al. 2006). But the
+        # MATLAB implementation uses 1.5 m/s.
+        si_track["vdrift"] = xr.zeros_like(si_track["v850"])
+        si_track["vdrift"].values[:, 0] = (
+            (1.5 if matlab_mode else 2.5)
+            * si_track.attrs["latsign"]
+            * np.cos(np.radians(si_track["lat"].values))
+        )
+        si_track["vshear"] = 5 * (si_track["vtrans"] - si_track["vdrift"] - si_track["v850"])
+
+    return si_track
+
+def _centr_distances(
+    si_track: xr.Dataset,
+    centroids: np.ndarray,
+    metric: str = "equirect",
+    res_radial_m: float = 2000.0,
+    **kwargs,
+) -> dict:
+    """Compute distances of centroids to storm locations required for `_compute_vertical_velocity`
+
+    In addition to the distances to the centroids, the distances to staggered centroid locations,
+    as well as the unit vectors pointing from the storm center to each centroid are returned.
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        TC track data in SI units, see `_track_to_si`.
+    centroids : ndarray
+        Each row is a pair of lat/lon coordinates.
+    metric : str, optional
+        Approximation method to use for earth distances: "equirect" (faster) or "geosphere" (more
+        accurate). See `dist_approx` function in `climada.util.coordinates`.
+        Default: "equirect".
+    res_radial_m : float, optional
+        Spatial resolution (in m) in radial direction. Default: 2000
+    kwargs : dict
+        Additional keyword arguments are ignored.
+
+    Returns
+    -------
+    dict
+    """
+    # d_centr : Distance (in m) from eyes to centroids .
+    # v_centr : Vector pointing from storm center to centroids. The directional components are
+    #           lat-lon, i. e. the y (meridional) direction is listed first.
+    [d_centr], [v_centr] = u_coord.dist_approx(
+        si_track["lat"].values[None], si_track["lon"].values[None],
+        centroids[None, :, 0], centroids[None, :, 1],
+        log=True, normalize=False, method=metric, units="m")
+
+    return {
+        "": d_centr,
+        "+": d_centr + res_radial_m,
+        "-": np.fmax(0, d_centr - res_radial_m),
+        "+h": d_centr + 0.5 * res_radial_m,
+        "-h": np.fmax(0, d_centr - 0.5 * res_radial_m),
+        "dir": v_centr / np.fmax(1e-3, d_centr[:, :, None]),
+    }
+
+def _rcliper(
+    si_track: xr.Dataset,
+    d_centr: np.ndarray,
+    close_centr: np.ndarray,
+) -> np.ndarray:
     """Compute rain rate (in mm/h) from maximum wind speeds using the R-CLIPER model
 
     The model is defined in equations (3)-(5) and Table 2 (NHC) in the following publication:
@@ -765,3 +975,649 @@ def _rcliper(si_track, d_centr, close_centr):
 
     rainrate[close_centr] = rainrate_close
     return rainrate
+
+def _tcr(
+    si_track: xr.Dataset,
+    centroids: np.ndarray,
+    d_centr: dict,
+    close_centr: np.ndarray,
+    e_precip: float = 0.9,
+    **kwargs,
+) -> np.ndarray:
+    """Compute rain rate (in mm/h) using the TCR model
+
+    This follows the TCR model that was used by Zhu et al. 2013 and Emanuel 2017 for the first time
+    and documented in Lu et al. 2018. This implementation includes improvements proposed by
+    Feldmann et al. 2019:
+
+    Zhu et al. (2013): Estimating tropical cyclone precipitation risk in Texas. Geophysical
+    Research Letters 40(23): 6225–6230. https://doi.org/10.1002/2013GL058284
+
+    Emanuel (2017): Assessing the present and future probability of Hurricane Harvey’s rainfall.
+    Proceedings of the National Academy of Sciences 114(48): 12681–12684.
+    https://doi.org/10.1073/pnas.1716222114
+
+    Lu et al. (2018): Assessing Hurricane Rainfall Mechanisms Using a Physics-Based Model:
+    Hurricanes Isabel (2003) and Irene (2011). Journal of the Atmospheric
+    Sciences 75(7): 2337–2358. https://doi.org/10.1175/JAS-D-17-0264.1
+
+    Feldmann et al. (2019): Estimation of Atlantic Tropical Cyclone Rainfall Frequency in the
+    United States. Journal of Applied Meteorology and Climatology 58(8): 1853–1866.
+    https://doi.org/10.1175/JAMC-D-19-0011.1
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        Output of `_track_to_si`.
+    d_centr : dict
+        Output of `_centr_distances`.
+    close_centr : np.ndarray of shape (npositions, ncentroids)
+        For each track position one row indicating which centroids are within reach.
+    e_precip : float, optional
+        Precipitation efficiency (unitless), the fraction of the vapor flux falling to the surface
+        as rainfall (Lu et al. 2018, eq. (14)). Default: 0.9
+    kwargs :
+        The remaining arguments are passed on to _compute_vertical_velocity.
+
+    Returns
+    -------
+    ndarray of shape (npositions, ncentroids)
+    """
+    # w is of shape (ntime, ncentroids)
+    w = _compute_vertical_velocity(si_track, centroids, d_centr, close_centr, **kwargs)
+
+    # derive vertical vapor flux wq by multiplying with saturation specific humidity Q900
+    wq = si_track["q900"].values[:, None] * w
+
+    # convert rainrate from "meters per second" to "milimeters per hour"
+    rainrate = (M_TO_MM * H_TO_S) * e_precip * RHO_A_OVER_RHO_L * wq
+
+    return rainrate
+
+def _compute_vertical_velocity(
+    si_track: xr.Dataset,
+    centroids: np.ndarray,
+    d_centr: dict,
+    close_centr: np.ndarray,
+    wind_model: str = "ER11",
+    elevation_tif: Optional[Union[str, Path]] = None,
+    c_drag_tif: Optional[Union[str, Path]] = None,
+    w_rad: float = 0.005,
+    res_radial_m: float = 2000.0,
+    min_c_drag: float = 0.001,
+    max_w_foreground: float = 7.0,
+    matlab_ref_mode: bool = False,
+) -> np.ndarray:
+    """Compute the vertical wind velocity at locations along a tropical cyclone track
+
+    This implements eqs. (6)-(13) from:
+
+    Lu et al. (2018): Assessing Hurricane Rainfall Mechanisms Using a Physics-Based Model:
+    Hurricanes Isabel (2003) and Irene (2011). Journal of the Atmospheric
+    Sciences 75(7): 2337–2358. https://doi.org/10.1175/JAS-D-17-0264.1
+
+    with improvements from:
+
+    Feldmann et al. (2019): Estimation of Atlantic Tropical Cyclone Rainfall Frequency in the
+    United States. Journal of Applied Meteorology and Climatology 58(8): 1853–1866.
+    https://doi.org/10.1175/JAMC-D-19-0011.1
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        TC track data in SI units, see `_track_to_si`.
+    centroids : ndarray
+        Each row is a pair of lat/lon coordinates.
+    d_centr : ndarray of shape (npositions, ncentroids)
+        Distances from storm centers to centroids.
+    close_centr : np.ndarray of shape (npositions, ncentroids)
+        For each track position one row indicating which centroids are within reach.
+    wind_model : str, optional
+        Parametric wind field model to use, see TropCyclone. Default: "ER11".
+    elevation_tif : Path or str, optional
+        Path to a GeoTIFF file containing digital elevation model data (in m). Default: None
+    c_drag_tif : Path or str, optional
+        Path to a GeoTIFF file containing gridded drag coefficients (bottom friction).
+        Default: None
+    w_rad : float, optional
+        Background subsidence velocity (in m/s) under radiative cooling. Default: 0.005
+    res_radial_m : float, optional
+        Spatial resolution (in m) in radial direction. Default: 2000
+    min_c_drag : float, optional
+        The drag coefficient is clipped to this minimum value (esp. over ocean). Default: 0.001
+    max_w_foreground : float, optional
+        The maximum value (in m/s) at which to clip the vertical velocity w before subtracting the
+        background subsidence velocity w_rad. The default value is taken from the MATLAB reference
+        implementation. Default: 7.0
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    ndarray of shape (ntime, ncentroids)
+    """
+    h_winds = _horizontal_winds(
+        si_track, d_centr, close_centr, MODEL_VANG[wind_model], matlab_ref_mode=matlab_ref_mode,
+    )
+
+    w_f_plus_w_t = _w_frict_stretch(
+        si_track, d_centr, h_winds, centroids,
+        res_radial_m=res_radial_m, c_drag_tif=c_drag_tif, min_c_drag=min_c_drag,
+        matlab_ref_mode=matlab_ref_mode,
+    )
+    w_h = _w_topo(
+        si_track, d_centr, h_winds, centroids,
+        elevation_tif=elevation_tif, matlab_ref_mode=matlab_ref_mode,
+    )
+    w_s = _w_shear(
+        si_track, d_centr, h_winds,
+        res_radial_m=res_radial_m,
+        matlab_ref_mode=matlab_ref_mode,
+    )
+
+    return np.fmax(np.fmin(w_f_plus_w_t + w_h + w_s, max_w_foreground) - w_rad, 0)
+
+def _horizontal_winds(
+    si_track: xr.Dataset,
+    d_centr: dict,
+    close_centr: np.ndarray,
+    model: int,
+    matlab_ref_mode: bool = False,
+) -> dict:
+    """Compute all horizontal wind speed variables required for `_compute_vertical_velocity`
+
+    Wind speeds are not only computed on the given centroids and for the given times, but also at
+    staggered locations for further use in finite difference computations.
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        TC track data in SI units, see `_track_to_si`.
+    d_centr : dict
+        Output of `_centr_distances`.
+    close_centr : np.ndarray of shape (npositions, ncentroids)
+        For each track position one row indicating which centroids are within reach.
+    model : int
+        Wind profile model selection according to MODEL_VANG.
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    dict
+    """
+    ntime = si_track.sizes["time"]
+    ncentroids = d_centr[""].shape[1]
+
+    # all of the following are in meters per second:
+    winds = {
+        # the cyclostrophic wind direction, the meridional direction is listed first!
+        "dir": (
+            si_track.attrs["latsign"]
+            * np.array([1.0, -1.0])[..., :]
+            * d_centr["dir"][:, :, ::-1]
+        ),
+        # radial windprofile without influence from coriolis force
+        "nocoriolis": _windprofile(
+            si_track, d_centr[""], close_centr, model,
+            cyclostrophic=True, matlab_ref_mode=matlab_ref_mode,
+        ),
+    }
+    # winds['r±,t±'] : radial windprofile with offset in radius and/or time
+    steps = ["", "+", "-"]
+    for rstep in steps:
+        for tstep in steps:
+            result = np.zeros((ntime, ncentroids))
+            if tstep == "":
+                result[:, :] = _windprofile(
+                    si_track, d_centr[rstep], close_centr, model,
+                    cyclostrophic=False, matlab_ref_mode=matlab_ref_mode,
+                )
+            else:
+                # NOTE: For the computation of time derivatives, the eye of the storm is held
+                #       fixed while only the wind profile varies (see MATLAB code)
+                sl = slice(2, None) if tstep == "+" else slice(None, -2)
+                result[1:-1, :] = _windprofile(
+                    si_track.isel(time=sl), d_centr[rstep][1:-1], close_centr[1:-1], model,
+                    cyclostrophic=False, matlab_ref_mode=matlab_ref_mode,
+                )
+            winds[f"r{rstep},t{tstep}"] = result
+
+    # winds['r±h,t'] : radial windprofile with half-sized offsets in radius
+    for rstep in ["+", "-"]:
+        winds[f"r{rstep}h,t"] = 0.5 * (winds["r,t"] + winds[f"r{rstep},t"])
+
+    return winds
+
+def _windprofile(
+    si_track: xr.Dataset,
+    d_centr: dict,
+    close_centr: np.ndarray,
+    model: int,
+    cyclostrophic: bool = False,
+    matlab_ref_mode: bool = False,
+) -> np.ndarray:
+    """Compute (absolute) angular wind speeds according to a parametric wind profile
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        TC track data in SI units, see `_track_to_si`.
+    d_centr : ndarray of shape (npositions, ncentroids)
+        Distances from storm centers to centroids.
+    close_centr : np.ndarray of shape (npositions, ncentroids)
+        For each track position one row indicating which centroids are within reach.
+    model : int
+        Wind profile model selection according to MODEL_VANG.
+    cyclostrophic : bool, optional
+        If True, don't apply the influence of the Coriolis force (set the Coriolis terms to 0).
+        Default: False
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    ndarray of shape (npositions, ncentroids)
+    """
+    if matlab_ref_mode:
+        si_track = si_track.copy()
+        si_track["cp"].values[:] = 5e-5
+    return _compute_angular_windspeeds(
+        si_track, d_centr, close_centr, model, cyclostrophic=cyclostrophic,
+    )
+
+def _w_shear(
+    si_track: xr.Dataset,
+    d_centr: dict,
+    h_winds: dict,
+    res_radial_m: float = 2000.0,
+    matlab_ref_mode: bool = False,
+) -> np.ndarray:
+    """Compute the shear component of the vertical wind velocity
+
+    This implements eq. (12) from:
+
+    Lu et al. (2018): Assessing Hurricane Rainfall Mechanisms Using a Physics-Based Model:
+    Hurricanes Isabel (2003) and Irene (2011). Journal of the Atmospheric
+    Sciences 75(7): 2337–2358. https://doi.org/10.1175/JAS-D-17-0264.1
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        TC track data in SI units, see `_track_to_si`.
+    d_centr : dict
+        Output of `_centr_distances`.
+    h_winds : dict
+        Output of `_horizontal_winds`.
+    res_radial_m : float, optional
+        Spatial resolution (in m) in radial direction. Default: 2000
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    ndarray of shape (ntime, ncentroids)
+    """
+    if "vshear" not in si_track.variables:
+        return np.zeros_like(h_winds["r,t"])
+
+    # fac_scalar : scalar factor from eq. (12) in Lu et al. 2018:
+    #                 g / (cp * (Ts - Tt) * (1 - ep) * N**2
+    #              g : gravitational acceleration (10 m*s**-2)
+    #              cp : isobaric specific heat of dry air (1000 J*(kg*K)**-1)
+    #              Ts - Tt : difference between surface and tropopause temperature (100 K)
+    #              ep : precipitation efficiency (0.5)
+    #              N : buoyancy frequency for dry air (2e-2 s**-1)
+    fac_scalar = 0.5
+
+    # the following are fixes of bugs in the MATLAB implementation
+    fac = fac_scalar * (
+        si_track["cp"].values[:, None]
+        + (2.0 if matlab_ref_mode else 1.0) * h_winds["r,t"] / (1 + d_centr[""])
+        + (h_winds["r+,t"] - h_winds["r-,t"]) / ((1.0 if matlab_ref_mode else 2.0) * res_radial_m)
+    )
+
+    return h_winds["nocoriolis"] * fac * (
+        d_centr["dir"] * si_track["vshear"].values[:, None, :]
+    ).sum(axis=-1)
+
+def _w_topo(
+    si_track: xr.Dataset,
+    d_centr: dict,
+    h_winds: dict,
+    centroids: np.ndarray,
+    elevation_tif: Optional[Union[str, Path]] = None,
+    matlab_ref_mode: bool = False,
+) -> np.ndarray:
+    """Compute the topographic component w_h of the vertical wind velocity
+
+    This implements eq. (7) from:
+
+    Lu et al. (2018): Assessing Hurricane Rainfall Mechanisms Using a Physics-Based Model:
+    Hurricanes Isabel (2003) and Irene (2011). Journal of the Atmospheric
+    Sciences 75(7): 2337–2358. https://doi.org/10.1175/JAS-D-17-0264.1
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        TC track data in SI units, see `_track_to_si`.
+    d_centr : dict
+        Output of `_centr_distances`.
+    h_winds : dict
+        Output of `_horizontal_winds`.
+    centroids : ndarray
+        Each row is a pair of lat/lon coordinates.
+    elevation_tif : Path or str, optional
+        Path to a GeoTIFF file containing digital elevation model data (in m). Default: None
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    ndarray of shape (ntime, ncentroids)
+    """
+    if elevation_tif is None:
+        elevation_tif = ELEVATION_FILE_MAT if matlab_ref_mode else ELEVATION_FILE_SRTM15
+
+    # The gradient of the raster products is smoothed in the MATLAB implementation, even though it
+    # should be piecewise constant since the data itself is read with bilinear interpolation
+    method = ("linear", "linear" if matlab_ref_mode else "nearest")
+    h, h_grad = u_coord.read_raster_sample_with_gradients(
+        elevation_tif, centroids[:, 0], centroids[:, 1], method=method,
+    )
+
+    # only consider interaction with terrain over land
+    mask_onland = (h > -1)
+    h[~mask_onland] = -1
+    h_grad[~mask_onland, :] *= 0
+
+    # reduce effect of translation speed and orography outside of storm core
+    vtrans_red = si_track["vtrans"].values[:, None, :] * (
+        np.clip((300 * KM_TO_M - d_centr[""]) / (50 * KM_TO_M), 0, 1)[:, :, None]
+    )
+    h_grad_red = h_grad[None, :, :] * (
+        np.clip((150 * KM_TO_M - d_centr[""]) / (30 * KM_TO_M), 0.2, 0.6)[:, :, None]
+    )
+    return (
+        (vtrans_red + h_winds["nocoriolis"][..., None] * h_winds["dir"]) * h_grad_red
+    ).sum(axis=-1)
+
+def _w_frict_stretch(
+    si_track: xr.Dataset,
+    d_centr: dict,
+    h_winds: dict,
+    centroids: np.ndarray,
+    res_radial_m: float = 2000.0,
+    c_drag_tif: Optional[Union[str, Path]] = None,
+    min_c_drag: float = 0.001,
+    matlab_ref_mode: bool = False,
+) -> np.ndarray:
+    """Compute the sum of the frictional and stretching components w_f and w_t
+
+    This implements eq. (6) and (11) from:
+
+    Lu et al. (2018): Assessing Hurricane Rainfall Mechanisms Using a Physics-Based Model:
+    Hurricanes Isabel (2003) and Irene (2011). Journal of the Atmospheric
+    Sciences 75(7): 2337–2358. https://doi.org/10.1175/JAS-D-17-0264.1
+
+    Parameters
+    ----------
+    si_track : xr.Dataset
+        TC track data in SI units, see `_track_to_si`.
+    d_centr : dict
+        Output of `_centr_distances`.
+    h_winds : dict
+        Output of `_horizontal_winds`.
+    centroids : ndarray
+        Each row is a pair of lat/lon coordinates.
+    res_radial_m : float, optional
+        Spatial resolution (in m) in radial direction. Default: 2000
+    c_drag_tif : Path or str, optional
+        Path to a GeoTIFF file containing gridded drag coefficients (bottom friction).
+        Default: None
+    min_c_drag : float, optional
+        The drag coefficient is clipped to this minimum value (esp. over ocean). Default: 0.001
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    ndarray of shape (ntime, ncentroids)
+    """
+    # sum of frictional and stretching components w_f and w_t
+    if c_drag_tif is None:
+        c_drag_tif = C_DRAG_FILE_MAT if matlab_ref_mode else C_DRAG_FILE_ERA5
+
+    # vnet : absolute value of the total surface wind
+    vnet = {
+        f"r{rstep}h,t": np.linalg.norm(
+            (
+                h_winds[f"r{rstep}h,t"][..., None] * h_winds["dir"]
+                + si_track["vtrans"].values[:, None, :]
+            ),
+            axis=-1,
+        )
+        for rstep in ["+", "-"]
+    }
+
+    # The gradient of the raster products is smoothed in the MATLAB implementation, even though it
+    # should be piecewise constant since the data itself is read with bilinear interpolation
+    method = ("linear", "linear" if matlab_ref_mode else "nearest")
+    cd, cd_grad = u_coord.read_raster_sample_with_gradients(
+        c_drag_tif, centroids[:, 0], centroids[:, 1], method=method,
+    )
+
+    mask_onland = (cd >= min_c_drag)
+    cd[~mask_onland] = min_c_drag
+    cd_grad[~mask_onland, :] *= 0
+
+    cd_hstep = (cd_grad[None] * (0.5 * res_radial_m * d_centr["dir"])).sum(axis=-1)
+    cd = {
+        "": cd,
+        "r+h": np.clip(cd + cd_hstep, 0.0, 0.01),
+        "r-h": np.clip(cd - cd_hstep, 0.0, 0.01),
+    }
+
+    # tau : azimuthal surface stress, equation (8) in (Lu et al. 2018)
+    tau = {
+        f"r{rstep}h,t": (
+            -cd[f"r{rstep}h"] * h_winds[f"r{rstep}h,t"] * vnet[f"r{rstep}h,t"]
+        ) for rstep in ["+", "-"]
+    }
+
+    # evaluate derivative of angular momentum M wrt r
+    #   M = r * V + 0.5 * f * r^2
+    #   dMdr = r * (f + dVdr) + V
+    dMdr = {
+        f"r{rstep}h,t": (
+            d_centr[f"{rstep}h"] * (
+                si_track["cp"].values[:, None]
+                + (1 if rstep == "+" else -1) * (
+                    h_winds[f"r{rstep},t"] - h_winds[f"r,t"]
+                ) / res_radial_m
+            ) + h_winds[f"r{rstep}h,t"]
+        )
+        for rstep in ["+", "-"]
+    }
+
+    # compute derivative of angular momentum M wrt t
+    #   M = r * V + 0.5 * f * r^2
+    #   dMdt = r * dVdt
+    # combine equations (6) and (11) in (Lu et al. 2018):
+    #   w_f + w_t = (1 / r) * (d/dr) [pre_wf_wt]
+    #   where [pre_wf_wt] := [r^2 / dMdr * (H_TROP * dVdt - tau)]
+    pre_wf_wt = {
+        f"r{rstep}h,t": (
+            d_centr[rstep]**2 / np.fmax(10, dMdr[f"r{rstep}h,t"]) * (
+                # NOTE: The attenuation factor is not in Lu et al. 2018.
+                #       It ranges from -1 (at the storm center) to 1 (at RMW and higher).
+                np.fmin(1, (-1 + 2 * (d_centr[rstep] / si_track["rad"].values[:, None])**2)) *
+                # continue with "official" formula:
+                H_TROP * (
+                    h_winds[f"r{rstep},t+"] - h_winds[f"r{rstep},t-"]
+                ) / (2 * si_track["tstep"].values[:, None])
+                - tau[f"r{rstep}h,t"]
+            )
+        ) for rstep in ["+", "-"]
+    }
+
+    return (pre_wf_wt["r+h,t"] - pre_wf_wt["r-h,t"]) / (res_radial_m * d_centr[""])
+
+def _qs_from_t_diff_level(
+    temps_in: np.ndarray,
+    vmax: np.ndarray,
+    pres_in: float,
+    pres_out: float,
+    cap_heat_air: float = 1005.0,
+    max_iter: int = 5,
+    matlab_ref_mode: bool = False,
+) -> np.ndarray:
+    """Compute the humidity from temperature assuming a moist adiabatic lapse rate
+
+    The input temperatures may be given on a different pressure level than the output humidities.
+    When computing Q from T on the same pressure level, see `_qs_from_t_same_level`.
+
+    The approach assumes that the lapse rate is constant and given by the law for the moist
+    adiabatic lapse rate:
+
+        Gamma = cp * log(T) + Lv * Q / T - Rd * log(p)
+
+    Where:
+
+        Gamma : lapse rate
+        T : temperature
+        Q : saturation specific humidity
+        p : pressure
+        cp : isobaric specific heat of dry air
+        Lv : latent heat of the evaporation of water
+        Rd : specific gas constant of dry air
+
+    Assuming a moist adiabatic lapse rate, Gamma is constant across pressure levels. Since it's
+    possible to compute Q from T on the same pressure level (see `_qs_from_t_same_level`), we can
+    use this law to compute Q at one pressure level from T given on a different pressure level.
+    However, since we can't solve the equation for T analytically, we use the Newton-Raphson method
+    to find the solution.
+
+    Parameters
+    ----------
+    temps_in : ndarray
+        Temperatures (in K) at the pressure level pres_in.
+    vmax : ndarray
+        Maximum surface wind speeds (in m/s).
+    pres_in : float
+        Pressure level (in hPa) at which the input temperatures are given.
+    pres_out : float
+        Pressure level (in hPa) at which the output humidity is computed.
+    cap_heat_air : float, optional
+        Isobaric specific heat of dry air (in J/(kg*K)). The value depends on env. conditions and
+        lies, for example, between 1003 (for 0 °C) and 1012 (typical room conditions).
+        Default: 1005
+    max_iter : int, optional
+        The number of Newton-Raphson steps to take. Default: 5
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    q_out : ndarray
+        For each temperature value in temps_in, a value of saturation specific humidity (in gm/gm)
+        at the pressure level pres_out.
+    """
+    # c_vmax : rescale factor from (squared) surface to (squared) gradient winds
+    #          MATLAB code uses c_vmax=1.6 (source unknown)
+    c_vmax = 1.6 if matlab_ref_mode else GRADIENT_LEVEL_TO_SURFACE_WINDS**-2
+
+    # first, calculate q_in from temps_in
+    q_in, _ = _qs_from_t_same_level(
+        pres_in, np.fmax(T_ICE_K - 50, temps_in), matlab_ref_mode=matlab_ref_mode)
+
+    # derive (temps_out, q_out) from (temps_in, q_in) iteratively (Newton-Raphson method)
+    q_out = np.zeros_like(q_in)
+    temps_out = temps_in.copy() + 20  # first guess, assuming that pres_out > pres_in
+
+    # exclude missing data (fill values) in the inputs
+    mask = (temps_in > 100)
+
+    for it in range(max_iter):
+        # compute new estimate of q_out:
+        q_out[mask], dQdT = _qs_from_t_same_level(
+            pres_out, temps_out[mask], gradient=True, matlab_ref_mode=matlab_ref_mode)
+
+        # fun : law for the moist adiabatic lapse rate at the two different pressure levels
+        fun = (
+            cap_heat_air * np.log(temps_out[mask] / temps_in[mask])
+            + L_EVAP_WATER * (q_out[mask] / temps_out[mask] - q_in[mask] / temps_in[mask])
+            - R_DRY_AIR * np.log(pres_out / pres_in)
+            - c_vmax * vmax[mask]**2 / DELTA_T_TROPOPAUSE
+        )
+        dFdT = (
+            cap_heat_air * temps_out[mask]
+            + L_EVAP_WATER * (dQdT * temps_out[mask] - q_out[mask])
+        ) / temps_out[mask]**2
+
+        # take Newton step
+        temps_out[mask] -= fun / dFdT
+
+    return q_out
+
+def _qs_from_t_same_level(
+    p_ref: float,
+    c: np.ndarray,
+    gradient: bool = False,
+    matlab_ref_mode: bool = False,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """Compute saturation specific humidity from temperature at a given pressure level
+
+    This uses the formulation for saturation vapor pressure (over water) given in:
+
+    Murray (1967): On the Computation of Saturation Vapor Pressure. Journal of Applied Meteorology
+    and Climatology 6(1): 203–204. http://doi.org/10.1175/1520-0450(1967)006<0203:OTCOSV>2.0.CO;2
+
+    Parameters
+    ----------
+    p_ref : float
+        Reference pressure level (in hPa) at which the input temperatures are given and at which
+        output humidity values are computed.
+    temps : ndarray
+        Temperatures (in K) at the pressure level p_ref.
+    gradient : bool, optional
+        If True, compute the derivative of the functional relationship between Q and T.
+    matlab_ref_mode : bool, optional
+        Do not apply the fixes to the reference MATLAB implementation. Default: False
+
+    Returns
+    -------
+    qs : ndarray
+        For each temperature value in temp, a value of saturation specific humidity (in gm/gm).
+    dQdT : ndarray
+        If `gradient` is False, this is None. Otherwise, the derivative of Q with respect to T is
+        returned.
+    """
+    if matlab_ref_mode:
+        # these parameters are used in the MATLAB code (source unknown)
+        a = 17.67
+        b = 29.65
+        c = 6.112
+    else:
+        # parameters from Murray 1967
+        a = 17.2693882
+        b = 35.86
+        c = 6.1078
+
+    # es : saturation vapor pressure (in hPa)
+    es = c * np.exp(a * (temps - T_ICE_K) / (temps - b))
+
+    qs = M_WATER / M_DRY_AIR * es / (p_ref - es)
+    dQdT = None
+    if gradient:
+        if matlab_ref_mode:
+            # Specific gas constant of water vapor (in J / kgK)
+            # (overwritten by 491 instead of 461 in the MATLAB code)
+            r_water = 1000 * R_GAS / M_WATER
+            r_water = 491
+            # this approximation of the derivative is used in the MATLAB code:
+            dQdT = (L_EVAP_WATER / r_water) / temps**2 * qs
+        else:
+            dQdT = a * (T_ICE_K - b) / (temps - b)**2 * qs * (1 - qs)
+
+    return qs, dQdT

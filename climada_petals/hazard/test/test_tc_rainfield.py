@@ -47,7 +47,7 @@ class TestReader(unittest.TestCase):
     """Test loading funcions from the TCRain class"""
 
     def test_set_one_pass(self):
-        """Test _set_from_track function."""
+        """Test from_tracks constructor with a single track."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
         tc_haz = TCRain.from_tracks(tc_track, centroids=CENTR_TEST_BRB)
@@ -74,6 +74,18 @@ class TestReader(unittest.TestCase):
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
         self.assertAlmostEqual(tc_haz.intensity[0, 100], 98.61962462510677, 6)
         self.assertAlmostEqual(tc_haz.intensity[0, 260], 27.702589231065055)
+
+    def test_tcr(self):
+        """Test from_tracks constructor with model TCR."""
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
+        tc_track.equal_timestep()
+        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
+
+        self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
+        self.assertEqual(tc_haz.intensity.shape, (1, 296))
+        self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
+        self.assertAlmostEqual(tc_haz.intensity[0, 100], 128.46424063696978)
+        self.assertAlmostEqual(tc_haz.intensity[0, 260], 15.697609721478253)
 
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""
