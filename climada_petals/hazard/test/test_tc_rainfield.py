@@ -27,7 +27,12 @@ from scipy import sparse
 
 from climada import CONFIG
 from climada.hazard.tc_tracks import TCTracks
-from climada_petals.hazard.tc_rainfield import TCRain, compute_rain, MODEL_RAIN
+from climada_petals.hazard.tc_rainfield import (
+    TCRain,
+    compute_rain,
+    MODEL_RAIN,
+    _qs_from_t_same_level,
+)
 from climada.hazard.centroids.centr import Centroids
 from climada.util.api_client import Client
 import climada.hazard.test as hazard_test
@@ -163,6 +168,7 @@ class TestModel(unittest.TestCase):
         self.assertAlmostEqual(rainfall[0, 200], 73.792450959)
 
     def test_rainfield_diff_time_steps(self):
+        """Check that the results do not depend too much on the track's time step sizes."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
 
         train_org = TCRain.from_tracks(tc_track)
@@ -179,6 +185,34 @@ class TestModel(unittest.TestCase):
                 train.intensity.sum(),
                 rtol=1e-1,
             )
+
+    def test_qs_from_t_same_level(self):
+        """Test the derivative of _qs_from_t_same_level"""
+        t0 = 270.0
+        pref = 900
+
+        # With h going to zero, the error of the Taylor approximation should go to zero
+        # at the order of h^2.
+        hs = np.array([1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5])
+        ts = t0 + hs
+
+        [q0], [dq0] = _qs_from_t_same_level(pref, np.array([t0]), gradient=True)
+        qs, _ = _qs_from_t_same_level(pref, ts, gradient=False)
+        diffs_rel = np.abs(q0 + dq0 * hs - qs) / hs**2
+        diffs_rel_mean = diffs_rel.mean()
+        orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
+        np.testing.assert_array_less(orders, 0.1)
+
+        # Because of a bug in the reference MATLAB implementation,
+        # the same doesn't work for `matlab_ref_mode=True`.
+        [q0], [dq0] = _qs_from_t_same_level(
+            pref, np.array([t0]), gradient=True, matlab_ref_mode=True,
+        )
+        qs, _ = _qs_from_t_same_level(pref, ts, gradient=False, matlab_ref_mode=True)
+        diffs_rel = np.abs(q0 + dq0 * hs - qs) / hs**2
+        diffs_rel_mean = diffs_rel.mean()
+        orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
+        self.assertGreater(orders.max(), 1)
 
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestReader)

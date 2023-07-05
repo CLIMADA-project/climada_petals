@@ -34,9 +34,9 @@ import xarray as xr
 
 from climada.hazard import Hazard, TCTracks, TropCyclone, Centroids
 from climada.hazard.trop_cyclone import (
-    _close_centroids,
-    _compute_angular_windspeeds,
-    _track_to_si,
+    get_close_centroids,
+    compute_angular_windspeeds,
+    tctrack_to_si,
     GRADIENT_LEVEL_TO_SURFACE_WINDS,
     H_TO_S,
     KM_TO_M,
@@ -90,10 +90,10 @@ M_DRY_AIR = 28.9634
 """Molar mass of dry air (in g/mol)"""
 
 R_GAS = 8.3144621
-"""Molar gas constant (in J / molK)"""
+"""Molar gas constant (in J/molK)"""
 
 R_DRY_AIR = 1000 * R_GAS / M_DRY_AIR
-"""Specific gas constant of dry air (in J / kgK)"""
+"""Specific gas constant of dry air (in J/kgK)"""
 
 RHO_A_OVER_RHO_L = 0.00117
 """Density of water vapor divided by density of liquid water"""
@@ -671,7 +671,7 @@ def compute_rain(
     # convert track variables to SI units
     si_track = _track_to_si_with_q_and_shear(track, **model_kwargs)
 
-    # normalize longitude values (improves performance of `dist_approx` and `_close_centroids`)
+    # normalize longitude values (improves performance of `dist_approx` and `get_close_centroids`)
     u_coord.lon_normalize(centroids[:, 1], center=si_track.attrs["mid_lon"])
 
     # Filter early with a larger threshold, but inaccurate (lat/lon) distances.
@@ -681,7 +681,7 @@ def compute_rain(
     )
 
     # restrict to centroids within rectangular bounding boxes around track positions
-    track_centr_msk = _close_centroids(
+    track_centr_msk = get_close_centroids(
         si_track["lat"].values,
         si_track["lon"].values,
         centroids,
@@ -713,7 +713,7 @@ def compute_rain(
     if model == MODEL_RAIN["R-CLIPER"]:
         rainrates = _rcliper(si_track, d_centr[""], close_centr_msk, **model_kwargs)
     elif model == MODEL_RAIN["TCR"]:
-        rainrates = _tcr(si_track, centroids, d_centr, close_centr_msk, **model_kwargs)
+        rainrates = _tcr(si_track, track_centr, d_centr, close_centr_msk, **model_kwargs)
     else:
         raise NotImplementedError
     [reachable_centr_idx] = track_centr_msk.nonzero()
@@ -792,7 +792,7 @@ def _track_to_si_with_q_and_shear(
         TC track data.
     q_900 : float, optional
         If the track data does not include "t600" values, assume this constant value of saturation
-        specific humidity (in gm/gm) at 900 hPa. Default: 0.01
+        specific humidity (in kg/kg) at 900 hPa. Default: 0.01
     matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
     kwargs : dict
@@ -802,7 +802,7 @@ def _track_to_si_with_q_and_shear(
     -------
     xr.Dataset
     """
-    si_track = _track_to_si(track)
+    si_track = tctrack_to_si(track)
 
     if "q900" in track.variables:
         si_track["q900"] = track["q900"].copy()
@@ -857,7 +857,7 @@ def _centr_distances(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `_track_to_si`.
+        TC track data in SI units, see `tctrack_to_si`.
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     metric : str, optional
@@ -906,7 +906,7 @@ def _rcliper(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `_track_to_si`.
+        Output of `tctrack_to_si`.
     d_centr : np.ndarray of shape (npositions, ncentroids)
         Distance (in m) between centroids and track positions.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -955,14 +955,12 @@ def _rcliper(
 
     rainrate_close = np.zeros_like(d_centr)
 
-    # rain rate inside of inner core
+    # rain rate inside and outside of inner core
     msk = (d_centr_km <= rad_m)
     rainrate_close[msk] = (
         rainr_0[msk] + (rainr_m[msk] - rainr_0[msk]) * (d_centr_km[msk] / rad_m[msk])
     )
-
-    # rain rate outside of inner core
-    msk = (d_centr_km > rad_m)
+    msk = ~msk
     rainrate_close[msk] = rainr_m[msk] * np.exp(-(d_centr_km[msk] - rad_m[msk]) / rad_e[msk])
 
     rainrate_close[np.isnan(rainrate_close)] = 0
@@ -1006,7 +1004,7 @@ def _tcr(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `_track_to_si`.
+        Output of `tctrack_to_si`.
     d_centr : dict
         Output of `_centr_distances`.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -1063,7 +1061,7 @@ def _compute_vertical_velocity(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `_track_to_si`.
+        TC track data in SI units, see `tctrack_to_si`.
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     d_centr : ndarray of shape (npositions, ncentroids)
@@ -1130,7 +1128,7 @@ def _horizontal_winds(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `_track_to_si`.
+        TC track data in SI units, see `tctrack_to_si`.
     d_centr : dict
         Output of `_centr_distances`.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -1200,7 +1198,7 @@ def _windprofile(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `_track_to_si`.
+        TC track data in SI units, see `tctrack_to_si`.
     d_centr : ndarray of shape (npositions, ncentroids)
         Distances from storm centers to centroids.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -1223,7 +1221,7 @@ def _windprofile(
         # implementation.
         si_track = si_track.copy(deep=True)
         si_track["cp"].values[:] = 5e-5
-    return _compute_angular_windspeeds(
+    return compute_angular_windspeeds(
         si_track, d_centr, close_centr, model, cyclostrophic=cyclostrophic,
     )
 
@@ -1245,7 +1243,7 @@ def _w_shear(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `_track_to_si`.
+        TC track data in SI units, see `tctrack_to_si`.
     d_centr : dict
         Output of `_centr_distances`.
     h_winds : dict
@@ -1301,7 +1299,7 @@ def _w_topo(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `_track_to_si`.
+        TC track data in SI units, see `tctrack_to_si`.
     d_centr : dict
         Output of `_centr_distances`.
     h_winds : dict
@@ -1364,7 +1362,7 @@ def _w_frict_stretch(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `_track_to_si`.
+        TC track data in SI units, see `tctrack_to_si`.
     d_centr : dict
         Output of `_centr_distances`.
     h_winds : dict
@@ -1478,14 +1476,13 @@ def _qs_from_t_diff_level(
     The input temperatures may be given on a different pressure level than the output humidities.
     When computing Q from T on the same pressure level, see `_qs_from_t_same_level`.
 
-    The approach assumes that the lapse rate is constant and given by the law for the moist
-    adiabatic lapse rate:
+    The approach assumes that the lapse rate dT/dz is given by the law for the moist adiabatic
+    lapse rate so that the following expression is constant across pressure levels:
 
-        Gamma = cp * log(T) + Lv * Q / T - Rd * log(p)
+        cp * log(T) + Lv * Q / T - Rd * log(p) = const.
 
     Where:
 
-        Gamma : lapse rate
         T : temperature
         Q : saturation specific humidity
         p : pressure
@@ -1493,11 +1490,18 @@ def _qs_from_t_diff_level(
         Lv : latent heat of the evaporation of water
         Rd : specific gas constant of dry air
 
-    Assuming a moist adiabatic lapse rate, Gamma is constant across pressure levels. Since it's
-    possible to compute Q from T on the same pressure level (see `_qs_from_t_same_level`), we can
-    use this law to compute Q at one pressure level from T given on a different pressure level.
-    However, since we can't solve the equation for T analytically, we use the Newton-Raphson method
-    to find the solution.
+    For details, see Exercises 3.50 and 3.63 and their solutions in the following reference:
+
+    Wallace and Hobbs (2006): Atmospheric Science. Second Edition.
+    https://gibbs.science/teaching/efd/handouts/wallace_hobbs_ch3.pdf
+    http://weather.ou.edu/~scavallo/classes/metr_5004/f2013/supplementary/e-3-4-5-6-7-9-10.pdf
+
+    TODO: Actually check that this is true. I was not able to verify the equation.
+
+    Since it's possible to compute Q from T on the same pressure level (see
+    `_qs_from_t_same_level`), we can use this relationship to compute Q at one pressure level from
+    T given on a different pressure level. However, since we can't solve the equation for T
+    analytically, we use the Newton-Raphson method to find the solution.
 
     Parameters
     ----------
@@ -1521,7 +1525,7 @@ def _qs_from_t_diff_level(
     Returns
     -------
     q_out : ndarray
-        For each temperature value in temps_in, a value of saturation specific humidity (in gm/gm)
+        For each temperature value in temps_in, a value of saturation specific humidity (in kg/kg)
         at the pressure level pres_out.
     """
     # c_vmax : rescale factor from (squared) surface to (squared) gradient winds
@@ -1565,14 +1569,26 @@ def _qs_from_t_same_level(
     p_ref: float,
     temps: np.ndarray,
     gradient: bool = False,
+    tetens_coeffs: str = "Buck1981",
     matlab_ref_mode: bool = False,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Compute saturation specific humidity from temperature at a given pressure level
 
-    This uses the formulation for saturation vapor pressure (over water) given in:
+    This uses the Tetens (or Magnus) formula for saturation vapor pressure (over water) with
+    coefficients given in:
 
     Murray (1967): On the Computation of Saturation Vapor Pressure. Journal of Applied Meteorology
     and Climatology 6(1): 203–204. http://doi.org/10.1175/1520-0450(1967)006<0203:OTCOSV>2.0.CO;2
+
+    Buck (1981): New Equations for Computing Vapor Pressure and Enhancement Factor. Journal of
+    Applied Meteorology and Climatology 20(12): 1527-1532.
+    http://doi.org/10.1175/1520-0450(1981)020<1527:NEFCVP>2.0.CO;2
+
+    The default coefficients (Buck 1981) are also used by the ECMWF, see Section 7.2.1 (b) of the
+    following document:
+
+    ECMWF (2023): IFS Documentation CY48R1, Part IV: Physical Processes.
+    https://www.ecmwf.int/en/elibrary/81370-ifs-documentation-cy48r1-part-iv-physical-processes
 
     Parameters
     ----------
@@ -1583,32 +1599,48 @@ def _qs_from_t_same_level(
         Temperatures (in K) at the pressure level p_ref.
     gradient : bool, optional
         If True, compute the derivative of the functional relationship between Q and T.
+    tetens_coeffs : str, optional
+        Coefficients to use for the Tetens formula. One of "Buck1981" or "Murray1967". This is
+        ignored if `matlab_ref_mode` is True because the reference MATLAB implementation uses its
+        own (undocumented) coefficients. Default: "Buck1981"
     matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
     qs : ndarray
-        For each temperature value in temp, a value of saturation specific humidity (in gm/gm).
+        For each temperature value in temp, a value of saturation specific humidity (in kg/kg).
     dQdT : ndarray
         If `gradient` is False, this is None. Otherwise, the derivative of Q with respect to T is
         returned.
     """
     if matlab_ref_mode:
-        # these parameters are used in the MATLAB code (source unknown)
+        # these coefficients are used in the MATLAB code (source unknown)
         a = 17.67
         b = 29.65
         c = 6.112
-    else:
-        # parameters from Murray 1967
+    elif tetens_coeffs == "Murray1967":
         a = 17.2693882
         b = 35.86
         c = 6.1078
+    elif tetens_coeffs == "Buck1981":
+        a = 17.502
+        b = 32.19
+        c = 6.1121
+    else:
+        raise NotImplementedError
 
     # es : saturation vapor pressure (in hPa)
     es = c * np.exp(a * (temps - T_ICE_K) / (temps - b))
 
-    qs = M_WATER / M_DRY_AIR * es / (p_ref - es)
+    fact = M_WATER / M_DRY_AIR
+    if matlab_ref_mode:
+        # in the reference implementation, the formula for the "mixing ratio" is used which is
+        # almost the same as the "specific humidity" in practice
+        qs = fact * es / (p_ref - es)
+    else:
+        qs = fact * es / (p_ref - (1 - fact) * es)
+
     dQdT = None
     if gradient:
         if matlab_ref_mode:
@@ -1619,6 +1651,6 @@ def _qs_from_t_same_level(
             # this approximation of the derivative is used in the MATLAB code:
             dQdT = (L_EVAP_WATER / r_water) / temps**2 * qs
         else:
-            dQdT = a * (T_ICE_K - b) / (temps - b)**2 * qs * (1 - qs)
+            dQdT = a * (T_ICE_K - b) / (temps - b)**2 * qs * (1 + (1 - fact) * qs / fact)
 
     return qs, dQdT
