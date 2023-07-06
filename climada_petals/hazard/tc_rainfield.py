@@ -98,26 +98,22 @@ R_DRY_AIR = 1000 * R_GAS / M_DRY_AIR
 RHO_A_OVER_RHO_L = 0.00117
 """Density of water vapor divided by density of liquid water"""
 
-ELEVATION_FILE_SRTM15 = u_const.SYSTEM_DIR / "srtm15_v2.3_300as.tif"
-"""Topography (land surface elevation) raster data
+DEF_ELEVATION_TIF = u_const.SYSTEM_DIR / "topography_land_360as.tif"
+"""Topography (land surface elevation, 0 over oceans) raster data at 0.1 degree resolution
 
-Upscaled to 300 arc-seconds from original SRTM15+ data (tiled, 'index.vrt') using "gdalwarp":
-
-$ gdalwarp index.vrt -tr 0.083333333333333 -0.083333333333333 -r average \
-    -co COMPRESS=DEFLATE srtm15_v2.3_300as.tif
+The data is copied from the reference MATLAB implementation (source unknown)
 """
 
-C_DRAG_FILE_ERA5 = u_const.SYSTEM_DIR / "era-5_C_Drag500-corrected.tif"
-"""Drag coefficient (bottom friction) raster data
+DEF_DRAG_TIF = u_const.SYSTEM_DIR / "c_drag_500.tif"
+"""Gradient-level drag coefficient raster data at 0.25 degree resolution
 
-Derived from ERA-5 'forecast_surface_roughness' (fsr) variable at 0.25° resolution.
+The ERA5 'forecast_surface_roughness' (fsr) variable has been transformed into drag
+coefficients (C_D) following eqs. (7) and (8) in the following work:
+
+    Feldmann et al. (2019): Estimation of Atlantic Tropical Cyclone Rainfall Frequency in the
+    United States. Journal of Applied Meteorology and Climatology 58(8): 1853–1866.
+    https://doi.org/10.1175/JAMC-D-19-0011.1
 """
-
-ELEVATION_FILE_MAT = u_const.SYSTEM_DIR / "mat_bathymetry_high.tif"
-"""Topography (land surface elevation) raster data, 0 over oceans"""
-
-C_DRAG_FILE_MAT = u_const.SYSTEM_DIR / "mat_C_Drag500-corrected.tif"
-"""Drag coefficient (bottom friction) raster data"""
 
 class TCRain(Hazard):
     """
@@ -1071,10 +1067,11 @@ def _compute_vertical_velocity(
     wind_model : str, optional
         Parametric wind field model to use, see TropCyclone. Default: "ER11".
     elevation_tif : Path or str, optional
-        Path to a GeoTIFF file containing digital elevation model data (in m). Default: None
+        Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, a
+        topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
     c_drag_tif : Path or str, optional
-        Path to a GeoTIFF file containing gridded drag coefficients (bottom friction).
-        Default: None
+        Path to a GeoTIFF file containing gridded drag coefficients (bottom friction). If not
+        specified, an ERA5-based data set provided with CLIMADA is used. Default: None
     w_rad : float, optional
         Background subsidence velocity (in m/s) under radiative cooling. Default: 0.005
     res_radial_m : float, optional
@@ -1307,7 +1304,8 @@ def _w_topo(
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     elevation_tif : Path or str, optional
-        Path to a GeoTIFF file containing digital elevation model data (in m). Default: None
+        Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, a
+        topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
     matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
 
@@ -1316,7 +1314,7 @@ def _w_topo(
     ndarray of shape (ntime, ncentroids)
     """
     if elevation_tif is None:
-        elevation_tif = ELEVATION_FILE_MAT if matlab_ref_mode else ELEVATION_FILE_SRTM15
+        elevation_tif = DEF_ELEVATION_TIF
 
     # Note that the gradient of the raster products is smoothed (as in the reference MATLAB
     # implementation), even though it should be piecewise constant since the data itself is read
@@ -1372,8 +1370,8 @@ def _w_frict_stretch(
     res_radial_m : float, optional
         Spatial resolution (in m) in radial direction. Default: 2000
     c_drag_tif : Path or str, optional
-        Path to a GeoTIFF file containing gridded drag coefficients (bottom friction).
-        Default: None
+        Path to a GeoTIFF file containing gridded drag coefficients (bottom friction). If not
+        specified, an ERA5-based data set provided with CLIMADA is used. Default: None
     min_c_drag : float, optional
         The drag coefficient is clipped to this minimum value (esp. over ocean). Default: 0.001
     matlab_ref_mode : bool, optional
@@ -1385,7 +1383,7 @@ def _w_frict_stretch(
     """
     # sum of frictional and stretching components w_f and w_t
     if c_drag_tif is None:
-        c_drag_tif = C_DRAG_FILE_MAT if matlab_ref_mode else C_DRAG_FILE_ERA5
+        c_drag_tif = DEF_DRAG_TIF
 
     # vnet : absolute value of the total surface wind
     vnet = {
