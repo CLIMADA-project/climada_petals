@@ -1318,11 +1318,11 @@ def _w_topo(
     if elevation_tif is None:
         elevation_tif = ELEVATION_FILE_MAT if matlab_ref_mode else ELEVATION_FILE_SRTM15
 
-    # The gradient of the raster products is smoothed in the MATLAB implementation, even though it
-    # should be piecewise constant since the data itself is read with bilinear interpolation
-    method = ("linear", "linear" if matlab_ref_mode else "nearest")
+    # Note that the gradient of the raster products is smoothed (as in the reference MATLAB
+    # implementation), even though it should be piecewise constant since the data itself is read
+    # with bilinear interpolation.
     h, h_grad = u_coord.read_raster_sample_with_gradients(
-        elevation_tif, centroids[:, 0], centroids[:, 1], method=method,
+        elevation_tif, centroids[:, 0], centroids[:, 1], method=("linear", "linear"),
     )
 
     # only consider interaction with terrain over land
@@ -1399,11 +1399,11 @@ def _w_frict_stretch(
         for rstep in ["+", "-"]
     }
 
-    # The gradient of the raster products is smoothed in the MATLAB implementation, even though it
-    # should be piecewise constant since the data itself is read with bilinear interpolation
-    method = ("linear", "linear" if matlab_ref_mode else "nearest")
+    # Note that the gradient of the raster products is smoothed (as in the reference MATLAB
+    # implementation), even though it should be piecewise constant since the data itself is read
+    # with bilinear interpolation.
     cd, cd_grad = u_coord.read_raster_sample_with_gradients(
-        c_drag_tif, centroids[:, 0], centroids[:, 1], method=method,
+        c_drag_tif, centroids[:, 0], centroids[:, 1], method=("linear", "linear"),
     )
 
     mask_onland = (cd >= min_c_drag)
