@@ -19,23 +19,28 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test TCRain class
 """
 
-import unittest
 import datetime as dt
 from pathlib import Path
+import unittest
+
 import numpy as np
 from scipy import sparse
+import xarray as xr
 
 from climada import CONFIG
-from climada.hazard.tc_tracks import TCTracks
+from climada.hazard import Centroids, TCTracks
+import climada.hazard.test as hazard_test
 from climada_petals.hazard.tc_rainfield import (
     TCRain,
     compute_rain,
+    KN_TO_MS,
     MODEL_RAIN,
+    _qs_from_t_diff_level,
     _qs_from_t_same_level,
+    _track_to_si_with_q_and_shear,
 )
-from climada.hazard.centroids.centr import Centroids
 from climada.util.api_client import Client
-import climada.hazard.test as hazard_test
+from climada.util.constants import DEMO_DIR
 
 
 def getTestData():
@@ -84,13 +89,24 @@ class TestReader(unittest.TestCase):
         """Test from_tracks constructor with model TCR."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
-        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
 
+        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
         self.assertAlmostEqual(tc_haz.intensity[0, 100], 128.46424063696978)
         self.assertAlmostEqual(tc_haz.intensity[0, 260], 15.697609721478253)
+
+        # For testing, fill in the mean temperature over the storm life time (from ERA5).
+        # This increases the results by more than 50% because the default value for saturation
+        # specific humidity corresponds to a temperature of only ~267 K.
+        tc_track.data[0]["t600"] = xr.full_like(tc_track.data[0]["central_pressure"], 275.0)
+        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
+        self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
+        self.assertEqual(tc_haz.intensity.shape, (1, 296))
+        self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
+        self.assertAlmostEqual(tc_haz.intensity[0, 100], 205.04356030680032)
+        self.assertAlmostEqual(tc_haz.intensity[0, 260], 25.127792498223748)
 
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""
@@ -213,6 +229,32 @@ class TestModel(unittest.TestCase):
         diffs_rel_mean = diffs_rel.mean()
         orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
         self.assertGreater(orders.max(), 1)
+
+    def test_qs_from_t_diff_level(self):
+        tracks = TCTracks.from_hdf5(DEMO_DIR / "tcrain_examples.nc")
+        track_ds = tracks.data[0]
+        temps_in = track_ds["t600"].values
+        vmax = track_ds["max_sustained_wind"].values * KN_TO_MS
+        pres_in, pres_out = 600, 900
+        q_out = _qs_from_t_diff_level(temps_in, vmax, pres_in, pres_out)
+        np.testing.assert_allclose(q_out, [
+            0.015296, 0.015248, 0.015129, 0.015306, 0.015043, 0.015513, 0.014814, 0.015791,
+            0.015524, 0.015966, 0.015733, 0.017770, 0.018992, 0.018337, 0.017511, 0.017244,
+            0.017307, 0.017897, 0.018583, 0.017926, 0.017833, 0.017219, 0.018566, 0.018513,
+            0.017535, 0.017131, 0.018035, 0.019303, 0.019411, 0.019400, 0.020129, 0.020589,
+            0.021679, 0.022256, 0.021991,
+        ], rtol=1e-4)
+
+    def test_track_to_si(self):
+        tracks = TCTracks.from_hdf5(DEMO_DIR / "tcrain_examples.nc")
+        track_ds = tracks.data[0]
+        si_track = _track_to_si_with_q_and_shear(track_ds)
+        self.assertIn("q900", si_track.variables)
+        self.assertIn("v850", si_track.variables)
+        self.assertEqual(si_track["v850"].shape, (track_ds.sizes["time"], 2))
+        # check that the meridional (v) component is listed first
+        np.testing.assert_array_equal(si_track["v850"].values[:, 0], track_ds["v850"].values)
+        np.testing.assert_array_equal(si_track["v850"].values[:, 1], track_ds["u850"].values)
 
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestReader)

@@ -1170,22 +1170,31 @@ def _compute_vertical_velocity(
         si_track, d_centr, close_centr, MODEL_VANG[wind_model], matlab_ref_mode=matlab_ref_mode,
     )
 
+    # Currently, the `close_centr` mask is ignored in the computation of the components, but it is
+    # applied only afterwards. This is because it seems like the code readability would suffer a
+    # lot from this. However, this might be one aspect where computational performance can be
+    # improved in the future.
+    w = np.zeros_like(d_centr[""])
+
     w_f_plus_w_t = _w_frict_stretch(
         si_track, d_centr, h_winds, centroids,
         res_radial_m=res_radial_m, c_drag_tif=c_drag_tif, min_c_drag=min_c_drag,
         matlab_ref_mode=matlab_ref_mode,
-    )
+    )[close_centr]
+
     w_h = _w_topo(
         si_track, d_centr, h_winds, centroids,
         elevation_tif=elevation_tif, matlab_ref_mode=matlab_ref_mode,
-    )
+    )[close_centr]
+
     w_s = _w_shear(
         si_track, d_centr, h_winds,
         res_radial_m=res_radial_m,
         matlab_ref_mode=matlab_ref_mode,
-    )
+    )[close_centr]
 
-    return np.fmax(np.fmin(w_f_plus_w_t + w_h + w_s, max_w_foreground) - w_rad, 0)
+    w[close_centr] = np.fmax(np.fmin(w_f_plus_w_t + w_h + w_s, max_w_foreground) - w_rad, 0)
+    return w
 
 def _horizontal_winds(
     si_track: xr.Dataset,
@@ -1268,6 +1277,9 @@ def _windprofile(
     matlab_ref_mode: bool = False,
 ) -> np.ndarray:
     """Compute (absolute) angular wind speeds according to a parametric wind profile
+
+    Wrapper around `compute_angular_windspeeds` (from climada.trop_cyclone) that adjusts the
+    Coriolis parameter if matlab_ref_mode is True.
 
     Parameters
     ----------
