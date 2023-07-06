@@ -1561,29 +1561,22 @@ def _qs_from_t_diff_level(
     """Compute the humidity from temperature assuming a moist adiabatic lapse rate
 
     The input temperatures may be given on a different pressure level than the output humidities.
-    When computing Q from T on the same pressure level, see `_qs_from_t_same_level`.
+    When computing Q from T on the same pressure level, see `_qs_from_t_same_level` instead.
 
     The approach assumes that the lapse rate dT/dz is given by the law for the moist adiabatic
-    lapse rate so that the following expression is constant across pressure levels:
+    lapse rate so that the following expression for the "total entropy" is a conserved quantity
+    across pressure levels (see eq. (4.5.9) in Emanuel (1994): Atmospheric convection):
 
-        cp * log(T) + Lv * Q / T - Rd * log(p) = const.
+        s = cp * log(T) + Lv * r / T - Rd * log(p) = const.,
 
-    Where:
+    where:
 
-        T : temperature
-        Q : saturation specific humidity
-        p : pressure
-        cp : isobaric specific heat of dry air
-        Lv : latent heat of the evaporation of water
-        Rd : specific gas constant of dry air
-
-    For details, see Exercises 3.50 and 3.63 and their solutions in the following reference:
-
-    Wallace and Hobbs (2006): Atmospheric Science. Second Edition.
-    https://gibbs.science/teaching/efd/handouts/wallace_hobbs_ch3.pdf
-    http://weather.ou.edu/~scavallo/classes/metr_5004/f2013/supplementary/e-3-4-5-6-7-9-10.pdf
-
-    TODO: Actually check that this is true. I was not able to verify the equation.
+        T : temperature,
+        r : mixing ratio (equals Q/(1-Q) where Q is saturation specific humidity),
+        p : pressure,
+        cp : isobaric specific heat of dry air,
+        Lv : latent heat of the evaporation of water,
+        Rd : specific gas constant of dry air.
 
     Since it's possible to compute Q from T on the same pressure level (see
     `_qs_from_t_same_level`), we can use this relationship to compute Q at one pressure level from
@@ -1630,33 +1623,50 @@ def _qs_from_t_diff_level(
     # exclude missing data (fill values) in the inputs
     mask = (temps_in > 100)
 
-    # fun : expression which is constant across pressure levels when assuming a moist adiabatic
-    #       lapse rate (from reference MATLAB implementation, source unknown)
-    fun_in = (
+    # r_in : mixing ratio at pressure level pres_in
+    if matlab_ref_mode:
+        # In the MATLAB implementation, _qs_from_t_same_level does actually return the mixing
+        # ratio instead of the specific humidity.
+        r_in = q_in[mask]
+    else:
+        r_in = q_in[mask] / (1 - q_in[mask])
+
+    # s : Total entropy, which is conserved across pressure levels when assuming a moist adiabatic
+    #     lapse rate. The additional vmax-term is a correction to account for the fact that the
+    #     eyewall is warmer than the environment at 600 hPa (thermal wind balance).
+    s_in = (
         cap_heat_air * np.log(temps_in[mask])
-        + L_EVAP_WATER * q_in[mask] / temps_in[mask]
+        + L_EVAP_WATER * r_in / temps_in[mask]
         - R_DRY_AIR * np.log(pres_in)
         + c_vmax * vmax[mask]**2 / DELTA_T_TROPOPAUSE
     )
 
-    # solve `fun_out(T_out) - fun_in = 0` using the Newton-Raphson method
+    # solve `s_out(T_out) - s_in = 0` using the Newton-Raphson method
     for it in range(max_iter):
         # compute new estimate of q_out from current estimate of T_out
         q_out[mask], dQdT = _qs_from_t_same_level(
             pres_out, temps_out[mask], gradient=True, matlab_ref_mode=matlab_ref_mode,
         )
-        fun_out = (
+        if matlab_ref_mode:
+            # In the MATLAB implementation, _qs_from_t_same_level does actually return the mixing
+            # ratio instead of the specific humidity.
+            r_out = q_out[mask]
+            drdT = dQdT
+        else:
+            r_out = q_out[mask] / (1 - q_out[mask])
+            drdT = dQdT / (1 - q_out[mask])**2
+        s_out = (
             cap_heat_air * np.log(temps_out[mask])
-            + L_EVAP_WATER * q_out[mask] / temps_out[mask]
+            + L_EVAP_WATER * r_out / temps_out[mask]
             - R_DRY_AIR * np.log(pres_out)
         )
-        dFdT = (
+        dsdT = (
             cap_heat_air * temps_out[mask]
-            + L_EVAP_WATER * (dQdT * temps_out[mask] - q_out[mask])
+            + L_EVAP_WATER * (drdT * temps_out[mask] - r_out)
         ) / temps_out[mask]**2
 
         # take Newton step
-        temps_out[mask] -= (fun_out - fun_in) / dFdT
+        temps_out[mask] -= (s_out - s_in) / dsdT
 
     return q_out
 
@@ -1674,6 +1684,9 @@ def _qs_from_t_same_level(
 
     Murray (1967): On the Computation of Saturation Vapor Pressure. Journal of Applied Meteorology
     and Climatology 6(1): 203–204. http://doi.org/10.1175/1520-0450(1967)006<0203:OTCOSV>2.0.CO;2
+
+    Bolton (1980): The Computation of Equivalent Potential Temperature. Monthly Weather Review
+    108(7): 1046–1053. https://doi.org/10.1175/1520-0493(1980)108<1046:TCOEPT>2.0.CO;2
 
     Buck (1981): New Equations for Computing Vapor Pressure and Enhancement Factor. Journal of
     Applied Meteorology and Climatology 20(12): 1527-1532.
@@ -1695,9 +1708,9 @@ def _qs_from_t_same_level(
     gradient : bool, optional
         If True, compute the derivative of the functional relationship between Q and T.
     tetens_coeffs : str, optional
-        Coefficients to use for the Tetens formula. One of "Buck1981" or "Murray1967". This is
-        ignored if `matlab_ref_mode` is True because the reference MATLAB implementation uses its
-        own (undocumented) coefficients. Default: "Buck1981"
+        Coefficients to use for the Tetens formula. One of "Buck1981", "Bolton1980",
+        or "Murray1967". This is overwritten if `matlab_ref_mode` is True because the reference
+        MATLAB implementation uses the "Bolton1980" coefficients. Default: "Buck1981"
     matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
 
@@ -1710,14 +1723,16 @@ def _qs_from_t_same_level(
         returned.
     """
     if matlab_ref_mode:
-        # these coefficients are used in the MATLAB code (source unknown)
-        a = 17.67
-        b = 29.65
-        c = 6.112
-    elif tetens_coeffs == "Murray1967":
+        tetens_coeffs = "Bolton1980"
+
+    if tetens_coeffs == "Murray1967":
         a = 17.2693882
         b = 35.86
         c = 6.1078
+    elif tetens_coeffs == "Bolton1980":
+        a = 17.67
+        b = 29.65
+        c = 6.112
     elif tetens_coeffs == "Buck1981":
         a = 17.502
         b = 32.19

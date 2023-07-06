@@ -105,8 +105,8 @@ class TestReader(unittest.TestCase):
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
-        self.assertAlmostEqual(tc_haz.intensity[0, 100], 205.04356030680032)
-        self.assertAlmostEqual(tc_haz.intensity[0, 260], 25.127792498223748)
+        self.assertAlmostEqual(tc_haz.intensity[0, 100], 203.1615859548711)
+        self.assertAlmostEqual(tc_haz.intensity[0, 260], 24.89597149514488)
 
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""
@@ -233,16 +233,17 @@ class TestModel(unittest.TestCase):
     def test_qs_from_t_diff_level(self):
         tracks = TCTracks.from_hdf5(DEMO_DIR / "tcrain_examples.nc")
         track_ds = tracks.data[0]
-        temps_in = track_ds["t600"].values
+        temps_in = track_ds["t600"].values.copy()
+        temps_in[3] = -9999.0  # test fill value
         vmax = track_ds["max_sustained_wind"].values * KN_TO_MS
         pres_in, pres_out = 600, 900
         q_out = _qs_from_t_diff_level(temps_in, vmax, pres_in, pres_out)
         np.testing.assert_allclose(q_out, [
-            0.015296, 0.015248, 0.015129, 0.015306, 0.015043, 0.015513, 0.014814, 0.015791,
-            0.015524, 0.015966, 0.015733, 0.017770, 0.018992, 0.018337, 0.017511, 0.017244,
-            0.017307, 0.017897, 0.018583, 0.017926, 0.017833, 0.017219, 0.018566, 0.018513,
-            0.017535, 0.017131, 0.018035, 0.019303, 0.019411, 0.019400, 0.020129, 0.020589,
-            0.021679, 0.022256, 0.021991,
+            0.015170, 0.015124, 0.015007, 0.000000, 0.014922, 0.015383, 0.014695, 0.015656,
+            0.015392, 0.015824, 0.015595, 0.017593, 0.018784, 0.018137, 0.017328, 0.017066,
+            0.017127, 0.017707, 0.018378, 0.017735, 0.017644, 0.017041, 0.018362, 0.018310,
+            0.017352, 0.016955, 0.017842, 0.019074, 0.019179, 0.019169, 0.019874, 0.020324,
+            0.021387, 0.021949, 0.021691,
         ], rtol=1e-4)
 
     def test_track_to_si(self):
