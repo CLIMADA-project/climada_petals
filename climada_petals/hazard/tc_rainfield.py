@@ -1543,17 +1543,25 @@ def _qs_from_t_diff_level(
     # exclude missing data (fill values) in the inputs
     mask = (temps_in > 100)
 
-    for it in range(max_iter):
-        # compute new estimate of q_out:
-        q_out[mask], dQdT = _qs_from_t_same_level(
-            pres_out, temps_out[mask], gradient=True, matlab_ref_mode=matlab_ref_mode)
+    # fun : expression which is constant across pressure levels when assuming a moist adiabatic
+    #       lapse rate (from reference MATLAB implementation, source unknown)
+    fun_in = (
+        cap_heat_air * np.log(temps_in[mask])
+        + L_EVAP_WATER * q_in[mask] / temps_in[mask]
+        - R_DRY_AIR * np.log(pres_in)
+        + c_vmax * vmax[mask]**2 / DELTA_T_TROPOPAUSE
+    )
 
-        # fun : law for the moist adiabatic lapse rate at the two different pressure levels
-        fun = (
-            cap_heat_air * np.log(temps_out[mask] / temps_in[mask])
-            + L_EVAP_WATER * (q_out[mask] / temps_out[mask] - q_in[mask] / temps_in[mask])
-            - R_DRY_AIR * np.log(pres_out / pres_in)
-            - c_vmax * vmax[mask]**2 / DELTA_T_TROPOPAUSE
+    # solve `fun_out(T_out) - fun_in = 0` using the Newton-Raphson method
+    for it in range(max_iter):
+        # compute new estimate of q_out from current estimate of T_out
+        q_out[mask], dQdT = _qs_from_t_same_level(
+            pres_out, temps_out[mask], gradient=True, matlab_ref_mode=matlab_ref_mode,
+        )
+        fun_out = (
+            cap_heat_air * np.log(temps_out[mask])
+            + L_EVAP_WATER * q_out[mask] / temps_out[mask]
+            - R_DRY_AIR * np.log(pres_out)
         )
         dFdT = (
             cap_heat_air * temps_out[mask]
@@ -1561,7 +1569,7 @@ def _qs_from_t_diff_level(
         ) / temps_out[mask]**2
 
         # take Newton step
-        temps_out[mask] -= fun / dFdT
+        temps_out[mask] -= (fun_out - fun_in) / dFdT
 
     return q_out
 
