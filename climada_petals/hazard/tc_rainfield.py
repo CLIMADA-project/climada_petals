@@ -1561,7 +1561,8 @@ def _qs_from_t_diff_level(
     """Compute the humidity from temperature assuming a moist adiabatic lapse rate
 
     The input temperatures may be given on a different pressure level than the output humidities.
-    When computing Q from T on the same pressure level, see `_qs_from_t_same_level` instead.
+    When computing Q from T on the same pressure level, see `_r_from_t_same_level` instead since
+    Q = r / (1 + r) for the mixing ratio r.
 
     The approach assumes that the lapse rate dT/dz is given by the law for the moist adiabatic
     lapse rate so that the following expression for the "total entropy" is a conserved quantity
@@ -1579,7 +1580,7 @@ def _qs_from_t_diff_level(
         Rd : specific gas constant of dry air.
 
     Since it's possible to compute Q from T on the same pressure level (see
-    `_qs_from_t_same_level`), we can use this relationship to compute Q at one pressure level from
+    `_r_from_t_same_level`), we can use this relationship to compute Q at one pressure level from
     T given on a different pressure level. However, since we can't solve the equation for T
     analytically, we use the Newton-Raphson method to find the solution.
 
@@ -1612,72 +1613,62 @@ def _qs_from_t_diff_level(
     #          MATLAB code uses c_vmax=1.6 (source unknown)
     c_vmax = 1.6 if matlab_ref_mode else GRADIENT_LEVEL_TO_SURFACE_WINDS**-2
 
-    # first, calculate q_in from temps_in
-    q_in, _ = _qs_from_t_same_level(
+    # first, calculate mixing ratio r_in from temps_in
+    r_in, _ = _r_from_t_same_level(
         pres_in, np.fmax(T_ICE_K - 50, temps_in), matlab_ref_mode=matlab_ref_mode)
 
-    # derive (temps_out, q_out) from (temps_in, q_in) iteratively (Newton-Raphson method)
-    q_out = np.zeros_like(q_in)
+    # derive (temps_out, r_out) from (temps_in, r_in) iteratively (Newton-Raphson method)
+    r_out = np.zeros_like(r_in)
     temps_out = temps_in.copy() + 20  # first guess, assuming that pres_out > pres_in
 
     # exclude missing data (fill values) in the inputs
     mask = (temps_in > 100)
-
-    # r_in : mixing ratio at pressure level pres_in
-    if matlab_ref_mode:
-        # In the MATLAB implementation, _qs_from_t_same_level does actually return the mixing
-        # ratio instead of the specific humidity.
-        r_in = q_in[mask]
-    else:
-        r_in = q_in[mask] / (1 - q_in[mask])
 
     # s : Total entropy, which is conserved across pressure levels when assuming a moist adiabatic
     #     lapse rate. The additional vmax-term is a correction to account for the fact that the
     #     eyewall is warmer than the environment at 600 hPa (thermal wind balance).
     s_in = (
         cap_heat_air * np.log(temps_in[mask])
-        + L_EVAP_WATER * r_in / temps_in[mask]
+        + L_EVAP_WATER * r_in[mask] / temps_in[mask]
         - R_DRY_AIR * np.log(pres_in)
         + c_vmax * vmax[mask]**2 / DELTA_T_TROPOPAUSE
     )
 
     # solve `s_out(T_out) - s_in = 0` using the Newton-Raphson method
     for it in range(max_iter):
-        # compute new estimate of q_out from current estimate of T_out
-        q_out[mask], dQdT = _qs_from_t_same_level(
+        # compute new estimate of r_out from current estimate of T_out
+        r_out[mask], drdT = _r_from_t_same_level(
             pres_out, temps_out[mask], gradient=True, matlab_ref_mode=matlab_ref_mode,
         )
-        if matlab_ref_mode:
-            # In the MATLAB implementation, _qs_from_t_same_level does actually return the mixing
-            # ratio instead of the specific humidity.
-            r_out = q_out[mask]
-            drdT = dQdT
-        else:
-            r_out = q_out[mask] / (1 - q_out[mask])
-            drdT = dQdT / (1 - q_out[mask])**2
         s_out = (
             cap_heat_air * np.log(temps_out[mask])
-            + L_EVAP_WATER * r_out / temps_out[mask]
+            + L_EVAP_WATER * r_out[mask] / temps_out[mask]
             - R_DRY_AIR * np.log(pres_out)
         )
         dsdT = (
             cap_heat_air * temps_out[mask]
-            + L_EVAP_WATER * (drdT * temps_out[mask] - r_out)
+            + L_EVAP_WATER * (drdT * temps_out[mask] - r_out[mask])
         ) / temps_out[mask]**2
 
         # take Newton step
         temps_out[mask] -= (s_out - s_in) / dsdT
 
+    if matlab_ref_mode:
+        # In the MATLAB implementation, this function does actually return the mixing ratio which
+        # is almost the same as the "specific humidity" in practice.
+        q_out = r_out
+    else:
+        q_out = r_out / (1 + r_out)
     return q_out
 
-def _qs_from_t_same_level(
+def _r_from_t_same_level(
     p_ref: float,
     temps: np.ndarray,
     gradient: bool = False,
     tetens_coeffs: str = "Buck1981",
     matlab_ref_mode: bool = False,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
-    """Compute saturation specific humidity from temperature at a given pressure level
+    """Compute the mixing ratio from temperature at a given pressure level
 
     This uses the Tetens (or Magnus) formula for saturation vapor pressure (over water) with
     coefficients given in:
@@ -1702,7 +1693,7 @@ def _qs_from_t_same_level(
     ----------
     p_ref : float
         Reference pressure level (in hPa) at which the input temperatures are given and at which
-        output humidity values are computed.
+        output mixing ratio values are computed.
     temps : ndarray
         Temperatures (in K) at the pressure level p_ref.
     gradient : bool, optional
@@ -1716,9 +1707,9 @@ def _qs_from_t_same_level(
 
     Returns
     -------
-    qs : ndarray
+    r : ndarray
         For each temperature value in temp, a value of saturation specific humidity (in kg/kg).
-    dQdT : ndarray
+    drdT : ndarray
         If `gradient` is False, this is None. Otherwise, the derivative of Q with respect to T is
         returned.
     """
@@ -1744,14 +1735,9 @@ def _qs_from_t_same_level(
     es = c * np.exp(a * (temps - T_ICE_K) / (temps - b))
 
     fact = M_WATER / M_DRY_AIR
-    if matlab_ref_mode:
-        # in the reference implementation, the formula for the "mixing ratio" is used which is
-        # almost the same as the "specific humidity" in practice
-        qs = fact * es / (p_ref - es)
-    else:
-        qs = fact * es / (p_ref - (1 - fact) * es)
+    r_mix = fact * es / (p_ref - es)
 
-    dQdT = None
+    drdT = None
     if gradient:
         if matlab_ref_mode:
             # Specific gas constant of water vapor (in J / kgK)
@@ -1759,8 +1745,8 @@ def _qs_from_t_same_level(
             r_water = 1000 * R_GAS / M_WATER
             r_water = 491
             # this approximation of the derivative is used in the MATLAB code:
-            dQdT = (L_EVAP_WATER / r_water) / temps**2 * qs
+            drdT = (L_EVAP_WATER / r_water) / temps**2 * r_mix
         else:
-            dQdT = a * (T_ICE_K - b) / (temps - b)**2 * qs * (1 + (1 - fact) * qs / fact)
+            drdT = a * (T_ICE_K - b) / (temps - b)**2 * r_mix * (1 + r_mix / fact)
 
-    return qs, dQdT
+    return r_mix, drdT

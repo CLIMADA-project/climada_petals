@@ -36,7 +36,7 @@ from climada_petals.hazard.tc_rainfield import (
     KN_TO_MS,
     MODEL_RAIN,
     _qs_from_t_diff_level,
-    _qs_from_t_same_level,
+    _r_from_t_same_level,
     _track_to_si_with_q_and_shear,
 )
 from climada.util.api_client import Client
@@ -202,8 +202,8 @@ class TestModel(unittest.TestCase):
                 rtol=1e-1,
             )
 
-    def test_qs_from_t_same_level(self):
-        """Test the derivative of _qs_from_t_same_level"""
+    def test_r_from_t_same_level(self):
+        """Test the derivative of _r_from_t_same_level"""
         t0 = 270.0
         pref = 900
 
@@ -212,20 +212,20 @@ class TestModel(unittest.TestCase):
         hs = np.array([1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5])
         ts = t0 + hs
 
-        [q0], [dq0] = _qs_from_t_same_level(pref, np.array([t0]), gradient=True)
-        qs, _ = _qs_from_t_same_level(pref, ts, gradient=False)
-        diffs_rel = np.abs(q0 + dq0 * hs - qs) / hs**2
+        [r0], [dr0] = _r_from_t_same_level(pref, np.array([t0]), gradient=True)
+        r_mix, _ = _r_from_t_same_level(pref, ts, gradient=False)
+        diffs_rel = np.abs(r0 + dr0 * hs - r_mix) / hs**2
         diffs_rel_mean = diffs_rel.mean()
         orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
         np.testing.assert_array_less(orders, 0.1)
 
         # Because of a bug in the reference MATLAB implementation,
         # the same doesn't work for `matlab_ref_mode=True`.
-        [q0], [dq0] = _qs_from_t_same_level(
+        [r0], [dr0] = _r_from_t_same_level(
             pref, np.array([t0]), gradient=True, matlab_ref_mode=True,
         )
-        qs, _ = _qs_from_t_same_level(pref, ts, gradient=False, matlab_ref_mode=True)
-        diffs_rel = np.abs(q0 + dq0 * hs - qs) / hs**2
+        r_mix, _ = _r_from_t_same_level(pref, ts, gradient=False, matlab_ref_mode=True)
+        diffs_rel = np.abs(r0 + dr0 * hs - r_mix) / hs**2
         diffs_rel_mean = diffs_rel.mean()
         orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
         self.assertGreater(orders.max(), 1)
