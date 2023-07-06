@@ -237,6 +237,77 @@ class TCRain(Hazard):
         Optionally, the time-dependent rain rates can be stored using the `store_rainrates`
         function parameter (see below).
 
+        Currently, two models are supported to compute the rain rates: R-CLIPER and TCR. The
+        R-CLIPER model is documented in Tuleya et al. 2007. The TCR model was used by
+        Zhu et al. 2013 and Emanuel 2017 for the first time and is documented in detail in
+        Lu et al. 2018. This implementation of TCR includes improvements proposed in
+        Feldmann et al. 2019. TCR's accuracy is much higher than R-CLIPER's at the cost of
+        additional computational and data requirements.
+
+        When using the TCR model make sure that your TC track data includes the along-track
+        variables "t600" (temperature at 600 hPa) and "u850"/"v850" (wind speed at 850 hPa). Both
+        can be extracted from reanalysis or climate model outputs. For "t600", use the value at the
+        storm center. For "u850"/"v850", use the average over the 200-500 km annulus around the
+        storm center. If "u850"/"v850" is missing, this implementation sets the shear component of
+        the vertical velocity to 0. If "t600" is missing, the saturation specific humidity is set
+        to a universal estimate of 0.01 kg/kg. Both assumptions can have a large effect on the
+        results (see Lu et al. 2018).
+
+        The implementation of the R-CLIPER model currently does not allow modifications, so that
+        `model_kwargs` is ignored with `model="R-CLIPER"`. While the TCR model can be configured in
+        several ways, it is usually safe to go with the default settings. Here is the complete list
+        of `model_kwargs` and their meaning with `model="TCR"` (in alphabetical order):
+
+        c_drag_tif : Path or str, optional
+            Path to a GeoTIFF file containing gridded drag coefficients (bottom friction). If not
+            specified, an ERA5-based data set provided with CLIMADA is used. Default: None
+        e_precip : float, optional
+            Precipitation efficiency (unitless), the fraction of the vapor flux falling to the
+            surface as rainfall (Lu et al. 2018, eq. (14)). Default: 0.9
+        elevation_tif : Path or str, optional
+            Path to a GeoTIFF file containing digital elevation model data (in m). If not
+            specified, a topography at 0.1 degree resolution provided with CLIMADA is used.
+            Default: None
+        matlab_ref_mode : bool, optional
+            This implementation is based on a (proprietary) reference implementation in MATLAB.
+            However, some bug fixes have been applied in the CLIMADA implementation compared to the
+            reference. If this parameter is True, do not apply the bug fixes, but reproduce the
+            exact behavior of the reference implementation. Default: False
+        max_w_foreground : float, optional
+            The maximum value (in m/s) at which to clip the vertical velocity w before subtracting
+            the background subsidence velocity w_rad. Default: 7.0
+        min_c_drag : float, optional
+            The drag coefficient is clipped to this minimum value (esp. over ocean). Default: 0.001
+        q_900 : float, optional
+            If the track data does not include "t600" values, assume this constant value of
+            saturation specific humidity (in kg/kg) at 900 hPa. Default: 0.01
+        res_radial_m : float, optional
+            Resolution (in m) in radial direction. This is used for the computation of discrete
+            derivatives of the horizontal wind fields and derived quantities. Default: 2000.0
+        w_rad : float, optional
+            Background subsidence velocity (in m/s) under radiative cooling. Default: 0.005
+        wind_model : str, optional
+            Parametric wind field model to use, see the `TropCyclone` class. Default: "ER11".
+
+        Emanuel (2017): Assessing the present and future probability of Hurricane Harvey’s
+        rainfall. Proceedings of the National Academy of Sciences 114(48): 12681–12684.
+        https://doi.org/10.1073/pnas.1716222114
+
+        Lu et al. (2018): Assessing Hurricane Rainfall Mechanisms Using a Physics-Based Model:
+        Hurricanes Isabel (2003) and Irene (2011). Journal of the Atmospheric
+        Sciences 75(7): 2337–2358. https://doi.org/10.1175/JAS-D-17-0264.1
+
+        Feldmann et al. (2019): Estimation of Atlantic Tropical Cyclone Rainfall Frequency in the
+        United States. Journal of Applied Meteorology and Climatology 58(8): 1853–1866.
+        https://doi.org/10.1175/JAMC-D-19-0011.1
+
+        Tuleya et al. (2007): Evaluation of GFDL and Simple Statistical Model Rainfall Forecasts
+        for U.S. Landfalling Tropical Storms. Weather and Forecasting 22(1): 56–70.
+        https://doi.org/10.1175/WAF972.1
+
+        Zhu et al. (2013): Estimating tropical cyclone precipitation risk in Texas. Geophysical
+        Research Letters 40(23): 6225–6230. https://doi.org/10.1002/2013GL058284
+
         Parameters
         ----------
         tracks : climada.hazard.TCTracks
@@ -249,8 +320,9 @@ class TCRain(Hazard):
             Description of the event set. Default: "".
         model : str, optional
             Parametric rain model to use: "R-CLIPER" (faster and requires less inputs, but
-            much less accurate, statistical approach), "TCR" (physics-based approach, requires
-            non-standard along-track variables). Default: "R-CLIPER".
+            much less accurate, statistical approach, Tuleya et al. 2007), "TCR" (physics-based
+            approach, requires non-standard along-track variables, Zhu et al. 2013).
+            Default: "R-CLIPER".
         model_kwargs: dict, optional
             If given, forward these kwargs to the selected model. Default: None
         ignore_distance_to_coast : boolean, optional
@@ -665,7 +737,7 @@ def compute_rain(
     rainrates = np.zeros((npositions, 0), dtype=np.float64)
 
     # convert track variables to SI units
-    si_track = _track_to_si_with_q_and_shear(track, **model_kwargs)
+    si_track = _track_to_si_with_q_and_shear(track, metric=metric, **model_kwargs)
 
     # normalize longitude values (improves performance of `dist_approx` and `get_close_centroids`)
     u_coord.lon_normalize(centroids[:, 1], center=si_track.attrs["mid_lon"])
@@ -767,6 +839,7 @@ def _compute_rain_chunked(
 
 def _track_to_si_with_q_and_shear(
     track: xr.Dataset,
+    metric: str = "equirect",
     q_900: float = 0.01,
     matlab_ref_mode: bool = False,
     **kwargs,
@@ -786,6 +859,10 @@ def _track_to_si_with_q_and_shear(
     ----------
     track : xr.Dataset
         TC track data.
+    metric : str, optional
+        Specify an approximation method to use for earth distances: "equirect" (faster) or
+        "geosphere" (more accurate). See `dist_approx` function in `climada.util.coordinates`.
+        Default: "equirect".
     q_900 : float, optional
         If the track data does not include "t600" values, assume this constant value of saturation
         specific humidity (in kg/kg) at 900 hPa. Default: 0.01
@@ -798,7 +875,7 @@ def _track_to_si_with_q_and_shear(
     -------
     xr.Dataset
     """
-    si_track = tctrack_to_si(track)
+    si_track = tctrack_to_si(track, metric=metric)
 
     if "q900" in track.variables:
         si_track["q900"] = track["q900"].copy()
