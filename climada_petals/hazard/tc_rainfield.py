@@ -1625,6 +1625,11 @@ def _qs_from_t_diff_level(
     #         Emanuel, K. (1986): An Air-Sea Interaction Theory for Tropical Cyclones. Part I:
     #         Steady-State Maintenance. Journal of the Atmospheric Sciences 43(6): 585–605.
     #         https://doi.org/10.1175/1520-0469(1986)043<0585:AASITF>2.0.CO;2
+    #
+    #     Compared to eq. (34), the last term is neglected due to V >> fr. The boundary layer
+    #     theta_e under the eyewall is equated with that of the far environment, and the saturation
+    #     theta_e of the eyewall (which is constant along an M surface) is equated with the
+    #     saturation theta_e of the sea surface.
     s_in = (
         cap_heat_air * np.log(temps_in[mask])
         + L_EVAP_WATER * r_in[mask] / temps_in[mask]
