@@ -772,8 +772,8 @@ def compute_rain(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Which data variables are used in the computation of the wind
-        speeds depends on the selected model.
+        Output of `tctrack_to_si`. Which data variables are used in the computation of the rain
+        rates depends on the selected model.
     centroids : np.ndarray with two dimensions
         Each row is a centroid [lat, lon].
         Centroids that are not within reach of the track are ignored.
@@ -969,7 +969,7 @@ def _rcliper(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`.
+        Output of `tctrack_to_si`. Only the "vmax" data variable is used.
     d_centr : np.ndarray of shape (npositions, ncentroids)
         Distance (in m) between centroids and track positions.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -1067,7 +1067,8 @@ def _tcr(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`.
+        Output of `tctrack_to_si`. Which data variables are used in the computation of the rain
+        rates depends on the selected wind model.
     d_centr : dict
         Output of `_centr_distances`.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -1124,7 +1125,7 @@ def _compute_vertical_velocity(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `tctrack_to_si`.
+        Output of `tctrack_to_si`. Which data variables are used depends on the wind model.
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     d_centr : ndarray of shape (npositions, ncentroids)
@@ -1201,7 +1202,7 @@ def _horizontal_winds(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `tctrack_to_si`.
+        Output of `tctrack_to_si`. Which data variables are used depends on the wind model.
     d_centr : dict
         Output of `_centr_distances`.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -1274,7 +1275,7 @@ def _windprofile(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `tctrack_to_si`.
+        Output of `tctrack_to_si`. Which data variables are used depends on the wind model.
     d_centr : ndarray of shape (npositions, ncentroids)
         Distances from storm centers to centroids.
     close_centr : np.ndarray of shape (npositions, ncentroids)
@@ -1319,7 +1320,8 @@ def _w_shear(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `tctrack_to_si`.
+        Output of `tctrack_to_si`. The data variables used by this function are "cp" and "vshear".
+        If the "vshear" variable is not available, the result is 0 everywhere.
     d_centr : dict
         Output of `_centr_distances`.
     h_winds : dict
@@ -1375,7 +1377,7 @@ def _w_topo(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `tctrack_to_si`.
+        Output of `tctrack_to_si`. Only the "vtrans" data variable is used by this function.
     d_centr : dict
         Output of `_centr_distances`.
     h_winds : dict
@@ -1439,7 +1441,8 @@ def _w_frict_stretch(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `tctrack_to_si`.
+        Output of `tctrack_to_si`. The data variables used by this function are "cp", "rad",
+        "tstep" and "vtrans".
     d_centr : dict
         Output of `_centr_distances`.
     h_winds : dict
