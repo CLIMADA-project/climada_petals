@@ -435,7 +435,7 @@ def rel_yield_to_int(haz_cy, hist_mean):
 
     # compute relative yield for each event:
     for event in range(len(haz_cy.event_id)):
-        hazard_matrix[event, idx] = (haz_cy.intensity[event, idx] / hist_mean[idx])-1
+        hazard_matrix[event, idx] = (haz_cy.intensity[event, idx].todense() / hist_mean[idx]) - 1
 
     new_haz = copy.deepcopy(haz_cy)
     new_haz.intensity = sparse.csr_matrix(hazard_matrix)
