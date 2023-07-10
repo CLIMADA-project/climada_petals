@@ -577,6 +577,8 @@ def _compute_rain_sparse(
         are stored in a sparse matrix of shape (npositions,  ncentroids ).
         If store_rainrates is False, `None` is returned.
     """
+    model_kwargs = {} if model_kwargs is None else model_kwargs
+
     try:
         mod_id = MODEL_RAIN[model]
     except KeyError as err:
@@ -588,14 +590,64 @@ def _compute_rain_sparse(
     rainrates_shape = (npositions, ncentroids)
     intensity_shape = (1, ncentroids)
 
-    # Split into chunks so that 5 arrays with `coastal_centr.size` entries can be stored for
-    # each position in a chunk:
-    memreq_per_pos_gb = (8 * 5 * max(1, coastal_centr.size)) / 1e9
-    max_chunksize = max(2, int(max_memory_gb / memreq_per_pos_gb) - 1)
-    n_chunks = int(np.ceil(npositions / max_chunksize))
-    if n_chunks > 1:
+    # start with the assumption that no centroids are within reach
+    rainrates_sparse = (
+        sparse.csr_matrix(([], ([], [])), shape=rainrates_shape)
+        if store_rainrates else None
+    )
+    intensity_sparse = sparse.csr_matrix(([], ([], [])), shape=intensity_shape)
+
+    # The TCR model requires at least three track positions because both forward and backward
+    # differences in time are used.
+    if npositions == 0 or model == "TCR" and npositions < 3:
+        return intensity_sparse, rainrates_sparse
+
+    # convert track variables to SI units
+    si_track = _track_to_si_with_q_and_shear(track, metric=metric, **model_kwargs)
+
+    # normalize longitudinal coordinates of centroids
+    u_coord.lon_normalize(coastal_centr[:, 1], center=si_track.attrs["mid_lon"])
+
+    # Filter early with a larger threshold, but inaccurate (lat/lon) distances.
+    # There is another filtering step with more accurate distances in km later.
+    max_dist_eye_deg = max_dist_eye_km / (
+        u_const.ONE_LAT_KM * np.cos(np.radians(np.abs(si_track["lat"].values).max()))
+    )
+
+    # Restrict to the bounding box of the whole track first (this can already reduce the number of
+    # centroids that are considered by a factor larger than 30).
+    coastal_idx = coastal_idx[
+        (coastal_centr[:, 0] >= si_track["lat"].values.min() - max_dist_eye_deg)
+        & (coastal_centr[:, 0] <= si_track["lat"].values.max() + max_dist_eye_deg)
+        & (coastal_centr[:, 1] >= si_track["lon"].values.min() - max_dist_eye_deg)
+        & (coastal_centr[:, 1] <= si_track["lon"].values.max() + max_dist_eye_deg)
+    ]
+    coastal_centr = centroids.coord[coastal_idx]
+
+    # restrict to centroids within rectangular bounding boxes around track positions
+    track_centr_msk = get_close_centroids(
+        si_track["lat"].values,
+        si_track["lon"].values,
+        coastal_centr,
+        max_dist_eye_deg,
+    )
+    coastal_idx = coastal_idx[track_centr_msk.any(axis=0)]
+    coastal_centr = centroids.coord[coastal_idx]
+    nreachable = coastal_centr.shape[0]
+    if nreachable == 0:
+        return intensity_sparse, rainrates_sparse
+
+    # the total memory requirement in GB if we compute everything without chunking:
+    # 8 Bytes per entry (float64), 10 arrays
+    total_memory_gb = npositions * nreachable * 8 * 10 / 1e9
+    if total_memory_gb > max_memory_gb and npositions > 3:
+        # If the number of positions is down to 3 already, we do not split any further. In that
+        # case, we just take the risk and try to do the computation anyway. It might still work
+        # since we have only computed an upper bound for the number of affected centroids.
+
+        # Split the track into chunks, compute the result for each chunk, and combine:
         return _compute_rain_sparse_chunked(
-            n_chunks,
+            track_centr_msk,
             track,
             centroids,
             coastal_idx,
@@ -609,7 +661,7 @@ def _compute_rain_sparse(
         )
 
     rainrates, reachable_centr_idx = compute_rain(
-        track,
+        si_track,
         coastal_centr,
         mod_id,
         model_kwargs=model_kwargs,
@@ -644,19 +696,23 @@ def _compute_rain_sparse(
     return intensity_sparse, rainrates_sparse
 
 def _compute_rain_sparse_chunked(
-    n_chunks: int,
+    track_centr_msk: np.ndarray,
     track: xr.Dataset,
     *args,
+    max_memory_gb: float = DEF_MAX_MEMORY_GB,
     **kwargs,
 ) -> Tuple[sparse.csr_matrix, Optional[sparse.csr_matrix]]:
     """Call `_compute_rain_sparse` for chunks of the track and re-assemble the results
 
     Parameters
     ----------
-    n_chunks : int
-        Number of chunks to use.
+    track_centr_msk : np.ndarray
+        Each row is a mask that indicates the centroids within reach for one track position.
     track : xr.Dataset
         Single tropical cyclone track.
+    max_memory_gb : float, optional
+        Maximum memory requirements (in GB) for the computation of a single chunk of the track.
+        Default: 8
     args, kwargs :
         The remaining arguments are passed on to `_compute_rain_sparse`.
 
@@ -666,28 +722,39 @@ def _compute_rain_sparse_chunked(
         See `_compute_rain_sparse` for a description of the return values.
     """
     npositions = track.sizes["time"]
-    chunks = np.array_split(np.arange(npositions), n_chunks)
-    intensities = []
-    rainrates = []
-    for i, chunk in enumerate(chunks):
-        # generate an overlap of 2 time steps between consecutive chunks:
-        chunk = ([] if i == 0 else chunks[i - 1][-2:].tolist()) + chunk.tolist()
-        inten, rainr = _compute_rain_sparse(track.isel(time=chunk), *args, **kwargs)
-        if rainr is None:
-            rainrates = None
-        else:
-            rainrates.append(rainr[slice(
-                    0 if i == 0 else 1,
-                    -1 if i + 1 < n_chunks else None,
-            )])
-        intensities.append(inten)
-    intensity = sparse.csr_matrix(sparse.vstack(intensities, format="csr").max(axis=0, ))
+    # The memory requirements for each track position are estimated for the case of 10 arrays
+    # containing `nreachable` float64 (8 Byte) values each. The chunking is only relevant in
+    # extreme cases with a very high temporal and/or spatial resolution.
+    max_nreachable = max_memory_gb * 1e9 / (8 * 10 * npositions)
+    chunk_size = 3
+    while chunk_size < npositions:
+        chunk_size += 1
+        nreachable = track_centr_msk[:chunk_size].any(axis=0).sum()
+        if nreachable > max_nreachable:
+            chunk_size = chunk_size - 1
+            break
+
+    intensity, rainrates = _compute_rain_sparse(
+        track.isel(time=slice(0, chunk_size)), *args,
+        max_memory_gb=max_memory_gb, **kwargs,
+    )
+
+    if chunk_size == npositions:
+        return intensity, rainrates
+
+    inten_rest, rainr_rest = _compute_rain_sparse_chunked(
+        track_centr_msk[chunk_size - 2:], track.isel(time=slice(chunk_size - 2, None)), *args,
+        max_memory_gb=max_memory_gb, **kwargs,
+    )
+
+    # eliminate the overlap between consecutive chunks
+    intensity = sparse.csr_matrix(sparse.vstack([intensity[:-1], inten_rest[1:]]).max(axis=0))
     if rainrates is not None:
-        rainrates = sparse.vstack(rainrates, format="csr")
+        rainrates = sparse.vstack([rainrates[:-1, :], rainr_rest[1:, :]], format="csr")
     return intensity, rainrates
 
 def compute_rain(
-    track: xr.Dataset,
+    si_track: xr.Dataset,
     centroids: np.ndarray,
     model: int,
     model_kwargs: Optional[dict] = None,
@@ -698,12 +765,15 @@ def compute_rain(
     """Compute rain rate (in mm/h) of the tropical cyclone
 
     In a first step, centroids within reach of the track are determined so that rain rates will
-    only be computed and returned for those centroids.
+    only be computed and returned for those centroids. Still, since computing the distance of
+    the storm center to the centroids is computationally expensive, make sure to pre-filter the
+    centroids and call this function only for those centroids that are potentially affected.
 
     Parameters
     ----------
-    track : xr.Dataset
-        Track information.
+    si_track : xr.Dataset
+        Output of `tctrack_to_si`. Which data variables are used in the computation of the wind
+        speeds depends on the selected model.
     centroids : np.ndarray with two dimensions
         Each row is a centroid [lat, lon].
         Centroids that are not within reach of the track are ignored.
@@ -732,51 +802,21 @@ def compute_rain(
     model_kwargs = {} if model_kwargs is None else model_kwargs
 
     # start with the assumption that no centroids are within reach
-    npositions = track.sizes["time"]
+    npositions = si_track.sizes["time"]
     reachable_centr_idx = np.zeros((0,), dtype=np.int64)
     rainrates = np.zeros((npositions, 0), dtype=np.float64)
 
-    # convert track variables to SI units
-    si_track = _track_to_si_with_q_and_shear(track, metric=metric, **model_kwargs)
-
-    # normalize longitude values (improves performance of `dist_approx` and `get_close_centroids`)
-    u_coord.lon_normalize(centroids[:, 1], center=si_track.attrs["mid_lon"])
-
-    # Filter early with a larger threshold, but inaccurate (lat/lon) distances.
-    # There is another filtering step with more accurate distances in km later.
-    max_dist_eye_deg = max_dist_eye_km / (
-        u_const.ONE_LAT_KM * np.cos(np.radians(np.abs(si_track["lat"].values).max()))
-    )
-
-    # restrict to centroids within rectangular bounding boxes around track positions
-    track_centr_msk = get_close_centroids(
-        si_track["lat"].values,
-        si_track["lon"].values,
-        centroids,
-        max_dist_eye_deg,
-    )
-    track_centr = centroids[track_centr_msk]
-    nreachable = track_centr.shape[0]
-    if nreachable == 0:
-        return rainrates, reachable_centr_idx
-
-    # The memory requirements for each track position are estimated for the case of 10 arrays
-    # containing `nreachable` float64 (8 Byte) values each. The chunking is only relevant in
-    # extreme cases with a very high temporal and/or spatial resolution.
-    memreq_per_pos_gb = (8 * 10 * nreachable) / 1e9
-    max_chunksize = max(2, int(max_memory_gb / memreq_per_pos_gb) - 1)
-    n_chunks = int(np.ceil(npositions / max_chunksize))
-    if n_chunks > 1:
-        return _compute_rain_chunked(
-            n_chunks, track, centroids, model, metric=metric, max_dist_eye_km=max_dist_eye_km,
-        )
-
-    d_centr = _centr_distances(si_track, track_centr, metric=metric, **model_kwargs)
-
     # exclude centroids that are too far from or too close to the eye
+    d_centr = _centr_distances(si_track, centroids, metric=metric, **model_kwargs)
     close_centr_msk = (d_centr[""] <= max_dist_eye_km * KM_TO_M) & (d_centr[""] > 1)
     if not np.any(close_centr_msk):
         return rainrates, reachable_centr_idx
+
+    # restrict to the centroids that are within reach of any of the positions
+    track_centr_msk = close_centr_msk.any(axis=0)
+    track_centr = centroids[track_centr_msk]
+    close_centr_msk = close_centr_msk[:, track_centr_msk]
+    d_centr = {key: d[:, track_centr_msk, ...] for key, d in d_centr.items()}
 
     if model == MODEL_RAIN["R-CLIPER"]:
         rainrates = _rcliper(si_track, d_centr[""], close_centr_msk, **model_kwargs)
@@ -785,56 +825,6 @@ def compute_rain(
     else:
         raise NotImplementedError
     [reachable_centr_idx] = track_centr_msk.nonzero()
-    return rainrates, reachable_centr_idx
-
-def _compute_rain_chunked(
-    n_chunks: int,
-    track: xr.Dataset,
-    *args,
-    **kwargs,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Call `compute_rain` for chunks of the track and re-assemble the results
-
-    Parameters
-    ----------
-    n_chunks : int
-        Number of chunks to use.
-    track : xr.Dataset
-        Single tropical cyclone track.
-    args, kwargs :
-        The remaining arguments are passed on to `compute_rain`.
-
-    Returns
-    -------
-    rainrates, reachable_centr_idx :
-        See `compute_rain` for a description of the return values.
-    """
-    npositions = track.sizes["time"]
-    chunks = np.array_split(np.arange(npositions), n_chunks)
-    results = [
-        compute_rain(track.isel(time=chunk), *args, **kwargs)
-        for chunk in [
-            # generate an overlap between consecutive chunks:
-            ([] if i == 0 else chunks[i - 1][-2:].tolist()) + chunk.tolist()
-            for i, chunk in enumerate(chunks)
-        ]
-    ]
-    # concatenate the results into one
-    reachable_centr_idx, reachable_centr_inv = np.unique(
-        np.concatenate([d[1] for d in results]),
-        return_inverse=True,
-    )
-    rainrates = np.zeros((npositions, reachable_centr_idx.size))
-    split_indices = np.cumsum([d[1].size for d in results])[:-1]
-    reachable_centr_inv = np.split(reachable_centr_inv, split_indices)
-    for chunk, (arr, _), inv in zip(chunks, results, reachable_centr_inv):
-        chunk_start, chunk_end = chunk[[0, -1]]
-        # remove overlapping positions from chunk data
-        offset = 0
-        if chunk_start > 0:
-            chunk_start -= 1
-            offset_start = 1
-        rainrates[chunk_start:chunk_end + 1, inv] = arr[offset:, :]
     return rainrates, reachable_centr_idx
 
 def _track_to_si_with_q_and_shear(
@@ -1626,7 +1616,12 @@ def _qs_from_t_diff_level(
 
     # s : Total entropy, which is conserved across pressure levels when assuming a moist adiabatic
     #     lapse rate. The additional vmax-term is a correction to account for the fact that the
-    #     eyewall is warmer than the environment at 600 hPa (thermal wind balance).
+    #     eyewall is warmer than the environment at 600 hPa (thermal wind balance). For a reference
+    #     of the vmax-term, see, e.g., the considerations in the following article:
+    #
+    #         Emanuel, K. (1986): An Air-Sea Interaction Theory for Tropical Cyclones. Part I:
+    #         Steady-State Maintenance. Journal of the Atmospheric Sciences 43(6): 585–605.
+    #         https://doi.org/10.1175/1520-0469(1986)043<0585:AASITF>2.0.CO;2
     s_in = (
         cap_heat_air * np.log(temps_in[mask])
         + L_EVAP_WATER * r_in[mask] / temps_in[mask]

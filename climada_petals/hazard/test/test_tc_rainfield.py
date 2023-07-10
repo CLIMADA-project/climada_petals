@@ -166,12 +166,12 @@ class TestModel(unittest.TestCase):
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
         track_ds = tc_track.data[0]
-
+        si_track = _track_to_si_with_q_and_shear(track_ds)
         centroids = CENTR_TEST_BRB
         ncentroids = centroids.size
         rainfall = np.zeros((1, ncentroids))
         rainrates, reachable_centr_idx = compute_rain(
-            track_ds, centroids.coord, MODEL_RAIN["R-CLIPER"],
+            si_track, centroids.coord, MODEL_RAIN["R-CLIPER"],
         )
         rainfall[0, reachable_centr_idx] = (
             (rainrates * track_ds["time_step"].values[:, None]).sum(axis=0)
