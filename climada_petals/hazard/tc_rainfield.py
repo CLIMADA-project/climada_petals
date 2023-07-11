@@ -408,7 +408,7 @@ class TCRain(Hazard):
         if pool:
             chunksize = min(num_tracks // pool.ncpus, 1000)
             tc_haz_list = pool.map(
-                cls.from_single_track, tracks.data,
+                cls._from_track, tracks.data,
                 itertools.repeat(centroids, num_tracks),
                 itertools.repeat(coastal_idx, num_tracks),
                 itertools.repeat(model, num_tracks),
