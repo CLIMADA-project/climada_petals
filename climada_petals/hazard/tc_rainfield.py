@@ -37,7 +37,6 @@ from climada.hazard.trop_cyclone import (
     get_close_centroids,
     compute_angular_windspeeds,
     tctrack_to_si,
-    GRADIENT_LEVEL_TO_SURFACE_WINDS,
     H_TO_S,
     KM_TO_M,
     KN_TO_MS,
@@ -97,6 +96,18 @@ R_DRY_AIR = 1000 * R_GAS / M_DRY_AIR
 
 RHO_A_OVER_RHO_L = 0.00117
 """Density of water vapor divided by density of liquid water"""
+
+GRADIENT_LEVEL_TO_SURFACE_WINDS = 0.8
+"""Gradient-to-surface wind reduction factor according to Table 2 in:
+
+Franklin, J.L., Black, M.L., Valde, K. (2003): GPS Dropwindsonde Wind Profiles in Hurricanes and
+Their Operational Implications. Weather and Forecasting 18(1): 32–44.
+https://doi.org/10.1175/1520-0434(2003)018<0032:GDWPIH>2.0.CO;2
+
+Note that we here use a value different from the one in `climada.hazard.trop_cyclone` because the
+focus is not only on the eyewall region, but also on the outer vortex, which is a little more
+important for precipitation than for wind effects.
+"""
 
 DEF_ELEVATION_TIF = u_const.SYSTEM_DIR / "topography_land_360as.tif"
 """Topography (land surface elevation, 0 over oceans) raster data at 0.1 degree resolution
@@ -1603,7 +1614,8 @@ def _qs_from_t_diff_level(
         at the pressure level pres_out.
     """
     # c_vmax : rescale factor from (squared) surface to (squared) gradient winds
-    #          MATLAB code uses c_vmax=1.6 (source unknown)
+    #          MATLAB code uses c_vmax=1.6 (source unknown), but this is almost the same as the
+    #          value used here (0.8**-2)
     c_vmax = 1.6 if matlab_ref_mode else GRADIENT_LEVEL_TO_SURFACE_WINDS**-2
 
     # first, calculate mixing ratio r_in from temps_in
