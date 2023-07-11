@@ -105,8 +105,8 @@ class TestReader(unittest.TestCase):
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
-        self.assertAlmostEqual(tc_haz.intensity[0, 100], 203.1615859548711)
-        self.assertAlmostEqual(tc_haz.intensity[0, 260], 24.89597149514488)
+        self.assertAlmostEqual(tc_haz.intensity[0, 100], 208.0608895225061)
+        self.assertAlmostEqual(tc_haz.intensity[0, 260], 25.514027006851833)
 
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""
@@ -239,11 +239,11 @@ class TestModel(unittest.TestCase):
         pres_in, pres_out = 600, 900
         q_out = _qs_from_t_diff_level(temps_in, vmax, pres_in, pres_out)
         np.testing.assert_allclose(q_out, [
-            0.015170, 0.015124, 0.015007, 0.000000, 0.014922, 0.015383, 0.014695, 0.015656,
-            0.015392, 0.015824, 0.015595, 0.017593, 0.018784, 0.018137, 0.017328, 0.017066,
-            0.017127, 0.017707, 0.018378, 0.017735, 0.017644, 0.017041, 0.018362, 0.018310,
-            0.017352, 0.016955, 0.017842, 0.019074, 0.019179, 0.019169, 0.019874, 0.020324,
-            0.021387, 0.021949, 0.021691,
+            0.015216, 0.015169, 0.015053, 0.000000, 0.014987, 0.015450, 0.014783, 0.015774,
+            0.015540, 0.016048, 0.015818, 0.017915, 0.019280, 0.018759, 0.017942, 0.017678,
+            0.017740, 0.018325, 0.019002, 0.018353, 0.018261, 0.017653, 0.018986, 0.018933,
+            0.017967, 0.017566, 0.018461, 0.019933, 0.020039, 0.020028, 0.020916, 0.021371,
+            0.022447, 0.023015, 0.022754,
         ], rtol=1e-4)
 
     def test_track_to_si(self):

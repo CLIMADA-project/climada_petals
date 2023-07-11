@@ -737,31 +737,39 @@ def _compute_rain_sparse_chunked(
     # containing `nreachable` float64 (8 Byte) values each. The chunking is only relevant in
     # extreme cases with a very high temporal and/or spatial resolution.
     max_nreachable = max_memory_gb * 1e9 / (8 * 25 * npositions)
+    split_pos = [0]
     chunk_size = 3
-    while chunk_size < npositions:
+    while split_pos[-1] + chunk_size < npositions:
         chunk_size += 1
-        nreachable = track_centr_msk[:chunk_size].any(axis=0).sum()
+        # create overlap between consecutive chunks
+        chunk_start = max(0, split_pos[-1] - 2)
+        chunk_end = chunk_start + chunk_size
+        nreachable = track_centr_msk[chunk_start:chunk_end].any(axis=0).sum()
         if nreachable > max_nreachable:
-            chunk_size = chunk_size - 1
-            break
+            split_pos.append(chunk_end - 1)
+            chunk_size = 3
+    split_pos.append(npositions)
 
-    intensity, rainrates = _compute_rain_sparse(
-        track.isel(time=slice(0, chunk_size)), *args,
-        max_memory_gb=max_memory_gb, **kwargs,
-    )
+    intensity = []
+    rainrates = []
+    for prev_chunk_end, chunk_end in zip(split_pos[:-1], split_pos[1:]):
+        chunk_start = max(0, prev_chunk_end - 2)
+        inten, rainr = _compute_rain_sparse(
+            track.isel(time=slice(chunk_start, chunk_end)), *args,
+            max_memory_gb=max_memory_gb, **kwargs,
+        )
+        intensity.append(inten)
+        rainrates.append(rainr)
 
-    if chunk_size == npositions:
-        return intensity, rainrates
-
-    inten_rest, rainr_rest = _compute_rain_sparse_chunked(
-        track_centr_msk[chunk_size - 2:], track.isel(time=slice(chunk_size - 2, None)), *args,
-        max_memory_gb=max_memory_gb, **kwargs,
-    )
-
-    intensity = sparse.csr_matrix(sparse.vstack([intensity, inten_rest]).max(axis=0))
-    if rainrates is not None:
+    intensity = sparse.csr_matrix(sparse.vstack(intensity).max(axis=0))
+    if rainrates[0] is not None:
         # eliminate the overlap between consecutive chunks
-        rainrates = sparse.vstack([rainrates[:-1, :], rainr_rest[1:, :]], format="csr")
+        rainrates = (
+            [rainrates[0][:-1, :]]
+            + [rainr[1:-1, :] for rainr in rainrates[1:-1]]
+            + [rainrates[-1][1:, :]]
+        )
+        rainrates = sparse.vstack(rainrates, format="csr")
     return intensity, rainrates
 
 def compute_rain(
