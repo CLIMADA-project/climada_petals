@@ -758,9 +758,9 @@ def _compute_rain_sparse_chunked(
         max_memory_gb=max_memory_gb, **kwargs,
     )
 
-    # eliminate the overlap between consecutive chunks
-    intensity = sparse.csr_matrix(sparse.vstack([intensity[:-1], inten_rest[1:]]).max(axis=0))
+    intensity = sparse.csr_matrix(sparse.vstack([intensity, inten_rest]).max(axis=0))
     if rainrates is not None:
+        # eliminate the overlap between consecutive chunks
         rainrates = sparse.vstack([rainrates[:-1, :], rainr_rest[1:, :]], format="csr")
     return intensity, rainrates
 
