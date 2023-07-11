@@ -649,8 +649,8 @@ def _compute_rain_sparse(
         return intensity_sparse, rainrates_sparse
 
     # the total memory requirement in GB if we compute everything without chunking:
-    # 8 Bytes per entry (float64), 10 arrays
-    total_memory_gb = npositions * nreachable * 8 * 10 / 1e9
+    # 8 Bytes per entry (float64), 25 arrays
+    total_memory_gb = npositions * nreachable * 8 * 25 / 1e9
     if total_memory_gb > max_memory_gb and npositions > 3:
         # If the number of positions is down to 3 already, we do not split any further. In that
         # case, we just take the risk and try to do the computation anyway. It might still work
@@ -733,10 +733,10 @@ def _compute_rain_sparse_chunked(
         See `_compute_rain_sparse` for a description of the return values.
     """
     npositions = track.sizes["time"]
-    # The memory requirements for each track position are estimated for the case of 10 arrays
+    # The memory requirements for each track position are estimated for the case of 25 arrays
     # containing `nreachable` float64 (8 Byte) values each. The chunking is only relevant in
     # extreme cases with a very high temporal and/or spatial resolution.
-    max_nreachable = max_memory_gb * 1e9 / (8 * 10 * npositions)
+    max_nreachable = max_memory_gb * 1e9 / (8 * 25 * npositions)
     chunk_size = 3
     while chunk_size < npositions:
         chunk_size += 1
