@@ -57,7 +57,7 @@ class TestTCForecast(unittest.TestCase):
         # Test data format for data variables
         self.assertIsInstance(tr_forecast.data[1]['max_sustained_wind'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[0]['central_pressure'].values[0], np.float64)
-        self.assertIsInstance(tr_forecast.data[0]['time_step'].values[0], np.integer)
+        self.assertIsInstance(tr_forecast.data[0]['time_step'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[2]['radius_max_wind'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[1]['environmental_pressure'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[0]['basin'].values[0], str)
