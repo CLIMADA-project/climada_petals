@@ -615,33 +615,27 @@ def _compute_rain_sparse(
 
     # convert track variables to SI units
     si_track = _track_to_si_with_q_and_shear(track, metric=metric, **model_kwargs)
+    t_lat, t_lon = si_track["lat"].values, si_track["lon"].values
 
     # normalize longitudinal coordinates of centroids
     u_coord.lon_normalize(coastal_centr[:, 1], center=si_track.attrs["mid_lon"])
 
-    # Filter early with a larger threshold, but inaccurate (lat/lon) distances.
-    # There is another filtering step with more accurate distances in km later.
-    max_dist_eye_deg = max_dist_eye_km / (
-        u_const.ONE_LAT_KM * np.cos(np.radians(np.abs(si_track["lat"].values).max()))
-    )
-
     # Restrict to the bounding box of the whole track first (this can already reduce the number of
     # centroids that are considered by a factor larger than 30).
+    max_dist_eye_lat = max_dist_eye_km / u_const.ONE_LAT_KM
+    max_dist_eye_lon = max_dist_eye_km / (
+        u_const.ONE_LAT_KM * np.cos(np.radians(np.abs(coastal_centr[:, 0])))
+    )
     coastal_idx = coastal_idx[
-        (coastal_centr[:, 0] >= si_track["lat"].values.min() - max_dist_eye_deg)
-        & (coastal_centr[:, 0] <= si_track["lat"].values.max() + max_dist_eye_deg)
-        & (coastal_centr[:, 1] >= si_track["lon"].values.min() - max_dist_eye_deg)
-        & (coastal_centr[:, 1] <= si_track["lon"].values.max() + max_dist_eye_deg)
+        (t_lat.min() - coastal_centr[:, 0] <= max_dist_eye_lat)
+        & (coastal_centr[:, 0] - t_lat.max() <= max_dist_eye_lat)
+        & (t_lon.min() - coastal_centr[:, 1] <= max_dist_eye_lon)
+        & (coastal_centr[:, 1] - t_lon.max() <= max_dist_eye_lon)
     ]
     coastal_centr = centroids.coord[coastal_idx]
 
     # restrict to centroids within rectangular bounding boxes around track positions
-    track_centr_msk = get_close_centroids(
-        si_track["lat"].values,
-        si_track["lon"].values,
-        coastal_centr,
-        max_dist_eye_deg,
-    )
+    track_centr_msk = get_close_centroids(t_lat, t_lon, coastal_centr, max_dist_eye_km)
     coastal_idx = coastal_idx[track_centr_msk.any(axis=0)]
     coastal_centr = centroids.coord[coastal_idx]
     nreachable = coastal_centr.shape[0]
