@@ -624,7 +624,9 @@ def _compute_rain_sparse(
     # centroids that are considered by a factor larger than 30).
     max_dist_eye_lat = max_dist_eye_km / u_const.ONE_LAT_KM
     max_dist_eye_lon = max_dist_eye_km / (
-        u_const.ONE_LAT_KM * np.cos(np.radians(np.abs(coastal_centr[:, 0])))
+        u_const.ONE_LAT_KM * np.cos(np.radians(
+            np.fmin(89.999, np.abs(coastal_centr[:, 0]) + max_dist_eye_lat)
+        ))
     )
     coastal_idx = coastal_idx[
         (t_lat.min() - coastal_centr[:, 0] <= max_dist_eye_lat)
@@ -635,7 +637,9 @@ def _compute_rain_sparse(
     coastal_centr = centroids.coord[coastal_idx]
 
     # restrict to centroids within rectangular bounding boxes around track positions
-    track_centr_msk = get_close_centroids(t_lat, t_lon, coastal_centr, max_dist_eye_km)
+    track_centr_msk = get_close_centroids(
+        t_lat, t_lon, coastal_centr, max_dist_eye_km, metric=metric,
+    )
     coastal_idx = coastal_idx[track_centr_msk.any(axis=0)]
     coastal_centr = centroids.coord[coastal_idx]
     nreachable = coastal_centr.shape[0]
