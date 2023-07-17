@@ -94,19 +94,19 @@ class TestReader(unittest.TestCase):
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
-        self.assertAlmostEqual(tc_haz.intensity[0, 100], 128.46424063696978)
-        self.assertAlmostEqual(tc_haz.intensity[0, 260], 15.697609721478253)
+        self.assertAlmostEqual(tc_haz.intensity[0, 100], 71.36902257609432)
+        self.assertAlmostEqual(tc_haz.intensity[0, 260], 8.720894289710138)
 
         # For testing, fill in the mean temperature over the storm life time (from ERA5).
-        # This increases the results by more than 50% because the default value for saturation
+        # This increases the results by more than 70% because the default value for saturation
         # specific humidity corresponds to a temperature of only ~267 K.
         tc_track.data[0]["t600"] = xr.full_like(tc_track.data[0]["central_pressure"], 275.0)
         tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
-        self.assertAlmostEqual(tc_haz.intensity[0, 100], 208.0608895225061)
-        self.assertAlmostEqual(tc_haz.intensity[0, 260], 25.514027006851833)
+        self.assertAlmostEqual(tc_haz.intensity[0, 100], 123.55255892009247)
+        self.assertAlmostEqual(tc_haz.intensity[0, 260], 15.148539942329757)
 
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""
@@ -205,7 +205,7 @@ class TestModel(unittest.TestCase):
     def test_r_from_t_same_level(self):
         """Test the derivative of _r_from_t_same_level"""
         t0 = 270.0
-        pref = 900
+        pref = 950
 
         # With h going to zero, the error of the Taylor approximation should go to zero
         # at the order of h^2.
@@ -235,22 +235,23 @@ class TestModel(unittest.TestCase):
         track_ds = tracks.data[0]
         temps_in = track_ds["t600"].values.copy()
         temps_in[3] = -9999.0  # test fill value
+        q_out_ref = np.array([
+            0.016311, 0.016263, 0.016144, 0.000000, 0.016077, 0.016549, 0.015868, 0.016880,
+            0.016642, 0.017160, 0.016925, 0.019063, 0.020451, 0.019922, 0.019091, 0.018822,
+            0.018885, 0.019480, 0.020169, 0.019509, 0.019416, 0.018797, 0.020152, 0.020099,
+            0.019116, 0.018708, 0.019619, 0.021115, 0.021223, 0.021212, 0.022113, 0.022574,
+            0.023665, 0.024241, 0.023977,
+        ])
         vmax = track_ds["max_sustained_wind"].values * KN_TO_MS
-        pres_in, pres_out = 600, 900
+        pres_in, pres_out = 600, 950
         q_out = _qs_from_t_diff_level(temps_in, vmax, pres_in, pres_out)
-        np.testing.assert_allclose(q_out, [
-            0.015216, 0.015169, 0.015053, 0.000000, 0.014987, 0.015450, 0.014783, 0.015774,
-            0.015540, 0.016048, 0.015818, 0.017915, 0.019280, 0.018759, 0.017942, 0.017678,
-            0.017740, 0.018325, 0.019002, 0.018353, 0.018261, 0.017653, 0.018986, 0.018933,
-            0.017967, 0.017566, 0.018461, 0.019933, 0.020039, 0.020028, 0.020916, 0.021371,
-            0.022447, 0.023015, 0.022754,
-        ], rtol=1e-4)
+        np.testing.assert_allclose(q_out, q_out_ref, rtol=1e-4)
 
     def test_track_to_si(self):
         tracks = TCTracks.from_hdf5(DEMO_DIR / "tcrain_examples.nc")
         track_ds = tracks.data[0]
         si_track = _track_to_si_with_q_and_shear(track_ds)
-        self.assertIn("q900", si_track.variables)
+        self.assertIn("q950", si_track.variables)
         self.assertIn("v850", si_track.variables)
         self.assertEqual(si_track["v850"].shape, (track_ds.sizes["time"], 2))
         # check that the meridional (v) component is listed first

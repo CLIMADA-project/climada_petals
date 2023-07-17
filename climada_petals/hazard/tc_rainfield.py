@@ -274,7 +274,9 @@ class TCRain(Hazard):
             specified, an ERA5-based data set provided with CLIMADA is used. Default: None
         e_precip : float, optional
             Precipitation efficiency (unitless), the fraction of the vapor flux falling to the
-            surface as rainfall (Lu et al. 2018, eq. (14)). Default: 0.9
+            surface as rainfall (Lu et al. 2018, eq. (14)). Note that we follow the MATLAB
+            reference implementation and use 0.5 as a default value instead of the 0.9 that was
+            proposed in Lu et al. 2018. Default: 0.5
         elevation_tif : Path or str, optional
             Path to a GeoTIFF file containing digital elevation model data (in m). If not
             specified, a topography at 0.1 degree resolution provided with CLIMADA is used.
@@ -289,9 +291,9 @@ class TCRain(Hazard):
             the background subsidence velocity w_rad. Default: 7.0
         min_c_drag : float, optional
             The drag coefficient is clipped to this minimum value (esp. over ocean). Default: 0.001
-        q_900 : float, optional
+        q_950 : float, optional
             If the track data does not include "t600" values, assume this constant value of
-            saturation specific humidity (in kg/kg) at 900 hPa. Default: 0.01
+            saturation specific humidity (in kg/kg) at 950 hPa. Default: 0.01
         res_radial_m : float, optional
             Resolution (in m) in radial direction. This is used for the computation of discrete
             derivatives of the horizontal wind fields and derived quantities. Default: 2000.0
@@ -847,13 +849,13 @@ def compute_rain(
 def _track_to_si_with_q_and_shear(
     track: xr.Dataset,
     metric: str = "equirect",
-    q_900: float = 0.01,
+    q_950: float = 0.01,
     matlab_ref_mode: bool = False,
     **kwargs,
 ) -> xr.Dataset:
     """Convert track data to SI units and add Q (humidity) and vshear variables
 
-    If the track data set does not contain the "q900" variable, but "t600", we compute the humidity
+    If the track data set does not contain the "q950" variable, but "t600", we compute the humidity
     assuming a moist adiabatic lapse rate (see `_qs_from_t_diff_level`).
 
     If the track data set does not contain the "vshear" variable, but "v850", we compute the wind
@@ -870,9 +872,9 @@ def _track_to_si_with_q_and_shear(
         Specify an approximation method to use for earth distances: "equirect" (faster) or
         "geosphere" (more accurate). See `dist_approx` function in `climada.util.coordinates`.
         Default: "equirect".
-    q_900 : float, optional
+    q_950 : float, optional
         If the track data does not include "t600" values, assume this constant value of saturation
-        specific humidity (in kg/kg) at 900 hPa. Default: 0.01
+        specific humidity (in kg/kg) at 950 hPa. Default: 0.01
     matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
     kwargs : dict
@@ -884,15 +886,16 @@ def _track_to_si_with_q_and_shear(
     """
     si_track = tctrack_to_si(track, metric=metric)
 
-    if "q900" in track.variables:
-        si_track["q900"] = track["q900"].copy()
+    if "q950" in track.variables:
+        si_track["q950"] = track["q950"].copy()
     elif "t600" not in track.variables:
-        si_track["q900"] = ("time", np.full_like(si_track["lat"].values, q_900))
+        si_track["q950"] = ("time", np.full_like(si_track["lat"].values, q_950))
     else:
-        # MATLAB computes Q at 950 hPa instead of 900 hPa (which is used in Lu et al. 2018)
+        # Note that we follow the MATLAB reference in computing Q at 950 hPa as opposed to the
+        # pressure level used in Lu et al. 2018 (900 hPa)
         pres_in = 600
-        pres_out = 950 if matlab_ref_mode else 900
-        si_track["q900"] = ("time", _qs_from_t_diff_level(
+        pres_out = 950
+        si_track["q950"] = ("time", _qs_from_t_diff_level(
             track["t600"].values,
             si_track["vmax"].values,
             pres_in,
@@ -909,12 +912,14 @@ def _track_to_si_with_q_and_shear(
             np.stack([track[f"{d}850"].values.copy() for d in ["v", "u"]], axis=1)
         ))
 
-        # We set v_drift (or v_beta) to be a 2.5 m/s drift in meridional direction (away from the
-        # equator), which seems to be common in the literature (e.g. Emanuel et al. 2006). But the
-        # MATLAB implementation uses 1.5 m/s.
+        # v_drift (or v_beta) is set to be a 1.4 m/s drift in meridional direction (away from the
+        # equator), because that's the value used in the proprietary synthetic track generator by
+        # WindRiskTech. Note, however, that a value of 2.5 m/s seems to be more common in the
+        # literature (e.g. Emanuel et al. 2006 or Lee et al. 2018).
+        v_beta_lat = 1.4
         si_track["vdrift"] = xr.zeros_like(si_track["v850"])
         si_track["vdrift"].values[:, 0] = (
-            (1.5 if matlab_ref_mode else 2.5)
+            v_beta_lat
             * si_track.attrs["latsign"]
             * np.cos(np.radians(si_track["lat"].values))
         )
@@ -1057,7 +1062,7 @@ def _tcr(
     centroids: np.ndarray,
     d_centr: dict,
     close_centr: np.ndarray,
-    e_precip: float = 0.9,
+    e_precip: float = 0.5,
     **kwargs,
 ) -> np.ndarray:
     """Compute rain rate (in mm/h) using the TCR model
@@ -1092,7 +1097,9 @@ def _tcr(
         For each track position one row indicating which centroids are within reach.
     e_precip : float, optional
         Precipitation efficiency (unitless), the fraction of the vapor flux falling to the surface
-        as rainfall (Lu et al. 2018, eq. (14)). Default: 0.9
+        as rainfall (Lu et al. 2018, eq. (14)). Note that we follow the MATLAB reference
+        implementation and use 0.5 as a default value instead of the 0.9 that was proposed in
+        Lu et al. 2018. Default: 0.5
     kwargs :
         The remaining arguments are passed on to _compute_vertical_velocity.
 
@@ -1103,8 +1110,8 @@ def _tcr(
     # w is of shape (ntime, ncentroids)
     w = _compute_vertical_velocity(si_track, centroids, d_centr, close_centr, **kwargs)
 
-    # derive vertical vapor flux wq by multiplying with saturation specific humidity Q900
-    wq = si_track["q900"].values[:, None] * w
+    # derive vertical vapor flux wq by multiplying with saturation specific humidity Q950
+    wq = si_track["q950"].values[:, None] * w
 
     # convert rainrate from "meters per second" to "milimeters per hour"
     rainrate = (M_TO_MM * H_TO_S) * e_precip * RHO_A_OVER_RHO_L * wq
@@ -1187,19 +1194,11 @@ def _compute_vertical_velocity(
     w_f_plus_w_t = _w_frict_stretch(
         si_track, d_centr, h_winds, centroids,
         res_radial_m=res_radial_m, c_drag_tif=c_drag_tif, min_c_drag=min_c_drag,
-        matlab_ref_mode=matlab_ref_mode,
     )[close_centr]
 
-    w_h = _w_topo(
-        si_track, d_centr, h_winds, centroids,
-        elevation_tif=elevation_tif, matlab_ref_mode=matlab_ref_mode,
-    )[close_centr]
+    w_h = _w_topo(si_track, d_centr, h_winds, centroids, elevation_tif=elevation_tif)[close_centr]
 
-    w_s = _w_shear(
-        si_track, d_centr, h_winds,
-        res_radial_m=res_radial_m,
-        matlab_ref_mode=matlab_ref_mode,
-    )[close_centr]
+    w_s = _w_shear(si_track, d_centr, h_winds, res_radial_m=res_radial_m)[close_centr]
 
     w[close_centr] = np.fmax(np.fmin(w_f_plus_w_t + w_h + w_s, max_w_foreground) - w_rad, 0)
     return w
@@ -1324,7 +1323,6 @@ def _w_shear(
     d_centr: dict,
     h_winds: dict,
     res_radial_m: float = 2000.0,
-    matlab_ref_mode: bool = False,
 ) -> np.ndarray:
     """Compute the shear component of the vertical wind velocity
 
@@ -1345,8 +1343,6 @@ def _w_shear(
         Output of `_horizontal_winds`.
     res_radial_m : float, optional
         Spatial resolution (in m) in radial direction. Default: 2000
-    matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
@@ -1362,13 +1358,15 @@ def _w_shear(
     #              Ts - Tt : difference between surface and tropopause temperature (100 K)
     #              ep : precipitation efficiency (0.5)
     #              N : buoyancy frequency for dry air (2e-2 s**-1)
-    fac_scalar = 0.5
+    # While Lu et al. 2018 assume a factor of 0.5, we follow the MATLAB reference implementation
+    # and use a factor of 1.0 because the precipitation efficiency (ep) is higher (0.75 instead
+    # of 0.5) in the TC than in the normal tropical environment.
+    fac_scalar = 1.0
 
-    # the following are fixes of bugs in the MATLAB implementation
     fac = fac_scalar * (
         si_track["cp"].values[:, None]
-        + (2.0 if matlab_ref_mode else 1.0) * h_winds["r,t"] / (1 + d_centr[""])
-        + (h_winds["r+,t"] - h_winds["r-,t"]) / ((1.0 if matlab_ref_mode else 2.0) * res_radial_m)
+        + h_winds["r,t"] / (1 + d_centr[""])
+        + (h_winds["r+,t"] - h_winds["r-,t"]) / (2.0 * res_radial_m)
     )
 
     return h_winds["nocoriolis"] * fac * (
@@ -1381,7 +1379,6 @@ def _w_topo(
     h_winds: dict,
     centroids: np.ndarray,
     elevation_tif: Optional[Union[str, Path]] = None,
-    matlab_ref_mode: bool = False,
 ) -> np.ndarray:
     """Compute the topographic component w_h of the vertical wind velocity
 
@@ -1404,8 +1401,6 @@ def _w_topo(
     elevation_tif : Path or str, optional
         Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, a
         topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
-    matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
@@ -1445,7 +1440,6 @@ def _w_frict_stretch(
     res_radial_m: float = 2000.0,
     c_drag_tif: Optional[Union[str, Path]] = None,
     min_c_drag: float = 0.001,
-    matlab_ref_mode: bool = False,
 ) -> np.ndarray:
     """Compute the sum of the frictional and stretching components w_f and w_t
 
@@ -1473,8 +1467,6 @@ def _w_frict_stretch(
         specified, an ERA5-based data set provided with CLIMADA is used. Default: None
     min_c_drag : float, optional
         The drag coefficient is clipped to this minimum value (esp. over ocean). Default: 0.001
-    matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
@@ -1691,8 +1683,10 @@ def _r_from_t_same_level(
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Compute the mixing ratio from temperature at a given pressure level
 
-    This uses the Tetens (or Magnus) formula for saturation vapor pressure (over water) with
-    coefficients given in:
+    The physical background is the Clausius-Clapeyron equation for water vapor pressure under
+    typical atmospheric conditions, but since this differential equation does not have an explicit
+    solution, the implementation uses the Tetens (or August-Roche-Magnus) approximation formula
+    with coefficients given in:
 
     Murray (1967): On the Computation of Saturation Vapor Pressure. Journal of Applied Meteorology
     and Climatology 6(1): 203–204. http://doi.org/10.1175/1520-0450(1967)006<0203:OTCOSV>2.0.CO;2
@@ -1702,7 +1696,11 @@ def _r_from_t_same_level(
 
     Buck (1981): New Equations for Computing Vapor Pressure and Enhancement Factor. Journal of
     Applied Meteorology and Climatology 20(12): 1527-1532.
-    http://doi.org/10.1175/1520-0450(1981)020<1527:NEFCVP>2.0.CO;2
+    https://doi.org/10.1175/1520-0450(1981)020<1527:NEFCVP>2.0.CO;2
+
+    Alduchov and Eskridge (1996): Improved Magnus Form Approximation of Saturation Vapor Pressure.
+    Journal of Applied Meteorology and Climatology 35(4): 601–609.
+    https://doi.org/10.1175/1520-0450(1996)035<0601:imfaos>2.0.co;2
 
     The default coefficients (Buck 1981) are also used by the ECMWF, see Section 7.2.1 (b) of the
     following document:
@@ -1720,9 +1718,9 @@ def _r_from_t_same_level(
     gradient : bool, optional
         If True, compute the derivative of the functional relationship between Q and T.
     tetens_coeffs : str, optional
-        Coefficients to use for the Tetens formula. One of "Buck1981", "Bolton1980",
-        or "Murray1967". This is overwritten if `matlab_ref_mode` is True because the reference
-        MATLAB implementation uses the "Bolton1980" coefficients. Default: "Buck1981"
+        Coefficients to use for the Tetens formula. One of "Alduchov1996", "Buck1981",
+        "Bolton1980", or "Murray1967". This is overwritten if `matlab_ref_mode` is True because the
+        reference MATLAB implementation uses the "Bolton1980" coefficients. Default: "Buck1981"
     matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
 
@@ -1737,20 +1735,15 @@ def _r_from_t_same_level(
     if matlab_ref_mode:
         tetens_coeffs = "Bolton1980"
 
-    if tetens_coeffs == "Murray1967":
-        a = 17.2693882
-        b = 35.86
-        c = 6.1078
-    elif tetens_coeffs == "Bolton1980":
-        a = 17.67
-        b = 29.65
-        c = 6.112
-    elif tetens_coeffs == "Buck1981":
-        a = 17.502
-        b = 32.19
-        c = 6.1121
-    else:
-        raise NotImplementedError
+    try:
+        a, b, c = {
+            "Murray1967": (17.2693882, 35.86, 6.1078),
+            "Bolton1980": (17.67, 29.65, 6.112),
+            "Buck1981": (17.502, 32.19, 6.1121),
+            "Alduchov1996": (17.625, 30.12, 6.1094),
+        }[tetens_coeffs]
+    except KeyError as err:
+        raise ValueError(f"Unknown Tetens coefficients: {tetens_coeffs}") from err
 
     # es : saturation vapor pressure (in hPa)
     es = c * np.exp(a * (temps - T_ICE_K) / (temps - b))
@@ -1762,10 +1755,20 @@ def _r_from_t_same_level(
     if gradient:
         if matlab_ref_mode:
             # Specific gas constant of water vapor (in J / kgK)
-            # (overwritten by 491 instead of 461 in the MATLAB code)
             r_water = 1000 * R_GAS / M_WATER
-            r_water = 491
-            # this approximation of the derivative is used in the MATLAB code:
+
+            # This approximation of the derivative is used in the MATLAB code, cf. the original
+            # Clausius-Clapeyron equation for water vapor under typical atmospheric conditions:
+            #
+            #   des/dT = (Lv * es) / (Rv * T**2)
+            #
+            # However, the following expression is missing the derivative of r_mix with
+            # respect to es (dr/dT = dr/des * des/dT), correct Clausius-Clapeyron would be:
+            #
+            #   drdT = (L_EVAP_WATER / r_water) / temps**2 * r_mix * (1 + r_mix / fact)
+            #
+            # The authors assume that this is fine because "the derivative is only used in the
+            # Newton-Raphson relaxation; it does not really matter if it is off by a little".
             drdT = (L_EVAP_WATER / r_water) / temps**2 * r_mix
         else:
             drdT = a * (T_ICE_K - b) / (temps - b)**2 * r_mix * (1 + r_mix / fact)
