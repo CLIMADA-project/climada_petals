@@ -550,9 +550,6 @@ class TCForecast(TCTracks):
 
         track = track.drop_vars(['ts_int'])
 
-        # track['radius_max_wind'] = (('time'), np.full_like(
-        #     track.time, np.nan, dtype=float)
-        # )
         track['environmental_pressure'] = (('time'), np.full_like(
             track.time, DEF_ENV_PRESSURE, dtype=float)
         )
