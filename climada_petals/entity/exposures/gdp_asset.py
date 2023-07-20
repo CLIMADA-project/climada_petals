@@ -26,9 +26,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import scipy as sp
-from climada.entity.tag import Tag
 import climada.util.coordinates as u_coord
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV, SYSTEM_DIR
+from climada.util.tag import Tag
 from climada.entity import Exposures, INDICATOR_IMPF
 
 LOGGER = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class GDP2Asset(Exposures):
             path to exposure dataset (ISIMIP)
         """
         gdp2a_list = []
-        tag = Tag()
+        description = ''
 
         if path is None:
             raise NameError('No path for exposure data set')
@@ -75,18 +75,18 @@ class GDP2Asset(Exposures):
             for cntr_ind in range(len(countries)):
                 gdp2a_list.append(self._set_one_country(countries[cntr_ind],
                                                         ref_year, path))
-                tag.description += ("{} GDP2Asset \n").\
+                description += ("{} GDP2Asset \n").\
                     format(countries[cntr_ind])
         except KeyError as err:
             raise KeyError(f'Exposure countries: {countries} or reg {reg} could not be set, '
                            f'check ISO3 or reference year {ref_year}') from err
 
-        tag.description += 'GDP2Asset ' + str(self.ref_year)
+        description += 'GDP2Asset ' + str(self.ref_year)
         Exposures.__init__(
             self,
             data=Exposures.concat(gdp2a_list).gdf,
             ref_year=ref_year,
-            tag=tag,
+            tag=Tag(description=description),
             value_unit='USD'
         )
 

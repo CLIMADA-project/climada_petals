@@ -71,7 +71,7 @@ class NotebookTest(unittest.TestCase):
                 if any([ tabu in c['source'].split() for tabu in [
                     'pathos.pools',
                     'mulitprocessing',
-                ]]): 
+                ]]):
                     print('\n'.join([
                         f'\nskip multiprocessing cell {i} in {self.notebook}',
                         '+'+'-'*68+'+',
@@ -80,7 +80,7 @@ class NotebookTest(unittest.TestCase):
                     continue
 
                 # remove non python lines and help calls which require user input
-                python_code = "\n".join([ln for ln in c['source'].split("\n") 
+                python_code = "\n".join([ln for ln in c['source'].split("\n")
                     if not ln.startswith('%')
                     and not ln.startswith('help(')
                     and not ln.startswith('ask_ok(')

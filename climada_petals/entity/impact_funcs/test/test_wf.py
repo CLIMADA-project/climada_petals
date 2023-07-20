@@ -47,7 +47,7 @@ class TestImpfWildfire(unittest.TestCase):
         paa = i_n**3 / (1 + i_n**3)
         self.assertTrue(np.array_equal(imp_fun.paa, paa))
         self.assertTrue(np.array_equal(imp_fun.mdd, np.ones(len(paa))))
-        
+
     def test_from_default_values_FIRMS_pass(self):
         """Compute mdr interpolating values. For the calibrated function"""
         imp_fun = ImpfWildfire.from_default_FIRMS(i_half_check)

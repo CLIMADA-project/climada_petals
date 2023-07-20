@@ -48,7 +48,7 @@ class TestIntegr(unittest.TestCase):
         haz_new.centroids.set_region_id()
 
         exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
-                                                bbox=bbox, yearrange=(2001, 2005), scenario='flexible', unit='t/y', 
+                                                bbox=bbox, yearrange=(2001, 2005), scenario='flexible', unit='t/y',
                                                 crop='whe', irr='firr')
         exp = value_to_usd(exp, INPUT_DIR, yearrange=(2000, 2018))
         exp.assign_centroids(haz, threshold=20)
@@ -67,7 +67,7 @@ class TestIntegr(unittest.TestCase):
         impact_manual = haz_new.select(event_names=['2002'], reg_id=276).intensity.multiply(exp_manual)
         dif = (impact_manual - impact.imp_mat).data
 
-        self.assertEqual(haz_new.tag.haz_type, 'RC')
+        self.assertEqual(haz_new.haz_type, 'RC')
         self.assertEqual(haz_new.size, 5)
         self.assertEqual(haz_new.centroids.size, 1092)
         self.assertAlmostEqual(haz_new.intensity.mean(), -2.0489097e-08, places=0)

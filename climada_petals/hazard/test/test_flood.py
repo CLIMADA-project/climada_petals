@@ -255,20 +255,6 @@ class TestRiverFlood(unittest.TestCase):
         self.assertAlmostEqual(testRFset.fla_ev_av,
                                2463979258.8144045, 3)
 
-    def test_select_events(self):
-        testRFTime = RiverFlood()
-        tt1 = dt.datetime.strptime('1988-07-02', '%Y-%m-%d')
-        tt2 = dt.datetime.strptime('2010-04-01', '%Y-%m-%d')
-        tt3 = dt.datetime.strptime('1997-07-02', '%Y-%m-%d')
-        tt4 = dt.datetime.strptime('1990-07-02', '%Y-%m-%d')
-        years = [2010, 1997]
-        test_time = np.array([tt1, tt2, tt3, tt4])
-        self.assertTrue(np.array_equal(
-                        testRFTime._select_event(test_time, years), [1, 2]))
-        years = [1988, 1990]
-        self.assertTrue(np.array_equal(
-                        testRFTime._select_event(test_time, years), [0, 3]))
-
 
 if __name__ == "__main__":
     # Execute Tests

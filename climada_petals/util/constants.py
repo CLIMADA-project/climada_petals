@@ -42,7 +42,10 @@ __all__ = ['SYSTEM_DIR',
            'EXP_DEMO_H5',
            'WS_DEMO_NC']
 
-from climada.util.constants import *
+from climada.util.constants import (DEMO_DIR, SYSTEM_DIR, ENT_DEMO_TODAY, ENT_DEMO_FUTURE,
+        HAZ_DEMO_MAT, HAZ_DEMO_FL, ENT_TEMPLATE_XLS, HAZ_TEMPLATE_XLS, ONE_LAT_KM, EARTH_RADIUS_KM,
+        GLB_CENTROIDS_MAT, GLB_CENTROIDS_NC, ISIMIP_GPWV3_NATID_150AS, NATEARTH_CENTROIDS,
+        RIVER_FLOOD_REGIONS_CSV, TC_ANDREW_FL, HAZ_DEMO_H5, EXP_DEMO_H5, WS_DEMO_NC)
 
 
 HAZ_DEMO_FLDDPH = DEMO_DIR.joinpath('flddph_2000_DEMO.nc')
@@ -55,18 +58,6 @@ DEMO_GDP2ASSET = DEMO_DIR.joinpath('gdp2asset_CHE_exposure.nc')
 """Exposure demo file for GDP2Asset"""
 
 
-"""
-dictionary for the generation of the correct download api-address at
-geofabrik.de, relating ISO3-country codes to the region & written-out name.
-Adapted from the GitHub repo osm_clipper (https://github.com/ElcoK/osm_clipper)
-Used by OSMRaw().get_data_geofabrik().
-
-Note: A few small countries will be downloaded as a multi-country file, as
-indicated in the comments.
-
-Note: "special" ISO-3 codes - Canary Islands (IC), Asian part of Russia (RUS-A),
-European part of Russia (RUS-E)
-"""
 DICT_GEOFABRIK = {
    'AFG' : ('asia','afghanistan'),
    'ALB' : ('europe','albania'),
@@ -261,33 +252,24 @@ DICT_GEOFABRIK = {
    'URY' : ('south-america', 'uruguay'),
    'VEN' : ('south-america', 'venezuela'),
 }
-
 """
-nested dictionary that contains collections of relevant columns (osm_keys) and
-key - value pairs (osm_query) to extract critical infrastructure data from an
-osm.pbf file, via the function OSM_FileQuery().retrieve_cis()
+dictionary for the generation of the correct download api-address at
+geofabrik.de, relating ISO3-country codes to the region & written-out name.
+Adapted from the GitHub repo osm_clipper (https://github.com/ElcoK/osm_clipper)
+Used by OSMRaw().get_data_geofabrik().
 
-Currently implemented for:
-    * educational facilities,
-    * electric power,
-    * food supply,
-    * healthcare facilities,
-    * natural gas infrastructure,
-    * oil infrastructure,
-    * road,
-    * rail,
-    * telecommunications,
-    * water supply,
-    * wastewater.
+Note: A few small countries will be downloaded as a multi-country file, as
+indicated in the comments.
 
-Note: If modified, make sure that key exists in osm.config file, under the
-respective geometry/-ies.
+Note: "special" ISO-3 codes - Canary Islands (IC), Asian part of Russia (RUS-A),
+European part of Russia (RUS-E)
 """
+
 DICT_CIS_OSM =  {
         'education' : {
             'osm_keys' : ['amenity','building','name'],
             'osm_query' : """building='school' or amenity='school' or
-                             building='kindergarten' or 
+                             building='kindergarten' or
                              amenity='kindergarten' or
                              building='college' or amenity='college' or
                              building='university' or amenity='university' or
@@ -297,14 +279,14 @@ DICT_CIS_OSM =  {
             'osm_keys' : ['amenity','building','healthcare','name'],
             'osm_query' : """amenity='hospital' or healthcare='hospital' or
                              building='hospital' or building='clinic' or
-                             amenity='clinic' or healthcare='clinic' or 
+                             amenity='clinic' or healthcare='clinic' or
                              amenity='doctors' or healthcare='doctors'
                              """},
         'water' : {
             'osm_keys' : ['man_made','pump','pipeline','emergency','name'],
             'osm_query' : """man_made='water_well' or man_made='water_works' or
                              man_made='water_tower' or
-                             man_made='reservoir_covered' or 
+                             man_made='reservoir_covered' or
                              landuse='reservoir' or
                              (man_made='pipeline' and substance='water') or
                              (pipeline='substation' and substance='water') or
@@ -318,10 +300,10 @@ DICT_CIS_OSM =  {
                              communication_mobile_phone='*' or
                              telecom='antenna' or
                              telecom='poles' or communication='pole' or
-                             telecom='central_office' or 
+                             telecom='central_office' or
                              telecom='street_cabinet' or
                              telecom='exchange' or telecom='data_center' or
-                             telecom='distribution_point' or 
+                             telecom='distribution_point' or
                              telecom='connection_point' or
                              telecom='line' or communication='line' or
                              utility='telecom'"""},
@@ -355,7 +337,7 @@ DICT_CIS_OSM =  {
              'osm_keys' : ['pipeline','man_made','amenity','name'],
              'osm_query' : """(pipeline='substation' and substance='oil') or
                               (man_made='pipeline' and substance='oil') or
-                              man_made='petroleum_well' or 
+                              man_made='petroleum_well' or
                               man_made='oil_refinery' or
                               amenity='fuel'"""},
         'power' : {
@@ -364,8 +346,8 @@ DICT_CIS_OSM =  {
                                power='minor_line' or power='plant' or
                                power='generator' or power='substation' or
                                power='transformer' or
-                               power='pole' or power='portal' or 
-                               power='tower' or power='terminal' or 
+                               power='pole' or power='portal' or
+                               power='tower' or power='terminal' or
                                power='switch' or power='catenary_mast' or
                                utility='power'"""},
         'wastewater' : {
@@ -374,7 +356,7 @@ DICT_CIS_OSM =  {
               'osm_query' : """reservoir_type='sewage' or
                                (man_made='storage_tank' and content='sewage') or
                                (man_made='pipeline' and substance='sewage') or
-                               substance='waterwaste' or 
+                               substance='waterwaste' or
                                substance='wastewater' or
                                (natural='water' and water='wastewater') or
                                man_made='wastewater_plant' or
@@ -383,6 +365,27 @@ DICT_CIS_OSM =  {
          'food' : {
              'osm_keys' : ['shop','name'],
              'osm_query' : """shop='supermarket' or shop='greengrocer' or
-                              shop='grocery' or shop='general' or 
+                              shop='grocery' or shop='general' or
                               shop='bakery'"""}
                               }
+"""
+nested dictionary that contains collections of relevant columns (osm_keys) and
+key - value pairs (osm_query) to extract critical infrastructure data from an
+osm.pbf file, via the function OSM_FileQuery().retrieve_cis()
+
+Currently implemented for:
+    * educational facilities,
+    * electric power,
+    * food supply,
+    * healthcare facilities,
+    * natural gas infrastructure,
+    * oil infrastructure,
+    * road,
+    * rail,
+    * telecommunications,
+    * water supply,
+    * wastewater.
+
+Note: If modified, make sure that key exists in osm.config file, under the
+respective geometry/-ies.
+"""
