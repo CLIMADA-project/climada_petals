@@ -32,28 +32,32 @@ import pickle
 import site
 import subprocess
 import sys
+from typing import Optional, Tuple, List, Union, Dict, Callable
 import warnings
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+import dask
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-import matplotlib.colors
-import matplotlib.cm
+import matplotlib.axes as maxes
+import matplotlib.colors as mcolors
+import matplotlib.cm as mcolormaps
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import numpy as np
 import pandas as pd
 import rasterio
-import scipy.sparse as sp
+from scipy import sparse
 import xarray as xr
 
 from climada import CONFIG
-from climada.hazard import Hazard, Tag as TagHazard, TropCyclone
+from climada.hazard import Centroids, Hazard, TropCyclone, TCTracks
 from climada.hazard.tc_tracks import estimate_rmw, estimate_roci
 from climada.util import ureg
 from climada.util.constants import ONE_LAT_KM
 import climada.util.coordinates as u_coord
+from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -84,6 +88,26 @@ class TCSurgeGeoClaw(Hazard):
 
     Attributes
     ----------
+    category : ndarray of ints
+        for every event, the TC category using the Saffir-Simpson scale:
+
+        * -1 tropical depression
+        *  0 tropical storm
+        *  1 Hurrican category 1
+        *  2 Hurrican category 2
+        *  3 Hurrican category 3
+        *  4 Hurrican category 4
+        *  5 Hurrican category 5
+    basin : list of str
+        Basin where every event starts:
+
+        * 'NA' North Atlantic
+        * 'EP' Eastern North Pacific
+        * 'WP' Western North Pacific
+        * 'NI' North Indian
+        * 'SI' South Indian
+        * 'SP' Southern Pacific
+        * 'SA' South Atlantic
     gauge_data : list of lists of dicts
         For each storm and each gauge, a dict containing the `location` of the gauge, and
         (for each landfall event) `base_sea_level`, `topo_height`, `time` and `height_above_geoid`
@@ -91,16 +115,64 @@ class TCSurgeGeoClaw(Hazard):
         Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
         can manually pickle it in a separate file using the `write_gauge_data` method.
     """
-    def __init__(self):
-        Hazard.__init__(self, HAZ_TYPE)
-        self.gauge_data = []
-        self.category = np.array([], int)
-        self.basin = list()
+    def __init__(
+        self,
+        category: Optional[np.ndarray] = None,
+        basin: Optional[List[str]] = None,
+        gauge_data: Optional[List[List[Dict]]] = None,
+        **kwargs,
+    ) -> None:
+        """Initialize values.
 
-    @staticmethod
-    def from_tc_tracks(tracks, topo_path, centroids=None, description='', gauges=None,
-                       topo_res_as=30, node_max_dist_deg=5.5, inland_max_dist_km=50,
-                       offshore_max_dist_km=10, max_latitude=61, sea_level=0, pool=None):
+        Parameters
+        ----------
+        category : ndarray of int, optional
+            For every event, the TC category using the Saffir-Simpson scale:
+                -1 tropical depression
+                0 tropical storm
+                1 Hurrican category 1
+                2 Hurrican category 2
+                3 Hurrican category 3
+                4 Hurrican category 4
+                5 Hurrican category 5
+        basin : list of str, optional
+            Basin where every event starts:
+                'NA' North Atlantic
+                'EP' Eastern North Pacific
+                'WP' Western North Pacific
+                'NI' North Indian
+                'SI' South Indian
+                'SP' Southern Pacific
+                'SA' South Atlantic
+        gauge_data : list of lists of dicts
+            For each storm and each gauge, a dict containing the `location` of the gauge, and
+            (for each landfall event) `base_sea_level`, `topo_height`, `time` and
+            `height_above_geoid` information.
+            Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
+            can manually pickle it in a separate file using the `write_gauge_data` method.
+        """
+        kwargs.setdefault('haz_type', HAZ_TYPE)
+        Hazard.__init__(self, **kwargs)
+        self.category = category if category is not None else np.array([], int)
+        self.basin = basin if basin is not None else []
+        self.gauge_data = gauge_data if gauge_data is not None else []
+
+    @classmethod
+    def from_tc_tracks(
+        cls,
+        tracks : TCTracks,
+        topo_path : Union[pathlib.Path, str],
+        centroids : Optional[Centroids] = None,
+        description : str = '',
+        gauges : Optional[List] = None,
+        topo_res_as : float = 30.0,
+        node_max_dist_deg : float = 5.5,
+        inland_max_dist_km : float = 50.0,
+        offshore_max_dist_km : float = 10.0,
+        max_latitude : float = 61.0,
+        sea_level : float = 0.0,
+        pool : any = None,
+    ):
         """Generate a TC surge hazard instance from a TCTracks object
 
         Parameters
@@ -149,32 +221,45 @@ class TCSurgeGeoClaw(Hazard):
         haz : TCSurgeGeoClaw object
         """
         if tracks.size == 0:
-            raise ValueError("The given TCTracks object doesn't contain any tracks.")
-        setup_clawpack()
+            raise ValueError("The given TCTracks object does not contain any tracks.")
+        _setup_clawpack()
 
         if centroids is None:
-            centroids = tracks.generate_centroids(res_deg=topo_res_as / (60 * 60),
-                                                  buffer_deg=node_max_dist_deg)
+            centroids = tracks.generate_centroids(
+                res_deg=topo_res_as / (60 * 60), buffer_deg=node_max_dist_deg,
+            )
 
         max_dist_coast_km = (offshore_max_dist_km, inland_max_dist_km)
-        coastal_idx = get_coastal_centroids_idx(centroids, max_dist_coast_km,
-                                                max_latitude=max_latitude)
+        coastal_idx = _get_coastal_centroids_idx(
+            centroids, max_dist_coast_km, max_latitude=max_latitude,
+        )
 
         LOGGER.info('Computing TC surge of %s tracks on %s centroids.',
                     str(tracks.size), str(coastal_idx.size))
-        haz = TCSurgeGeoClaw.concat(
-            [TCSurgeGeoClaw.from_xr_track(t, centroids, coastal_idx, topo_path,
-                                          topo_res_as=topo_res_as,
-                                          node_max_dist_deg=node_max_dist_deg,
-                                          gauges=gauges, sea_level=sea_level, pool=pool)
-             for t in tracks.data])
+        haz = cls.concat([
+            cls.from_xr_track(
+                t, centroids, coastal_idx, topo_path, topo_res_as=topo_res_as,
+                node_max_dist_deg=node_max_dist_deg, gauges=gauges, sea_level=sea_level, pool=pool,
+            )
+            for t in tracks.data
+        ])
         TropCyclone.frequency_from_tracks(haz, tracks.data)
-        haz.tag.description = description
+        haz.tag.append(Tag(description=description))
         return haz
 
-    @staticmethod
-    def from_xr_track(track, centroids, coastal_idx, topo_path, topo_res_as=30,
-                      node_max_dist_deg=5.5, gauges=None, sea_level=0, pool=None):
+    @classmethod
+    def from_xr_track(
+        cls,
+        track : xr.Dataset,
+        centroids : Centroids,
+        coastal_idx : np.ndarray,
+        topo_path : Union[pathlib.Path, str],
+        topo_res_as : float = 30.0,
+        node_max_dist_deg : float = 5.5,
+        gauges : Optional[List] = None,
+        sea_level : float = 0.0,
+        pool : any = None,
+    ):
         """Generate a TC surge hazard from a single xarray track dataset
 
         Parameters
@@ -183,7 +268,7 @@ class TCSurgeGeoClaw(Hazard):
             A single tropical cyclone track.
         centroids : Centroids
             Centroids instance.
-        coastal_idx : np.array
+        coastal_idx : ndarray
             Indices of centroids close to coast.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
@@ -213,38 +298,46 @@ class TCSurgeGeoClaw(Hazard):
         """
         coastal_centroids = centroids.coord[coastal_idx]
         intensity = np.zeros(centroids.coord.shape[0])
-        intensity[coastal_idx], gauge_data = geoclaw_surge_from_track(
+        intensity[coastal_idx], gauge_data = _geoclaw_surge_from_track(
             track, coastal_centroids, topo_path, gauges=gauges, sea_level=sea_level, pool=pool,
             topo_res_as=topo_res_as, node_max_dist_deg=node_max_dist_deg)
+        intensity = sparse.csr_matrix(intensity)
+        with _filter_xr_warnings():
+            date = np.array([
+                dt.datetime(
+                    track.time.dt.year.values[0],
+                    track.time.dt.month.values[0],
+                    track.time.dt.day.values[0]
+                ).toordinal()
+            ])
+        return cls(
+            centroids=centroids,
+            intensity=intensity,
+            gauge_data=[gauge_data],
+            category=np.array([track.category]),
+            basin=[str(track.basin.values[0])],
+            event_id=np.array([1]),
+            event_name=[track.sid],
+            date=date,
+            orig=np.array([track.orig_event_flag]),
+            frequency=np.array([1]),
+            fraction=sparse.csr_matrix(intensity.shape),
+            units="m",
+            description='Name: ' + track.name,
+        )
 
-        new_haz = TCSurgeGeoClaw()
-        new_haz.tag = TagHazard(HAZ_TYPE, 'Name: ' + track.name)
-        new_haz.intensity = sp.csr_matrix(intensity)
-        new_haz.gauge_data = [gauge_data]
-        new_haz.units = 'm'
-        new_haz.centroids = centroids
-        new_haz.event_id = np.array([1])
-        new_haz.frequency = np.array([1])
-        new_haz.event_name = [track.sid]
-        new_haz.fraction = new_haz.intensity.copy()
-        new_haz.fraction.data.fill(1)
-        new_haz.date = np.array([
-            dt.datetime(track.time.dt.year.values[0],
-                        track.time.dt.month.values[0],
-                        track.time.dt.day.values[0]).toordinal()
-        ])
-        new_haz.orig = np.array([track.orig_event_flag])
-        new_haz.category = np.array([track.category])
-        new_haz.basin = [str(track.basin.values[0])]
-        return new_haz
+    def write_hdf5(self, *args, **kwargs) -> None:
+        """Wrapper for `Hazard.write_hdf5` that omits the `gauge_data` attribute.
 
-    def write_hdf5(self, *args, **kwargs):
+        The HDF5 file format does not support very well the structure of the `gauge_data`
+        attribute. Use `write_gauge_data` instead to pickle the data.
+        """
         gauge_data = self.gauge_data
         delattr(self, "gauge_data")
         Hazard.write_hdf5(self, *args, **kwargs)
         self.gauge_data = gauge_data
 
-    def write_gauge_data(self, file_name):
+    def write_gauge_data(self, file_name : Union[pathlib.Path, str]) -> None:
         """Write this object's gauge_data attribute to a file in pickle format
 
         Parameters
@@ -255,7 +348,7 @@ class TCSurgeGeoClaw(Hazard):
         with open(file_name, "wb") as fp:
             pickle.dump(self.gauge_data, fp)
 
-    def read_gauge_data(self, file_name):
+    def read_gauge_data(self, file_name : Union[pathlib.Path, str]) -> None:
         """Overwrite this object's gauge_data attribute by data from a file
 
         Parameters
@@ -267,7 +360,11 @@ class TCSurgeGeoClaw(Hazard):
             self.gauge_data = pickle.load(fp)
 
 
-def get_coastal_centroids_idx(centroids, max_dist_coast_km, max_latitude=90):
+def _get_coastal_centroids_idx(
+    centroids : Centroids,
+    max_dist_coast_km : float,
+    max_latitude : float = 90.0,
+) -> np.ndarray:
     """Get indices of coastal centroids
 
     Parameters
@@ -282,7 +379,7 @@ def get_coastal_centroids_idx(centroids, max_dist_coast_km, max_latitude=90):
 
     Returns
     -------
-    coastal_idx : np.array of type int
+    coastal_idx : ndarray of type int
         Indices into given `centroids`.
     """
     try:
@@ -301,15 +398,23 @@ def get_coastal_centroids_idx(centroids, max_dist_coast_km, max_latitude=90):
     return coastal_msk.nonzero()[0]
 
 
-def geoclaw_surge_from_track(track, centroids, topo_path, topo_res_as=30, gauges=None,
-                             sea_level=0, pool=None, node_max_dist_deg=5.5):
+def _geoclaw_surge_from_track(
+    track : xr.Dataset,
+    centroids : np.ndarray,
+    topo_path : Union[pathlib.Path, str],
+    topo_res_as : float = 30.0,
+    gauges : Optional[List] = None,
+    sea_level : float = 0.0,
+    pool : any = None,
+    node_max_dist_deg : float = 5.5,
+) -> Tuple[np.ndarray, List[dict]]:
     """Compute TC surge height on centroids from a single track dataset
 
     Parameters
     ----------
     track : xr.Dataset
         Single tropical cyclone track.
-    centroids : 2d np.array
+    centroids : 2d ndarray
         Points for which to record the maximum height of inundation. Each row is a lat-lon point.
     topo_path : Path or str
         Path to raster file containing gridded elevation data.
@@ -334,7 +439,7 @@ def geoclaw_surge_from_track(track, centroids, topo_path, topo_res_as=30, gauges
 
     Returns
     -------
-    intensity : np.array
+    intensity : ndarray
         Surge height in meters.
     gauge_data : list of dicts
         For each gauge, a dict containing the `location` of the gauge, and (for each surge event)
@@ -406,7 +511,14 @@ def geoclaw_surge_from_track(track, centroids, topo_path, topo_res_as=30, gauges
     # get landfall events
     LOGGER.info("Determine georegions and temporal periods of landfall events...")
     events = TCSurgeEvents(track, track_centr)
-    events.plot_areas(path=work_dir.joinpath("event_areas.pdf"))
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="The 'geom_factory' function is deprecated",
+            module="cartopy",
+            category=DeprecationWarning,
+        )
+        events.plot_areas(path=work_dir.joinpath("event_areas.pdf"))
 
     if len(events) == 0:
         LOGGER.info("This storm doesn't affect any coastal areas.")
@@ -446,14 +558,24 @@ class GeoclawRunner():
 
     Attributes
     ----------
-    surge_h : np.array
+    surge_h : ndarray
         Maximum height of inundation recorded at given centroids.
     gauge_data : list of dicts
         For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time` and
         `height_above_geoid` information.
     """
-    def __init__(self, base_dir, track, time_offset, areas, centroids, topo_path,
-                 topo_res_as=30, gauges=None, sea_level=0):
+    def __init__(
+        self,
+        base_dir : str,
+        track : xr.Dataset,
+        time_offset : np.datetime64,
+        areas : Dict,
+        centroids : np.ndarray,
+        topo_path : Union[pathlib.Path, str],
+        topo_res_as : float = 30.0,
+        gauges : Optional[List] = None,
+        sea_level : float = 0.0,
+    ) -> None:
         """Initialize GeoClaw working directory with ClawPack rundata
 
         Parameters
@@ -466,7 +588,7 @@ class GeoclawRunner():
             Usually, time of landfall
         areas : dict
             Landfall event (single iterator output from TCSurgeEvents).
-        centroids : np.array
+        centroids : ndarray
             Points for which to record the maximum height of inundation.
             Each row is a lat-lon point.
         topo_path : Path or str
@@ -496,7 +618,7 @@ class GeoclawRunner():
         self.areas = areas
         self.centroids = centroids
         self.time_offset = time_offset
-        self.time_offset_str = dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
+        self.time_offset_str = _dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
         self.topo_path = topo_path
         self.gauge_data = [{'location': g, 'base_sea_level': 0, 'topo_height': -32768.0,
                             'time': [], 'height_above_geoid': [], 'in_domain': True}
@@ -518,7 +640,7 @@ class GeoclawRunner():
         # write Makefile
         with open(self.work_dir.joinpath("Makefile"), "w") as file_p:
             file_p.write(f"""\
-CLAW = {clawpack_info()[0]}
+CLAW = {_clawpack_info()[0]}
 CLAW_PKG = geoclaw
 EXE = xgeoclaw
 include $(CLAW)/geoclaw/src/2d/shallow/Makefile.geoclaw
@@ -534,7 +656,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         self.write_rundata()
 
 
-    def run(self):
+    def run(self) -> None:
         """Run GeoClaw script and set `surge_h` attribute."""
         LOGGER.info("Running GeoClaw in %s...", self.work_dir)
         self.stdout = ""
@@ -587,13 +709,13 @@ include $(CLAW)/clawutil/src/Makefile.common
                 LOGGER.warning("Reading GeoClaw output failed (see output above).")
 
 
-    def print_stdout(self):
+    def print_stdout(self) -> None:
         """"Print standard (and error) output of GeoClaw run."""
         LOGGER.info("Output of 'make .output' in GeoClaw work directory:")
         print(self.stdout)
 
 
-    def read_fgmax_data(self):
+    def read_fgmax_data(self) -> None:
         """Read fgmax output data from GeoClaw working directory."""
         # pylint: disable=import-outside-toplevel
         from clawpack.geoclaw import fgmax_tools
@@ -613,7 +735,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         self.surge_h[fgmax_grid.arrival_time.mask] = 0
 
 
-    def read_gauge_data(self):
+    def read_gauge_data(self) -> None:
         """Read gauge output data from GeoClaw working directory."""
         # pylint: disable=import-outside-toplevel
         from clawpack.pyclaw.gauges import GaugeSolution
@@ -633,23 +755,23 @@ include $(CLAW)/clawutil/src/Makefile.common
             gauge['height_above_geoid'] = g.q[1,:]
 
 
-    def write_rundata(self):
+    def write_rundata(self) -> None:
         """Create Makefile and all necessary datasets in working directory."""
         # pylint: disable=import-outside-toplevel
         import clawpack.clawutil.data
         num_dim = 2
         self.rundata = clawpack.clawutil.data.ClawRunData("geoclaw", num_dim)
-        self.set_rundata_claw()
-        self.set_rundata_amr()
-        self.set_rundata_geo()
-        self.set_rundata_fgmax()
-        self.set_rundata_storm()
-        self.set_rundata_gauges()
-        with contextlib.redirect_stdout(None), backup_loggers():
+        self._set_rundata_claw()
+        self._set_rundata_amr()
+        self._set_rundata_geo()
+        self._set_rundata_fgmax()
+        self._set_rundata_storm()
+        self._set_rundata_gauges()
+        with contextlib.redirect_stdout(None), _backup_loggers():
             self.rundata.write(out_dir=self.work_dir)
 
 
-    def set_rundata_claw(self):
+    def _set_rundata_claw(self) -> None:
         """Set the rundata parameters in the `clawdata` category."""
         clawdata = self.rundata.clawdata
         clawdata.verbosity = 1
@@ -673,7 +795,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.bc_upper = ['extrap', 'extrap']
 
 
-    def set_rundata_amr(self):
+    def _set_rundata_amr(self) -> None:
         """Set AMR-related rundata attributes."""
         clawdata = self.rundata.clawdata
         amrdata = self.rundata.amrdata
@@ -701,7 +823,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         refinedata.wave_tolerance = 1.0
 
 
-    def compute_refinement_ratios(self):
+    def compute_refinement_ratios(self) -> None:
         # select the refinement ratios so that:
         # * the last but one resolution is less than self.topo_resolution_as[-1]
         # * the list of ratios is non-decreasing
@@ -728,7 +850,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         return ratios
 
 
-    def set_rundata_geo(self):
+    def _set_rundata_geo(self) -> None:
         """Set geo-related rundata attributes."""
         geodata = self.rundata.geo_data
         topodata = self.rundata.topo_data
@@ -743,9 +865,10 @@ include $(CLAW)/clawutil/src/Makefile.common
 
         # get sea level information for affected areas and time period
         tr_period = (self.track.time.values[0], self.track.time.values[-1])
-        geodata.sea_level = np.mean(
-            [self.sea_level_fun(area, tr_period)
-             for area in self.areas['surge_areas']])
+        geodata.sea_level = np.mean([
+            self.sea_level_fun(area, tr_period)
+            for area in self.areas['surge_areas']
+        ])
 
         # load elevation data, resolution depending on area of refinement
         topodata.topofiles = []
@@ -757,22 +880,25 @@ include $(CLAW)/clawutil/src/Makefile.common
         resolutions += [self.topo_resolution_as[2]] * len(self.areas['surge_areas'])
         dems_for_plot = []
         for res_as, bounds in zip(resolutions, areas):
-            bounds, topo = load_topography(self.topo_path, bounds, res_as)
+            bounds, topo = _load_topography(self.topo_path, bounds, res_as)
             if 0 in topo.Z.shape:
                 LOGGER.warning("Area is ignored because it is too small.")
                 continue
-            tt3_fname = 'topo_{}s_{}.tt3'.format(res_as, bounds_to_str(bounds))
+            tt3_fname = 'topo_{}s_{}.tt3'.format(res_as, _bounds_to_str(bounds))
             tt3_fname = self.work_dir.joinpath(tt3_fname)
             topo.write(tt3_fname)
             topodata.topofiles.append([3, tt3_fname])
             dems_for_plot.append((bounds, topo.Z))
-        plot_dems(dems_for_plot, track=self.track,
-                  # for debugging purposes, also plot the centroids as scatter:
-                  # centroids=self.centroids,
-                  path=self.work_dir.joinpath("dems.pdf"))
+        _plot_dems(
+            dems_for_plot,
+            track=self.track,
+            # for debugging purposes, you might want to plot the centroids as scatter:
+            # centroids=self.centroids,
+            path=self.work_dir.joinpath("dems.pdf"),
+        )
 
 
-    def set_rundata_fgmax(self):
+    def _set_rundata_fgmax(self) -> None:
         """Set monitoring-related rundata attributes."""
         # pylint: disable=import-outside-toplevel
         from clawpack.geoclaw import fgmax_tools
@@ -792,7 +918,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         self.rundata.fgmax_data.fgmax_grids.append(fgmax_grid)
 
 
-    def set_rundata_storm(self):
+    def _set_rundata_storm(self) -> None:
         """Set storm-related rundata attributes."""
         surge_data = self.rundata.surge_data
         surge_data.wind_forcing = True
@@ -800,12 +926,13 @@ include $(CLAW)/clawutil/src/Makefile.common
         surge_data.pressure_forcing = True
         surge_data.storm_specification_type = 'holland80'
         surge_data.storm_file = str(self.work_dir.joinpath("track.storm"))
-        gc_storm = climada_xarray_to_geoclaw_storm(self.track,
-                                                   offset=dt64_to_pydt(self.time_offset))
+        gc_storm = _climada_xarray_to_geoclaw_storm(
+            self.track, offset=_dt64_to_pydt(self.time_offset),
+        )
         gc_storm.write(surge_data.storm_file, file_format='geoclaw')
 
 
-    def set_rundata_gauges(self):
+    def _set_rundata_gauges(self) -> None:
         """Set gauge-related rundata attributes."""
         for i_gauge, gauge in enumerate(self.gauge_data):
             lat, lon = gauge['location']
@@ -821,7 +948,12 @@ include $(CLAW)/clawutil/src/Makefile.common
         self.rundata.gaugedata.q_out_fields = [0]
 
 
-def plot_dems(dems, track=None, path=None, centroids=None):
+def _plot_dems(
+    dems : List,
+    track : Optional[xr.Dataset] = None,
+    path : Optional[Union[pathlib.Path, str]] = None,
+    centroids : Optional[Centroids] = None,
+) -> None:
     """Plot given DEMs as rasters to one worldmap
 
     Parameters
@@ -832,7 +964,7 @@ def plot_dems(dems, track=None, path=None, centroids=None):
         If given, save plot in this location. Default: None
     track : xr.Dataset
         If given, overlay the tropical cyclone track. Default: None
-    centroids : np.array
+    centroids : ndarray
         If given, overlay as scatter points. Default: None
     """
     # adjust properties of the colorbar (ignored by cartopy axes)
@@ -867,13 +999,13 @@ def plot_dems(dems, track=None, path=None, centroids=None):
     grid.top_labels = grid.right_labels = False
     grid.xformatter, grid.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
-    cmap, cnorm = colormap_coastal_dem(axes=axes)
+    cmap, cnorm = _colormap_coastal_dem(axes=axes)
     for bounds, heights in dems:
         # a bug (?) in cartopy breaks imshow with a transform different from `proj_ax`, so we
         # manually shift the central longitude in the `extent` attribute
         axes.imshow(heights, origin='lower', transform=proj_ax, cmap=cmap, norm=cnorm,
                     extent=(bounds[0] - mid_lon, bounds[2] - mid_lon, bounds[1], bounds[3]))
-        plot_bounds(axes, bounds, transform=proj_data, color='k', linewidth=0.5)
+        _plot_bounds(axes, bounds, transform=proj_data, color='k', linewidth=0.5)
     axes.coastlines(resolution='10m', linewidth=0.5)
     if track is not None:
         axes.plot(track.lon, track.lat, transform=proj_data, color='k', linewidth=0.5)
@@ -888,7 +1020,9 @@ def plot_dems(dems, track=None, path=None, centroids=None):
         plt.close(fig)
 
 
-def colormap_coastal_dem(axes=None):
+def _colormap_coastal_dem(
+    axes : Optional[maxes.Axes] = None,
+) -> Tuple[mcolors.Colormap, mcolors.Normalize]:
     """Return colormap and normalization for coastal areas of DEMs
 
     Parameters
@@ -915,38 +1049,41 @@ def colormap_coastal_dem(axes=None):
         (32, 114, 11),
         (117, 84, 0),
     ]
-    cmap_terrain = matplotlib.colors.LinearSegmentedColormap.from_list(
+    cmap_terrain = mcolors.LinearSegmentedColormap.from_list(
         "coastal_dem", [tuple(c / 255 for c in rgb) for rgb in cmap_terrain])
     cnorm_coastal_dem = LinearSegmentedNormalize([-8000, -1000, -10, -5, 0, 5, 10, 100, 1000])
     if axes:
         cbar_ax = inset_axes(axes, width="5%", height="100%",
                              loc='lower left', bbox_to_anchor=(1.02, 0., 0.5, 1),
                              bbox_transform=axes.transAxes, borderpad=0)
-        cbar = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap_terrain), cax=cbar_ax)
+        cbar = plt.colorbar(mcolormaps.ScalarMappable(cmap=cmap_terrain), cax=cbar_ax)
         cbar.set_ticks(cnorm_coastal_dem.values)
         cbar.set_ticklabels(cnorm_coastal_dem.vthresh)
     return cmap_terrain, cnorm_coastal_dem
 
 
-class LinearSegmentedNormalize(matplotlib.colors.Normalize):
+class LinearSegmentedNormalize(mcolors.Normalize):
     """Piecewise linear color normalization."""
-    def __init__(self, vthresh):
+    def __init__(self, vthresh : List[float]):
         """Initialize normalization
 
         Parameters
         ----------
-        vthresh : list
+        vthresh : list of floats
             Equally distributed to the interval [0,1].
         """
         self.vthresh = vthresh
         self.values = np.linspace(0, 1, len(self.vthresh))
-        matplotlib.colors.Normalize.__init__(self, vmin=vthresh[0], vmax=vthresh[-1], clip=False)
+        mcolors.Normalize.__init__(self, vmin=vthresh[0], vmax=vthresh[-1], clip=False)
 
-    def __call__(self, value, clip=None):
+    def __call__(self, value : float, clip : any = None) -> np.ndarray:
         return np.ma.masked_array(np.interp(value, self.vthresh, self.values))
 
 
-def climada_xarray_to_geoclaw_storm(track, offset=None):
+def _climada_xarray_to_geoclaw_storm(
+    track : xr.Dataset,
+    offset : Optional[dt.datetime] = None,
+) -> any:
     """Convert CLIMADA's xarray TC track to GeoClaw storm object
 
     Parameters
@@ -963,7 +1100,7 @@ def climada_xarray_to_geoclaw_storm(track, offset=None):
     # pylint: disable=import-outside-toplevel
     from clawpack.geoclaw.surge.storm import Storm
     gc_storm = Storm()
-    gc_storm.t = dt64_to_pydt(track.time.values)
+    gc_storm.t = _dt64_to_pydt(track.time.values)
     if offset is not None:
         gc_storm.time_offset = offset
     gc_storm.eye_location = np.stack([track.lon, track.lat], axis=-1)
@@ -974,7 +1111,12 @@ def climada_xarray_to_geoclaw_storm(track, offset=None):
     return gc_storm
 
 
-def sea_level_from_nc(path, t_agg="mean", t_pad=None, mod_zos=0):
+def sea_level_from_nc(
+    path : Union[pathlib.Path, str],
+    t_agg : str = "mean",
+    t_pad : Optional[np.timedelta64] = None,
+    mod_zos : float = 0.0,
+) -> Callable:
     """Generate a function that reads centroid sea levels from a NetCDF file
 
     The function that is generated can be used as an input for the `sea_level` parameter in
@@ -1006,13 +1148,13 @@ def sea_level_from_nc(path, t_agg="mean", t_pad=None, mod_zos=0):
     t_agg = t_agg.lower()
     if t_agg not in ["mean", "min", "max"]:
         raise ValueError(f"Aggregation method not supported: {t_agg}")
-    sea_level_nc_info(path)
+    _sea_level_nc_info(path)
     def sea_level_fun(bounds, period, path=path, t_agg=t_agg, t_pad=t_pad, mod_zos=mod_zos):
         t_pad = np.timedelta64(0, "D") if t_pad is None or t_pad == 0 else t_pad
         period = (period[0] - t_pad, period[1] + t_pad)
         centroid = (0.5 * (bounds[0] + bounds[2]), 0.5 * (bounds[1] + bounds[3]))
-        with xr.open_dataset(path) as ds:
-            ds = nc_rename_vars(ds)
+        with _filter_xr_warnings(), xr.open_dataset(path) as ds:
+            ds = _nc_rename_vars(ds)
             period = [_get_closest_date_in_index(ds.time, t) for t in period]
             ds = ds.sel(time=(ds.time >= period[0]) & (ds.time <= period[1]))
             lon, lat = _get_closest_valid_cell(ds.zos, *centroid)
@@ -1022,8 +1164,31 @@ def sea_level_from_nc(path, t_agg="mean", t_pad=None, mod_zos=0):
     return sea_level_fun
 
 
-def _get_closest_valid_cell(ds_var, lon, lat, threshold_deg=10):
-    """Extract the grid cell with valid entries that is closest to the given location"""
+def _get_closest_valid_cell(
+    ds_var : xr.DataArray,
+    lon : float,
+    lat : float,
+    threshold_deg : float = 10.0,
+) -> Tuple[float, float]:
+    """Extract the grid cell with valid entries that is closest to the given location
+
+    To be considered, a grid cell is required to have valid entries for all time steps.
+
+    Parameters
+    ----------
+    ds_var : xr.DataArray
+        Gridded data with "time" dimension.
+    lon, lat : float
+        The longitudinal and latitudinal coordinates of the location.
+    threshold_deg : float, optional
+        Threshold (in degrees) for a grid cell to be considered. Default: 10
+
+    Returns
+    -------
+    lon, lat : float
+        Longitudinal and latitudinal coordinates of the centroid of the grid cell that is closest
+        to the specified location and has valid entries.
+    """
     # for performance reasons, restrict search to cells that are close enough
     bounds = (lon - threshold_deg, lat - threshold_deg,
               lon + threshold_deg, lat + threshold_deg)
@@ -1040,8 +1205,26 @@ def _get_closest_valid_cell(ds_var, lon, lat, threshold_deg=10):
     return lons[idx], lats[idx]
 
 
-def _get_closest_date_in_index(dt_index, date):
-    """Extract the date from the given DatetimeIndex that is closest to the given date"""
+def _get_closest_date_in_index(
+    dt_index : pd.DatetimeIndex,
+    date : np.datetime64,
+) -> np.datetime64:
+    """Extract the entry from the given DatetimeIndex that is closest to the given date
+
+    If the date lies exactly between two consecutive entries in the index, the earlier date is
+    returned.
+
+    Parameters
+    ----------
+    dt_index : pd.DatetimeIndex
+        The index from which to extract the entry that is closest to `date`.
+    date : np.datetime64
+        The date for which to search the closest entry in `dt_index`.
+
+    Returns
+    -------
+    np.datetime64
+    """
     i = dt_index.searchsorted(date, side="left")
     if i == 0:
         return dt_index.values[0]
@@ -1052,7 +1235,11 @@ def _get_closest_date_in_index(dt_index, date):
     return dt_index.values[i - 1]
 
 
-def area_sea_level_from_monthly_nc(path, t_pad=None, mod_zos=0):
+def area_sea_level_from_monthly_nc(
+    path : Union[pathlib.Path, str],
+    t_pad : Optional[np.timedelta64] = None,
+    mod_zos : float = 0.0,
+) -> Callable:
     """Generate a function that reads area-aggregated sea levels from a NetCDF file
 
     The function that is generated can be used as an input for the `sea_level` parameter in
@@ -1078,24 +1265,28 @@ def area_sea_level_from_monthly_nc(path, t_pad=None, mod_zos=0):
         argument is a pair of np.datetime64 (start, end). The function returns the mean sea level
         in the specified region and time period.
     """
-    sea_level_nc_info(path)
+    _sea_level_nc_info(path)
     def sea_level_fun(bounds, period, path=path, t_pad=t_pad, mod_zos=mod_zos):
         t_pad = np.timedelta64(7, "D") if t_pad is None else t_pad
         period = (period[0] - t_pad, period[1] + t_pad)
         times = pd.Series([0, 0], index=list(period)).resample("12H").ffill(limit=1).index
         months = np.unique(np.stack((times.year, times.month), axis=-1), axis=0)
-        return mean_max_sea_level(path, months, bounds) + mod_zos
+        return _mean_max_sea_level(path, months, bounds) + mod_zos
     return sea_level_fun
 
 
-def mean_max_sea_level(path, months, bounds):
+def _mean_max_sea_level(
+    path : Union[pathlib.Path, str],
+    months : np.ndarray,
+    bounds : Tuple[float, float, float, float],
+) -> float:
     """Mean of maxima over affected area in affected months
 
     Parameters
     ----------
     path : Path or str
         Path to NetCDF file containing monthly sea level data.
-    months : np.array
+    months : ndarray
         each row is a tuple (year, month)
     bounds : tuple
         (lon_min, lat_min, lon_max, lat_max)
@@ -1107,8 +1298,8 @@ def mean_max_sea_level(path, months, bounds):
     """
     pad_deg = 0.25
     max_pad_deg = 5
-    with xr.open_dataset(path) as ds:
-        ds = nc_rename_vars(ds)
+    with _filter_xr_warnings(), xr.open_dataset(path) as ds:
+        ds = _nc_rename_vars(ds)
         mask_time = np.any([(ds.time.dt.year == m[0]) & (ds.time.dt.month == m[1])
                            for m in months], axis=0)
         if np.count_nonzero(mask_time) != months.shape[0]:
@@ -1132,8 +1323,31 @@ def mean_max_sea_level(path, months, bounds):
     return mean
 
 
-def _temporal_mean_of_max_within_bounds(ds, bounds):
-    ds_zos = _select_bounds(ds.zos, bounds)
+def _temporal_mean_of_max_within_bounds(
+    ds : xr.Dataset,
+    bounds : Tuple[float, float, float, float],
+) -> float:
+    """Take the maximum over a given spatial extent, then the mean over the time dimension
+
+    Any NaN-values in the data are ignored, unless all values within the specified bounds are NaN.
+    For example, in case of a gridded sea level data set with NaN over land, the maximum will just
+    be over the valid values. Only if all values within the spatial bounds are NaN, the maximum is
+    assumed to be NaN. Similarly, when taking the mean over the time dimension, the NaN values are
+    dropped before taking the mean.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        A dataset with temporal and spatial (lon/lat) dimensions and a "zos" data variable.
+    bounds : tuple of floats
+        The minimum and maximum values for each spatial dimension:
+        (lon_min, lat_min, lon_max, lat_max)
+
+    Returns
+    -------
+    float
+    """
+    ds_zos = _select_bounds(ds["zos"], bounds)
     if ds_zos is None:
         return np.nan
     values = ds_zos.values[:]
@@ -1142,21 +1356,81 @@ def _temporal_mean_of_max_within_bounds(ds, bounds):
     return np.nanmean(np.nanmax(values, axis=(1, 2)))
 
 
-def _select_bounds(ds, bounds):
-    lon = u_coord.lon_normalize(
-        ds.lon.values, center=0.5 * (bounds[0] + bounds[2]))
-    mask_lat = (bounds[1] <= ds.lat) & (ds.lat <= bounds[3])
-    mask_lon = (bounds[0] <= lon) & (lon <= bounds[2]) & np.isfinite(ds.lon)
-    mask_bounds = (mask_lat & mask_lon)
-    if not np.any(mask_bounds):
+def _select_bounds_dim(
+    ds : Union[xr.Dataset, xr.DataArray],
+    dim : str,
+    bounds : Tuple[float, float],
+) -> Union[xr.Dataset, xr.DataArray]:
+    """Restrict the data set's dimension to the specified bounds
+
+    Parameters
+    ----------
+    ds : xr.Dataset or xr.DataArray
+        The data set for which to restrict a dimension.
+    dim : str
+        The dimension within `ds` to restrict.
+    bounds : tuple of floats
+        The minimum and maximum value for `dim`.
+
+    Returns
+    -------
+    xr.Dataset or xr.DataArray
+    """
+    ref_min, ref_max = bounds
+    idx = ((ds[dim] <= ref_max) & (ds[dim] >= ref_min)).values.nonzero()[0]
+    if idx.size < 2:
+        d_min, d_max = ds[dim].values.min(), ds[dim].values.max()
+        LOGGER.warn(
+            f"The dimension '{dim}' ({d_min}-{d_max}) does not cover the range of the"
+            f" reference dimension ({ref_min}-{ref_max})."
+        )
         return None
-    return ds.where(mask_bounds, drop=True)
+    with dask.config.set(**{'array.slicing.split_large_chunks': True}):
+        ds = ds.isel(indexers={dim: slice(idx[0], idx[-1] + 1)})
+    return ds
 
 
-def sea_level_nc_info(path):
+def _select_bounds(
+    ds : Union[xr.Dataset, xr.DataArray],
+    bounds : Tuple[float, float, float, float],
+) -> Union[xr.Dataset, xr.DataArray]:
+    """Restrict the raster data set to the specified bounds
+
+    In a first step, the longitudinal coordinate values are normalized to the longitudinal range
+    indicated by `bounds`.
+
+    Parameters
+    ----------
+    ds : xr.Dataset or xr.DataArray
+        The raster data to restrict.
+    bounds : tuple of float
+        The minimum and maximum values for each spatial dimension:
+        (lon_min, lat_min, lon_max, lat_max)
+
+    Returns
+    -------
+    xr.Dataset or xr.DataArray
+    """
+    ds = _select_bounds_dim(ds, "lat", (bounds[1], bounds[3]))
+    mid_lon = 0.5 * (bounds[0] + bounds[2])
+    ds = ds.assign_coords(lon=u_coord.lon_normalize(ds["lon"].values.copy(), center=mid_lon))
+    ds = ds.reindex(lon=np.unique(ds["lon"].values))
+    ds = _select_bounds_dim(ds, "lon", (bounds[0], bounds[2]))
+    return ds
+
+
+def _sea_level_nc_info(path : Union[pathlib.Path, str]) -> None:
+    """Log information about the spatiotemporal bounds of the specified NetCDF file.
+
+    Parameters
+    ----------
+    path : Path or str
+        Path to a NetCDF file with raster data and time dimension.
+    """
     LOGGER.info("Reading sea level data from %s", path)
-    with xr.open_dataset(path) as ds:
-        ds = nc_rename_vars(ds)
+
+    with _filter_xr_warnings(), xr.open_dataset(path) as ds:
+        ds = _nc_rename_vars(ds)
         ds_bounds = (ds.lon.values.min(), ds.lat.values.min(),
                      ds.lon.values.max(), ds.lat.values.max())
         ds_period = (ds.time[0], ds.time[-1])
@@ -1165,8 +1439,43 @@ def sea_level_nc_info(path):
                     ds_period[0].dt.year, ds_period[0].dt.month,
                     ds_period[1].dt.year, ds_period[1].dt.month)
 
+@contextlib.contextmanager
+def _filter_xr_warnings():
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="distutils Version classes are deprecated",
+            category=DeprecationWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="Index.ravel returning ndarray is deprecated; in a future version",
+            module="xarray",
+            category=FutureWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="invalid value encountered in cast",
+            module="xarray",
+            category=RuntimeWarning,
+        )
+        yield
 
-def nc_rename_vars(ds):
+def _nc_rename_vars(ds : xr.Dataset) -> xr.Dataset:
+    """Rename several coordinate and data variable names to their defaults
+
+    The default names are "lon", "lat", "time", and "zos" (for sea surface height).
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Data set with longitudinal, latitudinal, and temporal dimensions, as well as a sea level
+        data variable.
+
+    Returns
+    -------
+    xr.Dataset
+    """
     var_names = {
         'lon': ('coords', ["longitude", "lon", "x"]),
         'lat': ('coords', ["latitude", "lat", "y"]),
@@ -1175,11 +1484,16 @@ def nc_rename_vars(ds):
     }
     for new_name, (var_type, all_names) in var_names.items():
         old_name = [c for c in getattr(ds, var_type) if c.lower() in all_names][0]
-        ds = ds.rename({old_name: new_name})
+        if old_name != new_name:
+            ds = ds.rename({old_name: new_name})
     return ds
 
 
-def load_topography(path, bounds, res_as):
+def _load_topography(
+    path : Union[pathlib.Path, str],
+    bounds : Tuple[float, float, float, float],
+    res_as : float,
+) -> Tuple[Tuple[float, float, float, float], any]:
     """Load topographical elevation data in specified bounds and resolution
 
     The bounds of the returned topodata are always larger than the requested bounds to make sure
@@ -1250,18 +1564,18 @@ class TCSurgeEvents():
     ----------
     track : xr.Dataset
         Single tropical cyclone track.
-    centroids : 2d np.array
+    centroids : 2d ndarray
         Each row is a centroid [lat, lon]. These are supposed to be coastal points of interest.
-    d_centroids : 2d np.array
+    d_centroids : 2d ndarray
         For each eye position, distances to centroids.
     nevents : int
         Number of landfall events.
     period : list of tuples
         For each event, a pair of datetime objects indicating beginnig and end
         of landfall event period.
-    time_mask : list of np.array
+    time_mask : list of ndarray
         For each event, a mask along `track.time` indicating the landfall event period.
-    time_mask_buffered : list of np.array
+    time_mask_buffered : list of ndarray
         For each event, a mask along `track.time` indicating the landfall event period
         with added buffer for storm form-up.
     wind_area : list of tuples
@@ -1273,7 +1587,7 @@ class TCSurgeEvents():
     surge_areas : list of list of tuples
         For each event, a list of tight rectangular boxes around the centroids that will
         be affected by storm surge during the landfall event.
-    centroid_mask : list of np.array
+    centroid_mask : list of ndarray
         For each event, a mask along first axis of `centroids` indicating which centroids are
         reachable by surge during this landfall event.
     """
@@ -1287,7 +1601,7 @@ class TCSurgeEvents():
     lf_rmw_factor = 2.0
     minwind_kt = 34
 
-    def __init__(self, track, centroids):
+    def __init__(self, track : xr.Dataset, centroids : np.ndarray) -> None:
         """Determine temporal periods and geographical regions where the storm
         affects the centroids
 
@@ -1295,7 +1609,7 @@ class TCSurgeEvents():
         ----------
         track : xr.Dataset
             Single tropical cyclone track.
-        centroids : 2d np.array
+        centroids : 2d ndarray
             Each row is a centroid [lat, lon].
         """
         self.track = track
@@ -1320,11 +1634,11 @@ class TCSurgeEvents():
             yield {key: getattr(self, key)[i_event] for key in self.keys}
 
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.nevents
 
 
-    def _remove_harmless_events(self):
+    def _remove_harmless_events(self) -> None:
         """Remove events without affected areas (surge_areas)"""
         relevant_idx = [i for i in range(self.nevents) if len(self.surge_areas[i]) > 0]
         for key in self.keys:
@@ -1332,7 +1646,7 @@ class TCSurgeEvents():
         self.nevents = len(relevant_idx)
 
 
-    def _set_periods(self):
+    def _set_periods(self) -> None:
         """Determine beginning and end of landfall events."""
         radii = np.fmax(self.lf_roci_factor * self.track.radius_oci.values,
                         self.lf_rmw_factor * self.track.radius_max_wind.values) * NM_TO_KM
@@ -1362,7 +1676,11 @@ class TCSurgeEvents():
         self.nevents = len(self.period)
 
 
-    def _period_to_mask(self, period, buffer=0.0):
+    def _period_to_mask(
+        self,
+        period : Tuple[np.datetime64, np.datetime64],
+        buffer : Union[Tuple[float, float], float] = 0.0,
+    ) -> np.ndarray:
         """Compute buffered 1d-mask over track time series from period
 
         Parameters
@@ -1374,7 +1692,7 @@ class TCSurgeEvents():
 
         Returns
         -------
-        mask : np.array
+        mask : ndarray
         """
         if not isinstance(buffer, tuple):
             buffer = (buffer, buffer)
@@ -1385,7 +1703,7 @@ class TCSurgeEvents():
         return (diff_start >= -buffer[0]) & (diff_end <= buffer[1])
 
 
-    def _set_areas(self):
+    def _set_areas(self) -> None:
         """For each event, determine areas affected by wind and surge."""
         # total area (maximum bounds to consider)
         pad = 1 + self.total_roci_factor * self.track.radius_oci / DEG_TO_NM
@@ -1437,7 +1755,7 @@ class TCSurgeEvents():
                 if pt_size < (2 * lf_radii.max() / ONE_LAT_KM)**2:
                     small_bounds = [pt_bounds]
                 else:
-                    small_bounds, pt_size = boxcover_points_along_axis(points, 3)
+                    small_bounds, pt_size = _boxcover_points_along_axis(points, 3)
                 min_size = 3. / (60. * 60.)
                 if pt_size > (2 * min_size)**2:
                     for bounds in small_bounds:
@@ -1457,7 +1775,11 @@ class TCSurgeEvents():
             self.centroid_mask.append(centroids_mask)
 
 
-    def plot_areas(self, path=None, pad_deg=5.5):
+    def plot_areas(
+        self,
+        path : Optional[Union[pathlib.Path, str]] = None,
+        pad_deg : float = 5.5,
+    ) -> None:
         """Plot areas associated with this track's landfall events
 
         Parameters
@@ -1509,8 +1831,10 @@ class TCSurgeEvents():
                 self.landfall_area[i_event],
             ] + self.surge_areas[i_event]
             for bounds in areas:
-                plot_bounds(axes, bounds, transform=proj_data,
-                            color=color_cycle[i_event], linewidth=linew)
+                _plot_bounds(
+                    axes, bounds, transform=proj_data,
+                    color=color_cycle[i_event], linewidth=linew,
+                )
 
         # plot track data points
         axes.scatter(self.track.lon, self.track.lat, transform=proj_data, s=2)
@@ -1525,7 +1849,7 @@ class TCSurgeEvents():
             plt.close(fig)
 
 
-def plot_bounds(axes, bounds, **kwargs):
+def _plot_bounds(axes : maxes.Axes, bounds : Tuple[float, float, float, float], **kwargs) -> None:
     """Plot given bounds as rectangular boundary lines
 
     Parameters
@@ -1542,12 +1866,12 @@ def plot_bounds(axes, bounds, **kwargs):
               [lat_min, lat_max, lat_max, lat_min, lat_min], **kwargs)
 
 
-def boxcover_points_along_axis(points, nsplits):
+def _boxcover_points_along_axis(points : np.ndarray, nsplits : int) -> Tuple[List[Tuple], float]:
     """Cover n-dimensional points with grid-aligned boxes
 
     Parameters
     ----------
-    points : np.array
+    points : ndarray
         Each row is an n-dimensional point.
     nsplits : int
         Maximum number of boxes to use.
@@ -1586,12 +1910,12 @@ def boxcover_points_along_axis(points, nsplits):
     return final_boxes, final_boxes_size
 
 
-def clawpack_info():
+def _clawpack_info() -> Tuple[Optional[pathlib.Path], Tuple[str]]:
     """Information about the available clawpack version
 
     Returns
     -------
-    path : Path or str or None
+    path : Path or None
         If the python package clawpack is not available, None is returned.
         Otherwise, the CLAW source path is returned.
     decorators : tuple of str
@@ -1621,7 +1945,7 @@ def clawpack_info():
     return path, decorators
 
 
-def setup_clawpack(version=CLAWPACK_VERSION):
+def _setup_clawpack(version : str = CLAWPACK_VERSION) -> None:
     """Install the specified version of clawpack if not already present
 
     Parameters
@@ -1629,7 +1953,7 @@ def setup_clawpack(version=CLAWPACK_VERSION):
     version : str, optional
         A git (short or long) hash, branch name or tag.
     """
-    path, git_ver = clawpack_info()
+    path, git_ver = _clawpack_info()
     if path is None or version not in git_ver and version not in git_ver[0]:
         LOGGER.info("Installing Clawpack version %s", version)
         src_path = CLAWPACK_SRC_DIR
@@ -1646,15 +1970,30 @@ def setup_clawpack(version=CLAWPACK_VERSION):
         importlib.reload(site)
         importlib.invalidate_caches()
 
-    with backup_loggers():
+    with _backup_loggers(), warnings.catch_warnings():
         # pylint: disable=unused-import,import-outside-toplevel
+        warnings.filterwarnings(
+            "ignore",
+            message="unclosed <socket.socket",
+            module="clawpack",
+            category=ResourceWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message="the imp module is deprecated",
+            module="clawpack",
+            category=DeprecationWarning,
+        )
         import clawpack.pyclaw
 
 
 @contextlib.contextmanager
-def backup_loggers():
-    # some modules (such as clawpack.pyclaw) use logging.config.fileConfig which disables all
-    # registered loggers; the following lines revert this
+def _backup_loggers():
+    """Context that reverts changes to the `disabled` states of all loggers afterwards
+
+    Some modules (such as clawpack.pyclaw) use logging.config.fileConfig which disables all
+    registered loggers; this context manager reverts these changes afterwards.
+    """
     try:
         logger_state = {name: logger.disabled
                         for name, logger in logging.root.manager.loggerDict.items()
@@ -1666,12 +2005,12 @@ def backup_loggers():
                 logger.disabled = False
 
 
-def bounds_to_str(bounds):
+def _bounds_to_str(bounds : Tuple[float, float, float, float]) -> str:
     """Convert longitude/latitude bounds to a human-readable string
 
     Example
     -------
-    >>> bounds_to_str((-4.2, 1.0, -3.05, 2.125))
+    >>> _bounds_to_str((-4.2, 1.0, -3.05, 2.125))
     '1N-2.125N_4.2W-3.05W'
 
     Parameters
@@ -1691,12 +2030,14 @@ def bounds_to_str(bounds):
         abs(lon_max), 'E' if lon_max >= 0 else 'W')
 
 
-def dt64_to_pydt(date):
+def _dt64_to_pydt(
+    date : Union[np.datetime64, np.ndarray],
+) -> Union[dt.datetime, List[dt.datetime]]:
     """Convert datetime64 value or array to python datetime object or list
 
     Parameters
     ----------
-    date : datetime64 value or array
+    date : np.datetime64 or array
 
     Returns
     -------

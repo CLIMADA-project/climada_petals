@@ -30,16 +30,18 @@ import xarray as xr
 
 from climada import CONFIG
 from climada.hazard import Centroids, TCTracks
-from climada_petals.hazard.tc_surge_geoclaw import (area_sea_level_from_monthly_nc,
-                                                    boxcover_points_along_axis,
-                                                    bounds_to_str,
-                                                    clawpack_info,
-                                                    dt64_to_pydt,
-                                                    load_topography,
-                                                    sea_level_from_nc,
-                                                    setup_clawpack,
-                                                    TCSurgeEvents,
-                                                    TCSurgeGeoClaw)
+from climada_petals.hazard.tc_surge_geoclaw import (
+    _boxcover_points_along_axis,
+    _bounds_to_str,
+    _clawpack_info,
+    _dt64_to_pydt,
+    _load_topography,
+    _setup_clawpack,
+    area_sea_level_from_monthly_nc,
+    sea_level_from_nc,
+    TCSurgeEvents,
+    TCSurgeGeoClaw,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -61,7 +63,7 @@ class TestFuncs(unittest.TestCase):
         points = points[[4, 7, 3, 1, 2, 5, 8, 1, 6, 0]].reshape(-1, 1)
         # this is easy to see from the sorted list of points
         boxes_correct = [[-3.0, -1.3], [1.5, 1.7], [4.6, 7.0]]
-        boxes, size = boxcover_points_along_axis(points, nsplits)
+        boxes, size = _boxcover_points_along_axis(points, nsplits)
         self.assertEqual(boxes, boxes_correct)
         self.assertEqual(size, sum(b[1] - b[0] for b in boxes))
 
@@ -76,10 +78,10 @@ class TestFuncs(unittest.TestCase):
             [0.2, 1.2, 3.0, 1.5],
             [0.4, 2.3, 0.5, 3.0],
         ]
-        boxes, size = boxcover_points_along_axis(points, nsplits)
+        boxes, size = _boxcover_points_along_axis(points, nsplits)
         self.assertEqual(boxes, boxes_correct)
         self.assertEqual(size, sum((b[2] - b[0]) * (b[3] - b[1]) for b in boxes))
-        boxes, size = boxcover_points_along_axis(points[:, ::-1], nsplits)
+        boxes, size = _boxcover_points_along_axis(points[:, ::-1], nsplits)
         self.assertEqual(boxes, [[b[1], b[0], b[3], b[2]] for b in boxes_correct])
 
 
@@ -91,7 +93,7 @@ class TestFuncs(unittest.TestCase):
             [(-6.9, -7.8334, 11, 25.1), '7.833S-25.1N_6.9W-11E'],
         ]
         for bounds, string in bounds_str:
-            str_out = bounds_to_str(bounds)
+            str_out = _bounds_to_str(bounds)
             self.assertEqual(str_out, string)
 
 
@@ -106,25 +108,25 @@ class TestFuncs(unittest.TestCase):
         dt64 = pd.Series(pydt).values
 
         # test conversion of numpy array of dates
-        pydt_conv = dt64_to_pydt(dt64)
+        pydt_conv = _dt64_to_pydt(dt64)
         self.assertIsInstance(pydt_conv, list)
         self.assertEqual(len(pydt_conv), dt64.size)
         self.assertIsInstance(pydt_conv[0], dt.datetime)
         self.assertEqual(pydt_conv[1], pydt[1])
 
         # test conversion of single object
-        pydt_conv = dt64_to_pydt(dt64[2])
+        pydt_conv = _dt64_to_pydt(dt64[2])
         self.assertIsInstance(pydt_conv, dt.datetime)
         self.assertEqual(pydt_conv, pydt[2])
 
 
     def test_clawpack_setup(self):
-        """Test setup_clawpack function"""
+        """Test _setup_clawpack function"""
         LOGGER.disabled = False
-        setup_clawpack()
+        _setup_clawpack()
         import clawpack.pyclaw
         self.assertFalse(LOGGER.disabled)
-        path, decorators = clawpack_info()
+        path, decorators = _clawpack_info()
         self.assertTrue(path is not None)
 
 
@@ -244,7 +246,7 @@ class TestFuncs(unittest.TestCase):
 
 
     def test_load_topography(self):
-        """Test load_topography function"""
+        """Test _load_topography function"""
         resolutions = [15, 30, 41, 90]
         bounds = [
             (-153.62, -28.79, -144.75, -18.44),
@@ -255,7 +257,7 @@ class TestFuncs(unittest.TestCase):
         zvalues = []
         for res_as in resolutions:
             for bnd in bounds:
-                topo_bounds, topo = load_topography(TOPO_PATH, bnd, res_as)
+                topo_bounds, topo = _load_topography(TOPO_PATH, bnd, res_as)
                 self.assertLessEqual(topo_bounds[0], bnd[0])
                 self.assertLessEqual(topo_bounds[1], bnd[1])
                 self.assertGreaterEqual(topo_bounds[2], bnd[2])
