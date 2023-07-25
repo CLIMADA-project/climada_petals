@@ -36,7 +36,6 @@ import numba
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
-from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
@@ -155,12 +154,12 @@ class WildFire(Hazard):
         centroids : Centroids, optional
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
-            
+
         Returns
         ----------
         haz : WildFire instance
         """
-        
+
         haz = cls()
 
         # read and initialize data
@@ -194,14 +193,14 @@ class WildFire(Hazard):
         LOGGER.info('Computing intensity of %s fires.',
                     np.unique(df_firms.event_id).size)
         haz._calc_brightness(df_firms, centroids, res_centr)
-        
+
         return haz
 
     def set_hist_fire_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
+        """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
 
     @classmethod
     def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
@@ -245,7 +244,7 @@ class WildFire(Hazard):
         keep_all_fires : bool, optional
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
-            
+
         Returns
         ----------
         haz : WildFire instance
@@ -303,7 +302,7 @@ class WildFire(Hazard):
             haz.hist_fire_seasons = hist_fire_seasons
 
         # save
-        haz.tag = TagHazard('WFseason')
+        haz.haz_type = 'WFseason'
         haz.centroids = centroids
         haz.n_fires = n_fires
         haz.units = 'K' # Kelvin brightness
@@ -331,14 +330,14 @@ class WildFire(Hazard):
         haz.intensity = haz.intensity.tocsr()
         haz.fraction = haz.intensity.copy()
         haz.fraction.data.fill(1.0)
-        
+
         return haz
 
     def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
-            """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
-            LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
-                           "Use WildFire.from_hist_fire_seasons_FIRMS .")
-            self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__        
+        """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_seasons_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False):
@@ -557,7 +556,7 @@ class WildFire(Hazard):
                                     np.amax(self.intensity[idx], 0))
 
         # save
-        self.tag = TagHazard('WFseason')
+        self.haz_type = 'WFseason'
         self.units = 'K' # Kelvin brightness
 
         # Following values are defined for each fire season
@@ -895,7 +894,7 @@ class WildFire(Hazard):
         num_ev = uni_ev.size
 
         # save
-        self.tag = TagHazard('WFsingle')
+        self.haz_type = 'WFsingle'
         self.centroids = centroids
         self.units = 'K' # Kelvin brightness
 

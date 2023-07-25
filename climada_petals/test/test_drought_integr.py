@@ -50,7 +50,7 @@ class TestIntegr(unittest.TestCase):
         index_event_start = imp_drought.event_name.index('2003')
         damages_drought = imp_drought.at_event[index_event_start]
 
-        self.assertEqual(hazard_set.tag.haz_type, 'DR')
+        self.assertEqual(hazard_set.haz_type, 'DR')
         self.assertEqual(hazard_set.size, 114)
         self.assertEqual(hazard_set.centroids.size, 130)
         self.assertEqual(exposure_agrar.gdf.latitude.values.size, 766 / 2)

@@ -200,13 +200,13 @@ class Drought(Hazard):
         """
 
         if self.intensity_definition == 2:
+            # TODO: what is the purpose of re-assigning the module constant HAZ_TYPE?
             HAZ_TYPE = 'DR_sumthr'
-            self.tag.haz_type = HAZ_TYPE
+            self.haz_type = HAZ_TYPE
         elif self.intensity_definition == 3:
+            # TODO: HAZ_TYPE, s.a.
             HAZ_TYPE = 'DR_sum'
-            self.tag.haz_type = HAZ_TYPE
-
-#        self.tag = TagHazard(HAZ_TYPE, 'TEST')
+            self.haz_type = HAZ_TYPE
 
         self.intensity = sparse.csr_matrix(intensity_matrix)
 
