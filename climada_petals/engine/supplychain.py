@@ -348,10 +348,10 @@ class SupplyChain:
     secs_exp : pd.DataFrame
             Exposure dataframe of each country/sector in the MRIOT. Columns are the
             same as the chosen MRIOT.
-    secs_imp : pd.DataFrame
+    secs_dir_imp : pd.DataFrame
             Impact dataframe for the directly affected countries/sectors for each event.
             Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
-    secs_shock : pd.DataFrame
+    secs_dir_shock : pd.DataFrame
             Shocks (i.e. impact / exposure) dataframe for the directly affected countries/sectors
             for each event. Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
     inverse : dict
@@ -369,7 +369,7 @@ class SupplyChain:
             Integer date corresponding to the proleptic Gregorian ordinal, where January 1 of year
             1 has ordinal 1 (ordinal format of datetime library) of events leading to impact.
             Deafult is None.
-    results : dict
+    secs_indir_imp : dict
             Dictionary with keys the chosen approach (ghosh, leontief, eeioa or boario 
             and its variations) and values dataframes of production losses (ghosh, leontief, eeioa)
             or production dynamics (boario and its variations) to countries/sectors for each event.
@@ -393,13 +393,13 @@ class SupplyChain:
 
         self.mriot = mriot
         self.secs_exp = None
-        self.secs_imp = None
-        self.secs_shock = None
+        self.secs_dir_imp = None
+        self.secs_dir_shock = None
         self.sim = None
         self.events_date = None
         self.inverse = dict()
         self.coeffs = dict()
-        self.results = dict()
+        self.secs_indir_imp = dict()
 
     @classmethod
     def from_mriot(
@@ -533,12 +533,12 @@ class SupplyChain:
             index=["total_value"],
             columns=self.mriot.Z.columns
         )
-        self.secs_imp = pd.DataFrame(
+        self.secs_dir_imp = pd.DataFrame(
             0,
             index=impact.event_id[events_w_imp_bool],
             columns=self.mriot.Z.columns
         )
-        self.secs_imp.index = self.secs_imp.index.set_names('event_id')
+        self.secs_dir_imp.index = self.secs_dir_imp.index.set_names('event_id')
 
         mriot_type = self.mriot.meta.name.split("-")[0]
 
@@ -558,23 +558,24 @@ class SupplyChain:
             # aggregated into one country as per WIOD table.
             self.secs_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_value_reg_id * secs_prod_ratio
-            )
-            self.secs_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
-                tot_imp_reg_id * secs_prod_ratio
-            )
+                ) / self.conversion_factor()
 
-        self.secs_shock = self.secs_imp.divide(
+            self.secs_dir_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
+                tot_imp_reg_id * secs_prod_ratio
+                ) / self.conversion_factor()
+
+        self.secs_dir_shock = self.secs_dir_imp.divide(
             self.secs_exp.values
         ).fillna(0) * shock_factor
 
-        if not np.all(self.secs_shock <= 1):
+        if not np.all(self.secs_dir_shock <= 1):
             warnings.warn(
                 "Consider changing the provided provided stock-to-production losses "
                 "ratios, as some of them lead to production losses in some sectors to "
                 "exceed the maximum sectorial production. For these sectors, total "
                 "production loss is assumed."
             )
-            self.secs_shock[self.secs_shock > 1] = 1
+            self.secs_dir_shock[self.secs_dir_shock > 1] = 1
 
     def calc_matrices(self, io_approach):
         """Build technical coefficient and Leontief inverse matrixes 
@@ -606,9 +607,9 @@ class SupplyChain:
                     impact=None,
                     impacted_secs=None,
                     shock_factor=None,
-                    boario_aggregate='agg',
+                    boario_params=dict(),
                     boario_type='recovery',
-                    boario_params=None
+                    boario_aggregate='agg'
                     ):
         """Calculate indirect production impacts based on to the 
         chosen input-output approach.
@@ -633,18 +634,17 @@ class SupplyChain:
             losses (i.e., impact / exposure). Deafult value is None, which means that shock 
             factors for all sectors are equal to 1, i.e., that production and direct losses 
             fractions are the same. Default is None.
-        boario_aggregate: str
-            Whether events are aggregated or not. Possible choices are 'agg' or 'sep'. 
-            Only meangingful when io_approach='boario'. Default is 'agg'.
-        boario_type: str
-            The chosen boario type. Possible choices are 'recovery', 'rebuild' and 
-            'production_shock'. Only meangingful when io_approach='boario'.Default 'recovery'.
         boario_params: dict
             Dictionary containing parameters to instantiate boario's ARIOPsiModel (key 'model'), 
             Simulation (key 'sim') and Event (key 'event') classes. Parameters instantiating
             each class need to be stored in a dictionary, e.g., {'model': {}, 'sim': {}, 'event': {}}.
             Only meangingful when io_approach='boario'. Default is None.
-
+        boario_type: str
+            The chosen boario type. Possible choices are 'recovery', 'rebuild' and 
+            'production_shock'. Only meangingful when io_approach='boario'. Default 'recovery'.
+        boario_aggregate: str
+            Whether events are aggregated or not. Possible choices are 'agg' or 'sep'. 
+            Only meangingful when io_approach='boario'. Default is 'agg'.
         References
         ----------
         [1] W. W. Leontief, Output, employment, consumption, and investment,
@@ -655,65 +655,78 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        n_events = self.secs_shock.shape[0]
+        n_events = self.secs_dir_shock.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
-        if self.secs_shock is None:
+        if self.secs_dir_shock is None:
             self.calc_shock_to_sectors(exposure, impact, impacted_secs, shock_factor)
 
-        n_events = self.secs_shock.shape[0]
+        n_events = self.secs_dir_shock.shape[0]
         if io_approach == "leontief":
             degr_demand = (
-                self.secs_shock * self.mriot.Y.sum(1)
+                self.secs_dir_shock * self.mriot.Y.sum(1)
             )
 
-            self.results.update({io_approach : pd.concat(
+            self.secs_indir_imp.update({io_approach : pd.concat(
                 [
                     pymrio.calc_x_from_L(self.inverse[io_approach], degr_demand.iloc[i])
                     for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(self.secs_shock.index)})
+            ).T.set_index(self.secs_dir_shock.index)})
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
             degr_value_added = (
-                self.secs_shock * value_added.values
+                self.secs_dir_shock * value_added.values
             )
 
-            self.results.update({io_approach : pd.concat(
+            self.secs_indir_imp.update({io_approach : pd.concat(
                 [
                     calc_x_from_G(self.inverse[io_approach], degr_value_added.iloc[i])
                     for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(self.secs_shock.index)})
+            ).T.set_index(self.secs_dir_shock.index)})
 
         elif io_approach == "eeioa":
-            self.results.update({io_approach : (
+            self.secs_indir_imp.update({io_approach : (
                 pd.DataFrame(
-                    self.secs_shock.dot(self.inverse[io_approach])
+                    self.secs_dir_shock.dot(self.inverse[io_approach])
                     * self.mriot.x.values.flatten()
                 )
             )})
 
-        ## TODO: properly handle kwargs in the various classes - this will be instrumental
-        ## for the sensitivity analysis
+        ## TODO: Make the logger nicer (e.g. build default dict based on event type). 
         elif io_approach == 'boario':
 
             self.mriot.A = self.coeffs[io_approach]
             self.mriot.L = self.inverse[io_approach]
 
+            if 'model' not in boario_params:
+                boario_params.update({'model' : {}})
+
+                LOGGER.debug(f"BoARIO model parameters were not specified. The"
+                            "simulation is initialized with default values,"
+                            "which is likely undesired.")
+
             # call ARIOPsiModel with default params
             model = ARIOPsiModel(self.mriot,
-                                 # productive capital vector needs to be in MRIOT, self.secs_exp's unit
-                                 # needs to be 1 (i.e., plain EUR or USD)
-                                 productive_capital_vector = self.secs_exp / self.conversion_factor(),
+                                 # productive capital vector needs to be in MRIOT's unit, this is the case
+                                 # as self.secs_exp was rescaled with the conversion_factor upon its construction
+                                 productive_capital_vector = self.secs_exp,
+                                 # monetary factor equal to the MRIOT's unit
                                  monetary_factor = self.conversion_factor(),
                                  **boario_params['model']
                                  )
 
             # run simulation up to one year after the last event
+            if 'sim' not in boario_params:
+                boario_params.update({'sim' : {}})
+
+                LOGGER.debug(f"BoARIO simulation parameters were not specified. This"
+                            "is NOT recommended and is allowed only for quick testing purposes.")
+
             self.sim = Simulation(
                         model,
                         n_temporal_units_to_sim = (self.events_date[-1]-self.events_date[0]+365),
@@ -721,32 +734,46 @@ class SupplyChain:
                         )
 
             if boario_type == 'recovery':
+
+                if 'event' not in boario_params:
+                    boario_params.update('event': {'recovery_time' : 30})
+                    LOGGER.debug(f"BoARIO {boario_type} event parameters were not specified. This"
+                            "is NOT recommended and is allowed only for quick testing purposes.")
+
                 events_list = [EventKapitalRecover.from_series(
-                                        impact=self.secs_imp.iloc[i],
+                                        impact=self.secs_dir_imp.iloc[i],
                                         occurrence = (self.events_date[i]-self.events_date[0]+1),
-                                        # here we pass the unit of the impact self.secs_imp, which like self.secs_exp
-                                        # is 1 (i.e., plain EUR or USD). Boario takes place of the conversion, as results
-                                        # will then be in MRIOT unit (e.g., M EUR)
-                                        event_monetary_factor = 1,
+                                        # monetary factor equal to the impact units. self.secs_dir_imp
+                                        # was rescaled by the conversion_factor upon its construction so
+                                        # we pass the conversion_factor as unit
+                                        event_monetary_factor = self.conversion_factor(),
                                         **boario_params['event']
                             ) for i in range(n_events)
                 ]
 
             elif boario_type == 'rebuild':
+
+                if 'event' not in boario_params:
+                    boario_params.update('event': {'rebuild_tau' : 5, 
+                                                   'rebuilding_sectors': pd.Series(index=self.mriot.get_sectors()) ## TODO: MAKE IT RANDOM SAMPLES
+                                                   })
+                    LOGGER.debug(f"BoARIO {boario_type} event parameters were not specified. This"
+                            "is NOT recommended and is allowed only for quick testing purposes.")
+
                 events_list = [EventKapitalRebuild.from_series(
-                                        impact=self.secs_imp.iloc[i],
+                                        impact=self.secs_dir_imp.iloc[i],
                                         occurrence = (self.events_date[i]-self.events_date[0]+1),
-                                        # here we pass the unit of the impact self.secs_imp, which like self.secs_exp
-                                        # is 1 (i.e., plain EUR or USD). Boario takes place of the conversion, as results
-                                        # will then be in MRIOT unit (e.g., M EUR)
-                                        event_monetary_factor = 1,
+                                        # monetary factor equal to the impact units. self.secs_dir_imp
+                                        # was rescaled by the conversion_factor upon its construction so
+                                        # we pass the conversion_factor as unit
+                                        event_monetary_factor = self.conversion_factor(),
                                         **boario_params['event']
                             ) for i in range(n_events)
                 ]
 
-            elif boario_type == 'shock-prod':
+            elif boario_type == 'shockprod':
                 events_list = [EventArbitraryProd.from_series(
-                                        impact=self.secs_shock.iloc[i],
+                                        impact=self.secs_dir_shock.iloc[i],
                                         occurrence = (self.events_date[i]-self.events_date[0]+1),
                                         **boario_params['event']
                             ) for i in range(n_events)
@@ -758,10 +785,10 @@ class SupplyChain:
             if boario_aggregate == 'agg':
                 self.sim.add_events(events_list)
                 self.sim.loop()
-                self.results.update({
+                self.secs_indir_imp.update({
                     f'{io_approach}_{boario_type}_{boario_aggregate}' : 
                     self.sim.production_realised.copy()[
-                                self.secs_imp.columns]
+                                self.secs_dir_imp.columns]
                 })
 
             elif boario_aggregate == 'sep':
@@ -771,11 +798,11 @@ class SupplyChain:
                     self.sim.loop()
                     results.append(
                         self.sim.production_realised.copy()[
-                            self.secs_imp.columns]
+                            self.secs_dir_imp.columns]
                         )
                     self.sim.reset_sim_full()
 
-                self.results.update({
+                self.secs_indir_imp.update({
                     f'{io_approach}_{boario_type}_{boario_aggregate}' : results
                 })
 
