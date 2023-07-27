@@ -25,6 +25,7 @@ import __main__
 import contextlib
 import datetime as dt
 import importlib
+import inspect
 import logging
 import re
 import pathlib
@@ -172,6 +173,7 @@ class TCSurgeGeoClaw(Hazard):
         offshore_max_dist_km : float = 10.0,
         max_latitude : float = 61.0,
         sea_level : float = 0.0,
+        resume : Optional[Union[pathlib.Path, str]] = None,
         pool : any = None,
     ):
         """Generate a TC surge hazard instance from a TCTracks object
@@ -211,6 +213,9 @@ class TCSurgeGeoClaw(Hazard):
             first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
             second argument is a pair of np.datetime64 (start, end). For example, see the helper
             function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
+        resume : Path or str, optional
+            If given, use this file to remember the location of the run directory and resume
+            operation later from this directory if it already exists. Default: None
         pool : an object with `map` functionality, optional
             If given, landfall events for each track are processed in parallel. Note that the
             solver for a single landfall event is using OpenMP multiprocessing capabilities
@@ -241,10 +246,12 @@ class TCSurgeGeoClaw(Hazard):
             cls.from_xr_track(
                 t, centroids, coastal_idx, topo_path, topo_res_as=topo_res_as,
                 node_max_dist_deg=node_max_dist_deg, gauges=gauges, sea_level=sea_level, pool=pool,
+                resume=None if resume is None else (pathlib.Path(resume), resume_i),
             )
-            for t in tracks.data
+            for resume_i, t in enumerate(tracks.data)
         ])
-        TropCyclone.frequency_from_tracks(haz, tracks.data)
+        with _filter_xr_warnings():
+            TropCyclone.frequency_from_tracks(haz, tracks.data)
         haz.tag.append(Tag(description=description))
         return haz
 
@@ -259,6 +266,7 @@ class TCSurgeGeoClaw(Hazard):
         node_max_dist_deg : float = 5.5,
         gauges : Optional[List] = None,
         sea_level : float = 0.0,
+        resume : Optional[Tuple[Union[pathlib.Path, str], int]] = None,
         pool : any = None,
     ):
         """Generate a TC surge hazard from a single xarray track dataset
@@ -290,6 +298,10 @@ class TCSurgeGeoClaw(Hazard):
             first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
             second argument is a pair of np.datetime64 (start, end). For example, see the helper
             function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
+        resume : tuple (Path, int), optional
+            If given, use this file to remember the location of the run directory and resume
+            operation later from this directory if it already exists. The integer points to the
+            line number (starting from 0) in the file to consider. Default: None
         pool : an object with `map` functionality, optional
             If given, landfall events are processed in parallel.
 
@@ -301,30 +313,31 @@ class TCSurgeGeoClaw(Hazard):
         intensity = np.zeros(centroids.coord.shape[0])
         intensity[coastal_idx], gauge_data = _geoclaw_surge_from_track(
             track, coastal_centroids, topo_path, gauges=gauges, sea_level=sea_level, pool=pool,
-            topo_res_as=topo_res_as, node_max_dist_deg=node_max_dist_deg)
+            topo_res_as=topo_res_as, node_max_dist_deg=node_max_dist_deg, resume=resume,
+        )
         intensity = sparse.csr_matrix(intensity)
         with _filter_xr_warnings():
             date = np.array([
                 dt.datetime(
-                    track.time.dt.year.values[0],
-                    track.time.dt.month.values[0],
-                    track.time.dt.day.values[0]
+                    track["time"].dt.year.values[0],
+                    track["time"].dt.month.values[0],
+                    track["time"].dt.day.values[0]
                 ).toordinal()
             ])
         return cls(
             centroids=centroids,
             intensity=intensity,
             gauge_data=[gauge_data],
-            category=np.array([track.category]),
-            basin=[str(track.basin.values[0])],
+            category=np.array([track.attrs["category"]]),
+            basin=[str(track["basin"].values[0])],
             event_id=np.array([1]),
-            event_name=[track.sid],
+            event_name=[track.attrs["sid"]],
             date=date,
-            orig=np.array([track.orig_event_flag]),
+            orig=np.array([track.attrs["orig_event_flag"]]),
             frequency=np.array([1]),
             fraction=sparse.csr_matrix(intensity.shape),
             units="m",
-            description='Name: ' + track.name,
+            file_name='Name: ' + track.attrs["name"],
         )
 
     def write_hdf5(self, *args, **kwargs) -> None:
@@ -406,6 +419,7 @@ def _geoclaw_surge_from_track(
     topo_res_as : float = 30.0,
     gauges : Optional[List] = None,
     sea_level : float = 0.0,
+    resume : Optional[Tuple[Union[pathlib.Path, str], int]] = None,
     pool : any = None,
     node_max_dist_deg : float = 5.5,
 ) -> Tuple[np.ndarray, List[dict]]:
@@ -432,6 +446,10 @@ def _geoclaw_surge_from_track(
         first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
         second argument is a pair of np.datetime64 (start, end). For example, see the helper
         function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
+    resume : tuple (Path, int), optional
+        If given, use this file to remember the location of the run directory and resume
+        operation later from this directory if it already exists. The integer points to the
+        line number (starting from 0) in the file to consider. Default: None
     pool : an object with `map` functionality, optional
         If given, landfall events are processed in parallel.
     node_max_dist_deg : float, optional
@@ -496,21 +514,22 @@ def _geoclaw_surge_from_track(
     track['radius_oci'][:] = np.fmax(track.radius_max_wind.values, track.radius_oci.values)
 
     # create work directory
-    GEOCLAW_WORK_DIR.mkdir(parents=True, exist_ok=True)
-    work_dir = GEOCLAW_WORK_DIR
-    work_dir_already_exists = True
-    while work_dir_already_exists:
-        work_dir = (dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-                    + f"{np.random.randint(0, 100):02d}-{track.sid}")
-        work_dir = GEOCLAW_WORK_DIR.joinpath(work_dir)
-        try:
-            work_dir.mkdir(parents=True)
-            work_dir_already_exists = False
-        except FileExistsError:
-            work_dir_already_exists = True
+    if resume is not None:
+        resume_file, resume_i = resume
+        if not resume_file.exists():
+            resume_file.write_text("")
+        resume_dirs = resume_file.read_text().strip().split("\n")
+        if resume_i >= len(resume_dirs):
+            work_dir = _get_unused_work_dir(suffix=f"-{track.attrs['sid']}")
+            resume_dirs.append(work_dir)
+            resume_file.write_text("\n".join(resume_dirs))
+        else:
+            work_dir = pathlib.Path(resume_dirs[resume_i])
+    else:
+        work_dir = _get_unused_work_dir(suffix=f"-{track.attrs['sid']}")
 
     # get landfall events
-    LOGGER.info("Determine georegions and temporal periods of landfall events...")
+    LOGGER.info("Determine georegions and temporal periods of landfall events ...")
     events = TCSurgeEvents(track, track_centr)
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -524,14 +543,15 @@ def _geoclaw_surge_from_track(
     if len(events) == 0:
         LOGGER.info("This storm doesn't affect any coastal areas.")
     else:
-        LOGGER.info("Starting %d runs of GeoClaw...", len(events))
-        runners = []
-        for event in events:
-            runners.append(GeoclawRunner(work_dir, track.sel(time=event['time_mask_buffered']),
-                                         event['period'][0], event,
-                                         track_centr[event['centroid_mask']], topo_path,
-                                         topo_res_as=topo_res_as, gauges=gauges,
-                                         sea_level=sea_level))
+        LOGGER.info("Starting %d runs of GeoClaw ...", len(events))
+        runners = [
+            GeoclawRunner(
+                work_dir, track.sel(time=event['time_mask_buffered']), event['period'][0], event,
+                track_centr[event['centroid_mask']], topo_path, topo_res_as=topo_res_as,
+                gauges=gauges, sea_level=sea_level,
+            )
+            for event in events
+        ]
 
         if pool is not None:
             pool.map(GeoclawRunner.run, runners)
@@ -552,6 +572,36 @@ def _geoclaw_surge_from_track(
         intensity[track_centr_msk] = np.stack(surge_h, axis=0).max(axis=0)
 
     return intensity, gauge_data
+
+
+def _get_unused_work_dir(suffix=""):
+    """Create an empty and non-occupied work directory for the GeoClaw run files
+
+    The directory name will consist of a time stamp and a random integer between 0 and 99.
+
+    Parameters
+    ----------
+    suffix : str, optional
+        Append this string to the directory name, e.g. to make the name more human-readable.
+        Default: ""
+
+    Returns
+    -------
+    Path
+    """
+    GEOCLAW_WORK_DIR.mkdir(parents=True, exist_ok=True)
+    work_dir_already_exists = True
+    while work_dir_already_exists:
+        path = GEOCLAW_WORK_DIR / (
+            dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+            + f"{np.random.randint(0, 100):02d}{suffix}"
+        )
+        try:
+            path.mkdir(parents=True)
+            work_dir_already_exists = False
+        except FileExistsError:
+            work_dir_already_exists = True
+    return path
 
 
 class GeoclawRunner():
@@ -631,16 +681,21 @@ class GeoclawRunner():
 
         # compute time horizon
         self.time_horizon = tuple([int((t - self.time_offset)  / np.timedelta64(1, 's'))
-                                   for t in self.track.time[[0, -1]]])
+                                   for t in self.track["time"][[0, -1]]])
 
         # create work directory
         self.work_dir = base_dir.joinpath(self.time_offset_str)
-        self.work_dir.mkdir(parents=True, exist_ok=True)
-        LOGGER.info("Init GeoClaw working directory in %s", self.work_dir)
+        if self.work_dir.exists():
+            LOGGER.info("Resuming in GeoClaw working directory: %s", self.work_dir)
+        else:
+            self.work_dir.mkdir(parents=True, exist_ok=True)
+            LOGGER.info("Init GeoClaw working directory: %s", self.work_dir)
 
         # write Makefile
-        with open(self.work_dir.joinpath("Makefile"), "w") as file_p:
-            file_p.write(f"""\
+        path = self.work_dir.joinpath("Makefile")
+        if not path.exists():
+            with open(path, "w") as file_p:
+                file_p.write(f"""\
 CLAW = {_clawpack_info()[0]}
 CLAW_PKG = geoclaw
 EXE = xgeoclaw
@@ -650,17 +705,35 @@ SOURCES = $(CLAW)/riemann/src/rpn2_geoclaw.f \\
           $(CLAW)/riemann/src/geoclaw_riemann_utils.f
 include $(CLAW)/clawutil/src/Makefile.common
 """)
-        with open(self.work_dir.joinpath("setrun.py"), "w") as file_p:
-            file_p.write("")
+        path = self.work_dir.joinpath("setrun.py")
+        if not path.exists():
+            with open(path, "w") as file_p:
+                file_p.write("")
 
-        # write rundata
         self.write_rundata()
 
 
     def run(self) -> None:
         """Run GeoClaw script and set `surge_h` attribute."""
-        LOGGER.info("Running GeoClaw in %s...", self.work_dir)
+        stdout_file = self.work_dir.joinpath("stdout.log")
         self.stdout = ""
+        self.stdout_printed = False
+        if stdout_file.exists():
+            LOGGER.info("Skip running GeoClaw since log file already exists ...")
+            self.stdout = stdout_file.read_text()
+        else:
+            self._run_subprocess()
+        LOGGER.info("Reading GeoClaw output ...")
+        try:
+            self.read_fgmax_data()
+            self.read_gauge_data()
+        except FileNotFoundError:
+            self.print_stdout()
+            LOGGER.warning("Reading GeoClaw output failed (see output above).")
+
+
+    def _run_subprocess(self) -> None:
+        LOGGER.info("Running GeoClaw in %s ...", self.work_dir)
         time_span = self.time_horizon[1] - self.time_horizon[0]
         perc = -100
         last_perc = -100
@@ -693,27 +766,20 @@ include $(CLAW)/clawutil/src/Makefile.common
             stopped = True
         elif int(last_perc) != 100:
             LOGGER.info("%s: 100%%", self.time_offset_str)
-
         with open(self.work_dir.joinpath("stdout.log"), "w") as file_p:
             file_p.write(self.stdout)
-
         if proc.returncode != 0 or stopped:
             self.print_stdout()
             raise RuntimeError("GeoClaw run failed (see output above).")
-        else:
-            LOGGER.info("Reading GeoClaw output...")
-            try:
-                self.read_fgmax_data()
-                self.read_gauge_data()
-            except FileNotFoundError:
-                self.print_stdout()
-                LOGGER.warning("Reading GeoClaw output failed (see output above).")
 
 
     def print_stdout(self) -> None:
         """"Print standard (and error) output of GeoClaw run."""
-        LOGGER.info("Output of 'make .output' in GeoClaw work directory:")
-        print(self.stdout)
+        if not self.stdout_printed:
+            LOGGER.info("Output of 'make .output' in GeoClaw work directory:")
+            print(self.stdout)
+            # make sure to print at most once
+            self.stdout_printed = True
 
 
     def read_fgmax_data(self) -> None:
@@ -757,19 +823,50 @@ include $(CLAW)/clawutil/src/Makefile.common
 
 
     def write_rundata(self) -> None:
-        """Create Makefile and all necessary datasets in working directory."""
+        """Create rundata config files in work directory or read if already existent."""
         # pylint: disable=import-outside-toplevel
+        if not self._read_rundata():
+            self._set_rundata_claw()
+            self._set_rundata_amr()
+            self._set_rundata_geo()
+            self._set_rundata_fgmax()
+            self._set_rundata_storm()
+            self._set_rundata_gauges()
+            with contextlib.redirect_stdout(None), _backup_loggers():
+                self.rundata.write(out_dir=self.work_dir)
+
+
+    def _read_rundata(self) -> bool:
+        """Read rundata object from files, return whether it was succesful
+
+        Returns
+        -------
+        bool
+        """
+        import clawpack.amrclaw.data
+        import clawpack.geoclaw.data
+        self._clear_rundata()
+        for dataobject in self.rundata.data_list:
+            if isinstance(dataobject, clawpack.geoclaw.data.FixedGridData):
+                # ignore since it's deprecated, hence unused
+                continue
+            fname = inspect.signature(dataobject.write).parameters["out_file"].default
+            path = self.work_dir / fname
+            if not path.exists():
+                self._clear_rundata()
+                return False
+            is_gauge_data = isinstance(dataobject, clawpack.amrclaw.data.GaugeData)
+            read_args = [] if is_gauge_data else [path]
+            read_kwargs = dict(data_path=self.work_dir) if is_gauge_data else {}
+            with contextlib.redirect_stdout(None):
+                dataobject.read(*read_args, **read_kwargs)
+        return True
+
+
+    def _clear_rundata(self) -> None:
+        """Reset the rundata object to its initial, empty state"""
         import clawpack.clawutil.data
-        num_dim = 2
-        self.rundata = clawpack.clawutil.data.ClawRunData("geoclaw", num_dim)
-        self._set_rundata_claw()
-        self._set_rundata_amr()
-        self._set_rundata_geo()
-        self._set_rundata_fgmax()
-        self._set_rundata_storm()
-        self._set_rundata_gauges()
-        with contextlib.redirect_stdout(None), _backup_loggers():
-            self.rundata.write(out_dir=self.work_dir)
+        self.rundata = clawpack.clawutil.data.ClawRunData(pkg="geoclaw", num_dim=2)
 
 
     def _set_rundata_claw(self) -> None:
@@ -865,7 +962,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         geodata.dry_tolerance = 1.e-2
 
         # get sea level information for affected areas and time period
-        tr_period = (self.track.time.values[0], self.track.time.values[-1])
+        tr_period = (self.track["time"].values[0], self.track["time"].values[-1])
         geodata.sea_level = np.mean([
             self.sea_level_fun(area, tr_period)
             for area in self.areas['surge_areas']
@@ -1101,7 +1198,7 @@ def _climada_xarray_to_geoclaw_storm(
     # pylint: disable=import-outside-toplevel
     from clawpack.geoclaw.surge.storm import Storm
     gc_storm = Storm()
-    gc_storm.t = _dt64_to_pydt(track.time.values)
+    gc_storm.t = _dt64_to_pydt(track["time"].values)
     if offset is not None:
         gc_storm.time_offset = offset
     gc_storm.eye_location = np.stack([track.lon, track.lat], axis=-1)
@@ -1575,9 +1672,9 @@ class TCSurgeEvents():
         For each event, a pair of datetime objects indicating beginnig and end
         of landfall event period.
     time_mask : list of ndarray
-        For each event, a mask along `track.time` indicating the landfall event period.
+        For each event, a mask along `track["time"]` indicating the landfall event period.
     time_mask_buffered : list of ndarray
-        For each event, a mask along `track.time` indicating the landfall event period
+        For each event, a mask along `track["time"]` indicating the landfall event period
         with added buffer for storm form-up.
     wind_area : list of tuples
         For each event, a rectangular box around the geographical area that is affected
@@ -1658,7 +1755,7 @@ class TCSurgeEvents():
         # convert landfall mask to (clustered) start/end pairs
         period = []
         start = end = None
-        for i, date in enumerate(self.track.time):
+        for i, date in enumerate(self.track["time"]):
             if start is not None:
                 # periods cover at most 36 hours and a split will be forced
                 # at breaks of more than 12 hours.
@@ -1698,9 +1795,9 @@ class TCSurgeEvents():
         if not isinstance(buffer, tuple):
             buffer = (buffer, buffer)
         diff_start = np.array([(t - period[0]) / np.timedelta64(1, 'D')
-                               for t in self.track.time])
+                               for t in self.track["time"]])
         diff_end = np.array([(t - period[1]) / np.timedelta64(1, 'D')
-                             for t in self.track.time])
+                             for t in self.track["time"]])
         return (diff_start >= -buffer[0]) & (diff_end <= buffer[1])
 
 
