@@ -518,10 +518,11 @@ def _geoclaw_surge_from_track(
         resume_file, resume_i = resume
         if not resume_file.exists():
             resume_file.write_text("")
-        resume_dirs = resume_file.read_text().strip().split("\n")
+        resume_dirs = resume_file.read_text().strip()
+        resume_dirs = [] if resume_dirs == "" else resume_dirs.split("\n")
         if resume_i >= len(resume_dirs):
             work_dir = _get_unused_work_dir(suffix=f"-{track.attrs['sid']}")
-            resume_dirs.append(work_dir)
+            resume_dirs.append(str(work_dir))
             resume_file.write_text("\n".join(resume_dirs))
         else:
             work_dir = pathlib.Path(resume_dirs[resume_i])
