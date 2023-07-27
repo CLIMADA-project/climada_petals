@@ -1253,12 +1253,12 @@ def sea_level_from_nc(
         period = (period[0] - t_pad, period[1] + t_pad)
         centroid = (0.5 * (bounds[0] + bounds[2]), 0.5 * (bounds[1] + bounds[3]))
         with _filter_xr_warnings(), xr.open_dataset(path) as ds:
-            ds = _nc_rename_vars(ds)
-            period = [_get_closest_date_in_index(ds.time, t) for t in period]
-            ds = ds.sel(time=(ds.time >= period[0]) & (ds.time <= period[1]))
-            lon, lat = _get_closest_valid_cell(ds.zos, *centroid)
-            ds = ds.sel(lon=lon, lat=lat)
-            v_agg = getattr(ds.zos, t_agg)().item()
+            da_zos = _nc_rename_vars(ds)["zos"]
+            period = [_get_closest_date_in_index(da_zos["time"], t) for t in period]
+            da_zos = da_zos.sel(time=(da_zos["time"] >= period[0]) & (da_zos["time"] <= period[1]))
+            lon, lat = _get_closest_valid_cell(da_zos, *centroid)
+            da_zos = da_zos.sel(lon=lon, lat=lat)
+            v_agg = getattr(da_zos, t_agg)().item()
         return v_agg + mod_zos
     return sea_level_fun
 
@@ -1288,6 +1288,9 @@ def _get_closest_valid_cell(
         Longitudinal and latitudinal coordinates of the centroid of the grid cell that is closest
         to the specified location and has valid entries.
     """
+    # store original longitudinal coordinates because they are normalized in the process
+    lon_orig = ds_var["lon"].values.copy()
+
     # for performance reasons, restrict search to cells that are close enough
     bounds = (lon - threshold_deg, lat - threshold_deg,
               lon + threshold_deg, lat + threshold_deg)
@@ -1301,7 +1304,11 @@ def _get_closest_valid_cell(
     lats, lons = finite_coords if finite_mask.dims[0] == "lat" else finite_coords[::-1]
     dist_sq = (lats - lat)**2 + (lons - lon)**2
     idx = np.argmin(dist_sq)
-    return lons[idx], lats[idx]
+    lon_close, lat_close = lons[idx], lats[idx]
+    lon_diff = np.mod(lon_orig - lon_close, 360)
+    lon_diff[lon_diff > 180] -= 360
+    lon_close = lon_orig[np.argmin(np.abs(lon_diff))]
+    return lon_close, lat_close
 
 
 def _get_closest_date_in_index(
@@ -1399,7 +1406,7 @@ def _mean_max_sea_level(
     max_pad_deg = 5
     with _filter_xr_warnings(), xr.open_dataset(path) as ds:
         ds = _nc_rename_vars(ds)
-        mask_time = np.any([(ds.time.dt.year == m[0]) & (ds.time.dt.month == m[1])
+        mask_time = np.any([(ds["time"].dt.year == m[0]) & (ds["time"].dt.month == m[1])
                            for m in months], axis=0)
         if np.count_nonzero(mask_time) != months.shape[0]:
             raise IndexError("The sea level data set doesn't contain the required months: %s"
@@ -1530,9 +1537,9 @@ def _sea_level_nc_info(path : Union[pathlib.Path, str]) -> None:
 
     with _filter_xr_warnings(), xr.open_dataset(path) as ds:
         ds = _nc_rename_vars(ds)
-        ds_bounds = (ds.lon.values.min(), ds.lat.values.min(),
-                     ds.lon.values.max(), ds.lat.values.max())
-        ds_period = (ds.time[0], ds.time[-1])
+        ds_bounds = (ds["lon"].values.min(), ds["lat"].values.min(),
+                     ds["lon"].values.max(), ds["lat"].values.max())
+        ds_period = (ds["time"][0], ds["time"][-1])
         LOGGER.info("Sea level data available within bounds %s", ds_bounds)
         LOGGER.info("Sea level data available within period from %04d-%02d till %04d-%02d",
                     ds_period[0].dt.year, ds_period[0].dt.month,
