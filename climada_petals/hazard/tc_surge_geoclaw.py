@@ -39,6 +39,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import dask
+import matplotlib
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.axes as maxes
 import matplotlib.colors as mcolors
