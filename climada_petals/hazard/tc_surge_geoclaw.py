@@ -266,7 +266,7 @@ class TCSurgeGeoClaw(Hazard):
         node_max_dist_deg : float = 5.5,
         gauges : Optional[List] = None,
         sea_level : float = 0.0,
-        resume : Optional[Tuple[Union[pathlib.Path, str], int]] = None,
+        resume : Optional[Tuple[pathlib.Path, int]] = None,
         pool : any = None,
     ):
         """Generate a TC surge hazard from a single xarray track dataset
@@ -419,7 +419,7 @@ def _geoclaw_surge_from_track(
     topo_res_as : float = 30.0,
     gauges : Optional[List] = None,
     sea_level : float = 0.0,
-    resume : Optional[Tuple[Union[pathlib.Path, str], int]] = None,
+    resume : Optional[Tuple[pathlib.Path, int]] = None,
     pool : any = None,
     node_max_dist_deg : float = 5.5,
 ) -> Tuple[np.ndarray, List[dict]]:
@@ -526,6 +526,7 @@ def _geoclaw_surge_from_track(
             resume_file.write_text("\n".join(resume_dirs))
         else:
             work_dir = pathlib.Path(resume_dirs[resume_i])
+            work_dir.mkdir(parents=True, exist_ok=True)
     else:
         work_dir = _get_unused_work_dir(suffix=f"-{track.attrs['sid']}")
 
@@ -695,7 +696,7 @@ class GeoclawRunner():
         # write Makefile
         path = self.work_dir.joinpath("Makefile")
         if not path.exists():
-            with open(path, "w") as file_p:
+            with path.open("w") as file_p:
                 file_p.write(f"""\
 CLAW = {_clawpack_info()[0]}
 CLAW_PKG = geoclaw
@@ -708,7 +709,7 @@ include $(CLAW)/clawutil/src/Makefile.common
 """)
         path = self.work_dir.joinpath("setrun.py")
         if not path.exists():
-            with open(path, "w") as file_p:
+            with path.open("w") as file_p:
                 file_p.write("")
 
         self.write_rundata()
@@ -716,12 +717,11 @@ include $(CLAW)/clawutil/src/Makefile.common
 
     def run(self) -> None:
         """Run GeoClaw script and set `surge_h` attribute."""
-        stdout_file = self.work_dir.joinpath("stdout.log")
         self.stdout = ""
         self.stdout_printed = False
-        if stdout_file.exists():
-            LOGGER.info("Skip running GeoClaw since log file already exists ...")
-            self.stdout = stdout_file.read_text()
+        if self.work_dir.joinpath("gc_terminated").exists():
+            LOGGER.info("Skip running GeoClaw since it terminated previously ...")
+            self.stdout = self.work_dir.joinpath("stdout.log").read_text()
         else:
             self._run_subprocess()
         LOGGER.info("Reading GeoClaw output ...")
@@ -746,6 +746,8 @@ include $(CLAW)/clawutil/src/Makefile.common
             for line in proc.stdout:
                 line = line.decode()
                 self.stdout += line
+                with self.work_dir.joinpath("stdout.log").open("a") as fp:
+                    fp.write(line)
                 line = line.rstrip()
                 error_strings = [
                     "ABORTING CALCULATION",
@@ -762,13 +764,12 @@ include $(CLAW)/clawutil/src/Makefile.common
                         # for parallelized output, print the time offset each time
                         LOGGER.info("%s: %d%%", self.time_offset_str, perc)
                         last_perc = perc
+        self.work_dir.joinpath("gc_terminated").write_text("True")
         if perc < 99.9:
             # sometimes, GeoClaw fails without a specific error output
             stopped = True
         elif int(last_perc) != 100:
             LOGGER.info("%s: 100%%", self.time_offset_str)
-        with open(self.work_dir.joinpath("stdout.log"), "w") as file_p:
-            file_p.write(self.stdout)
         if proc.returncode != 0 or stopped:
             self.print_stdout()
             raise RuntimeError("GeoClaw run failed (see output above).")
@@ -861,6 +862,14 @@ include $(CLAW)/clawutil/src/Makefile.common
             read_kwargs = dict(data_path=self.work_dir) if is_gauge_data else {}
             with contextlib.redirect_stdout(None):
                 dataobject.read(*read_args, **read_kwargs)
+        # resume from checkpoint if it exists and the previous run didn't finish
+        chk_files = list(self.work_dir.glob("_output/fort.chk*"))
+        if len(chk_files) > 1 and not self.work_dir.joinpath("gc_terminated").exists():
+            idx_by_mtimes = np.argsort([p.stat().st_mtime for p in chk_files])
+            # the latest might be corrupt after kill during I/O; use the previous
+            self.rundata.clawdata.restart_file = chk_files[idx_by_mtimes[-2]].name
+            self.rundata.clawdata.restart = True
+            self.rundata.clawdata.write(out_file=self.work_dir / "claw.data")
         return True
 
 
@@ -874,6 +883,8 @@ include $(CLAW)/clawutil/src/Makefile.common
         """Set the rundata parameters in the `clawdata` category."""
         clawdata = self.rundata.clawdata
         clawdata.verbosity = 1
+        clawdata.checkpt_style = -3
+        clawdata.checkpt_interval = 25
         clawdata.num_output_times = 0
         clawdata.output_t0 = False
         clawdata.lower = self.areas['wind_area'][:2]
@@ -1454,7 +1465,7 @@ def _temporal_mean_of_max_within_bounds(
     float
     """
     ds_zos = _select_bounds(ds["zos"], bounds)
-    if ds_zos is None:
+    if 0 in ds_zos.shape:
         return np.nan
     values = ds_zos.values[:]
     if np.all(np.isnan(values)):
@@ -1486,13 +1497,14 @@ def _select_bounds_dim(
     idx = ((ds[dim] <= ref_max) & (ds[dim] >= ref_min)).values.nonzero()[0]
     if idx.size < 2:
         d_min, d_max = ds[dim].values.min(), ds[dim].values.max()
-        LOGGER.warn(
-            f"The dimension '{dim}' ({d_min}-{d_max}) does not cover the range of the"
-            f" reference dimension ({ref_min}-{ref_max})."
-        )
-        return None
+        if d_min > ref_min or d_max < ref_max:
+            LOGGER.warn(
+                f"The dimension '{dim}' ({d_min} -- {d_max}) does not cover the range of the"
+                f" reference dimension ({ref_min} -- {ref_max})."
+            )
+    sl_start, sl_end = (idx[0], idx[-1] + 1) if idx.size > 0 else (0, 0)
     with dask.config.set(**{'array.slicing.split_large_chunks': True}):
-        ds = ds.isel(indexers={dim: slice(idx[0], idx[-1] + 1)})
+        ds = ds.isel(indexers={dim: slice(sl_start, sl_end)})
     return ds
 
 
