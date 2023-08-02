@@ -678,7 +678,6 @@ def _compute_rain_sparse(
         model_kwargs=model_kwargs,
         metric=metric,
         max_dist_eye_km=max_dist_eye_km,
-        max_memory_gb=0.8 * max_memory_gb,
     )
     reachable_coastal_centr_idx = coastal_idx[reachable_centr_idx]
     npositions = rainrates.shape[0]
@@ -779,7 +778,6 @@ def compute_rain(
     model_kwargs: Optional[dict] = None,
     metric: str = "equirect",
     max_dist_eye_km: float = DEF_MAX_DIST_EYE_KM,
-    max_memory_gb: float = DEF_MAX_MEMORY_GB,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Compute rain rate (in mm/h) of the tropical cyclone
 
@@ -807,9 +805,6 @@ def compute_rain(
     max_dist_eye_km : float, optional
         No rain calculation is done for centroids with a distance (in km) to the TC center
         ("eye") larger than this parameter. Default: 300
-    max_memory_gb : float, optional
-        To avoid memory issues, the computation is done for chunks of the track sequentially.
-        The chunk size is determined depending on the available memory (in GB). Default: 8
 
     Returns
     -------
@@ -851,7 +846,7 @@ def _track_to_si_with_q_and_shear(
     metric: str = "equirect",
     q_950: float = 0.01,
     matlab_ref_mode: bool = False,
-    **kwargs,
+    **_kwargs,
 ) -> xr.Dataset:
     """Convert track data to SI units and add Q (humidity) and vshear variables
 
@@ -877,7 +872,7 @@ def _track_to_si_with_q_and_shear(
         specific humidity (in kg/kg) at 950 hPa. Default: 0.01
     matlab_ref_mode : bool, optional
         Do not apply the fixes to the reference MATLAB implementation. Default: False
-    kwargs : dict
+    _kwargs : dict
         Additional kwargs are ignored.
 
     Returns
@@ -932,7 +927,7 @@ def _centr_distances(
     centroids: np.ndarray,
     metric: str = "equirect",
     res_radial_m: float = 2000.0,
-    **kwargs,
+    **_kwargs,
 ) -> dict:
     """Compute distances of centroids to storm locations required for `_compute_vertical_velocity`
 
@@ -951,7 +946,7 @@ def _centr_distances(
         Default: "equirect".
     res_radial_m : float, optional
         Spatial resolution (in m) in radial direction. Default: 2000
-    kwargs : dict
+    _kwargs : dict
         Additional keyword arguments are ignored.
 
     Returns
