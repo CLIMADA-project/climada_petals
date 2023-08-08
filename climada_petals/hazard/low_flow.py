@@ -40,7 +40,6 @@ from scipy import sparse
 from climada.hazard.base import Hazard
 from climada.hazard.centroids import Centroids
 import climada.util.coordinates as u_coord
-from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -305,11 +304,6 @@ class LowFlow(Hazard):
         if not keep_dis_data:
             self.lowflow_df = None
         self.set_frequency(yearrange=yearrange)
-        self.tag = Tag(file_name=f'{gh_model}_{cl_model}_*_{scenario}_{soc}_{fn_str_var}_*.nc',
-                       description=f'yearrange: {yearrange[0]}-{yearrange[0]} '
-                                   f'({scenario}, {soc}), '
-                                   f'reference: {yearrange_ref[0]}-{yearrange_ref[0]} '
-                                   f'({scenario_ref}, {soc_ref})')
 
     def _intensity_loop(self, uniq_ev, coord, res_centr, num_centr):
         """Compute intensity and populate intensity matrix.

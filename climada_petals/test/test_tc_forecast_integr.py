@@ -83,8 +83,6 @@ class TestTCForecast(unittest.TestCase):
         tc_forecast = TropCyclone.from_tracks(tr_forecast, centroids=TEST_CENTROIDS)
 
         self.assertEqual(tc_forecast.haz_type, 'TC')
-        self.assertEqual(tc_forecast.tag.description, [])
-        self.assertEqual(tc_forecast.tag.file_name[0], 'Name: CHANTHU')
         self.assertEqual(tc_forecast.units, 'm/s')
         self.assertEqual(tc_forecast.centroids.size, 2009)
         self.assertEqual(tc_forecast.event_id.size, 52)
