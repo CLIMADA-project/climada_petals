@@ -875,7 +875,7 @@ class WildFire(Hazard):
         # of these points (maximal damages).
         tree_centr = BallTree(centroids.coord, metric='chebyshev')
         if self.pool:
-            chunksize = min(num_ev//self.pool.ncpus, 1000)
+            chunksize = max(min(num_ev//self.pool.ncpus, 1000), 1)
             bright_list = self.pool.map(self._brightness_one_fire,
                                         itertools.repeat(df_firms, num_ev),
                                         itertools.repeat(tree_centr, num_ev),
