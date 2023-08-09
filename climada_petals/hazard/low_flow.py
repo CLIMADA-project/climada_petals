@@ -271,15 +271,11 @@ class LowFlow(Hazard):
             centroids = centroids_import
         haz.identify_clusters()
         haz.set_intensity_from_clusters(centroids, min_intensity, min_number_cells,
-                                        yearrange, yearrange_ref, gh_model, cl_model,
-                                        scenario, scenario_ref, soc, soc_ref, fn_str_var, keep_dis_data)
+                                        yearrange, keep_dis_data)
         return haz
 
     def set_intensity_from_clusters(self, centroids=None, min_intensity=1, min_number_cells=1,
-                                    yearrange=TARGET_YEARRANGE, yearrange_ref=REFERENCE_YEARRANGE,
-                                    gh_model=None, cl_model=None,
-                                    scenario='historical', scenario_ref='historical', soc='histsoc',
-                                    soc_ref='histsoc', fn_str_var=FN_STR_VAR, keep_dis_data=False):
+                                    yearrange=TARGET_YEARRANGE, keep_dis_data=False):
         """ Build low flow hazards with events from clustering and centroids and
         (re)set attributes.
         """
