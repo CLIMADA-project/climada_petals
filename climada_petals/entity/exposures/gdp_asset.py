@@ -86,7 +86,6 @@ class GDP2Asset(Exposures):
             self,
             data=Exposures.concat(gdp2a_list).gdf,
             ref_year=ref_year,
-            tag=Tag(description=description),
             value_unit='USD'
         )
 

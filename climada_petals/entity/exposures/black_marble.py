@@ -116,7 +116,6 @@ class BlackMarble(Exposures):
             data=Exposures.concat(bkmrbl_list).gdf,
             crs=DEF_CRS,
             ref_year=ref_year,
-            tag=Tag(file_name=fn_nl, description=description),
             value_unit='USD'
         )
 

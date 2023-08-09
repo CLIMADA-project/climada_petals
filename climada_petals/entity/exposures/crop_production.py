@@ -1033,9 +1033,6 @@ def normalize_with_fao_cp(exp_firr, exp_noirr, input_dir=None,
         elif 'kcal' in unit or 'kcal' in exp_firr.value_unit:
             exp_firr.set_value_to_kcal(biomass=True)
 
-    exp_firr_norm.tag.description = exp_firr_norm.tag.description.append('normalized')
-    exp_noirr_norm.tag.description = exp_noirr_norm.tag.description.append('normalized')
-
     if return_data:
         return country_list, ratio, exp_firr_norm, exp_noirr_norm, \
             fao_crop_production, exp_tot_production
