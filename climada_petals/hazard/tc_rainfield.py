@@ -104,7 +104,7 @@ class TCRain(Hazard):
         LOGGER.info('Mapping %s tracks to %s centroids.', str(tracks.size),
                     str(centroids.size))
         if pool:
-            chunksize = min(num_tracks // pool.ncpus, 1000)
+            chunksize = max(min(num_tracks // pool.ncpus, 1000), 1)
             tc_haz = pool.map(cls._from_track, tracks.data,
                               itertools.repeat(centroids, num_tracks),
                               itertools.repeat(dist_degree, num_tracks),

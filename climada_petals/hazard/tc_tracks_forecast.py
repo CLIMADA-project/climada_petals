@@ -418,6 +418,8 @@ class TCForecast(TCTracks):
                     self.append(track)
                 else:
                     LOGGER.debug('Dropping empty track %s, subset %d', name, i)
+            # release the BUFR message
+            ec.codes_release(bufr)
 
     def write_hdf5(self, file_name, complevel=5):
         """Write TC tracks in NetCDF4-compliant HDF5 format. This method
