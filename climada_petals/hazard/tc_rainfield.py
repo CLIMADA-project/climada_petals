@@ -30,8 +30,8 @@ from scipy import sparse
 
 from climada.hazard.base import Hazard
 from climada.hazard.trop_cyclone import TropCyclone
-from climada.hazard.tag import Tag as TagHazard
 from climada.hazard.centroids.centr import Centroids
+from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ class TCRain(Hazard):
         LOGGER.info('Mapping %s tracks to %s centroids.', str(tracks.size),
                     str(centroids.size))
         if pool:
-            chunksize = min(num_tracks // pool.ncpus, 1000)
+            chunksize = max(min(num_tracks // pool.ncpus, 1000), 1)
             tc_haz = pool.map(cls._from_track, tracks.data,
                               itertools.repeat(centroids, num_tracks),
                               itertools.repeat(dist_degree, num_tracks),
@@ -144,7 +144,7 @@ class TCRain(Hazard):
             New TCRain object with data from track.
         """
         new_haz = TCRain()
-        new_haz.tag = TagHazard(HAZ_TYPE, 'IBTrACS: ' + track.name)
+        new_haz.tag = Tag(file_name='IBTrACS: ' + track.name)
         new_haz.intensity = rainfield_from_track(track, centroids, dist_degree, intensity_thres)
         new_haz.units = 'mm'
         new_haz.centroids = centroids

@@ -39,7 +39,7 @@ class TestWildFire(unittest.TestCase):
         wf.set_hist_fire_FIRMS(TEST_FIRMS)
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
+        self.assertEqual(wf.haz_type, 'WFsingle')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 13)))
         self.assertTrue(np.allclose(wf.date,
@@ -67,7 +67,7 @@ class TestWildFire(unittest.TestCase):
         wf = wf.from_hist_fire_FIRMS(TEST_FIRMS)
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
+        self.assertEqual(wf.haz_type, 'WFsingle')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 13)))
         self.assertTrue(np.allclose(wf.date,
@@ -87,14 +87,14 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[7, 18821], 312.8)
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
         self.assertAlmostEqual(wf.fraction.max(), 1.0)
-        self.assertAlmostEqual(wf.fraction.min(), 0.0)    
+        self.assertAlmostEqual(wf.fraction.min(), 0.0)
 
     def test_hist_fire_season_firms_pass(self):
         """ Test set_hist_event_year_set """
         wf = WildFire()
         wf.set_hist_fire_seasons_FIRMS(TEST_FIRMS)
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
@@ -112,13 +112,13 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
         self.assertAlmostEqual(wf.fraction.max(), 1.0)
         self.assertAlmostEqual(wf.fraction.min(), 0.0)
-        
+
     def test_from_hist_fire_season_firms_pass(self):
         """ Test set_hist_event_year_set """
         wf = WildFire()
         wf = wf.from_hist_fire_seasons_FIRMS(TEST_FIRMS)
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
@@ -165,7 +165,7 @@ class TestWildFire(unittest.TestCase):
         wf = WildFire.from_hist_fire_FIRMS(TEST_FIRMS)
         wf.summarize_fires_to_seasons()
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
