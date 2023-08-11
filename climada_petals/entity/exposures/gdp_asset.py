@@ -28,7 +28,6 @@ import xarray as xr
 import scipy as sp
 import climada.util.coordinates as u_coord
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV, SYSTEM_DIR
-from climada.util.tag import Tag
 from climada.entity import Exposures, INDICATOR_IMPF
 
 LOGGER = logging.getLogger(__name__)

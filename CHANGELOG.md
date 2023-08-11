@@ -17,7 +17,7 @@ Upgraded:
 ### Changed
 
 - refactored `climada_petals.river_flood.RiverFlood.from_nc`, removing calls to `set_raster` ([#80](https://github.com/CLIMADA-project/climada_petals/pull/80))
-- several adaptations have been necessary because of the `Tag` class being removed from the CLIMADA core package:
+- several adaptations for the removal of the `Tag` class from the CLIMADA core package:
   [#88](https://github.com/CLIMADA-project/climada_petals/pull/88)
   [#89](https://github.com/CLIMADA-project/climada_petals/pull/89)
 

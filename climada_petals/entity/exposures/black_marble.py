@@ -23,6 +23,8 @@ __all__ = ['BlackMarble']
 
 import logging
 import math
+from pathlib import Path
+
 import numpy as np
 from numpy.polynomial.polynomial import polyval
 from scipy import ndimage
@@ -33,7 +35,6 @@ from climada.entity.exposures.base import Exposures, INDICATOR_IMPF
 from climada.entity.exposures.litpop import nightlight as nl_utils
 from climada.util.constants import SYSTEM_DIR, DEF_CRS
 from climada.util.finance import gdp, income_group
-from climada.util.tag import Tag
 import climada.util.coordinates as u_coord
 
 LOGGER = logging.getLogger(__name__)
@@ -57,6 +58,8 @@ class BlackMarble(Exposures):
     - 0 if country not found in UNSD.
     - -1 for water
     """
+
+    _metadata = Exposures._metadata + ['nightlight_file']
 
     def set_countries(self, countries, ref_year=2016, res_km=None, from_hr=None,
                       admin_file='admin_0_countries', **kwargs):
@@ -102,21 +105,23 @@ class BlackMarble(Exposures):
 
         bkmrbl_list = []
 
-        description = ""
+        descr_lines = []
         for cntry_iso, cntry_val in cntry_info.items():
 
             bkmrbl_list.append(
                 self._set_one_country(cntry_val, nightlight, coord_nl, res_fact, res_km,
                                       cntry_admin1[cntry_iso], **kwargs).gdf)
-            description += ("{} {:d} GDP: {:.3e} income group: {:d} \n").\
-                format(cntry_val[1], cntry_val[3], cntry_val[4], cntry_val[5])
+            descr_lines.append(f"{cntry_val[1]} {cntry_val[3]:d}"
+                            f" GDP: {cntry_val[4]:.3e} income group: {cntry_val[5]:d}")
 
-        Exposures.__init__(
+        BlackMarble.__init__(
             self,
             data=Exposures.concat(bkmrbl_list).gdf,
             crs=DEF_CRS,
             ref_year=ref_year,
-            value_unit='USD'
+            value_unit='USD',
+            description="\n".join(descr_lines),
+            nightlight_file = Path(fn_nl).name,
         )
 
         rows, cols, ras_trans = u_coord.pts_to_raster_meta(
@@ -180,6 +185,7 @@ class BlackMarble(Exposures):
         exp_bkmrb.gdf[INDICATOR_IMPF] = 1
 
         return exp_bkmrb
+
 
 def country_iso_geom(countries, shp_file, admin_key=['ADMIN', 'ADM0_A3']):
     """ Get country ISO alpha_3, country id (defined as the United Nations
