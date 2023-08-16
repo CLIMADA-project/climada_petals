@@ -919,7 +919,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         amrdata.regrid_buffer_width = 2
         amrdata.verbosity_regrid = 0
         regions = self.rundata.regiondata.regions
-        t_1, t_2 = self.rundata.clawdata.t0, self.rundata.clawdata.tfinal
+        t_1, t_2 = clawdata.t0, clawdata.tfinal
         maxlevel = amrdata.amr_levels_max
         x_1, y_1, x_2, y_2 = self.areas['wind_area']
         regions.append([1, 4, t_1, t_2, x_1, x_2, y_1, y_2])
@@ -962,6 +962,8 @@ include $(CLAW)/clawutil/src/Makefile.common
 
     def _set_rundata_geo(self) -> None:
         """Set geo-related rundata attributes."""
+        clawdata = self.rundata.clawdata
+        frictiondata = self.rundata.friction_data
         geodata = self.rundata.geo_data
         topodata = self.rundata.topo_data
 
@@ -969,8 +971,11 @@ include $(CLAW)/clawutil/src/Makefile.common
         geodata.coordinate_system = 2
 
         # different friction on land and at sea
-        geodata.manning_coefficient = [0.025, 0.050]
-        geodata.manning_break = [0.0]
+        geodata.friction_forcing = True
+        frictiondata.variable_friction = True
+        frictiondata.friction_regions.append([
+            clawdata.lower, clawdata.upper, [np.infty, 0.0, -np.infty], [0.050, 0.025],
+        ])
         geodata.dry_tolerance = 1.e-2
 
         # get sea level information for affected areas and time period
@@ -1044,16 +1049,17 @@ include $(CLAW)/clawutil/src/Makefile.common
 
     def _set_rundata_gauges(self) -> None:
         """Set gauge-related rundata attributes."""
+        clawdata = self.rundata.clawdata
         for i_gauge, gauge in enumerate(self.gauge_data):
             lat, lon = gauge['location']
-            if (self.rundata.clawdata.lower[0] > lon or self.rundata.clawdata.lower[1] > lat
-                or self.rundata.clawdata.upper[0] < lon or self.rundata.clawdata.upper[1] < lat):
+            if (clawdata.lower[0] > lon or clawdata.lower[1] > lat
+                or clawdata.upper[0] < lon or clawdata.upper[1] < lat):
                 # skip gauges outside of model domain
                 gauge['in_domain'] = False
                 continue
-            self.rundata.gaugedata.gauges.append([i_gauge + 1, lon, lat,
-                                                  self.rundata.clawdata.t0,
-                                                  self.rundata.clawdata.tfinal])
+            self.rundata.gaugedata.gauges.append(
+                [i_gauge + 1, lon, lat, clawdata.t0, clawdata.tfinal]
+            )
         # q[0]: height above topography (topo includes added sea_level)
         self.rundata.gaugedata.q_out_fields = [0]
 
