@@ -24,8 +24,7 @@ import numpy as np
 from cartopy.io import shapereader
 
 from climada_petals.entity.exposures.black_marble import BlackMarble
-from climada.entity.exposures.litpop.nightlight import load_nightlight_nasa, \
-    load_nightlight_noaa, NOAA_BORDER
+from climada.entity.exposures.litpop.nightlight import NOAA_BORDER
 from climada.entity.exposures.litpop import nightlight as nl_utils
 import climada.util.coordinates as u_coord
 
@@ -37,7 +36,7 @@ class Test2013(unittest.TestCase):
         ent = BlackMarble()
         with self.assertLogs('climada.util.finance', level='INFO') as cm:
             ent.set_countries(country_name, 2013, res_km=1)
-        self.assertIn('GDP ESP 2013: 1.355e+12.', cm.output[0])
+        self.assertIn('GDP ESP 2013: 1.356e+12.', cm.output[0])
         self.assertIn('Income group ESP 2013: 4.', cm.output[1])
 
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
@@ -81,8 +80,8 @@ class Test2013(unittest.TestCase):
         ent = BlackMarble()
         ent.set_countries(country_name, 2013, res_km=0.2)
         self.assertEqual(ent.ref_year, 2013)
-        self.assertIn("Anguilla 2013 GDP: 1.754e+08 income group: 3", ent.tag.description)
-        self.assertAlmostEqual(ent.gdf.value.sum(), 1.754e+08 * (3 + 1))
+        self.assertEqual(["Anguilla 2013 GDP: 1.750e+08 income group: 3 \n"], ent.tag.description)
+        self.assertAlmostEqual(ent.gdf.value.sum(), 1.75e+08 * (3 + 1))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
 
 class Test1968(unittest.TestCase):
@@ -188,12 +187,12 @@ class BMFuncs(unittest.TestCase):
 
         self.assertEqual(np.unique(ent.gdf.region_id).size, 2)
         self.assertEqual(ent.ref_year, 2013)
-        self.assertIn('Switzerland 2013 GDP: ', ent.tag.description)
-        self.assertIn('Germany 2013 GDP: ', ent.tag.description)
-        self.assertIn('income group: 4', ent.tag.description)
-        self.assertIn('income group: 4', ent.tag.description)
-        self.assertIn('F182013.v4c_web.stable_lights.avg_vis.p', ent.tag.file_name)
-        self.assertIn('F182013.v4c_web.stable_lights.avg_vis.p', ent.tag.file_name)
+        [description] = ent.tag.description
+        self.assertIn('Switzerland 2013 GDP: ', description)
+        self.assertIn('Germany 2013 GDP: ', description)
+        self.assertIn('income group: 4', description)
+        [file_name] = ent.tag.file_name
+        self.assertIn('F182013.v4c_web.stable_lights.avg_vis.p',file_name)
 
 # Execute Tests
 if __name__ == "__main__":

@@ -111,8 +111,7 @@ class TestStats(unittest.TestCase):
     def test_haz_max_events(self):
         """Test haz_max_events function"""
         hazard = Hazard('TC')
-        hazard.centroids = Centroids()
-        hazard.centroids.set_lat_lon(np.array([1, 3, 5]), np.array([2, 4, 6]))
+        hazard.centroids = Centroids.from_lat_lon(np.array([1, 3, 5]), np.array([2, 4, 6]))
         hazard.event_id = np.array([1, 2, 3, 4])
         hazard.event_name = ['ev1', 'ev2', 'ev3', 'ev4']
         hazard.date = np.array([1, 3, 5, 7])

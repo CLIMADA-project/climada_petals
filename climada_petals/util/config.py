@@ -24,21 +24,26 @@ __all__ = [
 ]
 
 
+import logging
 from pathlib import Path
 
 import climada
 import climada.util.config
-from climada.util.config import Config, _fetch_conf, CONFIG_NAME, CONFIG
+from climada.util.config import (
+    Config, _fetch_conf, CONFIG_NAME, CONFIG, CONSOLE)
+
+LOGGER = logging.getLogger('climada_petals')
+LOGGER.propagate = False
+LOGGER.addHandler(CONSOLE)
 
 CORE_DIR = Path(climada.__file__).parent
 SOURCE_DIR = Path(__file__).absolute().parent.parent
 
-climada.util.config.CONFIG = Config.from_dict(_fetch_conf([
+CONFIG.__dict__ = Config.from_dict(_fetch_conf([
     CORE_DIR / 'conf',  # default config from the climada repository
     SOURCE_DIR / 'conf',  # default config from the climada_petals repository
     Path.home() / 'climada' / 'conf',  # ~/climada/conf directory
     Path.home() / '.config',  # ~/.config directory
     Path.cwd(),  # current working directory
-], CONFIG_NAME))
-
-climada.CONFIG = climada.util.config.CONFIG
+], CONFIG_NAME)).__dict__
+LOGGER.setLevel(getattr(logging, CONFIG.log_level.str()))

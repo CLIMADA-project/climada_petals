@@ -43,7 +43,6 @@ def def_ori_centroids(firms, centr_res_factor):
     else:
         res_data = 0.375 # For VIIRS data
 
-    centroids = Centroids()
     dlat_km = abs(firms['latitude'].min() - firms['latitude'].max()) * ONE_LAT_KM
     dlon_km = abs(firms['longitude'].min() - firms['longitude'].max()) * ONE_LAT_KM* \
         np.cos(np.radians((abs(firms['latitude'].min() - firms['latitude'].max()))/2))
@@ -52,8 +51,8 @@ def def_ori_centroids(firms, centr_res_factor):
     coord = (np.mgrid[firms['latitude'].min() : firms['latitude'].max() : complex(0, nb_centr_lat), \
         firms['longitude'].min() : firms['longitude'].max() : complex(0, nb_centr_lon)]). \
         reshape(2, nb_centr_lat*nb_centr_lon).transpose()
-    centroids.set_lat_lon(coord[:, 0], coord[:, 1])
 
+    centroids = Centroids.from_lat_lon(coord[:, 0], coord[:, 1])
     centroids.set_area_approx()
     centroids.set_on_land()
     centroids.empty_geometry_points()
@@ -227,8 +226,8 @@ class TestMethodsFirms(unittest.TestCase):
         wf._calc_brightness(firms, DEF_CENTROIDS[0], DEF_CENTROIDS[1])
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
-        self.assertEqual(wf.tag.description, '')
+        self.assertEqual(wf.haz_type, 'WFsingle')
+        self.assertEqual(wf.tag.description, [])
         self.assertEqual(wf.units, 'K')
         self.assertEqual(wf.centroids.size, 19454)
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 8)))

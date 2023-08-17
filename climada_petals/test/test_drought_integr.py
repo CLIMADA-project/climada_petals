@@ -39,8 +39,7 @@ class TestIntegr(unittest.TestCase):
 
         imp_drought = Impact()
         dr_impf = ImpactFuncSet()
-        impf_def = ImpfDrought()
-        impf_def.set_default()
+        impf_def = ImpfDrought.from_default()
         dr_impf.append(impf_def)
 
         exposure_agrar = SpamAgrar()
@@ -51,7 +50,7 @@ class TestIntegr(unittest.TestCase):
         index_event_start = imp_drought.event_name.index('2003')
         damages_drought = imp_drought.at_event[index_event_start]
 
-        self.assertEqual(hazard_set.tag.haz_type, 'DR')
+        self.assertEqual(hazard_set.haz_type, 'DR')
         self.assertEqual(hazard_set.size, 114)
         self.assertEqual(hazard_set.centroids.size, 130)
         self.assertEqual(exposure_agrar.gdf.latitude.values.size, 766 / 2)

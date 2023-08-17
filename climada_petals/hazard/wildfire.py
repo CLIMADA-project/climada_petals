@@ -36,7 +36,6 @@ import numba
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
-from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
@@ -61,7 +60,7 @@ class WildFire(Hazard):
     events can be displayed as single fires. In that case they have the tag
     'WFsingle'.
 
-    Attributes:
+    Attributes
     ----------
     date_end : array
         integer date corresponding to the proleptic Gregorian ordinal,
@@ -77,7 +76,7 @@ class WildFire(Hazard):
     class FirmsParams():
         """ DataClass as container for firms parameters.
 
-        Attributes:
+        Attributes
         ----------
         clean_thresh : int, default = 30
             Minimal confidence value for the data from MODIS instrument
@@ -100,18 +99,17 @@ class WildFire(Hazard):
 
     @dataclass
     class ProbaParams():
-        """ DataClass as container for parameters for generation of
+        """ Dataclass as container for parameters for generation of
         probabilistic events.
 
         PLEASE BE AWARE: Parameter values did not undergo any calibration.
 
-        Attributes:
+        Attributes
         ----------
         blurr_steps : int, default = 4
             steps with exponential decay for fire propagation matrix
         prop_proba : float, default = 0.21
-        max_it_propa : float, default = 500000
-
+        max_it_propa : int, default = 500000
         """
         blurr_steps: int = 4
         prop_proba: float = 0.21
@@ -123,7 +121,8 @@ class WildFire(Hazard):
         self.FirmsParams = self.FirmsParams()
         self.ProbaParams = self.ProbaParams()
 
-    def set_hist_fire_FIRMS(self, df_firms, centr_res_factor=1.0, centroids=None):
+    @classmethod
+    def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None):
         """ Parse FIRMS data and generate historical fires by temporal and spatial
         clustering. Single fire events are defined as a set of data points
         that are geographically close and/or have consecutive dates. The
@@ -156,42 +155,55 @@ class WildFire(Hazard):
             centroids in degrees to map data, centroids need to be on a
             regular raster grid in order for the clustrering to work.
 
+        Returns
+        ----------
+        haz : WildFire instance
         """
-        self.clear()
+
+        haz = cls()
 
         # read and initialize data
-        df_firms = self._clean_firms_df(df_firms)
+        df_firms = haz._clean_firms_df(df_firms)
         # compute centroids
-        res_data = self._firms_resolution(df_firms)
+        res_data = haz._firms_resolution(df_firms)
         if not centroids:
-            centroids = self._firms_centroids_creation(df_firms, res_data, centr_res_factor)
+            centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
         else:
             if not centroids.lat.any():
                 centroids.set_meta_to_lat_lon()
-        res_centr = self._centroids_resolution(centroids)
+        res_centr = haz._centroids_resolution(centroids)
 
         # fire identification
         while df_firms.iter_ev.any():
             # Compute cons_id: consecutive fires in current iteration
-            self._firms_cons_days(df_firms)
+            haz._firms_cons_days(df_firms)
             # Compute clus_id: cluster identifier inside cons_id
-            self._firms_clustering(df_firms, res_data)
+            haz._firms_clustering(df_firms, res_data)
             # compute event_id
-            self._firms_fire(df_firms)
+            haz._firms_fire(df_firms)
             LOGGER.info('Remaining fires to identify: %s.', str(np.argwhere(\
             df_firms.iter_ev.values).size))
 
         # remove minor fires
-        if self.FirmsParams.remove_minor_fires_firms:
-            df_firms = self._firms_remove_minor_fires(df_firms,
-                                    self.FirmsParams.minor_fire_thres_firms)
+        if haz.FirmsParams.remove_minor_fires_firms:
+            df_firms = haz._firms_remove_minor_fires(df_firms,
+                                    haz.FirmsParams.minor_fire_thres_firms)
 
         # compute brightness and fill class attributes
         LOGGER.info('Computing intensity of %s fires.',
                     np.unique(df_firms.event_id).size)
-        self._calc_brightness(df_firms, centroids, res_centr)
+        haz._calc_brightness(df_firms, centroids, res_centr)
 
-    def set_hist_fire_seasons_FIRMS(self, df_firms, centr_res_factor=1.0,
+        return haz
+
+    def set_hist_fire_FIRMS(self, *args, **kwargs):
+        """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
+
+    @classmethod
+    def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
                                     centroids=None, hemisphere=None,
                                     year_start=None, year_end=None,
                                     keep_all_fires=False):
@@ -233,17 +245,20 @@ class WildFire(Hazard):
             keep list of all individual fires; default is False to save
             memory. If set to true, fires are stored in self.hist_fire_seasons
 
+        Returns
+        ----------
+        haz : WildFire instance
         """
 
         LOGGER.info('Setting up historical fires for year set.')
-        self.clear()
+        haz = cls()
 
         # read and initialize data
-        df_firms = self._clean_firms_df(df_firms)
+        df_firms = haz._clean_firms_df(df_firms)
         # compute centroids
-        res_data = self._firms_resolution(df_firms)
+        res_data = haz._firms_resolution(df_firms)
         if not centroids:
-            centroids = self._firms_centroids_creation(df_firms, res_data, centr_res_factor)
+            centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
         else:
             if not centroids.coord.size:
                 centroids.set_meta_to_lat_lon()
@@ -271,7 +286,7 @@ class WildFire(Hazard):
 
         for year in years:
             LOGGER.info('Setting up historical fire seasons %s.', str(year))
-            firms_temp = self._select_fire_season(df_firms, year, hemisphere=hemisphere)
+            firms_temp = haz._select_fire_season(df_firms, year, hemisphere=hemisphere)
             # calculate historic fire seasons
             wf_year = WildFire()
             wf_year.set_hist_fire_FIRMS(firms_temp, centroids=centroids)
@@ -284,37 +299,45 @@ class WildFire(Hazard):
             n_fires[idx] = len(wf.event_id)
 
         if keep_all_fires:
-            self.hist_fire_seasons = hist_fire_seasons
+            haz.hist_fire_seasons = hist_fire_seasons
 
         # save
-        self.tag = TagHazard('WFseason')
-        self.centroids = centroids
-        self.n_fires = n_fires
-        self.units = 'K' # Kelvin brightness
+        haz.haz_type = 'WFseason'
+        haz.centroids = centroids
+        haz.n_fires = n_fires
+        haz.units = 'K' # Kelvin brightness
 
         # Following values are defined for each fire
-        self.event_id = np.arange(1, len(years)+1).astype(int)
-        self.event_name = list(map(str, years))
-        self.date = np.zeros(len(years), int)
-        self.date_end = np.zeros(len(years), int)
+        haz.event_id = np.arange(1, len(years)+1).astype(int)
+        haz.event_name = list(map(str, years))
+        haz.date = np.zeros(len(years), int)
+        haz.date_end = np.zeros(len(years), int)
         if hemisphere == 'NHS':
             for y_idx, year in enumerate(years):
-                self.date[y_idx] = date.toordinal(date(year, 1, 1))
-                self.date_end[y_idx] = date.toordinal(date(year, 12, 31))
+                haz.date[y_idx] = date.toordinal(date(year, 1, 1))
+                haz.date_end[y_idx] = date.toordinal(date(year, 12, 31))
         elif hemisphere == 'SHS':
             for y_idx, year in enumerate(years):
-                self.date[y_idx] = date.toordinal(date(year, 7, 1))
-                self.date_end[y_idx] = date.toordinal(date(year+1, 6, 30))
-        self.orig = np.ones(len(years), bool)
-        self._set_frequency()
+                haz.date[y_idx] = date.toordinal(date(year, 7, 1))
+                haz.date_end[y_idx] = date.toordinal(date(year+1, 6, 30))
+        haz.orig = np.ones(len(years), bool)
+        haz._set_frequency()
 
         # Following values are defined for each fire and centroid
-        self.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
+        haz.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
         for idx, wf in enumerate(hist_fire_seasons):
-            self.intensity[idx] = wf.intensity.max(axis=0)
-        self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+            haz.intensity[idx] = wf.intensity.max(axis=0)
+        haz.intensity = haz.intensity.tocsr()
+        haz.fraction = haz.intensity.copy()
+        haz.fraction.data.fill(1.0)
+
+        return haz
+
+    def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
+        """This function is deprecated, use WildFire.from_hist_fire_seasons_FIRMS instead."""
+        LOGGER.warning("The use of WildFire.set_hist_fire_seasons_FIRMS is deprecated."
+                        "Use WildFire.from_hist_fire_seasons_FIRMS .")
+        self.__dict__ = WildFire.from_hist_fire_seasons_FIRMS(*args, **kwargs).__dict__
 
     def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
                                keep_all_fires=False):
@@ -349,7 +372,6 @@ class WildFire(Hazard):
         keep_all_fires : bool, optional
             keep detailed list of all fires; default is False to save
             memory.
-
         """
         # min/max for uniform distribtion to sample for n_fires per year
         if n_ignitions is None:
@@ -408,7 +430,6 @@ class WildFire(Hazard):
             if set to true, only the merged event is returned.
         probabilistic : bool, optional
             differentiate, because probabilistic events have no date.
-
         """
 
         if probabilistic is False:
@@ -491,7 +512,6 @@ class WildFire(Hazard):
             end year; fires after that are cut; no cut if not specified
         hemisphere : str, optional
             'SHS' or 'NHS' to define fire seasons
-
         """
 
         # define hemisphere
@@ -536,7 +556,7 @@ class WildFire(Hazard):
                                     np.amax(self.intensity[idx], 0))
 
         # save
-        self.tag = TagHazard('WFseason')
+        self.haz_type = 'WFseason'
         self.units = 'K' # Kelvin brightness
 
         # Following values are defined for each fire season
@@ -569,7 +589,6 @@ class WildFire(Hazard):
         Returns
         -------
         df_firms : pd.DataFrame
-
         """
         # Check for the type of instrument (MODIS vs VIIRS)
         # Remove data with low confidence interval
@@ -614,7 +633,6 @@ class WildFire(Hazard):
         -------
         res_data/ONE_LAT_KM : float
             resolution in degrees
-
         """
         # Resolution in km of the centroids depends on the data origin.
         if 'instrument' in df_firms.columns:
@@ -642,10 +660,8 @@ class WildFire(Hazard):
         Returns
         -------
         centroids : Centroids
-
         """
-        centroids = Centroids()
-        centroids.set_raster_from_pnt_bounds((df_firms['longitude'].min(), \
+        centroids = Centroids.from_pnt_bounds((df_firms['longitude'].min(), \
             df_firms['latitude'].min(), df_firms['longitude'].max(), \
             df_firms['latitude'].max()), res=res_data/centr_res_factor)
         centroids.set_meta_to_lat_lon()
@@ -667,7 +683,6 @@ class WildFire(Hazard):
         -------
         res_centr : float
             grid resolution of centroids
-
         """
         if centroids.meta:
             res_centr = abs(centroids.meta['transform'][4]), \
@@ -693,7 +708,6 @@ class WildFire(Hazard):
         -------
         df_firms : pd.DataFrame
             FIRMS data including info on temporal cluster per point
-
         """
         LOGGER.debug('Computing clusters of consecutive days.')
         firms_iter = df_firms[df_firms['iter_ev']][['datenum', 'cons_id', 'event_id']]
@@ -748,7 +762,6 @@ class WildFire(Hazard):
         -------
         df_firms : pd.DataFrame
             FIRMS data including info on spacial cluster per point
-
         """
 
         LOGGER.debug('Computing geographic clusters in consecutive fires.')
@@ -790,7 +803,6 @@ class WildFire(Hazard):
         -------
         df_firms : pd.DataFrame
             FIRMS data including info on final cluster (=event) per point
-
         """
         ev_id = 0
         for cons_id in np.unique(df_firms.cons_id.values):
@@ -824,7 +836,6 @@ class WildFire(Hazard):
         -------
         df_firms : pd.DataFrame
             FIRMS data excluding minor fire events
-
         """
         # drop minor fires
         for i in range(np.unique(df_firms.event_id).size):
@@ -854,7 +865,6 @@ class WildFire(Hazard):
         centroids : Centroids
         res_centr : float
             centroids resolution in centroids unit
-
         """
         uni_ev = np.unique(df_firms['event_id'].values)
         num_ev = uni_ev.size
@@ -865,7 +875,7 @@ class WildFire(Hazard):
         # of these points (maximal damages).
         tree_centr = BallTree(centroids.coord, metric='chebyshev')
         if self.pool:
-            chunksize = min(num_ev//self.pool.ncpus, 1000)
+            chunksize = max(min(num_ev//self.pool.ncpus, 1000), 1)
             bright_list = self.pool.map(self._brightness_one_fire,
                                         itertools.repeat(df_firms, num_ev),
                                         itertools.repeat(tree_centr, num_ev),
@@ -884,7 +894,7 @@ class WildFire(Hazard):
         num_ev = uni_ev.size
 
         # save
-        self.tag = TagHazard('WFsingle')
+        self.haz_type = 'WFsingle'
         self.centroids = centroids
         self.units = 'K' # Kelvin brightness
 
@@ -924,7 +934,6 @@ class WildFire(Hazard):
         -------
         brightness_ev : lil_matrix
             maximum brightness at each centroids
-
         """
         LOGGER.debug('Brightness corresponding to FIRMS event %s.', str(ev_id))
         temp_firms = df_firms.reindex(
@@ -966,7 +975,6 @@ class WildFire(Hazard):
             list with events that occured on the defined centroids
         firms : pd.DataFrame
             FIRMS data (with data that occured on the defined centroids)
-
         """
         bright_list_nonzero = []
         event_id_new = 1
@@ -997,7 +1005,6 @@ class WildFire(Hazard):
         -------
         proba_fires : lil_matrix
             probablistic hazard
-
         """
         np.random.seed(seed)
         proba_fires = sparse.lil_matrix(np.zeros((n_ignitions, self.centroids.size)))
@@ -1050,7 +1057,6 @@ class WildFire(Hazard):
         -------
         centr_burned : np.array
             array indicating which centroids burned
-
         """
         # set fire propagation matrix if not already defined
         if not hasattr(self.centroids, 'fire_propa_matrix'):
@@ -1130,7 +1136,6 @@ class WildFire(Hazard):
         -------
         centr_burned : np.array
             updated centr_burned matrix
-
         """
         # Neighbourhood
         hood = ((-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1))
@@ -1165,7 +1170,6 @@ class WildFire(Hazard):
         -------
         proba_intensity : lil_matrix
             hazard intensity matrix of generated probabilistic fire
-
         """
         # The brightness values are chosen randomly at every burned centroids
         # from the brightness values of the historical fire
@@ -1196,7 +1200,6 @@ class WildFire(Hazard):
         Parameters
         ----------
         self : climada.hazard.WildFire instance
-
         """
         # historically burned centroids
         hist_burned = np.zeros(self.centroids.lat.shape, dtype=bool)
@@ -1238,7 +1241,6 @@ class WildFire(Hazard):
         -------
         contour plot : plt
             contour plot of fire_propa_matrix
-
         """
 
         lon = np.reshape(self.centroids.lon, self.centroids.fire_propa_matrix.shape)
@@ -1257,11 +1259,11 @@ class WildFire(Hazard):
         year : int
         hemisphere : str, optional
             'NHS' or 'SHS'
+
         Returns
         -------
         firms : pd.DataFrame
             FIRMS data for specified fire season
-
         """
 
         df_firms['date'] = df_firms['acq_date'].apply(pd.to_datetime)
@@ -1286,7 +1288,6 @@ class WildFire(Hazard):
         Returns
         -------
         self.frequency : np.array
-
         """
         delta_time = date.fromordinal(int(np.max(self.date))).year - \
             date.fromordinal(int(np.min(self.date))).year + 1
@@ -1303,24 +1304,23 @@ def _fill_intensity_max(num_centr, ind, index_uni, lat_lon_cpy, fir_bright):
     as it can happen that several firms data points are mapped on to one
     centroid.
 
-        Parameters
-        ----------
-        num_centr : int
-            number of centroids
-        ind : np.array
-            index of closest centroid of each firms point
-        index_uni : np.array
-            unique index of each centroid
-        lat_lon_cpy : np.array
-            lat /lon information of each firms point
-        fir_bright : np.array
-            brightness of each firms data point
+    Parameters
+    ----------
+    num_centr : int
+        number of centroids
+    ind : np.array
+        index of closest centroid of each firms point
+    index_uni : np.array
+        unique index of each centroid
+    lat_lon_cpy : np.array
+        lat /lon information of each firms point
+    fir_bright : np.array
+        brightness of each firms data point
 
-        Returns:
-        -------
-        brightness_ev : np.array
-            maximum brightness at each centroids
-
+    Returns
+    -------
+    brightness_ev : np.array
+        maximum brightness at each centroids
     """
     brightness_ev = np.zeros((1, num_centr), dtype=numba.float64)
     for idx in range(index_uni.size):

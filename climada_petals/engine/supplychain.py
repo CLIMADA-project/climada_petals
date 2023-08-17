@@ -23,6 +23,8 @@ __all__ = ['SupplyChain']
 
 import logging
 import datetime as dt
+from pathlib import Path
+import zipfile
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -127,11 +129,19 @@ class SupplyChain():
 
         file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
         file_loc = WIOD_DIRECTORY / file_name
+        if not file_loc.exists():
+            if not WIOD_DIRECTORY.exists():
+                WIOD_DIRECTORY.mkdir()
+            LOGGER.info('Downloading folder with WIOD tables')
 
-        if not file_loc in WIOD_DIRECTORY.iterdir():
-            download_link = WIOD_FILE_LINK + file_name
-            u_fh.download_file(download_link, download_dir=WIOD_DIRECTORY)
-            LOGGER.info('Downloading WIOD table for year %s', year)
+            downloaded_file_name = u_fh.download_file(WIOD_FILE_LINK,
+                                                      download_dir=WIOD_DIRECTORY)
+            downloaded_file_zip_path = Path(downloaded_file_name + '.zip')
+            Path(downloaded_file_name).rename(downloaded_file_zip_path)
+
+            with zipfile.ZipFile(downloaded_file_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(WIOD_DIRECTORY)
+
         mriot = pd.read_excel(file_loc, engine='pyxlsb')
 
         start_row, end_row = range_rows
@@ -152,7 +162,7 @@ class SupplyChain():
                                   selected_subsec="service"):
         """Calculate direct impacts.
 
-        Parameters:
+        Parameters
         ----------
         hazard : Hazard
             Hazard object for impact calculation.

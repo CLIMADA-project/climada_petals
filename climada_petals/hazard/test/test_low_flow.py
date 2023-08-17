@@ -23,12 +23,15 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 
+from climada.hazard.centroids import Centroids
+from climada.util.api_client import Client
 from climada_petals.hazard.low_flow import LowFlow, unique_clusters, \
     _compute_threshold_grid, _read_and_combine_nc, _split_bbox
-from climada.util.constants import DEMO_DIR as INPUT_DIR
-from climada.hazard.centroids import Centroids
 
+
+client = Client()
 FN_STR_DEMO = 'co2_dis_global_daily_DEMO_FR'
+INPUT_DIR, _ = client.download_dataset(client.get_dataset_info(name='ISIMIP_low_flow_historical', status='test_dataset'))
 
 
 def init_test_data_unique_clusters():
@@ -64,7 +67,6 @@ def init_test_data_clustering():
 
 def init_test_centroids(data):
     """define centroids for test data:"""
-    centroids = Centroids()
     grid = np.meshgrid(np.arange(data.lat.min(), data.lat.max()+.5, .5),
                        np.arange(data.lon.min(), data.lon.max()+.5, .5))
     lat = list()
@@ -72,7 +74,7 @@ def init_test_centroids(data):
     for arrlat, arrlon in zip(list(grid[0]), list(grid[1])):
         lat += list(arrlat)
         lon += list(arrlon)
-    centroids.set_lat_lon(np.array(lat), np.array(lon))
+    centroids = Centroids.from_lat_lon(np.array(lat), np.array(lon))
     centroids.set_lat_lon_to_meta()
     return centroids
 
@@ -159,8 +161,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
         and keep monthly data"""
 
         # init test hazard instance from trimmed ISIMIP output netcdf file
-        haz = LowFlow()
-        haz.set_from_nc(input_dir=INPUT_DIR, percentile=2.5,
+        haz = LowFlow.from_netcdf(input_dir=INPUT_DIR, percentile=2.5,
                     yearrange=(2001, 2003), yearrange_ref=(2001, 2003),
                     gh_model='h08', cl_model='gfdl-esm2m',
                     scenario='historical', scenario_ref='historical', soc='histsoc',
@@ -169,7 +170,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
         self.assertEqual(haz.lowflow_df.shape[0], 1073)
         self.assertEqual(haz.lowflow_df.shape[1], 14)
         self.assertEqual(haz.lowflow_df.ndays.max(), 28.0)
-        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 9.994408201304752)
+        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 9.99440860748291, places=6)
         self.assertAlmostEqual(haz.lowflow_df.relative_dis.max(), 0.4480659)
         self.assertEqual(haz.centroids.lon.min(), -4.75)
         self.assertEqual(haz.centroids.lon.max(), 8.25)
@@ -193,8 +194,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
 
     def test_combine_nc(self):
         """Test combining two chunked data files (2001-2003 combined with 2004-2005)"""
-        haz = LowFlow()
-        haz.set_from_nc(input_dir=INPUT_DIR, percentile=2.5,
+        haz = LowFlow.from_netcdf(input_dir=INPUT_DIR, percentile=2.5,
                          yearrange=(2001, 2005), yearrange_ref=(2001, 2005),
                          gh_model='h08', cl_model='gfdl-esm2m',
                          scenario='historical', scenario_ref='historical', soc='histsoc',
@@ -204,7 +204,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
 
         self.assertEqual(haz.lowflow_df.shape[1], 14)
         self.assertEqual(haz.lowflow_df.ndays.max(), 31.0)
-        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 10.588021778584393)
+        self.assertAlmostEqual(haz.lowflow_df.ndays.mean(), 10.588022232055664, places=6)
         self.assertAlmostEqual(haz.lowflow_df.relative_dis.max(), 0.41278067)
         self.assertEqual(haz.centroids.lon.min(), -4.75)
         self.assertEqual(haz.centroids.lon.max(), 8.25)
@@ -229,8 +229,7 @@ class TestLowFlowNETCDF(unittest.TestCase):
 
     def test_filter_events(self):
         """test if the right events are being filtered out"""
-        haz = LowFlow()
-        haz.set_from_nc(input_dir=INPUT_DIR, percentile=2.5, min_intensity=10,
+        haz = LowFlow.from_netcdf(input_dir=INPUT_DIR, percentile=2.5, min_intensity=10,
                         min_number_cells=10, min_days_per_month=10,
                         yearrange=(2001, 2003), yearrange_ref=(2001, 2003),
                         gh_model='h08', cl_model='gfdl-esm2m',

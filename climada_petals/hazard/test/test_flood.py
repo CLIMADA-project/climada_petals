@@ -31,14 +31,13 @@ class TestRiverFlood(unittest.TestCase):
 
     def test_wrong_iso3_fail(self):
 
-        emptyFlood = RiverFlood()
         with self.assertRaises(LookupError):
             RiverFlood._select_exact_area(['OYY'])
         with self.assertRaises(AttributeError):
-            emptyFlood.set_from_nc(years=[2600], dph_path=HAZ_DEMO_FLDDPH,
+            RiverFlood.from_nc(years=[2600], dph_path=HAZ_DEMO_FLDDPH,
                                    frc_path=HAZ_DEMO_FLDFRC)
         with self.assertRaises(KeyError):
-            emptyFlood.set_from_nc(reg=['OYY'], dph_path=HAZ_DEMO_FLDDPH,
+            RiverFlood.from_nc(reg=['OYY'], dph_path=HAZ_DEMO_FLDDPH,
                                    frc_path=HAZ_DEMO_FLDFRC, ISINatIDGrid=True)
 
     def test_exact_area_selection_country(self):
@@ -91,11 +90,10 @@ class TestRiverFlood(unittest.TestCase):
         self.assertAlmostEqual(testCentr.lat[10000], 11.47897099999998, 4)
 
     def test_isimip_country_flood(self):
-        rf = RiverFlood()
-        rf.set_from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+        rf = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
                        countries=['DEU'], ISINatIDGrid=True)
         self.assertEqual(rf.date[0], 730303)
-        self.assertEqual(rf.event_id[0], 0)
+        self.assertEqual(rf.event_id[0], 1)
         self.assertEqual(rf.event_name[0], '2000')
         self.assertEqual(rf.orig[0], False)
         self.assertAlmostEqual(rf.frequency[0], 1.)
@@ -121,12 +119,11 @@ class TestRiverFlood(unittest.TestCase):
         return
 
     def test_NATearth_country_flood(self):
-        rf = RiverFlood()
-        rf.set_from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+        rf = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
                        countries=['DEU'])
 
         self.assertEqual(rf.date[0], 730303)
-        self.assertEqual(rf.event_id[0], 0)
+        self.assertEqual(rf.event_id[0], 1)
         self.assertEqual(rf.event_name[0], '2000')
         self.assertEqual(rf.orig[0], False)
         self.assertAlmostEqual(rf.frequency[0], 1.)
@@ -144,17 +141,15 @@ class TestRiverFlood(unittest.TestCase):
     def test_centroids_flood(self):
 
         # this is going to go through the meta part
-        rand_centroids = Centroids()
         lat = np.arange(47, 56, 0.2)
         lon = np.arange(5, 15, 0.2)
         lon, lat = np.meshgrid(lon, lat)
-        rand_centroids.set_lat_lon(lat.flatten(), lon.flatten())
-        rf = RiverFlood()
-        rf.set_from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+        rand_centroids = Centroids.from_lat_lon(lat.flatten(), lon.flatten())
+        rf = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
                        centroids=rand_centroids, ISINatIDGrid=False)
 
         self.assertEqual(rf.date[0], 730303)
-        self.assertEqual(rf.event_id[0], 0)
+        self.assertEqual(rf.event_id[0], 1)
         self.assertEqual(rf.event_name[0], '2000')
         self.assertEqual(rf.orig[0], False)
         self.assertAlmostEqual(rf.frequency[0], 1.)
@@ -181,11 +176,8 @@ class TestRiverFlood(unittest.TestCase):
 
     def test_meta_centroids_flood(self):
         min_lat, max_lat, min_lon, max_lon = 45.7, 47.8, 7.5, 10.5
-        cent = Centroids()
-        cent.set_raster_from_pnt_bounds((min_lon, min_lat, max_lon, max_lat),
-                                        res=0.05)
-        rf_rast = RiverFlood()
-        rf_rast.set_from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+        cent = Centroids.from_pnt_bounds((min_lon, min_lat, max_lon, max_lat), res=0.05)
+        rf_rast = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
                             centroids=cent)
         self.assertEqual(rf_rast.centroids.shape, (43, 61))
         self.assertAlmostEqual(np.min(rf_rast.centroids.lat),
@@ -215,14 +207,12 @@ class TestRiverFlood(unittest.TestCase):
 #
     def test_flooded_area(self):
 
-        testRFset = RiverFlood()
-        testRFset.set_from_nc(countries=['DEU', 'CHE'], dph_path=HAZ_DEMO_FLDDPH,
+        testRFset = RiverFlood.from_nc(countries=['DEU', 'CHE'], dph_path=HAZ_DEMO_FLDDPH,
                               frc_path=HAZ_DEMO_FLDFRC, ISINatIDGrid=True)
         years = [2000, 2001, 2002]
         manipulated_dates = [730303, 730669, 731034]
         for i in range(len(years)):
-            testRFaddset = RiverFlood()
-            testRFaddset.set_from_nc(countries=['DEU', 'CHE'],
+            testRFaddset = RiverFlood.from_nc(countries=['DEU', 'CHE'],
                                      dph_path=HAZ_DEMO_FLDDPH,
                                      frc_path=HAZ_DEMO_FLDFRC,
                                      ISINatIDGrid=True)
@@ -264,20 +254,6 @@ class TestRiverFlood(unittest.TestCase):
                                3285305678.419206, 3)
         self.assertAlmostEqual(testRFset.fla_ev_av,
                                2463979258.8144045, 3)
-
-    def test_select_events(self):
-        testRFTime = RiverFlood()
-        tt1 = dt.datetime.strptime('1988-07-02', '%Y-%m-%d')
-        tt2 = dt.datetime.strptime('2010-04-01', '%Y-%m-%d')
-        tt3 = dt.datetime.strptime('1997-07-02', '%Y-%m-%d')
-        tt4 = dt.datetime.strptime('1990-07-02', '%Y-%m-%d')
-        years = [2010, 1997]
-        test_time = np.array([tt1, tt2, tt3, tt4])
-        self.assertTrue(np.array_equal(
-                        testRFTime._select_event(test_time, years), [1, 2]))
-        years = [1988, 1990]
-        self.assertTrue(np.array_equal(
-                        testRFTime._select_event(test_time, years), [0, 3]))
 
 
 if __name__ == "__main__":

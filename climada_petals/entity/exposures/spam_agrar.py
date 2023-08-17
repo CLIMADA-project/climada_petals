@@ -26,10 +26,10 @@ import pandas as pd
 import numpy as np
 
 from climada import CONFIG
-from climada.entity.tag import Tag
 from climada.entity.exposures.base import Exposures, INDICATOR_IMPF
 from climada.util.files_handler import download_file
 from climada.util.constants import SYSTEM_DIR
+from climada.util.tag import Tag
 import climada.util.coordinates as u_coord
 
 logging.root.setLevel(logging.DEBUG)
@@ -74,45 +74,46 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
             https://dataverse.harvard.edu/
             dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
 
-        Optional parameters:
-            data_path (str): absolute path where files are stored.
-                Default: SYSTEM_DIR
-
-            country (str): Three letter country code of country to be cut out.
-                No default (global)
-            name_adm1 (str): Name of admin1 (e.g. Federal State) to be cut out.
-                No default
-            name_adm2 (str): Name of admin2 to be cut out.
-                No default
-
-            spam_variable (str): select one agricultural variable:
-                'A'		physical area
-                'H'		harvested area
-                'P'		production
-                'Y'		yield
-                'V_agg'	value of production, aggregated to all crops,
-                                 food and non-food (default)
-                 Warning: for A, H, P and Y, currently all crops are summed up
-
-            spam_technology (str): select one agricultural technology type:
-                'TA'	   all technologies together, ie complete crop (default)
-                'TI'   irrigated portion of crop
-                'TH'   rainfed high inputs portion of crop
-                'TL'   rainfed low inputs portion of crop
-                'TS'   rainfed subsistence portion of crop
-                'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
-                ! different impact_ids are assigned to each technology (1-6)
-
-            save_name_adm1 (Boolean): Determines how many aditional data are saved:
-                False: only basics (lat, lon, total value), region_id per country
-                True: like 1 + name of admin1
-
-            haz_type (str): hazard type abbreviation, e.g.
-                'DR' for Drought or
-                'CP' for CropPotential
-
-
-        Returns:
+        Parameters
+        ----------
+        data_path : str
+            absolute path where files are stored.
+            Default: SYSTEM_DIR
+        country : str
+            Three letter country code of country to be cut out.
+            No default (global)
+        name_adm1 : str
+            Name of admin1 (e.g. Federal State) to be cut out.
+            No default
+        name_adm2 : str
+            Name of admin2 to be cut out.
+            No default
+        spam_variable : str
+            select one agricultural variable:
+            'A'		physical area
+            'H'		harvested area
+            'P'		production
+            'Y'		yield
+            'V_agg'	value of production, aggregated to all crops,
+            food and non-food (default)
+            Warning: for A, H, P and Y, currently all crops are summed up
+        spam_technology : str
+            select one agricultural technology type:
+            'TA'	   all technologies together, ie complete crop (default)
+            'TI'   irrigated portion of crop
+            'TH'   rainfed high inputs portion of crop
+            'TL'   rainfed low inputs portion of crop
+            'TS'   rainfed subsistence portion of crop
+            'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
+            ! different impact_ids are assigned to each technology (1-6)
+        save_name_adm1 : Boolean
+            Determines how many aditional data are saved:
+            False: only basics (lat, lon, total value), region_id per country
+            True: like 1 + name of admin1
+        haz_type : str
+            hazard type abbreviation, e.g.
+            'DR' for Drought or
+            'CP' for CropPotential
         """
         data_p = parameters.get('data_path', SYSTEM_DIR)
         spam_t = parameters.get('spam_technology', 'TA')
@@ -169,17 +170,14 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
                 region_id[i] = u_coord.country_to_iso(country_id.iloc[i], "numeric")
         self.gdf['region_id'] = region_id
         self.ref_year = 2005
-        self.tag = Tag()
-        self.tag.description = ("SPAM agrar exposure for variable "
-                                + spam_v + " and technology " + spam_t)
+        self.tag = Tag(description=f"SPAM agrar exposure for variable {spam_v}"
+                                   f" and technology {spam_t}",
+                       file_name=f"{FILENAME_SPAM}_{spam_v}_{spam_t}.csv")
 
         # if impact id variation iiv = 1, assign different damage function ID
         # per technology type.
         self._set_impf(spam_t, haz_type)
 
-        self.tag.file_name = (FILENAME_SPAM + '_' + spam_v + '_' + spam_t + '.csv')
-#        self.tag.shape = cntry_info[2]
-        #self.tag.country = cntry_info[1]
         if spam_v in ('A', 'H'):
             self.value_unit = 'Ha'
         elif spam_v == 'Y':
@@ -201,28 +199,22 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         iiv = 0
         if spam_t == 'TA':
             self.gdf[INDICATOR_IMPF + haz_type] = 1
-            self.tag.description = self.tag.description + '. '\
-            + 'all technologies together, ie complete crop'
+            self.tag.append(Tag(description='all technologies together, ie complete crop'))
         elif spam_t == 'TI':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'irrigated portion of crop'
+            self.tag.append(Tag(description='irrigated portion of crop'))
         elif spam_t == 'TH':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 2 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed high inputs portion of crop'
+            self.tag.append(Tag(description='rainfed high inputs portion of crop'))
         elif spam_t == 'TL':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 3 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed low inputs portion of crop'
+            self.tag.append(Tag(description='rainfed low inputs portion of crop'))
         elif spam_t == 'TS':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 4 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed subsistence portion of crop'
+            self.tag.append(Tag(description='rainfed subsistence portion of crop'))
         elif spam_t == 'TR':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 5 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed portion of crop (= TA - TI)'
+            self.tag.append(Tag(description='rainfed portion of crop (= TA - TI)'))
         else:
             self.gdf[INDICATOR_IMPF + haz_type] = 1
         self.set_geometry_points()
@@ -231,28 +223,31 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         """Reads data from SPAM CSV file and cuts out the data for the
             according country, admin1, or admin2 (if requested).
 
-        Optional parameters:
-            data_path (str): absolute path where files are stored. Default: SYSTEM_DIR
+        Parameters
+        ----------
+        data_path : str
+            absolute path where files are stored. Default: SYSTEM_DIR
+        spam_variable : str
+            select one agricultural variable:
+            'A'		physical area
+            'H'		harvested area
+            'P'		production
+            'Y'		yield
+            'V_agg'	value of production, aggregated to all crops,
+            food and non-food (default)
+        spam_technology : str
+            select one agricultural technology type:
+            'TA'	   all technologies together, ie complete crop (default)
+            'TI'   irrigated portion of crop
+            'TH'   rainfed high inputs portion of crop
+            'TL'   rainfed low inputs portion of crop
+            'TS'   rainfed subsistence portion of crop
+            'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
 
-            spam_variable (str): select one agricultural variable:
-                'A'		physical area
-                'H'		harvested area
-                'P'		production
-                'Y'		yield
-                'V_agg'	value of production, aggregated to all crops,
-                                 food and non-food (default)
-
-            spam_technology (str): select one agricultural technology type:
-                'TA'	   all technologies together, ie complete crop (default)
-                'TI'   irrigated portion of crop
-                'TH'   rainfed high inputs portion of crop
-                'TL'   rainfed low inputs portion of crop
-                'TS'   rainfed subsistence portion of crop
-                'TR'   rainfed portion of crop (= TA - TI, or TH + TL + TS)
-
-
-        Returns:
-            data: PandaFrame with all data for selected country / region
+        Returns
+        -------
+        data :
+            PandaFrame with all data for selected country / region
         """
         data_path = parameters.get('data_path', SYSTEM_DIR)
         spam_tech = parameters.get('spam_technology', 'TA')
@@ -320,17 +315,19 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         """
         restrict data to given country (admin0) or admin1/ admin2.
 
-        Input:
-            data: dataframe from _read_spam_file()
-
-        Optional parameters:
-
-            country(str): Three letter country code of country to be cut out.
-                No default (global)
-            name_adm1 (str): Name of admin1 (e.g. Federal State) to be cut out.
-                No default
-            name_adm2 (str): Name of admin2 to be cut out.
-                No default
+        Parameters
+        ----------
+        data :
+            dataframe from _read_spam_file()
+        country(str) :
+            Three letter country code of country to be cut out.
+            No default (global)
+        name_adm1 : str
+            Name of admin1 (e.g. Federal State) to be cut out.
+            No default
+        name_adm2 : str
+            Name of admin2 to be cut out.
+            No default
         """
         adm0 = parameters.get('country')
         adm1 = parameters.get('name_adm1')
@@ -371,18 +368,20 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         """
         Download and unzip CSV files from https://dataverse.harvard.edu/file
 
-        Inputs:
-            data_path (str): absolute path where files are to be stored.
-                                Default: SYSTEM_DIR
-
-            spam_variable (str): select one variable:
-                'A'		physical area
-                'H'		harvested area
-                'P'		production
-                'Y'		yield
-                'V_agg'	value of production, aggregated to all crops,
-                                 food and non-food (default)
-                'cell5m' concordance_data to retrieve lat / lon
+        Parameters
+        ----------
+        data_path : str
+            absolute path where files are to be stored.
+            Default: SYSTEM_DIR
+        spam_variable : str
+            select one variable:
+            'A'		physical area
+            'H'		harvested area
+            'P'		production
+            'Y'		yield
+            'V_agg'	value of production, aggregated to all crops,
+            food and non-food (default)
+            'cell5m' concordance_data to retrieve lat / lon
         """
         try:
             fname = Path(data_path, FILENAME_PERMALINKS)

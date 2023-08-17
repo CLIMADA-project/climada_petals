@@ -1,0 +1,35 @@
+pipeline {
+  agent any
+
+  stages {
+    stage('lint') {
+      steps {
+        sh '''#!/bin/bash
+        export PATH=$PATH:$CONDAPATH
+        source activate petals_env
+        rm -f pylint.log
+        pylint -ry climada_petals | tee pylint.log'''
+
+        recordIssues tools: [pyLint(pattern: 'pylint.log')]
+      }
+    }
+
+    stage('integ_test') {
+      steps {
+        sh '''#!/bin/bash
+        export PATH=$PATH:$CONDAPATH
+        source activate petals_env
+        rm -rf tests_xml/
+        rm -rf coverage/
+        make test'''
+      }
+    }
+  }
+
+  post {
+    always {
+      junit 'tests_xml/*.xml'
+      cobertura coberturaReportFile: 'coverage.xml', enableNewApi: false
+    }
+  }
+}
