@@ -36,7 +36,6 @@ import numba
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
-from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
@@ -303,7 +302,7 @@ class WildFire(Hazard):
             haz.hist_fire_seasons = hist_fire_seasons
 
         # save
-        haz.tag = TagHazard('WFseason')
+        haz.haz_type = 'WFseason'
         haz.centroids = centroids
         haz.n_fires = n_fires
         haz.units = 'K' # Kelvin brightness
@@ -557,7 +556,7 @@ class WildFire(Hazard):
                                     np.amax(self.intensity[idx], 0))
 
         # save
-        self.tag = TagHazard('WFseason')
+        self.haz_type = 'WFseason'
         self.units = 'K' # Kelvin brightness
 
         # Following values are defined for each fire season
@@ -895,7 +894,7 @@ class WildFire(Hazard):
         num_ev = uni_ev.size
 
         # save
-        self.tag = TagHazard('WFsingle')
+        self.haz_type = 'WFsingle'
         self.centroids = centroids
         self.units = 'K' # Kelvin brightness
 

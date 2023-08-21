@@ -10,8 +10,8 @@ The data is stored by the `Copernicus Data Store (CDS) <https://cds.climate.cope
 Overview
 --------
 
-Because hydrological models for inundation depths are computationally expensive, we do not want to compute flood directly.
-Instead, we only use river discharge data and river flood hazard maps.
+Instead of employing a computationally expensive hydrological model to compute inundation depths, this module uses a simplified statistical approach to compute flooded areas.
+As an input, the approach uses river discharge data and river flood hazard maps.
 These hazard maps contain flood footprints for specific return periods.
 The idea is to compute equivalent return periods for the discharge data at every pixel and then use the flood hazard maps to compute a flood hazard.
 For computing these return periods, we require an extreme value distribution at every point.
@@ -22,7 +22,7 @@ We recommend using a powerful machine or even a server cluster for large computa
 
 All computations within this module are executed as a Transformation DAG pipeline of the `dantro <https://dantro.readthedocs.io/en/latest/>`_ package.
 It handles the data management, caches results for later use and can be controlled via `YAML <https://yaml.org/>`_ configuration files.
-We provide one configuration file for the setup (``climada_petals/hazard/rf_glofas/setup.yml``) and one exemplary configuratio file for a river flood foodprint computation task (``climada_petals/hazard/rf_glofas/rf_glofas.yml``).
+We provide one configuration file for the setup (``climada_petals/hazard/rf_glofas/setup.yml``) and one exemplary configuration file for a river flood foodprint computation task (``climada_petals/hazard/rf_glofas/rf_glofas.yml``).
 
 ------------
 Preparations
