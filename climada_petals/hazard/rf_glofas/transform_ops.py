@@ -34,6 +34,7 @@ from scipy.stats import gumbel_r
 from scipy.interpolate import interp1d
 from shapely.geometry import Point
 import xesmf as xe
+from numba import float32, float64, int64, guvectorize
 
 from dantro.data_ops import is_operation
 from dantro.groups import OrderedDataGroup
@@ -53,7 +54,12 @@ def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArra
     return target.sel(longitude=slice(*lon), latitude=slice(*lat))
 
 
-def rp_comp(sample: np.ndarray, loc: np.ndarray, scale: np.ndarray):
+def rp_comp(
+    sample: np.ndarray,
+    loc: np.ndarray,
+    scale: np.ndarray,
+    max_rp: Optional[float] = np.inf,
+):
     """Compute the return period from a right-handed Gumbel distribution
 
     All parameters can be arrays, in which case numpy broadcasting rules apply.
@@ -70,13 +76,16 @@ def rp_comp(sample: np.ndarray, loc: np.ndarray, scale: np.ndarray):
         Loc parameter of the Gumbel distribution
     scale : array
         Scale parameter of the distribution
+    max_rp : float, optional
+        The maximum value of return periods. This avoids returning infinite values.
+        Defaults to ``np.inf`` (no maximum).
 
     Returns
     -------
     np.ndarray
         The return period(s) for the input parameters
     """
-    return 1.0 / (1.0 - gumbel_r.cdf(sample, loc=loc, scale=scale))
+    return np.minimum(1.0 / (1.0 - gumbel_r.cdf(sample, loc=loc, scale=scale)), max_rp)
 
 
 def reindex(
@@ -230,6 +239,7 @@ def fit_gumbel_r(
         vectorize=True,
         dask="parallelized",
         output_dtypes=[np.float64, np.float64, np.int32],
+        dask_gufunc_kwargs=dict(allow_rechunk=True),
     )
 
     return xr.Dataset(dict(loc=loc, scale=scale, samples=samples))
@@ -351,7 +361,10 @@ def max_from_isel(
 
 @is_operation
 def return_period(
-    discharge: xr.DataArray, gev_loc: xr.DataArray, gev_scale: xr.DataArray
+    discharge: xr.DataArray,
+    gev_loc: xr.DataArray,
+    gev_scale: xr.DataArray,
+    max_return_period: float = 1e4,
 ) -> xr.DataArray:
     """Compute the return period for a discharge from a Gumbel EV distribution fit
 
@@ -387,6 +400,7 @@ def return_period(
         discharge,
         gev_loc,
         gev_scale,
+        max_return_period,
         dask="parallelized",
         output_dtypes=[np.float32],
     ).rename("Return Period")
@@ -399,6 +413,7 @@ def return_period_resample(
     gev_scale: xr.DataArray,
     gev_samples: xr.DataArray,
     bootstrap_samples: int,
+    max_return_period: float = 1e4,
     fit_method: str = "MLE",
 ) -> xr.DataArray:
     """Compute resampled return periods for a discharge from a Gumbel EV distribution fit
@@ -449,7 +464,9 @@ def return_period_resample(
     gev_samples = reindex(gev_samples, discharge, **reindex_kwargs).astype("int32")
 
     # Compute the return period
-    def rp_sampling(dis: np.ndarray, loc: float, scale: float, samples: int):
+    def rp_sampling(
+        dis: np.ndarray, loc: float, scale: float, samples: int, max_rp: float
+    ):
         """Compute multiple return periods using bootstrap sampling
 
         This function does not support broadcasting on the ``loc`` and ``scale``
@@ -469,7 +486,7 @@ def return_period_resample(
 
         # Resample the distribution and compute return periods from these resamples
         return np.array(
-            [rp_comp(dis, *resample_params()) for _ in range(bootstrap_samples)]
+            [rp_comp(dis, *resample_params(), max_rp) for _ in range(bootstrap_samples)]
         )
 
     # Apply and return
@@ -482,12 +499,15 @@ def return_period_resample(
         gev_loc,
         gev_scale,
         gev_samples,
-        input_core_dims=[list(core_dims), [], [], []],
+        max_return_period,
+        input_core_dims=[list(core_dims), [], [], [], []],
         output_core_dims=[["sample"] + list(core_dims)],
         vectorize=True,
         dask="parallelized",
         output_dtypes=[np.float32],
-        dask_gufunc_kwargs=dict(output_sizes=dict(sample=bootstrap_samples)),
+        dask_gufunc_kwargs=dict(
+            output_sizes=dict(sample=bootstrap_samples), allow_rechunk=True
+        ),
     ).rename("Return Period")
     ret["sample"] = np.arange(bootstrap_samples)
     return ret
@@ -598,6 +618,7 @@ def apply_flopros(
     return return_period.where(return_period > flopros)
 
 
+# TODO: Make this support datasets as return type inputs!!
 @is_operation
 def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dataset:
     """Compute the flood depth from a return period and flood maps.
@@ -620,8 +641,33 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
         The flood depths for the given return periods. The dataset contains a single
         variable ``Flood Depth`` with the same dimensions as ``return_period``.
     """
+    # Select lon/lat for flood maps
+    flood_maps = sel_lon_lat_slice(flood_maps, return_period)
 
-    def interpolate(return_period, hazard, return_periods):
+    # Clip infinite return periods
+    return_period = return_period.clip(
+        min=1, max=flood_maps["return_period"].max(), keep_attrs=True
+    )
+
+    # All but 'longitude' and 'latitude' are core dimensions for this operation
+    core_dims = list(return_period.dims)
+    core_dims.remove("longitude")
+    core_dims.remove("latitude")
+
+    # Define input array layout
+    # NOTE: This depends on the actual core dimensions put in, so we have to do this
+    #       programmatically.
+    num_core_dims = len(core_dims)
+    arr_str = "[" + ", ".join([":" for _ in range(num_core_dims)]) + "]"
+    core_dims_str = "(" + ", ".join([f"c_{i}" for i in range(num_core_dims)]) + ")"
+
+    # Define the vectorized function
+    @guvectorize(
+        f"(float64{arr_str}, float64[:], int64[:], float64{arr_str})",
+        f"{core_dims_str}, (j), (j) -> {core_dims_str}",
+        nopython=True,
+    )
+    def interpolate(return_period, hazard, return_periods, out_depth):
         """Linearly interpolate the hazard to a given return period
 
         Args:
@@ -635,52 +681,57 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
             The hazard cannot become negative. Values beyond the given return periods
             range are extrapolated.
         """
+        # print(f"return_period: {return_period.shape}")
+        # print(f"hazard: {hazard.shape}")
+        # print(return_periods)
+        # print(f"out_depth: {out_depth.shape}")
+
         # Shortcut for only NaNs
         if np.all(np.isnan(hazard)):
-            return np.full_like(return_period, np.nan)
+            out_depth[:] = np.full_like(return_period, np.nan)
+            return
 
         # Make NaNs to zeros
         # NOTE: NaNs should be grouped at lower end of 'return_periods', so this should
         #       be sane.
-        hazard = np.nan_to_num(hazard)
-
-        # Handle infinite return periods
-        return_period = np.clip(return_period, a_min=1, a_max=np.max(return_periods))
+        # hazard = np.nan_to_num(hazard)
+        hazard = np.where(np.isnan(hazard), 0.0, hazard)
 
         # Use extrapolation and have 0.0 as minimum value
-        ret = interp1d(
-            return_periods,
-            hazard,
-            fill_value="extrapolate",
-            assume_sorted=True,
-            copy=False,
-        )(return_period)
-        ret = np.maximum(ret, 0.0)
-        return ret
-
-    # Select lon/lat for flood maps
-    flood_maps = sel_lon_lat_slice(flood_maps, return_period)
-
-    # All but 'longitude' and 'latitude' are core dimensions for this operation
-    dims = set(return_period.dims)
-    core_dims = dims - {"longitude", "latitude"}
+        # out_depth[:] = interp1d(
+        #     return_periods,
+        #     hazard,
+        #     # fill_value="extrapolate",
+        #     assume_sorted=True,
+        #     copy=False,
+        # )(return_period)
+        # print(return_periods)
+        # print(hazard)
+        out_depth[:] = np.interp(return_period, return_periods, hazard)
+        out_depth[:] = np.maximum(out_depth, 0.0)
+        # print(out_depth)
 
     # Perform operation
+    # print(return_period.dtype)
+    # print(flood_maps.dtype)
+    # print(flood_maps["return_period"].dtype)
     return (
         xr.apply_ufunc(
             interpolate,
             return_period,
             flood_maps,
             flood_maps["return_period"],
-            input_core_dims=[list(core_dims), ["return_period"], ["return_period"]],
-            output_core_dims=[list(core_dims)],
-            exclude_dims={"return_period"},  # Add 'step' and 'number' here?
+            input_core_dims=[core_dims, ["return_period"], ["return_period"]],
+            output_core_dims=[core_dims],
+            # exclude_dims={"return_period"},  # Add 'step' and 'number' here?
             dask="parallelized",
-            vectorize=True,
-            output_dtypes=[np.float32],
+            # vectorize=True,
+            output_dtypes=[np.float64],
+            dask_gufunc_kwargs=dict(allow_rechunk=True),
         )
+        # .transpose(*return_period.dims)
         .rename("Flood Depth")
-        .to_dataset()
+        # .to_dataset()
     )
 
 

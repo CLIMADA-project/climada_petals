@@ -35,7 +35,7 @@ from dantro.containers import XrDataContainer, PassthroughContainer
 from dantro.tools import load_yml
 
 from climada.util.constants import SYSTEM_DIR
-from climada_petals.hazard.river_flood import RiverFlood
+from climada.hazard import Hazard
 
 
 LOGGER = logging.getLogger(__name__)
@@ -258,9 +258,9 @@ def hazard_series_from_dataset(
     if not isinstance(data, xr.Dataset):
         data = xr.open_dataset(data, chunks="auto")
 
-    def create_hazard(dataset: xr.Dataset) -> RiverFlood:
+    def create_hazard(dataset: xr.Dataset) -> Hazard:
         """Create hazard from a GloFASRiverFlood hazard dataset"""
-        return RiverFlood.from_xarray_raster(
+        return Hazard.from_xarray_raster(
             dataset,
             hazard_type="RF",
             intensity="Flood Depth",

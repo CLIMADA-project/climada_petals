@@ -8,6 +8,7 @@ import numpy.testing as npt
 from numpy.random import default_rng
 
 import xarray as xr
+import xarray.testing as xrt
 import geopandas as gpd
 from shapely.geometry import Polygon
 
@@ -421,32 +422,46 @@ class TestDantroOpsGloFAS(unittest.TestCase):
     def test_flood_depth(self):
         """Test 'flood_depth' operation"""
         # Create dummy datasets
-        ones = np.ones((12, 13))
+        ones = np.ones((4, 3))
         da_flood_maps = xr.DataArray(
             data=[ones, ones * 10, ones * 100],
             dims=["return_period", "longitude", "latitude"],
             coords=dict(
                 return_period=[1, 10, 100],
-                longitude=np.arange(12),
-                latitude=np.arange(13),
+                longitude=np.arange(4),
+                latitude=np.arange(3),
             ),
         )
 
-        x = np.arange(10)
-        core_dim = np.arange(2)
-        values = np.array([range(200)]).reshape((10, 10, 2)) + self.rng.uniform(
-            -0.1, 0.1, size=(10, 10, 2)
+        x = np.arange(4)
+        y = np.arange(3)
+        core_dim_1 = np.arange(3)
+        core_dim_2 = np.arange(2)
+        shape = (x.size, y.size, core_dim_1.size, core_dim_2.size)
+        values = np.array(
+            list(range(x.size * y.size * core_dim_1.size * core_dim_2.size)),
+            dtype=np.float_,
         )
+        values = values.reshape(shape) + self.rng.uniform(-0.1, 0.1, size=shape)
+        values.flat[0] = 101  # Above max
+        values.flat[1] = 0.1  # Below min
         da_return_period = xr.DataArray(
             data=values,
-            dims=["longitude", "latitude", "core_dim"],
-            coords=dict(longitude=x, latitude=x, core_dim=core_dim),
+            dims=["longitude", "latitude", "core_dim_1", "core_dim_2"],
+            coords=dict(
+                longitude=x, latitude=y, core_dim_1=core_dim_1, core_dim_2=core_dim_2
+            ),
         )
+        # print(da_return_period)
 
         ds_result = flood_depth(da_return_period, da_flood_maps)
+        # print(ds_result)
         self.assertIn("Flood Depth", ds_result.data_vars)
         # NOTE: Single point precision, so reduce the decimal accuracy
-        npt.assert_allclose(ds_result["Flood Depth"].values, values)
+        # print(ds_result["Flood Depth"].values - da_return_period.clip(1, 100))
+        xrt.assert_allclose(
+            ds_result["Flood Depth"], da_return_period.clip(1, 100)
+        )
 
         # Check NaN shortcut
         da_flood_maps = xr.DataArray(
@@ -454,44 +469,42 @@ class TestDantroOpsGloFAS(unittest.TestCase):
             dims=["return_period", "longitude", "latitude"],
             coords=dict(
                 return_period=[1, 10, 100],
-                longitude=np.arange(12),
-                latitude=np.arange(13),
+                longitude=np.arange(4),
+                latitude=np.arange(3),
             ),
         )
-        with patch(
-            "climada_petals.hazard.rf_glofas.transform_ops.np.full_like"
-        ) as full_like_mock:
-            full_like_mock.side_effect = lambda x, _: np.full(x.shape, 0.0)
-            flood_depth(da_return_period, da_flood_maps)
-            # Should have been called 100 times, one time for each lon/lat coordinate
-            self.assertEqual(full_like_mock.call_count, 100)
+        ds_result = flood_depth(da_return_period, da_flood_maps)
+        self.assertTrue(ds_result["Flood Depth"].isnull().all())
 
         # Check NaN sanitizer
         da_flood_maps = xr.DataArray(
-            data=[np.full_like(ones, np.nan), ones, ones * 10],
+            data=[np.full_like(ones, np.nan), ones * 9, ones * 99],
             dims=["return_period", "longitude", "latitude"],
             coords=dict(
                 return_period=[1, 10, 100],
-                longitude=np.arange(12),
-                latitude=np.arange(13),
+                longitude=np.arange(4),
+                latitude=np.arange(3),
             ),
         )
-        with patch(
-            "climada_petals.hazard.rf_glofas.transform_ops.interp1d"
-        ) as interp1d_mock:
-            interp1d_mock.return_value = lambda x: np.full_like(x, 0.0)
-            flood_depth(da_return_period, da_flood_maps)
-            hazard_args = np.array(
-                [call[0][1] for call in interp1d_mock.call_args_list]
-            )
-            self.assertFalse(np.any(np.isnan(hazard_args)))
+        da_return_period[...] = 1 + self.rng.uniform(-0.1, 0.1, size=shape)
+        print(da_return_period)
+        ds_result = flood_depth(da_return_period, da_flood_maps)
+        xrt.assert_allclose(
+            ds_result["Flood Depth"], (da_return_period - 1).clip(min=0)
+        )
 
         # Check that DataArrays have to be aligned
         x_diff = x + self.rng.uniform(-1e-3, 1e-3, size=x.shape)
+        y_diff = y + self.rng.uniform(-1e-3, 1e-3, size=y.shape)
         da_return_period = xr.DataArray(
             data=values,
-            dims=["longitude", "latitude", "core_dim"],
-            coords=dict(longitude=x_diff, latitude=x_diff, core_dim=core_dim),
+            dims=["longitude", "latitude", "core_dim_1", "core_dim_2"],
+            coords=dict(
+                longitude=x_diff,
+                latitude=y_diff,
+                core_dim_1=core_dim_1,
+                core_dim_2=core_dim_2,
+            ),
         )
         with self.assertRaises(ValueError) as cm:
             flood_depth(da_return_period, da_flood_maps)
