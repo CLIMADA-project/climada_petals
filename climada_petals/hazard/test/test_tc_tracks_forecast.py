@@ -22,6 +22,7 @@ Test tc_tracks_forecast module.
 import unittest
 import numpy as np
 import pandas as pd
+import warnings
 
 from climada import CONFIG
 from climada_petals.hazard.tc_tracks_forecast import TCForecast
@@ -34,6 +35,11 @@ TEST_BUFR_FILES = [
     ]
 ]
 TEST_BUFR_FILE_MULTIMESSAGE = DATA_DIR.joinpath('test202204181200.bufr')
+"""TC tracks in four BUFR formats as provided by ECMWF. Sourced from
+https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
+"""
+
+TEST_BUFR_FILE_MULTIMESSAGE_MISSING_TIMEPERIOD = DATA_DIR.joinpath('test202308220000.bufr')
 """TC tracks in four BUFR formats as provided by ECMWF. Sourced from
 https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
 """
@@ -80,7 +86,6 @@ class TestECMWF(unittest.TestCase):
                          np.datetime64('2020-03-19T12:00:00.000000'))
         self.assertEqual(forecast.data[1].is_ensemble, True)
 
-
     def test_ecmwf_multimessage(self):
         """Test ECMWF reader in multimessage format"""
         forecast = TCForecast()
@@ -100,6 +105,20 @@ class TestECMWF(unittest.TestCase):
             np.array(['70E', '70W', '71E', '71W', '72W'], dtype=str)
             )
 
+    def test_ecmwf_multimessage_missing_timeperiod(self):
+        """Test ECMWF reader should continue reading messages if one track misses timePeriod"""
+        with self.assertLogs('climada_petals.hazard.tc_tracks_forecast', level='INFO') as cm:
+            forecast = TCForecast()
+            forecast.fetch_ecmwf(files=TEST_BUFR_FILE_MULTIMESSAGE_MISSING_TIMEPERIOD)
+        assert ("Track 07L has no defined timePeriod. Track is discarded.") in cm.output[0]
+        self.assertEqual(forecast.size, 125)
+        np.testing.assert_array_equal(
+            np.unique(
+                [forecast.data[ind_i].name
+                 for ind_i in np.arange(122)]
+            ),
+            np.array(['09L', 'FRANKLIN', 'GERT'], dtype=str)
+        )
 
     def test_equal_timestep(self):
         """Test equal timestep"""
