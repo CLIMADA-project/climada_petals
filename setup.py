@@ -2,7 +2,7 @@
 """
 
 from pathlib import Path
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 here = Path(__file__).parent.absolute()
 
@@ -10,29 +10,23 @@ here = Path(__file__).parent.absolute()
 with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
     long_description = f.read()
 
-# Add configuration files
-extra_files = [str(here / 'climada_petals/conf/climada.conf'), str(here / 'doc/misc/README.md')]
-
 setup(
     name='climada_petals',
 
-    version='3.3.0-dev',
+    version='3.3.1',
 
-    description='CLIMADA in Python',
+    description='CLIMADA Extensions in Python',
 
     long_description=long_description,
     long_description_content_type='text/markdown',
 
-    url='https://github.com/davidnbresch/climada_python',
+    url='https://github.com/CLIMADA-project/climada_python',
 
     author='ETH',
 
     license='OSI Approved :: GNU General Public License v3 (GPLv3)',
 
     classifiers=[
-        #   3 - Alpha
-        #   4 - Beta
-        #   5 - Production/Stable
         'Development Status :: 4 - Beta',
         'Programming Language :: Python :: 3.9',
         'Topic :: Scientific/Engineering :: Atmospheric Science',
@@ -42,14 +36,13 @@ setup(
 
     keywords='climate adaptation',
 
-    packages=find_packages(where='.'),
-
     install_requires=[
-        'climada',
+        'climada==3.3',
         'scikit-image',
     ],
 
-    package_data={'': extra_files},
+    packages=find_namespace_packages(include=['climada_petals*']),
 
-    include_package_data=True
+    setup_requires=['setuptools_scm'],
+    include_package_data=True,
 )
