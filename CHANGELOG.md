@@ -2,6 +2,14 @@
 
 ## v3.3.1
 
+Release date: 2023-08-24
+
+### Description
+
+Rearranged file-system structure: `data` subdirectory of `climada_petals`.
+
+## v3.3.0
+
 Release date: 2023-05-08
 
 ### Description
