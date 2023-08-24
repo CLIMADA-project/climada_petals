@@ -16,6 +16,7 @@ dependencies:
   - pip:
     - coverage>=4.5
     - descartes
+    - jupyter_contrib_nbextensions
     - markdown
     - myst-parser    
     - nbformat
