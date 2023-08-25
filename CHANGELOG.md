@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.3.2
+
+Release date: 2023-08-25
+
+### Description
+
+Patch release
+
 ## v3.3.1
 
 Release date: 2023-08-24
