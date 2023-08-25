@@ -13,7 +13,7 @@ with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
 setup(
     name='climada_petals',
 
-    version='3.3.1-dev',
+    version='3.3.2-dev',
 
     description='CLIMADA Extensions in Python',
 
@@ -37,7 +37,7 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
-        'climada',
+        'climada==3.3.*',
         'scikit-image',
     ],
 
