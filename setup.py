@@ -37,7 +37,7 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
-        'climada==3.3',
+        'climada==3.3.*',
         'scikit-image',
     ],
 
