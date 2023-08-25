@@ -6,6 +6,8 @@ Release date: YYYY-MM-DD
 
 Code freeze date: YYYY-MM-DD
 
+### Description
+
 ### Dependency Changes
 
 Upgraded:
@@ -17,14 +19,14 @@ Upgraded:
 ### Changed
 
 - refactored `climada_petals.river_flood.RiverFlood.from_nc`, removing calls to `set_raster` ([#80](https://github.com/CLIMADA-project/climada_petals/pull/80))
-- several adaptations have been necessary because of the `Tag` class being removed from the CLIMADA core package:
-  [#88](https://github.com/CLIMADA-project/climada_petals/pull/88)
 
 ### Fixed
 
 ### Deprecated
 
 ### Removed
+
+- `tag` attribute from hazard classes [#88](https://github.com/CLIMADA-project/climada_petals/pull/88)
 
 ## v3.3.2
 
