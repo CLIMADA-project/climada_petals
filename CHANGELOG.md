@@ -11,6 +11,7 @@ Code freeze date: YYYY-MM-DD
 ### Dependency Changes
 
 Upgraded:
+
 - shapely `1.8` -> `2.0` ([#80](https://github.com/CLIMADA-project/climada_petals/pull/80))
 
 ### Added
@@ -24,6 +25,8 @@ Upgraded:
 ### Deprecated
 
 ### Removed
+
+- `tag` attribute from hazard classes [#88](https://github.com/CLIMADA-project/climada_petals/pull/88)
 
 ## v3.3.2
 
