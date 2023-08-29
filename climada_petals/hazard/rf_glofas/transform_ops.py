@@ -31,20 +31,16 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 from scipy.stats import gumbel_r
-from scipy.interpolate import interp1d
-from shapely.geometry import Point
 import xesmf as xe
-from numba import float32, float64, int64, guvectorize
-
-from dantro.data_ops import is_operation
-from dantro.groups import OrderedDataGroup
-from dantro.containers import PassthroughContainer
+from numba import guvectorize
 
 from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries, country_to_iso
 from climada_petals.util import glofas_request
 
 LOGGER = logging.getLogger(__name__)
+
+CDS_DOWNLOAD_DIR = Path(SYSTEM_DIR, "cds-download")
 
 
 def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
@@ -155,44 +151,43 @@ def reindex(
     return target
 
 
-@is_operation
-def merge_flood_maps(flood_maps: OrderedDataGroup) -> xr.Dataset:
+def merge_flood_maps(flood_maps: Mapping[str, xr.DataArray]) -> xr.DataArray:
     """Merge the flood maps GeoTIFFs into one NetCDF file
 
     Adds a "zero" flood map (all zeros)
 
     Parameters
     ----------
-    flood_maps : dantro.OrderedDataGroup
-        The flood maps stored in a data group. Each flood map is expected to be an
-        xarray Dataset named ``floodMapGL_rpXXXy``, where ``XXX`` indicates the return
+    flood_maps : dict(str, xarray.DataArray)
+        The mapping of GeoTIFF file paths to respective DataArray. Each flood map is
+        identified through the folder containing it. The folders are expected to follow
+        the naming scheme ``floodMapGL_rpXXXy``, where ``XXX`` indicates the return
         period of the respective map.
-
     """
-    # print(flood_maps)
     expr = re.compile(r"floodMapGL_rp(\d+)y")
-    years = [int(expr.match(name).group(1)) for name in flood_maps]
+    years = [int(expr.search(name).group(1)) for name in flood_maps]
     idx = np.argsort(years)
-    dsets = list(flood_maps.values())
-    dsets = [dsets[i].drop_vars("spatial_ref").squeeze("band", drop=True) for i in idx]
+    darrs = list(flood_maps.values())
+    darrs = [darrs[i].drop_vars("spatial_ref").squeeze("band", drop=True) for i in idx]
 
     # Add zero flood map
     # NOTE: Return period of 1 is the minimal value
-    ds_null_flood = xr.zeros_like(dsets[0])
-    dsets.insert(0, ds_null_flood)
+    da_null_flood = xr.full_like(darrs[0], np.nan)
+    darrs.insert(0, da_null_flood)
 
     # Concatenate and rename
     years = np.insert(np.array(years)[idx], 0, 1)
-    ds_flood_maps = xr.concat(dsets, pd.Index(years, name="return_period"))
-    ds_flood_maps = ds_flood_maps.rename(
-        band_data="flood_depth", x="longitude", y="latitude"
+    da_flood_maps = xr.concat(darrs, pd.Index(years, name="return_period"))
+    da_flood_maps = da_flood_maps.rename(x="longitude", y="latitude"
     )
-    return ds_flood_maps
+    return da_flood_maps.rename("flood_depth")
 
 
-@is_operation
 def fit_gumbel_r(
-    input_data: xr.DataArray, fit_method: str = "MLE", min_samples: int = 2
+    input_data: xr.DataArray,
+    time_dim: str = "year",
+    fit_method: str = "MM",
+    min_samples: int = 2,
 ):
     """Fit a right-handed Gumbel distribution to the data
 
@@ -200,12 +195,14 @@ def fit_gumbel_r(
     ----------
     input_data : xr.DataArray
         The input time series to compute the distributions for. It must contain the
-        dimension ``year``.
+        dimension specified as ``time_dim``.
+    time_dim : str
+        The dimension indicating time. Defaults to ``year``.
     fit_method : str
         The method used for computing the distribution. Either ``MLE`` (Maximum
         Likelihood Estimation) or ``MM`` (Method of Moments).
     min_samples : int
-        The number of finite samples along the ``year`` dimension required for a
+        The number of finite samples along the time dimension required for a
         successful fit. If there are fewer samples, the fit result will be NaN.
 
     Returns
@@ -233,9 +230,9 @@ def fit_gumbel_r(
     loc, scale, samples = xr.apply_ufunc(
         fit,
         input_data,
-        input_core_dims=[["year"]],
+        input_core_dims=[[time_dim]],
         output_core_dims=[[], [], []],
-        exclude_dims={"year"},
+        exclude_dims={time_dim},
         vectorize=True,
         dask="parallelized",
         output_dtypes=[np.float64, np.float64, np.int32],
@@ -245,13 +242,12 @@ def fit_gumbel_r(
     return xr.Dataset(dict(loc=loc, scale=scale, samples=samples))
 
 
-@is_operation
 def download_glofas_discharge(
     product: str,
     date_from: str,
     date_to: Optional[str],
     num_proc: int = 1,
-    download_path: Union[str, Path] = Path(SYSTEM_DIR, "glofas-discharge"),
+    download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
     countries: Optional[Union[List[str], str]] = None,
     preprocess: Optional[str] = None,
     open_mfdataset_kw: Optional[Mapping[str, Any]] = None,
@@ -341,7 +337,6 @@ def download_glofas_discharge(
     return xr.open_mfdataset(files, **open_kwargs)["dis24"]
 
 
-@is_operation
 def max_from_isel(
     array: xr.DataArray, dim: str, selections: List[Union[Iterable, slice]]
 ) -> xr.DataArray:
@@ -359,7 +354,6 @@ def max_from_isel(
     )
 
 
-@is_operation
 def return_period(
     discharge: xr.DataArray,
     gev_loc: xr.DataArray,
@@ -406,7 +400,6 @@ def return_period(
     ).rename("Return Period")
 
 
-@is_operation
 def return_period_resample(
     discharge: xr.DataArray,
     gev_loc: xr.DataArray,
@@ -463,9 +456,40 @@ def return_period_resample(
     gev_scale = reindex(gev_scale, discharge, **reindex_kwargs)
     gev_samples = reindex(gev_samples, discharge, **reindex_kwargs).astype("int32")
 
-    # Compute the return period
+    # All but 'longitude' and 'latitude' are core dimensions for this operation
+    core_dims = list(discharge.dims)
+    core_dims.remove("longitude")
+    core_dims.remove("latitude")
+
+    # Define input array layout
+    # NOTE: This depends on the actual core dimensions put in, so we have to do this
+    #       programmatically.
+    # num_core_dims = len(core_dims)
+    # arr_str_in = "[" + ", ".join([":" for _ in range(num_core_dims)]) + "]"
+    # dims_str_in = "(" + ", ".join([f"c_{i}" for i in range(num_core_dims)]) + ")"
+    # arr_str_out = arr_str_in[:-1] + ", :]"
+    # dims_str_out = dims_str_in[:-1] + ", samples)"
+    # print(arr_str_in, dims_str_in)
+    # print(arr_str_out, dims_str_out)
+
+    # Dummy array
+    # dummy = xr.DataArray(
+    #     np.empty((bootstrap_samples)),
+    #     coords=dict(samples=list(range(bootstrap_samples))),
+    # )
+
+    # Define the vectorized function
+    # @guvectorize(
+    #     f"(float32{arr_str_in}, float64, float64, int32, float64, float64[:], float32{arr_str_out})",
+    #     f"{dims_str_in}, (), (), (), (), (samples) -> {dims_str_out}",
+    #     # nopython=True,
+    # )
     def rp_sampling(
-        dis: np.ndarray, loc: float, scale: float, samples: int, max_rp: float
+        dis: np.ndarray,
+        loc: float,
+        scale: float,
+        samples: int,
+        max_rp: float,
     ):
         """Compute multiple return periods using bootstrap sampling
 
@@ -486,13 +510,17 @@ def return_period_resample(
 
         # Resample the distribution and compute return periods from these resamples
         return np.array(
-            [rp_comp(dis, *resample_params(), max_rp) for _ in range(bootstrap_samples)]
+            [
+                rp_comp(dis, *resample_params(), max_rp)
+                for _ in range(bootstrap_samples)
+            ],
+            dtype=np.float32,
         )
 
     # Apply and return
     # NOTE: 'rp_sampling' requires scalar 'loc' and 'scale' parameters, so we
     #       define all but 'longitude' and 'latitude' dimensions as core dimensions
-    core_dims = set(discharge.dims) - {"longitude", "latitude"}
+    # core_dims = set(discharge.dims) - {"longitude", "latitude"}
     ret = xr.apply_ufunc(
         rp_sampling,
         discharge,
@@ -513,7 +541,6 @@ def return_period_resample(
     return ret
 
 
-@is_operation
 def interpolate_space(
     return_period: xr.DataArray,
     flood_maps: xr.DataArray,
@@ -531,7 +558,6 @@ def interpolate_space(
     )
 
 
-@is_operation
 def regrid(
     return_period: xr.DataArray,
     flood_maps: xr.DataArray,
@@ -541,18 +567,30 @@ def regrid(
     # Select lon/lat for flood maps
     flood_maps = sel_lon_lat_slice(flood_maps, return_period)
 
+    # Mask return period so NaNs are not propagated
+    rp = return_period.to_dataset(name="data")
+    dims_to_remove = set(rp.sizes.keys()) - {"longitude", "latitude"}
+    dims_to_remove = {dim: 0 for dim in dims_to_remove}
+    rp["mask"] = xr.where(rp["data"].isel(dims_to_remove).isnull(), 0, 1)
+
+    # NOTE: Masking here would omit all return periods outside flood plains
+    #       (This might be desirable at some point?)
+    flood = flood_maps.to_dataset(name="data")
+    # flood["mask"] = xr.where(flood["data"].isel(return_period=-1).isnull(), 0, 1)
+
     # Perform regridding
     regridder = xe.Regridder(
-        return_period.to_dataset(name="data"),
-        flood_maps.to_dataset(name="data"),
+        rp,
+        flood,
         method=method,
+        extrap_method="nearest_s2d",
+        # unmapped_to_nan=False,
     )
     return regridder(return_period).rename(return_period.name)
 
 
-@is_operation
 def apply_flopros(
-    flopros_data: PassthroughContainer,
+    flopros_data: gpd.GeoDataFrame,
     return_period: Union[xr.DataArray, xr.Dataset],
     layer: str = "MerL_Riv",
 ) -> Union[xr.DataArray, xr.Dataset]:
@@ -583,11 +621,12 @@ def apply_flopros(
     latitude = return_period["latitude"].values
     longitude = return_period["longitude"].values
     lon, lat = np.meshgrid(longitude, latitude, indexing="ij")
-    points = [Point(lo, la) for lo, la in zip(lon.flat, lat.flat)]
-    df_geometry = gpd.GeoDataFrame(geometry=points, crs="EPSG:4326")
+    df_geometry = gpd.GeoDataFrame(
+        geometry=gpd.points_from_xy(lon.flat, lat.flat), crs="EPSG:4326"
+    )
 
     # Merge the DataFrames, setting the FLOPROS value for each point
-    df_merged = df_geometry.sjoin(flopros_data.data, how="left", predicate="within")
+    df_merged = df_geometry.sjoin(flopros_data, how="left", predicate="within")
 
     # Available layers
     # layers = [
@@ -619,7 +658,6 @@ def apply_flopros(
 
 
 # TODO: Make this support datasets as return type inputs!!
-@is_operation
 def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dataset:
     """Compute the flood depth from a return period and flood maps.
 
@@ -663,7 +701,7 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
 
     # Define the vectorized function
     @guvectorize(
-        f"(float64{arr_str}, float64[:], int64[:], float64{arr_str})",
+        f"(float32{arr_str}, float64[:], int64[:], float32{arr_str})",
         f"{core_dims_str}, (j), (j) -> {core_dims_str}",
         nopython=True,
     )
@@ -681,13 +719,9 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
             The hazard cannot become negative. Values beyond the given return periods
             range are extrapolated.
         """
-        # print(f"return_period: {return_period.shape}")
-        # print(f"hazard: {hazard.shape}")
-        # print(return_periods)
-        # print(f"out_depth: {out_depth.shape}")
-
         # Shortcut for only NaNs
-        if np.all(np.isnan(hazard)):
+        # NOTE: After rebuilding the hazard maps, the "1:" can be removed
+        if np.all(np.isnan(hazard[1:])):
             out_depth[:] = np.full_like(return_period, np.nan)
             return
 
@@ -698,41 +732,21 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
         hazard = np.where(np.isnan(hazard), 0.0, hazard)
 
         # Use extrapolation and have 0.0 as minimum value
-        # out_depth[:] = interp1d(
-        #     return_periods,
-        #     hazard,
-        #     # fill_value="extrapolate",
-        #     assume_sorted=True,
-        #     copy=False,
-        # )(return_period)
-        # print(return_periods)
-        # print(hazard)
         out_depth[:] = np.interp(return_period, return_periods, hazard)
         out_depth[:] = np.maximum(out_depth, 0.0)
-        # print(out_depth)
 
     # Perform operation
-    # print(return_period.dtype)
-    # print(flood_maps.dtype)
-    # print(flood_maps["return_period"].dtype)
-    return (
-        xr.apply_ufunc(
-            interpolate,
-            return_period,
-            flood_maps,
-            flood_maps["return_period"],
-            input_core_dims=[core_dims, ["return_period"], ["return_period"]],
-            output_core_dims=[core_dims],
-            # exclude_dims={"return_period"},  # Add 'step' and 'number' here?
-            dask="parallelized",
-            # vectorize=True,
-            output_dtypes=[np.float64],
-            dask_gufunc_kwargs=dict(allow_rechunk=True),
-        )
-        # .transpose(*return_period.dims)
-        .rename("Flood Depth")
-        # .to_dataset()
-    )
+    return xr.apply_ufunc(
+        interpolate,
+        return_period,
+        flood_maps,
+        flood_maps["return_period"],
+        input_core_dims=[core_dims, ["return_period"], ["return_period"]],
+        output_core_dims=[core_dims],
+        dask="parallelized",
+        output_dtypes=[np.float32],
+        dask_gufunc_kwargs=dict(allow_rechunk=True),
+    ).rename("Flood Depth")
 
 
 def save_file(
@@ -775,96 +789,96 @@ def save_file(
     data.to_netcdf(output_path, encoding=enc)
 
 
-def finalize(
-    *,
-    data: Mapping[str, Any],
-    to_file: Optional[Iterable[Union[str, Mapping[str, Any]]]] = None,
-    to_dm: Optional[Iterable[Union[str, Mapping[str, Any]]]] = None,
-    **kwargs,
-):
-    """Store tagged nodes in files or in the DataManager depending on the user input
+# def finalize(
+#     *,
+#     data: Mapping[str, Any],
+#     to_file: Optional[Iterable[Union[str, Mapping[str, Any]]]] = None,
+#     to_dm: Optional[Iterable[Union[str, Mapping[str, Any]]]] = None,
+#     **kwargs,
+# ):
+#     """Store tagged nodes in files or in the DataManager depending on the user input
 
-    Parameters
-    ----------
-    data : dict
-        The mapping of tagged data containers computed by the dantro transform DAG.
-    to_file : list of str or dict (optional)
-        Specs for writing data into files. If an entry is a single string, it is
-        interpreted as the data tag to write and the filename to write to. If it is a
-        ``dict``, the following items are interpreted:
+#     Parameters
+#     ----------
+#     data : dict
+#         The mapping of tagged data containers computed by the dantro transform DAG.
+#     to_file : list of str or dict (optional)
+#         Specs for writing data into files. If an entry is a single string, it is
+#         interpreted as the data tag to write and the filename to write to. If it is a
+#         ``dict``, the following items are interpreted:
 
-        * ``tag``: The data tag to write.
-        * ``filename`` (optional): The filename to write to. Defaults to the value of
-          ``tag``.
-        * ``encoding`` (dict, optional): The encoding when writing the file.
-        * ``encoding_defaults``(dict, optional): The encoding settings shared by each
-          variable.
+#         * ``tag``: The data tag to write.
+#         * ``filename`` (optional): The filename to write to. Defaults to the value of
+#           ``tag``.
+#         * ``encoding`` (dict, optional): The encoding when writing the file.
+#         * ``encoding_defaults``(dict, optional): The encoding settings shared by each
+#           variable.
 
-        This will call :py:func:`climada_petals.hazard.rf_glofas.transform_ops.save_file`,
-        for each entry in ``to_file``.
-    to_dm : list of str or dict (optional)
-        Specs for storing data in the ``DataManager``. This requires the manager to be
-        passed as node called ``data_manager`` in the transform DAG:
+#         This will call :py:func:`climada_petals.hazard.rf_glofas.transform_ops.save_file`,
+#         for each entry in ``to_file``.
+#     to_dm : list of str or dict (optional)
+#         Specs for storing data in the ``DataManager``. This requires the manager to be
+#         passed as node called ``data_manager`` in the transform DAG:
 
-        .. code-block:: yaml
+#         .. code-block:: yaml
 
-            transform:
-              - pass: !dag_tag dm
-              tag: data_manager
+#             transform:
+#               - pass: !dag_tag dm
+#               tag: data_manager
 
-        If an entry in ``to_dm`` is a single string, it is interpreted as the data tag to
-        store and the name of the data entry in the ``DataManager``. If it is a ``dict``,
-        the following items are interpreted:
+#         If an entry in ``to_dm`` is a single string, it is interpreted as the data tag to
+#         store and the name of the data entry in the ``DataManager``. If it is a ``dict``,
+#         the following items are interpreted:
 
-        * ``tag``: The data tag to store.
-        * ``name`` (optional): The name of the target entry in the data manager.
-          Defaults to the value of ``tag``.
+#         * ``tag``: The data tag to store.
+#         * ``name`` (optional): The name of the target entry in the data manager.
+#           Defaults to the value of ``tag``.
 
-    Examples
-    --------
+#     Examples
+#     --------
 
-    Add the ``to_file`` and ``to_dm`` nodes to your evaluation config on the same level
-    as ``transform``:
+#     Add the ``to_file`` and ``to_dm`` nodes to your evaluation config on the same level
+#     as ``transform``:
 
-    .. code-block:: yaml
+#     .. code-block:: yaml
 
-        eval:
-          with_cache:
-            to_file:
-              - some_tag
-              - tag: some_other_tag
-                filename: other_tag_output
-            to_dm:
-              - some_tag
-              - tag: some_other_tag
-                name: other_tag_container
+#         eval:
+#           with_cache:
+#             to_file:
+#               - some_tag
+#               - tag: some_other_tag
+#                 filename: other_tag_output
+#             to_dm:
+#               - some_tag
+#               - tag: some_other_tag
+#                 name: other_tag_container
 
-            transform:
-              # ...
-    """
-    # Write data to files
-    output_dir = Path(kwargs["out_path"]).parent
-    for entry in to_file if to_file is not None else {}:
-        if isinstance(entry, dict):
-            tag = entry["tag"]
-            filename = entry.get("filename", tag)
-            encoding = entry.get("encoding", {})
-            encoding_defaults = entry.get("encoding_defaults", {})
-        else:
-            tag = entry
-            filename = entry
-            encoding, encoding_defaults = {}, {}
-        save_file(data[tag], output_dir / filename, encoding, **encoding_defaults)
+#             transform:
+#               # ...
+#     """
+#     # Write data to files
+#     output_dir = Path(kwargs["out_path"]).parent
+#     for entry in to_file if to_file is not None else {}:
+#         if isinstance(entry, dict):
+#             tag = entry["tag"]
+#             filename = entry.get("filename", tag)
+#             encoding = entry.get("encoding", {})
+#             encoding_defaults = entry.get("encoding_defaults", {})
+#         else:
+#             tag = entry
+#             filename = entry
+#             encoding, encoding_defaults = {}, {}
+#         save_file(data[tag], output_dir / filename, encoding, **encoding_defaults)
 
-    # Store data in DataManager
-    for entry in to_dm if to_dm is not None else {}:
-        if isinstance(entry, dict):
-            tag = entry["tag"]
-            name = entry.get("name", tag)
-        else:
-            tag = entry
-            name = entry
+#     # Store data in DataManager
+#     for entry in to_dm if to_dm is not None else {}:
+#         if isinstance(entry, dict):
+#             tag = entry["tag"]
+#             name = entry.get("name", tag)
+#         else:
+#             tag = entry
+#             name = entry
 
-        cont_data = data[tag]
-        ContClass = PassthroughContainer if isinstance(cont_data, xr.Dataset) else None
-        data["data_manager"].new_container(name, data=cont_data, Cls=ContClass)
+#         cont_data = data[tag]
+#         ContClass = PassthroughContainer if isinstance(cont_data, xr.Dataset) else None
+#         data["data_manager"].new_container(name, data=cont_data, Cls=ContClass)

@@ -38,9 +38,9 @@ DEFAULT_REQUESTS = {
     "forecast": {
         "variable": "river_discharge_in_the_last_24_hours",
         "product_type": "ensemble_perturbed_forecasts",
-        "system_version": "operational",
+        "system_version": "version_3_1",
         "hydrological_model": "lisflood",
-        "format": "netcdf",
+        "format": "grib",
         "year": "2022",
         "month": "08",
         "day": "01",

@@ -169,15 +169,17 @@ class TestGloFASRequest(unittest.TestCase):
     )
     def test_historical_iter(self, mock_req):
         """Test request for multiple historical years"""
-        glofas_request("historical", "2019", "2020", self.tempdir.name)
+        glofas_request("historical", "2019", "2021", self.tempdir.name)
         requests = mock_req.call_args.args[1]
         self.assertEqual(requests[0]["hyear"], "2019")
         self.assertEqual(requests[1]["hyear"], "2020")
+        self.assertEqual(requests[2]["hyear"], "2021")
         self.assertEqual(
             mock_req.call_args.args[2],
             [
                 Path(self.tempdir.name, "glofas-historical-2019.grib"),
                 Path(self.tempdir.name, "glofas-historical-2020.grib"),
+                Path(self.tempdir.name, "glofas-historical-2021.grib"),
             ],
         )
 
