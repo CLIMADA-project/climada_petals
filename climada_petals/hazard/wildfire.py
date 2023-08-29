@@ -54,10 +54,10 @@ class WildFire(Hazard):
     consistency, we consider an event as a whole fire season. A fire season
     is defined as a whole year (Jan-Dec in the NHS, Jul-Jun in SHS). This allows
     consistent risk assessment across the globe and over time. Hazard for
-    which events refer to a fire season have the tag 'WFseason'.
+    which events refer to a fire season have the haz_type 'WFseason'.
 
     In order to perform concrete case studies or calibrate impact functions,
-    events can be displayed as single fires. In that case they have the tag
+    events can be displayed as single fires. In that case they have the haz_type
     'WFsingle'.
 
     Attributes
