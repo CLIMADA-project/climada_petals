@@ -102,7 +102,7 @@ def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False)
         ),
     )
     discharge_file = output_dir / "discharge.nc"
-    discharge.to_netcdf(discharge_file)
+    discharge.to_netcdf(discharge_file, engine="netcdf4")
     discharge.close()
 
     # Fit Gumbel
@@ -112,7 +112,7 @@ def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False)
     ) as discharge:
 
         fit = fit_gumbel_r(discharge, min_samples=10)
-        fit.to_netcdf(output_dir / "gumbel-fit.nc")
+        fit.to_netcdf(output_dir / "gumbel-fit.nc", engine="netcdf4")
 
 
 def setup(
