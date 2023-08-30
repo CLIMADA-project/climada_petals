@@ -95,9 +95,10 @@ def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False)
         "2015",
         num_proc=num_downloads,
         preprocess="x.groupby('time.year').max()",
-        parallel=parallel,
         open_mfdataset_kw=dict(
-            concat_dim="year", chunks=dict(time=-1, longitude="auto", latitude="auto")
+            concat_dim="year",
+            chunks=dict(time=-1, longitude="auto", latitude="auto"),
+            parallel=parallel,
         ),
     )
     discharge_file = output_dir / "discharge.nc"
