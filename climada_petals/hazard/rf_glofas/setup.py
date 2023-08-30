@@ -86,15 +86,16 @@ def setup_flood_hazard_maps(output_dir, flood_maps_dir):
     da_flood_maps.to_netcdf(output_dir / "flood-maps.nc")
 
 
-def setup_gumbel_fit(output_dir, num_workers, memory_limit):
+def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False):
     # Download discharge and preprocess
     LOGGER.debug("Downloading historical discharge data")
     discharge = download_glofas_discharge(
         "historical",
         "1979",
-        "1980",
-        num_proc=num_workers,
+        "2015",
+        num_proc=num_downloads,
         preprocess="x.groupby('time.year').max()",
+        parallel=parallel,
         open_mfdataset_kw=dict(
             concat_dim="year", chunks=dict(time=-1, longitude="auto", latitude="auto")
         ),
@@ -105,23 +106,12 @@ def setup_gumbel_fit(output_dir, num_workers, memory_limit):
 
     # Fit Gumbel
     LOGGER.debug("Fitting Gumbel distributions to historical discharge data")
-    discharge = xr.open_dataarray(
+    with xr.open_dataarray(
         discharge_file, chunks=dict(time=-1, longitude=50, latitude=50)
-    )
+    ) as discharge:
 
-    def work():
         fit = fit_gumbel_r(discharge, min_samples=10)
         fit.to_netcdf(output_dir / "gumbel-fit.nc")
-
-    if num_workers > 1:
-        with dask_client(num_workers, 1, memory_limit):
-            work()
-    else:
-        work()
-
-    # Delete intermediates
-    discharge.close()
-    discharge_file.unlink()
 
 
 def setup(
@@ -158,4 +148,9 @@ def setup(
     output_dir.mkdir(exist_ok=True)
 
     setup_flood_hazard_maps(output_dir, flood_maps_dir)
-    setup_gumbel_fit(output_dir, num_workers, memory_limit)
+
+    if num_workers > 1:
+        with dask_client(num_workers, 1, memory_limit):
+            setup_gumbel_fit(output_dir, num_downloads=num_workers, parallel=True)
+    else:
+        setup_gumbel_fit(output_dir, parallel=False)
