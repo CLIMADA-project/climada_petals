@@ -40,7 +40,7 @@ from climada.hazard import Hazard
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_DATA_DIR = SYSTEM_DIR / "glofas-computation"
+DEFAULT_DATA_DIR = SYSTEM_DIR / "river-flood-computation"
 DEFAULT_SETUP_CFG = Path(__file__).parent.absolute() / "setup.yml"
 DEFAULT_GLOFAS_CFG = Path(__file__).parent.absolute() / "rf_glofas.yml"
 

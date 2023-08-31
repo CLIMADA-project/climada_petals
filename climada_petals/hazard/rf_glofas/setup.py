@@ -29,7 +29,7 @@ import logging
 import xarray as xr
 import requests
 
-from .transform_ops import merge_flood_maps, download_glofas_discharge, fit_gumbel_r
+from .transform_ops import merge_flood_maps, download_glofas_discharge, fit_gumbel_r, save_file
 from .rf_glofas import dask_client, DEFAULT_DATA_DIR
 
 LOGGER = logging.getLogger(__file__)
@@ -83,7 +83,7 @@ def setup_flood_hazard_maps(output_dir, flood_maps_dir):
         for path in flood_maps_paths
     }
     da_flood_maps = merge_flood_maps(flood_maps)
-    da_flood_maps.to_netcdf(output_dir / "flood-maps.nc")
+    save_file(da_flood_maps, output_dir / "flood-maps.nc")
 
 
 def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False):

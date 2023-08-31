@@ -23,10 +23,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import logging
 from typing import Iterable, Union, Optional
+from contextlib import contextmanager
 
 import xarray as xr
 import geopandas as gpd
 import numpy as np
+import xesmf as xe
 
 from .rf_glofas import DEFAULT_DATA_DIR, dask_client
 from .transform_ops import (
@@ -41,12 +43,39 @@ from .transform_ops import (
 LOGGER = logging.getLogger(__file__)
 
 
+@contextmanager
+def maybe_open_dataarray(
+    arr: Optional[xr.DataArray] = None,
+    *open_dataarray_args,
+    **open_dataarray_kwargs,
+):
+    """Create a context for opening an xarray file or yielding the input array"""
+    if arr is None:
+        print(f"Opening file: {open_dataarray_args}")
+        arr = xr.open_dataarray(*open_dataarray_args, **open_dataarray_kwargs)
+        try:
+            yield arr
+        finally:
+            print(f"Closing file: {open_dataarray_args}")
+            arr.close()
+
+    else:
+        try:
+            yield arr
+        finally:
+            pass
+
+
 class RiverFloodInundation:
     """Class for computing river flood inundations"""
 
     # Definitions for intermediate file paths
 
-    def __init__(self, store_intermediates: bool = True):
+    def __init__(
+        self,
+        store_intermediates: bool = True,
+        cache_dir: Optional[Union[Path, str]] = None,
+    ):
         self.store_intermediates = store_intermediates
         self.flood_maps = xr.open_dataarray(
             DEFAULT_DATA_DIR / "flood-maps.nc",
@@ -58,7 +87,14 @@ class RiverFloodInundation:
         self.flopros = gpd.read_file(
             DEFAULT_DATA_DIR / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp"
         )
-        self._tempdir = TemporaryDirectory(prefix=".cache-", dir=DEFAULT_DATA_DIR)
+
+        self.regridder = None
+        self._create_tempdir(cache_dir=cache_dir)
+
+    def _create_tempdir(self, cache_dir):
+        self._tempdir = TemporaryDirectory(
+            prefix=".cache-", dir=cache_dir or DEFAULT_DATA_DIR
+        )
         self.cache_dir = Path(self._tempdir.name)
 
         self._DISCHARGE_PATH = self.cache_dir / "discharge.nc"
@@ -68,15 +104,36 @@ class RiverFloodInundation:
             self.cache_dir / "return-period-regrid-protect.nc"
         )
 
-    def run(self, **download_kwargs):
-        self.download_forecast(**download_kwargs)
-        self.return_period()
-        self.regrid()
-        inundation = self.flood_depth()
+    def clear_cache(self):
+        self._tempdir.cleanup()
+        self._create_tempdir()
 
+    def run(self, download_type, download_kws=None, resample_kws=None):
+        # Download data
+        if download_kws is None:
+            download_kws = {}
+        if download_type == "forecast":
+            self.download_forecast(**download_kws)
+        elif download_type == "reanalysis":
+            self.download_reanalysis(**download_kws)
+        else:
+            raise RuntimeError(f"Unknown download type: {download_type}")
+
+        # Compute return period
+        if resample_kws is None:
+            self.return_period()
+        else:
+            self.return_period_resample(**resample_kws)
+
+        # Regrid
+        self.regrid()
+
+        # Compute inundations
+        inundation = self.flood_depth()
         self.apply_protection()
         inundation_protected = self.flood_depth()
 
+        # Return data
         return xr.Dataset(
             dict(flood_depth=inundation, flood_depth_flopros=inundation_protected)
         )
@@ -103,19 +160,37 @@ class RiverFloodInundation:
             forecast.to_netcdf(self._DISCHARGE_PATH)
         return forecast
 
+    def download_reanalysis(
+        self,
+        countries: Union[str, Iterable[str]],
+        year: str,
+        preprocess: Optional[str] = None,
+    ):
+        reanalysis = download_glofas_discharge(
+            product="historical",
+            date_from=year,
+            date_to=None,
+            countries=countries,
+            preprocess=preprocess,
+        )
+        if self.store_intermediates:
+            reanalysis.to_netcdf(self._DISCHARGE_PATH)
+        return reanalysis
+
     def return_period(
         self,
         discharge: Optional[xr.DataArray] = None,
     ):
-        if discharge is None:
-            discharge = xr.open_dataarray(self._DISCHARGE_PATH, chunks="auto")
-        rp = return_period(
-            discharge, self.gumbel_fits["loc"], self.gumbel_fits["scale"]
-        )
+        with maybe_open_dataarray(
+            discharge, self._DISCHARGE_PATH, chunks="auto"
+        ) as discharge:
+            rp = return_period(
+                discharge, self.gumbel_fits["loc"], self.gumbel_fits["scale"]
+            )
 
-        if self.store_intermediates:
-            rp.to_netcdf(self._RETURN_PERIOD_PATH)
-        return rp
+            if self.store_intermediates:
+                rp.to_netcdf(self._RETURN_PERIOD_PATH)
+            return rp
 
     def return_period_resample(
         self,
@@ -123,72 +198,84 @@ class RiverFloodInundation:
         discharge: Optional[xr.DataArray] = None,
         fit_method: str = "MM",
         num_workers: int = 1,
+        memory_per_worker: str = "2G",
     ):
         # Use smaller chunks so function does not suffocate
-        if discharge is None:
-            discharge = xr.open_dataarray(
-                self._DISCHARGE_PATH, chunks=dict(longitude=50, latitude=50)
+        with maybe_open_dataarray(
+            discharge, self._DISCHARGE_PATH, chunks=dict(longitude=50, latitude=50)
+        ) as discharge:
+
+            kwargs = dict(
+                discharge=discharge,
+                gev_loc=self.gumbel_fits["loc"],
+                gev_scale=self.gumbel_fits["scale"],
+                gev_samples=self.gumbel_fits["samples"],
+                bootstrap_samples=num_bootstrap_samples,
+                fit_method=fit_method,
             )
 
-        kwargs = dict(
-            discharge=discharge,
-            gev_loc=self.gumbel_fits["loc"],
-            gev_scale=self.gumbel_fits["scale"],
-            gev_samples=self.gumbel_fits["samples"],
-            bootstrap_samples=num_bootstrap_samples,
-            fit_method=fit_method,
-        )
-
-        if num_workers > 1:
-            with dask_client(num_workers, 1, "2GB"):
+            def work():
                 rp = return_period_resample(**kwargs)
-        else:
-            rp = return_period_resample(**kwargs)
+                if self.store_intermediates:
+                    rp.to_netcdf(self._RETURN_PERIOD_PATH, engine="netcdf4")
+                return rp
 
-        if self.store_intermediates:
-            rp.to_netcdf(self._RETURN_PERIOD_PATH)
-        return rp
+            if num_workers > 1:
+                with dask_client(num_workers, 1, memory_per_worker):
+                    return work()
+            else:
+                return work()
 
     def regrid(
-        self, return_period: Optional[xr.DataArray] = None, method: str = "bilinear"
+        self,
+        return_period: Optional[xr.DataArray] = None,
+        method: str = "bilinear",
+        reset_regridder: bool = True,
     ):
-        if return_period is None:
-            return_period = xr.open_dataarray(
-                self._RETURN_PERIOD_PATH,
-                chunks=dict(
-                    longitude=-1, latitude=-1, time=1, sample=1, number=1, step=1
-                ),
+        with maybe_open_dataarray(
+            return_period,
+            self._RETURN_PERIOD_PATH,
+            chunks=dict(longitude=-1, latitude=-1, time=1, sample=1, number=1, step=1),
+        ) as return_period:
+
+            if reset_regridder:
+                self._regridder = None
+            return_period_regrid, self._regridder = regrid(
+                return_period,
+                self.flood_maps,
+                method=method,
+                regridder=self._regridder,
+                return_regridder=True,
             )
 
-        return_period_regrid = regrid(return_period, self.flood_maps, method=method)
-        if self.store_intermediates:
-            return_period_regrid.to_netcdf(self._RETURN_PERIOD_REGRID_PATH)
-        return return_period_regrid
+            if self.store_intermediates:
+                return_period_regrid.to_netcdf(self._RETURN_PERIOD_REGRID_PATH)
+            return return_period_regrid
 
     def apply_protection(self, return_period_regrid: Optional[xr.DataArray] = None):
-        if return_period_regrid is None:
-            return_period_regrid = xr.open_dataarray(
-                self._RETURN_PERIOD_REGRID_PATH, chunks="auto"
+        with maybe_open_dataarray(
+            return_period_regrid, self._RETURN_PERIOD_REGRID_PATH, chunks="auto"
+        ) as return_period_regrid:
+
+            return_period_regrid_protect = apply_flopros(
+                self.flopros, return_period_regrid
             )
 
-        return_period_regrid_protect = apply_flopros(self.flopros, return_period_regrid)
-
-        if self.store_intermediates:
-            return_period_regrid_protect.to_netcdf(
-                self._RETURN_PERIOD_REGRID_PROTECT_PATH
-            )
-        return return_period_regrid_protect
+            if self.store_intermediates:
+                return_period_regrid_protect.to_netcdf(
+                    self._RETURN_PERIOD_REGRID_PROTECT_PATH
+                )
+            return return_period_regrid_protect
 
     def flood_depth(self, return_period_regrid: Optional[xr.DataArray] = None):
-        if return_period_regrid is None:
-            if self._RETURN_PERIOD_REGRID_PROTECT_PATH.is_file():
-                return_period_regrid = xr.open_dataarray(
-                    self._RETURN_PERIOD_REGRID_PROTECT_PATH, chunks="auto"
-                )
-            else:
-                return_period_regrid = xr.open_dataarray(
-                    self._RETURN_PERIOD_REGRID_PATH, chunks="auto"
-                )
+        file_path = (
+            self._RETURN_PERIOD_REGRID_PROTECT_PATH
+            if self._RETURN_PERIOD_REGRID_PROTECT_PATH.is_file()
+            else self._RETURN_PERIOD_REGRID_PATH
+        )
 
-        inundation = flood_depth(return_period_regrid, self.flood_maps)
-        return inundation
+        with maybe_open_dataarray(
+            return_period_regrid, file_path, chunks="auto"
+        ) as return_period_regrid:
+            inundation = flood_depth(return_period_regrid, self.flood_maps)
+            return inundation

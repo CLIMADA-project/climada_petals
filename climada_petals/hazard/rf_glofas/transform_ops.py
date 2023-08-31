@@ -22,7 +22,7 @@ Transformations for dantro data pipeline
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Union, List, Mapping, Any, Iterable
+from typing import Optional, Union, List, Mapping, Any, Iterable, Tuple
 from collections import deque
 from copy import deepcopy
 
@@ -562,7 +562,9 @@ def regrid(
     return_period: xr.DataArray,
     flood_maps: xr.DataArray,
     method: str = "bilinear",
-) -> xr.DataArray:
+    regridder: Optional[xe.Regridder] = None,
+    return_regridder: bool = False,
+) -> Union[xr.DataArray, Tuple[xr.DataArray, xe.Regridder]]:
     """Regrid the return period onto the flood maps grid"""
     # Select lon/lat for flood maps
     flood_maps = sel_lon_lat_slice(flood_maps, return_period)
@@ -579,14 +581,20 @@ def regrid(
     # flood["mask"] = xr.where(flood["data"].isel(return_period=-1).isnull(), 0, 1)
 
     # Perform regridding
-    regridder = xe.Regridder(
-        rp,
-        flood,
-        method=method,
-        extrap_method="nearest_s2d",
-        # unmapped_to_nan=False,
-    )
-    return regridder(return_period).rename(return_period.name)
+    if regridder is None:
+        regridder = xe.Regridder(
+            rp,
+            flood,
+            method=method,
+            extrap_method="nearest_s2d",
+            # unmapped_to_nan=False,
+        )
+
+    return_period_regridded = regridder(return_period).rename(return_period.name)
+    if return_regridder:
+        return return_period_regridded, regridder
+
+    return return_period_regridded
 
 
 def apply_flopros(
