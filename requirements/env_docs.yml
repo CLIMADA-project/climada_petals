@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - climada=4.0
+  - climada
   - scikit-image=0.21
   - ipython
   - ipykernel
