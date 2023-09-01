@@ -1,10 +1,8 @@
 # Changelog
 
-## Unreleased
+## 4.0.0
 
-Release date: YYYY-MM-DD
-
-Code freeze date: YYYY-MM-DD
+Release date: 2023-09-01
 
 ### Dependency Changes
 
@@ -12,16 +10,10 @@ Upgraded:
 
 - shapely `1.8` -> `2.0` ([#80](https://github.com/CLIMADA-project/climada_petals/pull/80))
 
-### Added
-
 ### Changed
 
 - refactored `climada_petals.river_flood.RiverFlood.from_nc`, removing calls to `set_raster` ([#80](https://github.com/CLIMADA-project/climada_petals/pull/80))
 - Replace `tag` attribute with string `description` in classes derived from `Exposure` [#89](https://github.com/CLIMADA-project/climada_petals/pull/89)
-
-### Fixed
-
-### Deprecated
 
 ### Removed
 
