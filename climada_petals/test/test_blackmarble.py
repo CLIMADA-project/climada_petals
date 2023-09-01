@@ -80,7 +80,7 @@ class Test2013(unittest.TestCase):
         ent = BlackMarble()
         ent.set_countries(country_name, 2013, res_km=0.2)
         self.assertEqual(ent.ref_year, 2013)
-        self.assertIn("Anguilla 2013 GDP: 1.750e+08 income group: 3", ent.tag.description)
+        self.assertEqual("Anguilla 2013 GDP: 1.750e+08 income group: 3", ent.description)
         self.assertAlmostEqual(ent.gdf.value.sum(), 1.75e+08 * (3 + 1))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
 
@@ -187,12 +187,11 @@ class BMFuncs(unittest.TestCase):
 
         self.assertEqual(np.unique(ent.gdf.region_id).size, 2)
         self.assertEqual(ent.ref_year, 2013)
-        self.assertIn('Switzerland 2013 GDP: ', ent.tag.description)
-        self.assertIn('Germany 2013 GDP: ', ent.tag.description)
-        self.assertIn('income group: 4', ent.tag.description)
-        self.assertIn('income group: 4', ent.tag.description)
-        self.assertIn('F182013.v4c_web.stable_lights.avg_vis.p', ent.tag.file_name)
-        self.assertIn('F182013.v4c_web.stable_lights.avg_vis.p', ent.tag.file_name)
+        self.assertEqual('F182013.v4c_web.stable_lights.avg_vis.p', ent.nightlight_file)
+        self.assertIn('Switzerland 2013 GDP: ', ent.description)
+        self.assertIn('Germany 2013 GDP: ', ent.description)
+        self.assertIn('income group: 4', ent.description)
+
 
 # Execute Tests
 if __name__ == "__main__":

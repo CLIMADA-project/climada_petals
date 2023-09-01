@@ -36,7 +36,6 @@ import numba
 
 from climada.hazard.centroids.centr import Centroids
 from climada.hazard.base import Hazard
-from climada.hazard.tag import Tag as TagHazard
 from climada.util.constants import ONE_LAT_KM
 import climada.util.dates_times as u_dt
 import climada.util.coordinates as u_coord
@@ -55,10 +54,10 @@ class WildFire(Hazard):
     consistency, we consider an event as a whole fire season. A fire season
     is defined as a whole year (Jan-Dec in the NHS, Jul-Jun in SHS). This allows
     consistent risk assessment across the globe and over time. Hazard for
-    which events refer to a fire season have the tag 'WFseason'.
+    which events refer to a fire season have the haz_type 'WFseason'.
 
     In order to perform concrete case studies or calibrate impact functions,
-    events can be displayed as single fires. In that case they have the tag
+    events can be displayed as single fires. In that case they have the haz_type
     'WFsingle'.
 
     Attributes
@@ -303,7 +302,7 @@ class WildFire(Hazard):
             haz.hist_fire_seasons = hist_fire_seasons
 
         # save
-        haz.tag = TagHazard('WFseason')
+        haz.haz_type = 'WFseason'
         haz.centroids = centroids
         haz.n_fires = n_fires
         haz.units = 'K' # Kelvin brightness
@@ -557,7 +556,7 @@ class WildFire(Hazard):
                                     np.amax(self.intensity[idx], 0))
 
         # save
-        self.tag = TagHazard('WFseason')
+        self.haz_type = 'WFseason'
         self.units = 'K' # Kelvin brightness
 
         # Following values are defined for each fire season
@@ -876,7 +875,7 @@ class WildFire(Hazard):
         # of these points (maximal damages).
         tree_centr = BallTree(centroids.coord, metric='chebyshev')
         if self.pool:
-            chunksize = min(num_ev//self.pool.ncpus, 1000)
+            chunksize = max(min(num_ev//self.pool.ncpus, 1000), 1)
             bright_list = self.pool.map(self._brightness_one_fire,
                                         itertools.repeat(df_firms, num_ev),
                                         itertools.repeat(tree_centr, num_ev),
@@ -895,7 +894,7 @@ class WildFire(Hazard):
         num_ev = uni_ev.size
 
         # save
-        self.tag = TagHazard('WFsingle')
+        self.haz_type = 'WFsingle'
         self.centroids = centroids
         self.units = 'K' # Kelvin brightness
 
