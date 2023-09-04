@@ -32,9 +32,7 @@ pipeline {
             pip install --upgrade cdsapi dantro matplotlib==3.5.* ruamel.yaml
             rm -rf tests_xml/
             rm -rf coverage/
-            python -m coverage run tests_runner.py unit
-            python -m coverage xml -o coverage.xml
-            python -m coverage html -d coverage'''
+            make unit_test'''
           }
         }
 

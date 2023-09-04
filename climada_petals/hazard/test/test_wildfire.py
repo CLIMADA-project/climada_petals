@@ -227,7 +227,6 @@ class TestMethodsFirms(unittest.TestCase):
         wf.check()
 
         self.assertEqual(wf.haz_type, 'WFsingle')
-        self.assertEqual(wf.tag.description, [])
         self.assertEqual(wf.units, 'K')
         self.assertEqual(wf.centroids.size, 19454)
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 8)))

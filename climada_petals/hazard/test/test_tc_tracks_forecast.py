@@ -63,6 +63,10 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].time_step.dtype, np.float64)
         self.assertEqual(forecast.data[1].max_sustained_wind[2], 14.9)
         self.assertEqual(forecast.data[0].central_pressure[1], 1000.)
+        self.assertAlmostEqual(forecast.data[0].radius_max_wind[1],
+                               43.3,
+                               delta=0.01)
+        self.assertEqual(forecast.data[0].radius_max_wind[1], 43.29955029743889)
         self.assertEqual(forecast.data[0]['time.year'][1], 2020)
         self.assertEqual(forecast.data[16]['time.month'][7], 3)
         self.assertEqual(forecast.data[16]['time.day'][7], 21)
@@ -85,6 +89,9 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.size, 122)
         self.assertEqual(forecast.data[121].lat[2], 9.6)
         self.assertEqual(forecast.data[121].lon[2], -126.8)
+        self.assertAlmostEqual(forecast.data[121].radius_max_wind[1],
+                               146.78,
+                               delta=0.01)
         np.testing.assert_array_equal(
             np.unique(
                 [forecast.data[ind_i].name
