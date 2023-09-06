@@ -22,7 +22,6 @@ Test tc_tracks_forecast module.
 import unittest
 import numpy as np
 import pandas as pd
-import warnings
 
 from climada import CONFIG
 from climada_petals.hazard.tc_tracks_forecast import TCForecast
@@ -110,7 +109,9 @@ class TestECMWF(unittest.TestCase):
         with self.assertLogs('climada_petals.hazard.tc_tracks_forecast', level='INFO') as cm:
             forecast = TCForecast()
             forecast.fetch_ecmwf(files=TEST_BUFR_FILE_MULTIMESSAGE_MISSING_TIMEPERIOD)
-        assert ("Track 07L has no defined timePeriod. Track is discarded.") in cm.output[0]
+        self.assertIn(
+            "Track 07L has no defined timePeriod. Track is discarded.", cm.output[0]
+        )
         self.assertEqual(forecast.size, 125)
         np.testing.assert_array_equal(
             np.unique(
