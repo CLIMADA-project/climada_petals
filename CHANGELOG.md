@@ -4,6 +4,26 @@
 
 Release date: 2023-09-01
 
+### Description
+
+### Dependency Changes
+
+### Added
+
+### Changed
+
+### Fixed
+
+- `TCForecast` now skips "untrackable" TCs when reading multi-message `.bufr` files [#91](https://github.com/CLIMADA-project/climada_petals/pull/91)
+
+### Deprecated
+
+### Removed
+
+## 4.0.0
+
+Release date: 2023-09-01
+
 ### Dependency Changes
 
 Upgraded:
