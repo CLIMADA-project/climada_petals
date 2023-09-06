@@ -16,11 +16,17 @@ Code freeze date: YYYY-MM-DD
 
 ### Fixed
 
-- `TCForecast` now skips "untrackable" TCs when reading multi-message `.bufr` files [#91](https://github.com/CLIMADA-project/climada_petals/pull/91)
-
 ### Deprecated
 
 ### Removed
+
+## 4.0.0
+
+Release date: 2023-09-01
+
+### Fixed
+
+- `TCForecast` now skips "untrackable" TCs when reading multi-message `.bufr` files [#91](https://github.com/CLIMADA-project/climada_petals/pull/91)
 
 ## 4.0.0
 
