@@ -21,6 +21,8 @@ Upgraded:
 
 ### Fixed
 
+- `TCForecast` now skips "untrackable" TCs when reading multi-message `.bufr` files [#91](https://github.com/CLIMADA-project/climada_petals/pull/91)
+
 ### Deprecated
 
 ### Removed
