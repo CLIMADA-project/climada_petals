@@ -27,10 +27,12 @@ import copy
 import datetime as dt
 from pathlib import Path
 import cftime
-import xarray as xr
 import geopandas as gpd
 import numpy as np
 import numba
+import pandas as pd
+import xarray as xr
+
 
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import BallTree
@@ -754,7 +756,7 @@ def data_preprocessing_percentile(percentile, yearrange, yearrange_ref,
                 dataf = _xarray_to_geopandas(data_chunk)
                 first_file = False
             else:
-                dataf = dataf.append(_xarray_to_geopandas(data_chunk))
+                dataf = pd.concat([dataf, _xarray_to_geopandas(data_chunk)])
     del data_chunk
     dataf = dataf.sort_values(['lat', 'lon', 'dtime'], ascending=[True, True, True])
     return dataf.reset_index(drop=True), centroids

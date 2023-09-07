@@ -606,7 +606,7 @@ class WildFire(Hazard):
                     df_firms_viirs = df_firms_viirs.drop(df_firms_viirs[ \
                         df_firms_viirs.confidence == 'l'].index)
                     df_firms_viirs = df_firms_viirs.rename(columns={'bright_ti4':'brightness'})
-                    temp = temp.append(df_firms_viirs, sort=True)
+                    temp = pd.concat([temp, df_firms_viirs], sort=True)
                     temp = temp.drop(columns=['bright_ti4'])
 
                 df_firms = temp
