@@ -26,7 +26,7 @@ import time
 import urllib.request
 
 import geopandas as gpd
-import numpy as np
+import pandas as pd
 from osgeo import ogr, gdal
 import overpy
 import shapely
@@ -417,28 +417,29 @@ class OSMFileQuery:
         """
         # features consisting in points and multipolygon results:
         if ci_type in ['healthcare','education','food']:
-            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
-                                 DICT_CIS_OSM[ci_type]['osm_query'])
-            gdf = gdf.append(
+            gdf = pd.concat([
+                self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
+                              DICT_CIS_OSM[ci_type]['osm_query']),
                 self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
-                              DICT_CIS_OSM[ci_type]['osm_query']))
+                              DICT_CIS_OSM[ci_type]['osm_query']),
+            ])
 
         # features consisting in multipolygon results:
         elif ci_type in ['air']:
             gdf = self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
-                                 DICT_CIS_OSM[ci_type]['osm_query'])
+                                DICT_CIS_OSM[ci_type]['osm_query'])
 
         # features consisting in points, multipolygons and lines:
         elif ci_type in ['gas','oil','telecom','water','wastewater','power',
                          'rail','road']:
-            gdf = self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
-                                 DICT_CIS_OSM[ci_type]['osm_query'])
-            gdf = gdf.append(
+            gdf = pd.concat([
+                self.retrieve('points', DICT_CIS_OSM[ci_type]['osm_keys'],
+                              DICT_CIS_OSM[ci_type]['osm_query']),
                 self.retrieve('multipolygons', DICT_CIS_OSM[ci_type]['osm_keys'],
-                                 DICT_CIS_OSM[ci_type]['osm_query']))
-            gdf = gdf.append(
+                              DICT_CIS_OSM[ci_type]['osm_query']),
                 self.retrieve('lines', DICT_CIS_OSM[ci_type]['osm_keys'],
-                                 DICT_CIS_OSM[ci_type]['osm_query']))
+                              DICT_CIS_OSM[ci_type]['osm_query']),
+            ])
         else:
             LOGGER.warning('feature not in DICT_CIS_OSM. Returning empty gdf')
             gdf = gpd.GeoDataFrame()
