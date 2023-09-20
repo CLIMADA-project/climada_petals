@@ -69,7 +69,7 @@ class CoastalFlood(Hazard):
             projection = [projection]
 
         file_names = [
-                f'inuncoast_{rcp}_{sub}_{year}_rp{rp.zfill(5-len(rp))}_{proj}.tif'
+                f'inuncoast_{rcp}_{sub}_{year}_rp{rp.zfill(4)}_{proj}.tif'
                     for rcp in rcps
                     for sub in subsidence
                     for year in years
