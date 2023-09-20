@@ -277,7 +277,7 @@ class TCForecast(TCTracks):
                 n_timestep = ec.codes_get_size(bufr, 'timePeriod') + 1
             except ec.CodesInternalError:
                 LOGGER.warning("Track %s has no defined timePeriod. Track is discarded.", sid)
-                return None
+                continue
 
             # get number of ensemble members
             ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
@@ -418,6 +418,8 @@ class TCForecast(TCTracks):
                     self.append(track)
                 else:
                     LOGGER.debug('Dropping empty track %s, subset %d', name, i)
+            # release the BUFR message
+            ec.codes_release(bufr)
 
     def write_hdf5(self, file_name, complevel=5):
         """Write TC tracks in NetCDF4-compliant HDF5 format. This method
