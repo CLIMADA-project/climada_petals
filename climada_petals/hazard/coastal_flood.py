@@ -30,7 +30,7 @@ class CoastalFlood(Hazard):
     def from_aqueduct_tif(cls, rcps=None, years=None, return_periods=None,
                            subsidence=['nosub'], projection=['0'],
                            centroids=None, countries=None, shape=None,
-                           boundaries=None):
+                           boundaries=None, dwd_dir=DOWNLOAD_DIRECTORY):
         """
         TODO: proper docstring
 
