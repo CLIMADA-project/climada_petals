@@ -112,8 +112,8 @@ class TCSurgeGeoClaw(Hazard):
         * 'SA' South Atlantic
     gauge_data : list of lists of dicts
         For each storm and each gauge, a dict containing the `location` of the gauge, and
-        (for each landfall event) `base_sea_level`, `topo_height`, `time` and `height_above_geoid`
-        information.
+        (for each landfall event) `base_sea_level`, `topo_height`, `time`, `height_above_geoid`,
+        `height_above_ground`, and `amr_level` information.
         Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
         can manually pickle it in a separate file using the `write_gauge_data` method.
     """
@@ -148,8 +148,8 @@ class TCSurgeGeoClaw(Hazard):
                 'SA' South Atlantic
         gauge_data : list of lists of dicts
             For each storm and each gauge, a dict containing the `location` of the gauge, and
-            (for each landfall event) `base_sea_level`, `topo_height`, `time` and
-            `height_above_geoid` information.
+            (for each landfall event) `base_sea_level`, `topo_height`, `time`,
+            `height_above_geoid`, `height_above_ground`, and `amr_level` information.
             Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
             can manually pickle it in a separate file using the `write_gauge_data` method.
         """
@@ -462,13 +462,23 @@ def _geoclaw_surge_from_track(
         Surge height in meters.
     gauge_data : list of dicts
         For each gauge, a dict containing the `location` of the gauge, and (for each surge event)
-        `base_sea_level`, `topo_height`, `time` and `height_above_geoid` information.
+        `base_sea_level`, `topo_height`, `time`, `height_above_geoid`, `height_above_ground`,
+        and `amr_level` information.
     """
     gauges = [] if gauges is None else gauges
 
     # initialize gauge data
-    gauge_data = [{'location': g, 'base_sea_level': [], 'topo_height': [],
-                   'time': [], 'height_above_geoid': []} for g in gauges]
+    gauge_data = [
+        {
+            'location': g,
+            'base_sea_level': [],
+            'topo_height': [],
+            'time': [],
+            'height_above_ground': [],
+            'height_above_geoid': [],
+            'amr_level': [],
+        } for g in gauges
+    ]
 
     # initialize intensity
     intensity = np.zeros(centroids.shape[0])
@@ -567,7 +577,10 @@ def _geoclaw_surge_from_track(
             surge_h.append(event_surge_h)
             for igauge, new_gauge_data in enumerate(runner.gauge_data):
                 if len(new_gauge_data['time']) > 0:
-                    for var in ['base_sea_level', 'topo_height', 'time', 'height_above_geoid']:
+                    for var in [
+                        'base_sea_level', 'topo_height', 'time', 'height_above_ground',
+                        'height_above_geoid', 'amr_level',
+                    ]:
                         gauge_data[igauge][var].append(new_gauge_data[var])
 
         # write results to intensity array
@@ -614,8 +627,8 @@ class GeoclawRunner():
     surge_h : ndarray
         Maximum height of inundation recorded at given centroids.
     gauge_data : list of dicts
-        For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time` and
-        `height_above_geoid` information.
+        For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time`,
+        `height_above_geoid`, `height_above_ground`, and `amr_level` information.
     """
     def __init__(
         self,
@@ -673,9 +686,18 @@ class GeoclawRunner():
         self.time_offset = time_offset
         self.time_offset_str = _dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
         self.topo_path = topo_path
-        self.gauge_data = [{'location': g, 'base_sea_level': 0, 'topo_height': -32768.0,
-                            'time': [], 'height_above_geoid': [], 'in_domain': True}
-                           for g in gauges]
+        self.gauge_data = [
+            {
+                'location': g,
+                'base_sea_level': 0,
+                'topo_height': -32768.0,
+                'time': [],
+                'height_above_ground': [],
+                'height_above_geoid': [],
+                'amr_level': [],
+                'in_domain': True,
+            } for g in gauges
+        ]
         self.sea_level_fun = sea_level
         if np.isscalar(sea_level):
             self.sea_level_fun = lambda bounds, period: sea_level
@@ -821,7 +843,9 @@ include $(CLAW)/clawutil/src/Makefile.common
                 continue
             gauge['time'] = self.time_offset + g.t * np.timedelta64(1, 's')
             gauge['topo_height'] = g.q[1, -1] - g.q[0, -1]
-            gauge['height_above_geoid'] = g.q[1,:]
+            gauge['height_above_ground'] = g.q[0, :]
+            gauge['height_above_geoid'] = g.q[1, :]
+            gauge["amr_level"] = g.level
 
 
     def write_rundata(self) -> None:
@@ -1060,7 +1084,7 @@ include $(CLAW)/clawutil/src/Makefile.common
             self.rundata.gaugedata.gauges.append(
                 [i_gauge + 1, lon, lat, clawdata.t0, clawdata.tfinal]
             )
-        # q[0]: height above topography (topo includes added sea_level)
+        # q[0]: height above topography (above ground, where ground might be sea floor)
         self.rundata.gaugedata.q_out_fields = [0]
 
 
