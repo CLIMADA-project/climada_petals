@@ -45,7 +45,6 @@ from climada.hazard.trop_cyclone import (
 from climada.util import ureg
 import climada.util.constants as u_const
 import climada.util.coordinates as u_coord
-from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -220,7 +219,6 @@ class TCRain(Hazard):
         tracks: TCTracks,
         centroids: Optional[Centroids] = None,
         pool: Optional[pathos.pools.ProcessPool] = None,
-        description: str = '',
         model: str = 'R-CLIPER',
         model_kwargs: Optional[dict] = None,
         ignore_distance_to_coast: bool = False,
@@ -329,8 +327,6 @@ class TCRain(Hazard):
             Centroids where to model TC. Default: global centroids at 360 arc-seconds resolution.
         pool : pathos.pool, optional
             Pool that will be used for parallel computation of rain fields. Default: None
-        description : str, optional
-            Description of the event set. Default: "".
         model : str, optional
             Parametric rain model to use: "R-CLIPER" (faster and requires less inputs, but
             much less accurate, statistical approach, Tuleya et al. 2007), "TCR" (physics-based
@@ -445,7 +441,6 @@ class TCRain(Hazard):
         haz.intensity_thres = intensity_thres
         LOGGER.debug('Compute frequency.')
         TropCyclone.frequency_from_tracks(haz, tracks.data)
-        haz.tag.append(Tag(description=description))
         return haz
 
     @classmethod
@@ -512,7 +507,6 @@ class TCRain(Hazard):
         )
 
         new_haz = cls(haz_type=HAZ_TYPE)
-        new_haz.tag = Tag(file_name=f'Name: {track.name}')
         new_haz.intensity_thres = intensity_thres
         new_haz.intensity = intensity_sparse
         if store_rainrates:
