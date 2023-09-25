@@ -33,7 +33,7 @@ import pickle
 import site
 import subprocess
 import sys
-from typing import Optional, Tuple, List, Union, Dict, Callable
+from typing import Optional, Tuple, List, Union, Dict, Callable, Any
 import warnings
 
 import cartopy.crs as ccrs
@@ -59,7 +59,6 @@ from climada.hazard.tc_tracks import estimate_rmw, estimate_roci
 from climada.util import ureg
 from climada.util.constants import ONE_LAT_KM
 import climada.util.coordinates as u_coord
-from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -165,7 +164,6 @@ class TCSurgeGeoClaw(Hazard):
         tracks : TCTracks,
         topo_path : Union[pathlib.Path, str],
         centroids : Optional[Centroids] = None,
-        description : str = '',
         gauges : Optional[List] = None,
         topo_res_as : float = 30.0,
         node_max_dist_deg : float = 5.5,
@@ -174,7 +172,7 @@ class TCSurgeGeoClaw(Hazard):
         max_latitude : float = 61.0,
         sea_level : float = 0.0,
         resume : Optional[Union[pathlib.Path, str]] = None,
-        pool : any = None,
+        pool : Any = None,
     ):
         """Generate a TC surge hazard instance from a TCTracks object
 
@@ -252,7 +250,6 @@ class TCSurgeGeoClaw(Hazard):
         ])
         with _filter_xr_warnings():
             TropCyclone.frequency_from_tracks(haz, tracks.data)
-        haz.tag.append(Tag(description=description))
         return haz
 
     @classmethod
@@ -267,7 +264,7 @@ class TCSurgeGeoClaw(Hazard):
         gauges : Optional[List] = None,
         sea_level : float = 0.0,
         resume : Optional[Tuple[pathlib.Path, int]] = None,
-        pool : any = None,
+        pool : Any = None,
     ):
         """Generate a TC surge hazard from a single xarray track dataset
 
@@ -337,7 +334,6 @@ class TCSurgeGeoClaw(Hazard):
             frequency=np.array([1]),
             fraction=sparse.csr_matrix(intensity.shape),
             units="m",
-            file_name='Name: ' + track.attrs["name"],
         )
 
     def write_hdf5(self, *args, **kwargs) -> None:
@@ -420,7 +416,7 @@ def _geoclaw_surge_from_track(
     gauges : Optional[List] = None,
     sea_level : float = 0.0,
     resume : Optional[Tuple[pathlib.Path, int]] = None,
-    pool : any = None,
+    pool : Any = None,
     node_max_dist_deg : float = 5.5,
 ) -> Tuple[np.ndarray, List[dict]]:
     """Compute TC surge height on centroids from a single track dataset
@@ -1186,14 +1182,14 @@ class LinearSegmentedNormalize(mcolors.Normalize):
         self.values = np.linspace(0, 1, len(self.vthresh))
         mcolors.Normalize.__init__(self, vmin=vthresh[0], vmax=vthresh[-1], clip=False)
 
-    def __call__(self, value : float, clip : any = None) -> np.ndarray:
+    def __call__(self, value : float, clip : Any = None) -> np.ndarray:
         return np.ma.masked_array(np.interp(value, self.vthresh, self.values))
 
 
 def _climada_xarray_to_geoclaw_storm(
     track : xr.Dataset,
     offset : Optional[dt.datetime] = None,
-) -> any:
+) -> Any:
     """Convert CLIMADA's xarray TC track to GeoClaw storm object
 
     Parameters
@@ -1611,7 +1607,7 @@ def _load_topography(
     path : Union[pathlib.Path, str],
     bounds : Tuple[float, float, float, float],
     res_as : float,
-) -> Tuple[Tuple[float, float, float, float], any]:
+) -> Tuple[Tuple[float, float, float, float], Any]:
     """Load topographical elevation data in specified bounds and resolution
 
     The bounds of the returned topodata are always larger than the requested bounds to make sure
