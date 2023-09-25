@@ -37,14 +37,7 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
-<<<<<<< HEAD
-        'climada',
-        'cdsapi',
-        'dantro',
-        'ruamel.yaml',
-=======
         'climada>=4.0',
->>>>>>> develop
         'scikit-image',
         'xesmf',
     ],

@@ -22,7 +22,7 @@ Transformations for dantro data pipeline
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Union, List, Mapping, Any, Iterable, Tuple
+from typing import Optional, Union, List, Mapping, Any, Iterable, Tuple, Callable
 from collections import deque
 from copy import deepcopy
 
@@ -178,8 +178,7 @@ def merge_flood_maps(flood_maps: Mapping[str, xr.DataArray]) -> xr.DataArray:
     # Concatenate and rename
     years = np.insert(np.array(years)[idx], 0, 1)
     da_flood_maps = xr.concat(darrs, pd.Index(years, name="return_period"))
-    da_flood_maps = da_flood_maps.rename(x="longitude", y="latitude"
-    )
+    da_flood_maps = da_flood_maps.rename(x="longitude", y="latitude")
     return da_flood_maps.rename("flood_depth")
 
 
@@ -249,7 +248,7 @@ def download_glofas_discharge(
     num_proc: int = 1,
     download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
     countries: Optional[Union[List[str], str]] = None,
-    preprocess: Optional[str] = None,
+    preprocess: Optional[Callable] = None,
     open_mfdataset_kw: Optional[Mapping[str, Any]] = None,
     **request_kwargs,
 ) -> xr.DataArray:
@@ -325,16 +324,14 @@ def download_glofas_discharge(
     )
 
     # Set arguments for 'open_mfdataset'
-    open_kwargs = dict(chunks={}, combine="nested", concat_dim="time")
+    open_kwargs = dict(
+        chunks={}, combine="nested", concat_dim="time", preprocess=preprocess
+    )
     if open_mfdataset_kw is not None:
         open_kwargs.update(open_mfdataset_kw)
 
-    # Preprocessing
-    if preprocess is not None:
-        open_kwargs.update(preprocess=lambda x: eval(preprocess))
-
     # Open the data and return it
-    return xr.open_mfdataset(files, **open_kwargs)["dis24"]
+    return xr.open_mfdataset(files, **open_kwargs)["dis24"].squeeze()
 
 
 def max_from_isel(
@@ -665,8 +662,9 @@ def apply_flopros(
     return return_period.where(return_period > flopros)
 
 
-# TODO: Make this support datasets as return type inputs!!
-def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dataset:
+def flood_depth(
+    return_period: Union[xr.Dataset, xr.DataArray], flood_maps: xr.DataArray
+) -> Union[xr.Dataset, xr.DataArray]:
     """Compute the flood depth from a return period and flood maps.
 
     At each lat/lon coordinate, take the return period(s) and use them to interpolate
@@ -676,16 +674,16 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
 
     Parameters
     ----------
-    return_period : xr.DataArray
-        The return periods for which to compute the flood depth
+    return_period : xr.DataArray or xr.Dataset
+        The return periods for which to compute the flood depth. If this is a dataset,
+        the function will compute the flood depth for each variable.
     flood_maps : xr.DataArray
         Maps that indicate flood depth at latitude/longitude/return period coordinates.
 
     Returns
     -------
-    xr.Dataset
-        The flood depths for the given return periods. The dataset contains a single
-        variable ``Flood Depth`` with the same dimensions as ``return_period``.
+    xr.DataArray or xr.Dataset
+        The flood depths for the given return periods.
     """
     # Select lon/lat for flood maps
     flood_maps = sel_lon_lat_slice(flood_maps, return_period)
@@ -744,7 +742,7 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
         out_depth[:] = np.maximum(out_depth, 0.0)
 
     # Perform operation
-    return xr.apply_ufunc(
+    out = xr.apply_ufunc(
         interpolate,
         return_period,
         flood_maps,
@@ -754,16 +752,24 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.DataArray) -> xr.Dat
         dask="parallelized",
         output_dtypes=[np.float32],
         dask_gufunc_kwargs=dict(allow_rechunk=True),
-    ).rename("Flood Depth")
+    )
+    if isinstance(out, xr.DataArray):
+        out = out.rename("Flood Depth")
+    return out
 
 
 def save_file(
     data: Union[xr.Dataset, xr.DataArray],
     output_path: Union[Path, str],
     encoding: Optional[Mapping[str, Any]] = None,
+    engine: Optional[str] = "netcdf4",
     **encoding_defaults,
 ):
     """Save xarray data as a file with default compression
+
+    Calls ``data.to_netcdf``.
+    See https://docs.xarray.dev/en/stable/generated/xarray.Dataset.to_netcdf.html
+    for the documentation of the underlying method.
 
     Parameters
     ----------
@@ -774,6 +780,8 @@ def save_file(
         is automatically appended. The enclosing folder must already exist.
     encoding : dict (optional)
         Encoding settings for every data variable. Will update the default settings.
+    engine : str (optional)
+        The engine used for writing the file. Defaults to ``"netcdf4"``.
     encoding_defaults
         Encoding settings shared by all data variables. This will update the default
         encoding settings, which are ``dict(dtype="float32", zlib=True, complevel=4)``.
@@ -794,7 +802,7 @@ def save_file(
     output_path = Path(output_path)
     if not output_path.suffix:
         output_path = output_path.with_suffix(".nc")
-    data.to_netcdf(output_path, encoding=enc)
+    data.to_netcdf(output_path, encoding=enc, engine=engine)
 
 
 # def finalize(

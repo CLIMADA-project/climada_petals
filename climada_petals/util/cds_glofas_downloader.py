@@ -8,6 +8,8 @@ import logging
 
 from cdsapi import Client
 from ruamel.yaml import YAML
+import pandas as pd
+import numpy as np
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ DEFAULT_REQUESTS = {
         "year": "2022",
         "month": "08",
         "day": "01",
-        "leadtime_hour": list(map(str, range(1, 31))),
+        "leadtime_hour": list(map(str, (np.arange(1, 31, dtype=np.int_) * 24).flat)),
     },
 }
 """Default request keyword arguments to be updated by the user requests"""

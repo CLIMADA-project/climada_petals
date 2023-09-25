@@ -29,7 +29,12 @@ import logging
 import xarray as xr
 import requests
 
-from .transform_ops import merge_flood_maps, download_glofas_discharge, fit_gumbel_r, save_file
+from .transform_ops import (
+    merge_flood_maps,
+    download_glofas_discharge,
+    fit_gumbel_r,
+    save_file,
+)
 from .rf_glofas import dask_client, DEFAULT_DATA_DIR
 
 LOGGER = logging.getLogger(__file__)
@@ -94,7 +99,7 @@ def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False)
         "1979",
         "2015",
         num_proc=num_downloads,
-        preprocess="x.groupby('time.year').max()",
+        preprocess=lambda x: x.groupby("time.year").max(),
         open_mfdataset_kw=dict(
             concat_dim="year",
             chunks=dict(time=-1, longitude="auto", latitude="auto"),

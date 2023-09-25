@@ -205,7 +205,7 @@ def setup(cfg: Union[str, Path] = DEFAULT_SETUP_CFG):
 
 
 def hazard_series_from_dataset(
-    data: Union[Path, str, xr.Dataset], event_dim: str
+    data: Union[Path, str, xr.Dataset], intensity: str, event_dim: str
 ) -> pd.Series:
     """Create a series of Hazard objects from a multi-dimensional dataset
 
@@ -263,7 +263,7 @@ def hazard_series_from_dataset(
         return Hazard.from_xarray_raster(
             dataset,
             hazard_type="RF",
-            intensity="Flood Depth",
+            intensity=intensity,
             intensity_unit="m",
             coordinate_vars=dict(event=event_dim),
             data_vars=dict(date="time"),
