@@ -151,9 +151,9 @@ class TCRain(Hazard):
         new_haz.fraction.data.fill(1)
         # store date of start
         new_haz.date = np.array([dt.datetime(
-            int(track.time.dt.year[0]),
-            int(track.time.dt.month[0]),
-            int(track.time.dt.day[0])
+            track.time.dt.year.values[0],
+            track.time.dt.month.values[0],
+            track.time.dt.day.values[0],
         ).toordinal()])
         new_haz.orig = np.array([track.orig_event_flag])
         new_haz.category = np.array([track.category])
