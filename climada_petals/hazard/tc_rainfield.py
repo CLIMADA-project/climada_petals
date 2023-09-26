@@ -31,7 +31,6 @@ from scipy import sparse
 from climada.hazard.base import Hazard
 from climada.hazard.trop_cyclone import TropCyclone
 from climada.hazard.centroids.centr import Centroids
-from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -66,7 +65,7 @@ class TCRain(Hazard):
         self.__dict__ = TCRain.from_tracks(*args, **kwargs).__dict__
 
     @classmethod
-    def from_tracks(cls, tracks, centroids=None, dist_degree=3, description='', pool=None,
+    def from_tracks(cls, tracks, centroids=None, dist_degree=3, pool=None,
                     intensity_thres=None):
         """Computes rainfield from tracks based on the RCLIPER model.
         Parallel process.
@@ -81,8 +80,6 @@ class TCRain(Hazard):
         disr_degree : int
             distance (in degrees) from node within which
             the rainfield is processed (default 3 deg,~300km)
-        description : str, optional
-            description of the events
         pool : pathos.pool, optional
             Pool that will be used for parallel computation of wind fields. Default: None
         intensity_thres : float, optional
@@ -118,7 +115,6 @@ class TCRain(Hazard):
         haz = cls.concat(tc_haz)
         LOGGER.debug('Compute frequency.')
         TropCyclone.frequency_from_tracks(haz, tracks.data)
-        haz.tag.description = description
         return haz
 
     @staticmethod
@@ -144,7 +140,6 @@ class TCRain(Hazard):
             New TCRain object with data from track.
         """
         new_haz = TCRain()
-        new_haz.tag = Tag(file_name='IBTrACS: ' + track.name)
         new_haz.intensity = rainfield_from_track(track, centroids, dist_degree, intensity_thres)
         new_haz.units = 'mm'
         new_haz.centroids = centroids

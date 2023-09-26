@@ -277,7 +277,7 @@ class TCForecast(TCTracks):
                 n_timestep = ec.codes_get_size(bufr, 'timePeriod') + 1
             except ec.CodesInternalError:
                 LOGGER.warning("Track %s has no defined timePeriod. Track is discarded.", sid)
-                return None
+                continue
 
             # get number of ensemble members
             ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
