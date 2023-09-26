@@ -59,7 +59,6 @@ from climada.hazard.tc_tracks import estimate_rmw, estimate_roci
 from climada.util import ureg
 from climada.util.constants import ONE_LAT_KM
 import climada.util.coordinates as u_coord
-from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -221,6 +220,9 @@ class TCSurgeGeoClaw(Hazard):
             solver for a single landfall event is using OpenMP multiprocessing capabilities
             already. You will only benefit from processing these OpenMP tasks in parallel if a
             sufficient number of CPUs is available, e.g. with MPI multitasking on a cluster.
+            To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to the
+            number of cores and set the compiler flag `export FFLAGS='-O2 -fopenmp'`, following
+            the [GeoClaw docs](https://www.clawpack.org/openmp.html).
 
         Returns
         -------
@@ -252,7 +254,6 @@ class TCSurgeGeoClaw(Hazard):
         ])
         with _filter_xr_warnings():
             TropCyclone.frequency_from_tracks(haz, tracks.data)
-        haz.tag.append(Tag(description=description))
         return haz
 
     @classmethod
@@ -303,7 +304,10 @@ class TCSurgeGeoClaw(Hazard):
             operation later from this directory if it already exists. The integer points to the
             line number (starting from 0) in the file to consider. Default: None
         pool : an object with `map` functionality, optional
-            If given, landfall events are processed in parallel.
+            If given, landfall events are processed in parallel. Experimental feature for use with
+            MPI. To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to
+            the number of cores and set the compiler flag `export FFLAGS='-O2 -fopenmp'`, following
+            the [GeoClaw docs](https://www.clawpack.org/openmp.html).
 
         Returns
         -------
@@ -451,7 +455,10 @@ def _geoclaw_surge_from_track(
         operation later from this directory if it already exists. The integer points to the
         line number (starting from 0) in the file to consider. Default: None
     pool : an object with `map` functionality, optional
-        If given, landfall events are processed in parallel.
+        If given, landfall events are processed in parallel. Experimental feature for use with
+        MPI. To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to
+        the number of cores and set the compiler flag `export FFLAGS='-O2 -fopenmp'`, following
+        the [GeoClaw docs](https://www.clawpack.org/openmp.html).
     node_max_dist_deg : float, optional
         Maximum distance from a TC track node in degrees for a centroid to be considered
         as potentially affected. Default: 5.5
