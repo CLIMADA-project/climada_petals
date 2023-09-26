@@ -2059,16 +2059,21 @@ def _clawpack_info() -> Tuple[Optional[pathlib.Path], Tuple[str]]:
     return path, decorators
 
 
-def _setup_clawpack(version : str = CLAWPACK_VERSION) -> None:
+def _setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) -> None:
     """Install the specified version of clawpack if not already present
 
     Parameters
     ----------
     version : str, optional
         A git (short or long) hash, branch name or tag.
+    overwrite : bool, optional
+        If ``True``, perform a fresh install even if an existing installation is found.
+        Defaults to ``False``.
     """
     path, git_ver = _clawpack_info()
-    if path is None or version not in git_ver and version not in git_ver[0]:
+    if overwrite or (
+        path is None or version not in git_ver and version not in git_ver[0]
+    ):
         LOGGER.info("Installing Clawpack version %s", version)
         src_path = CLAWPACK_SRC_DIR
         pkg = f"git+{CLAWPACK_GIT_URL}@{version}#egg=clawpack"
@@ -2077,7 +2082,7 @@ def _setup_clawpack(version : str = CLAWPACK_VERSION) -> None:
             subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
             LOGGER.warning(f"pip install failed with return code {exc.returncode} and stdout:")
-            print(exc.output)
+            print(exc.output.decode("utf-8"))
             raise RuntimeError("pip install failed with return code %d (see output above)."
                                "Make sure that a Fortran compiler (e.g. gfortran) is available on "
                                "your machine before using tc_surge_geoclaw!") from exc
