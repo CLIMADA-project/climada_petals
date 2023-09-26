@@ -111,8 +111,8 @@ class TCSurgeGeoClaw(Hazard):
         * 'SA' South Atlantic
     gauge_data : list of lists of dicts
         For each storm and each gauge, a dict containing the `location` of the gauge, and
-        (for each landfall event) `base_sea_level`, `topo_height`, `time` and `height_above_geoid`
-        information.
+        (for each landfall event) `base_sea_level`, `topo_height`, `time`, `height_above_geoid`,
+        `height_above_ground`, and `amr_level` information.
         Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
         can manually pickle it in a separate file using the `write_gauge_data` method.
     """
@@ -147,8 +147,8 @@ class TCSurgeGeoClaw(Hazard):
                 'SA' South Atlantic
         gauge_data : list of lists of dicts
             For each storm and each gauge, a dict containing the `location` of the gauge, and
-            (for each landfall event) `base_sea_level`, `topo_height`, `time` and
-            `height_above_geoid` information.
+            (for each landfall event) `base_sea_level`, `topo_height`, `time`,
+            `height_above_geoid`, `height_above_ground`, and `amr_level` information.
             Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
             can manually pickle it in a separate file using the `write_gauge_data` method.
         """
@@ -186,8 +186,6 @@ class TCSurgeGeoClaw(Hazard):
             Centroids where to measure maximum surge heights. By default, a centroids grid at the
             resolution `topo_res_as` is generated in a bounding box around the given tracks using
             the method `TCTracks.generate_centroids`.
-        description : str, optional
-            String description of the tropical cyclone events.
         gauges : list of pairs (lat, lon), optional
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes. The result is stored in the `gauge_data`
@@ -219,6 +217,9 @@ class TCSurgeGeoClaw(Hazard):
             solver for a single landfall event is using OpenMP multiprocessing capabilities
             already. You will only benefit from processing these OpenMP tasks in parallel if a
             sufficient number of CPUs is available, e.g. with MPI multitasking on a cluster.
+            To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to the
+            number of cores and set the compiler flag `export FFLAGS='-O2 -fopenmp'`, following
+            the [GeoClaw docs](https://www.clawpack.org/openmp.html).
 
         Returns
         -------
@@ -300,7 +301,10 @@ class TCSurgeGeoClaw(Hazard):
             operation later from this directory if it already exists. The integer points to the
             line number (starting from 0) in the file to consider. Default: None
         pool : an object with `map` functionality, optional
-            If given, landfall events are processed in parallel.
+            If given, landfall events are processed in parallel. Experimental feature for use with
+            MPI. To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to
+            the number of cores and set the compiler flag `export FFLAGS='-O2 -fopenmp'`, following
+            the [GeoClaw docs](https://www.clawpack.org/openmp.html).
 
         Returns
         -------
@@ -447,7 +451,10 @@ def _geoclaw_surge_from_track(
         operation later from this directory if it already exists. The integer points to the
         line number (starting from 0) in the file to consider. Default: None
     pool : an object with `map` functionality, optional
-        If given, landfall events are processed in parallel.
+        If given, landfall events are processed in parallel. Experimental feature for use with
+        MPI. To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to
+        the number of cores and set the compiler flag `export FFLAGS='-O2 -fopenmp'`, following
+        the [GeoClaw docs](https://www.clawpack.org/openmp.html).
     node_max_dist_deg : float, optional
         Maximum distance from a TC track node in degrees for a centroid to be considered
         as potentially affected. Default: 5.5
@@ -458,13 +465,23 @@ def _geoclaw_surge_from_track(
         Surge height in meters.
     gauge_data : list of dicts
         For each gauge, a dict containing the `location` of the gauge, and (for each surge event)
-        `base_sea_level`, `topo_height`, `time` and `height_above_geoid` information.
+        `base_sea_level`, `topo_height`, `time`, `height_above_geoid`, `height_above_ground`,
+        and `amr_level` information.
     """
     gauges = [] if gauges is None else gauges
 
     # initialize gauge data
-    gauge_data = [{'location': g, 'base_sea_level': [], 'topo_height': [],
-                   'time': [], 'height_above_geoid': []} for g in gauges]
+    gauge_data = [
+        {
+            'location': g,
+            'base_sea_level': [],
+            'topo_height': [],
+            'time': [],
+            'height_above_ground': [],
+            'height_above_geoid': [],
+            'amr_level': [],
+        } for g in gauges
+    ]
 
     # initialize intensity
     intensity = np.zeros(centroids.shape[0])
@@ -563,7 +580,10 @@ def _geoclaw_surge_from_track(
             surge_h.append(event_surge_h)
             for igauge, new_gauge_data in enumerate(runner.gauge_data):
                 if len(new_gauge_data['time']) > 0:
-                    for var in ['base_sea_level', 'topo_height', 'time', 'height_above_geoid']:
+                    for var in [
+                        'base_sea_level', 'topo_height', 'time', 'height_above_ground',
+                        'height_above_geoid', 'amr_level',
+                    ]:
                         gauge_data[igauge][var].append(new_gauge_data[var])
 
         # write results to intensity array
@@ -610,8 +630,8 @@ class GeoclawRunner():
     surge_h : ndarray
         Maximum height of inundation recorded at given centroids.
     gauge_data : list of dicts
-        For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time` and
-        `height_above_geoid` information.
+        For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time`,
+        `height_above_geoid`, `height_above_ground`, and `amr_level` information.
     """
     def __init__(
         self,
@@ -669,9 +689,18 @@ class GeoclawRunner():
         self.time_offset = time_offset
         self.time_offset_str = _dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
         self.topo_path = topo_path
-        self.gauge_data = [{'location': g, 'base_sea_level': 0, 'topo_height': -32768.0,
-                            'time': [], 'height_above_geoid': [], 'in_domain': True}
-                           for g in gauges]
+        self.gauge_data = [
+            {
+                'location': g,
+                'base_sea_level': 0,
+                'topo_height': -32768.0,
+                'time': [],
+                'height_above_ground': [],
+                'height_above_geoid': [],
+                'amr_level': [],
+                'in_domain': True,
+            } for g in gauges
+        ]
         self.sea_level_fun = sea_level
         if np.isscalar(sea_level):
             self.sea_level_fun = lambda bounds, period: sea_level
@@ -817,7 +846,9 @@ include $(CLAW)/clawutil/src/Makefile.common
                 continue
             gauge['time'] = self.time_offset + g.t * np.timedelta64(1, 's')
             gauge['topo_height'] = g.q[1, -1] - g.q[0, -1]
-            gauge['height_above_geoid'] = g.q[1,:]
+            gauge['height_above_ground'] = g.q[0, :]
+            gauge['height_above_geoid'] = g.q[1, :]
+            gauge["amr_level"] = g.level
 
 
     def write_rundata(self) -> None:
@@ -915,7 +946,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         amrdata.regrid_buffer_width = 2
         amrdata.verbosity_regrid = 0
         regions = self.rundata.regiondata.regions
-        t_1, t_2 = self.rundata.clawdata.t0, self.rundata.clawdata.tfinal
+        t_1, t_2 = clawdata.t0, clawdata.tfinal
         maxlevel = amrdata.amr_levels_max
         x_1, y_1, x_2, y_2 = self.areas['wind_area']
         regions.append([1, 4, t_1, t_2, x_1, x_2, y_1, y_2])
@@ -958,6 +989,8 @@ include $(CLAW)/clawutil/src/Makefile.common
 
     def _set_rundata_geo(self) -> None:
         """Set geo-related rundata attributes."""
+        clawdata = self.rundata.clawdata
+        frictiondata = self.rundata.friction_data
         geodata = self.rundata.geo_data
         topodata = self.rundata.topo_data
 
@@ -965,8 +998,11 @@ include $(CLAW)/clawutil/src/Makefile.common
         geodata.coordinate_system = 2
 
         # different friction on land and at sea
-        geodata.manning_coefficient = [0.025, 0.050]
-        geodata.manning_break = [0.0]
+        geodata.friction_forcing = True
+        frictiondata.variable_friction = True
+        frictiondata.friction_regions.append([
+            clawdata.lower, clawdata.upper, [np.infty, 0.0, -np.infty], [0.050, 0.025],
+        ])
         geodata.dry_tolerance = 1.e-2
 
         # get sea level information for affected areas and time period
@@ -1040,17 +1076,18 @@ include $(CLAW)/clawutil/src/Makefile.common
 
     def _set_rundata_gauges(self) -> None:
         """Set gauge-related rundata attributes."""
+        clawdata = self.rundata.clawdata
         for i_gauge, gauge in enumerate(self.gauge_data):
             lat, lon = gauge['location']
-            if (self.rundata.clawdata.lower[0] > lon or self.rundata.clawdata.lower[1] > lat
-                or self.rundata.clawdata.upper[0] < lon or self.rundata.clawdata.upper[1] < lat):
+            if (clawdata.lower[0] > lon or clawdata.lower[1] > lat
+                or clawdata.upper[0] < lon or clawdata.upper[1] < lat):
                 # skip gauges outside of model domain
                 gauge['in_domain'] = False
                 continue
-            self.rundata.gaugedata.gauges.append([i_gauge + 1, lon, lat,
-                                                  self.rundata.clawdata.t0,
-                                                  self.rundata.clawdata.tfinal])
-        # q[0]: height above topography (topo includes added sea_level)
+            self.rundata.gaugedata.gauges.append(
+                [i_gauge + 1, lon, lat, clawdata.t0, clawdata.tfinal]
+            )
+        # q[0]: height above topography (above ground, where ground might be sea floor)
         self.rundata.gaugedata.q_out_fields = [0]
 
 
