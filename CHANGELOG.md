@@ -10,11 +10,17 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+- `pandas` >=1.5,<2.0 &rarr; >=1.5 (compatibility with pandas 2.x)
+
 ### Added
 
 ### Changed
 
+- improved integration tests for notebooks and external data apis
+
 ### Fixed
+
+- implicit casting from `DataArray` to `int` in reading mehtods made explicit [#95](https://github.com/CLIMADA-project/climada_petals/pull/95/files)
 
 ### Deprecated
 
