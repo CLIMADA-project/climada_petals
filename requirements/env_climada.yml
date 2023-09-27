@@ -5,3 +5,4 @@ channels:
 dependencies:
   - scikit-image>=0.21
   - climada>=4.0
+  - pymrio>=0.5.2
