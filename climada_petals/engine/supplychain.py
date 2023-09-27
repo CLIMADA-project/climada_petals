@@ -241,9 +241,6 @@ def download_mriot(mriot_type, mriot_year, download_dir):
     """
 
     if mriot_type == "EXIOBASE3":
-        # EXIOBASE3 gets a system argument. This can be ixi (ind x ind matrix)
-        # or pxp (prod x prod matrix). By default both are downloaded, we here
-        # use only ixi for the time being.
         pymrio.download_exiobase3(
             storage_folder=download_dir, system="ixi", years=[mriot_year]
         )
@@ -338,24 +335,25 @@ class SupplyChain:
             Exposure dataframe of each country/sector in the MRIOT. Columns are the 
             same as the chosen MRIOT.
     secs_imp : pd.DataFrame
-            Impact dataframe for the directly affected countries/sectors for each event. 
-            Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
+            Impact dataframe for the directly affected countries/sectors for each event with impacts.
+            Columns are the same as the chosen MRIOT and rows are the hazard events ids.
     secs_shock : pd.DataFrame
             Shocks (i.e. impact / exposure) dataframe for the directly affected countries/sectors
-            for each event. Columns are the same as the chosen MRIOT and rows are the hazard events' ids.
+            for each event with impacts. Columns are the same as the chosen MRIOT and rows are the
+            hazard events ids.
     inverse : dict
-            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            Dictionary with keys being the chosen approach (ghosh, leontief or eeioa)
             and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if 
             approach is ghosh) inverse matrix.
     coeffs : dict
-            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
-            and values the Technical (A, if approach is leontief or eeioa) or allocation 
+            Dictionary with keys being the chosen approach (ghosh, leontief or eeioa)
+            and values the Technical (A, if approach is leontief or eeioa) or allocation
             (B, if approach is ghosh) coefficients matrix.
     supchain_imp : dict
             Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
-            and values dataframes of indirect impacts to countries/sectors for each event.
-            For each dataframe, columns are the same as the chosen MRIOT and rows are the 
-            hazard events' ids.
+            and values dataframes of indirect impacts to countries/sectors for each event
+            with direct impacts. For each dataframe, columns are the same as the chosen
+            MRIOT and rows are the hazard events ids.
     """
 
     def __init__(self, mriot):
@@ -472,10 +470,10 @@ class SupplyChain:
             as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
             or as sector names (as string or list).
         shock_factor : np.array
-            It has lenght equal to the number of sectors. For each sector, it defined to
+            It has lenght equal to the number of sectors. For each sector, it defines to
             what extent the fraction of indirect losses differs from the one of direct
-            losses (i.e., impact / exposure). Deafult value is None, which means that shock 
-            factors for all sectors are equal to 1, i.e., that production and direct losses 
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock
+            factors for all sectors are equal to 1, i.e., that production and stock losses
             fractions are the same.
         """
 
@@ -539,7 +537,7 @@ class SupplyChain:
         if not np.all(self.secs_shock <= 1):
             warnings.warn(
                 "Consider changing the provided provided stock-to-production losses "
-                "ratios, as some of them lead to production losses in some sectors to "
+                "ratios, as some of them lead to some sectors' production losses to "
                 "exceed the maximum sectorial production. For these sectors, total "
                 "production loss is assumed."
             )
@@ -590,11 +588,11 @@ class SupplyChain:
             as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
             or as sector names (as string or list). Default is None.
         shock_factor : np.array
-            It has lenght equal to the number of sectors. For each sector, it defined to
+            It has lenght equal to the number of sectors. For each sector, it defines to
             what extent the fraction of indirect losses differs from the one of direct
-            losses (i.e., impact / exposure). Deafult value is None, which means that shock 
-            factors for all sectors are equal to 1, i.e., that production and direct losses 
-            fractions are the same. Default is None.
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock
+            factors for all sectors are equal to 1, i.e., that production and stock losses
+            fractions are the same.
 
         References
         ----------
