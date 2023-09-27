@@ -671,7 +671,7 @@ class SupplyChain:
                     for i in range(n_events)
                 ],
                 axis=1,
-            ).T.set_index(self.secs_dir_shock.index)})
+            ).T.set_index(self.secs_shock.index)})
 
         elif io_approach == "ghosh":
             value_added = calc_v(self.mriot.Z, self.mriot.x)
@@ -695,19 +695,32 @@ class SupplyChain:
                 )
             )})
 
-        ## TODO: Make the logger nicer (e.g. build default dict based on event type). 
         elif io_approach == 'boario':
 
             self.mriot.A = self.coeffs[io_approach]
             self.mriot.L = self.inverse[io_approach]
 
-            if 'model' not in boario_params:
-                boario_params.update({'model' : {}})
+            for boario_param_type in ['model', 'sim']:
+                if boario_param_type not in boario_params:
+                    LOGGER.debug(f"BoARIO f'{boario_param_type}' parameters were"
+                                "not specified and default values are used. This"
+                                "is not recommended and likely undesired.")
 
-                LOGGER.debug(f"BoARIO model parameters were not specified. The"
-                            "simulation is initialized with default values,"
-                            "which is likely undesired.")
+                    boario_params.update({f'{boario_param_type}':{}})
 
+            if 'event' not in boario_params:
+                if boario_type == 'recovery':
+                    boario_params.update({'event': {'recovery_time' : 30}})
+
+                elif boario_type == 'rebuild':
+                    boario_params.update({'event': {
+                        'rebuild_tau' : 5,
+                        'rebuilding_sectors': pd.Series(index=self.mriot.get_sectors())}
+                                          })
+
+                LOGGER.debug(f"BoARIO {boario_type} event parameters were not specified."
+                              "This is not recommended.")
+                
             # call ARIOPsiModel with default params
             model = ARIOPsiModel(self.mriot,
                                  # productive capital vector (i.e. exposure) needs to be in 
@@ -720,12 +733,6 @@ class SupplyChain:
                                  )
 
             # run simulation up to one year after the last event
-            if 'sim' not in boario_params:
-                boario_params.update({'sim' : {}})
-
-                LOGGER.debug(f"BoARIO simulation parameters were not specified. This"
-                            "is NOT recommended and is allowed only for quick testing purposes.")
-
             self.sim = Simulation(
                         model,
                         n_temporal_units_to_sim = (self.events_date[-1]-self.events_date[0]+365),
@@ -733,11 +740,6 @@ class SupplyChain:
                         )
 
             if boario_type == 'recovery':
-
-                if 'event' not in boario_params:
-                    boario_params.update('event': {'recovery_time' : 30})
-                    LOGGER.debug(f"BoARIO {boario_type} event parameters were not specified. This"
-                            "is NOT recommended and is allowed only for quick testing purposes.")
 
                 events_list = [EventKapitalRecover.from_series(
                                         impact=self.secs_imp.iloc[i],
@@ -751,14 +753,6 @@ class SupplyChain:
                 ]
 
             elif boario_type == 'rebuild':
-
-                if 'event' not in boario_params:
-                    boario_params.update('event': {
-                                    'rebuild_tau' : 5,
-                                    'rebuilding_sectors': pd.Series(index=self.mriot.get_sectors())}) ## TODO: MAKE IT RANDOM SAMPLES
-
-                    LOGGER.debug(f"BoARIO {boario_type} event parameters were not specified. This"
-                            "is NOT recommended and is allowed only for quick testing purposes.")
 
                 events_list = [EventKapitalRebuild.from_series(
                                         impact=self.secs_imp.iloc[i],
