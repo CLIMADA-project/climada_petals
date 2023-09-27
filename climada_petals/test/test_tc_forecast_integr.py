@@ -57,7 +57,7 @@ class TestTCForecast(unittest.TestCase):
         # Test data format for data variables
         self.assertIsInstance(tr_forecast.data[1]['max_sustained_wind'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[0]['central_pressure'].values[0], np.float64)
-        self.assertIsInstance(tr_forecast.data[0]['time_step'].values[0], np.integer)
+        self.assertIsInstance(tr_forecast.data[0]['time_step'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[2]['radius_max_wind'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[1]['environmental_pressure'].values[0], np.float64)
         self.assertIsInstance(tr_forecast.data[0]['basin'].values[0], str)
@@ -83,8 +83,6 @@ class TestTCForecast(unittest.TestCase):
         tc_forecast = TropCyclone.from_tracks(tr_forecast, centroids=TEST_CENTROIDS)
 
         self.assertEqual(tc_forecast.haz_type, 'TC')
-        self.assertEqual(tc_forecast.tag.description, [])
-        self.assertEqual(tc_forecast.tag.file_name[0], 'Name: CHANTHU')
         self.assertEqual(tc_forecast.units, 'm/s')
         self.assertEqual(tc_forecast.centroids.size, 2009)
         self.assertEqual(tc_forecast.event_id.size, 52)
