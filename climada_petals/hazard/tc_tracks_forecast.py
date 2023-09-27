@@ -47,7 +47,9 @@ from climada.hazard.tc_tracks import (
     TCTracks,
     set_category,
 )
+from climada.hazard.trop_cyclone import NM_TO_KM
 from climada.util.files_handler import get_file_names
+from climada.util.coordinates import dist_approx
 
 # declare constants
 ECMWF_FTP = CONFIG.hazard.tc_tracks_forecast.resources.ecmwf
@@ -275,15 +277,15 @@ class TCForecast(TCTracks):
                 n_timestep = ec.codes_get_size(bufr, 'timePeriod') + 1
             except ec.CodesInternalError:
                 LOGGER.warning("Track %s has no defined timePeriod. Track is discarded.", sid)
-                return None
+                continue
 
             # get number of ensemble members
             ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
             n_ens = len(ens_no)
 
             # See documentation for link to ensemble types
-            # Sometimes only one value is given instead of an array and it needs to be reproduced
-            # across all tracks
+            # Sometimes only one value is given instead of an array and it needs
+            # to be reproduced across all tracks
             ens_type = ec.codes_get_array(bufr, 'ensembleForecastType')
             if len(ens_type) == 1:
                 ens_type = np.repeat(ens_type, n_ens)
@@ -293,24 +295,29 @@ class TCForecast(TCTracks):
             lon_init_temp = ec.codes_get_array(bufr, '#2#longitude')
             pre_init_temp = ec.codes_get_array(bufr, '#1#pressureReducedToMeanSeaLevel')
             wnd_init_temp = ec.codes_get_array(bufr, '#1#windSpeedAt10M')
+            latmax_init_temp = ec.codes_get_array(bufr, '#3#latitude')
+            lonmax_init_temp = ec.codes_get_array(bufr, '#3#longitude')
 
             # check dimension of the variables, and replace missing value with NaN
-            lat_init = self._check_variable(lat_init_temp, n_ens,
-                                            varname="Latitude at time 0")
-            lon_init = self._check_variable(lon_init_temp, n_ens,
-                                            varname="Longitude at time 0")
-            pre_init = self._check_variable(pre_init_temp, n_ens,
-                                            varname="Pressure at time 0")
+            lat_init = self._check_variable(lat_init_temp, n_ens, varname="Latitude at time 0")
+            lon_init = self._check_variable(lon_init_temp, n_ens, varname="Longitude at time 0")
+            pre_init = self._check_variable(pre_init_temp, n_ens, varname="Pressure at time 0")
             wnd_init = self._check_variable(wnd_init_temp, n_ens,
                                             varname="Maximum 10m wind at time 0")
+            latmax_init = self._check_variable(latmax_init_temp, n_ens,
+                                               varname="Latitude of max 10m wind at time 0")
+            lonmax_init = self._check_variable(lonmax_init_temp, n_ens,
+                                               varname="Longitude of max 10m wind at time 0")
 
             # Create dictionaries of lists to store output for each variable.
-            # Each dict entry is an ensemble member, and it contains a list of forecast values
-            # by timestep
+            # Each dict entry is an ensemble member, and it contains a list of
+            # forecast values by timestep
             latitude = {ind_ens: np.array(lat_init[ind_ens]) for ind_ens in range(n_ens)}
             longitude = {ind_ens: np.array(lon_init[ind_ens]) for ind_ens in range(n_ens)}
             pressure = {ind_ens: np.array(pre_init[ind_ens]) for ind_ens in range(n_ens)}
             max_wind = {ind_ens: np.array(wnd_init[ind_ens]) for ind_ens in range(n_ens)}
+            latitudemax = {ind_ens: np.array(latmax_init[ind_ens]) for ind_ens in range(n_ens)}
+            longitudemax = {ind_ens: np.array(lonmax_init[ind_ens]) for ind_ens in range(n_ens)}
 
             # getting the forecasted storms
             timesteps_int = [0 for x in range(n_timestep)]
@@ -345,6 +352,8 @@ class TCForecast(TCTracks):
                 # max_wind of each ensemble members at ind_timestep
                 if significance_wind == 3:
                     wnd_temp = ec.codes_get_array(bufr, f"#{ind_timestep + 1:d}#windSpeedAt10M")
+                    latmax_temp = ec.codes_get_array(bufr, f"#{rank3:d}#latitude")
+                    lonmax_temp = ec.codes_get_array(bufr, f"#{rank3:d}#longitude")
                 else:
                     raise ValueError(
                         f'unexpected meteorologicalAttributeSignificance={significance}')
@@ -358,6 +367,10 @@ class TCForecast(TCTracks):
                                            varname=f"Pressure at time {ind_timestep}")
                 wnd = self._check_variable(wnd_temp, n_ens,
                                            varname=f"Maximum 10m wind at time {ind_timestep}")
+                latmax = self._check_variable(latmax_temp, n_ens, varname="Latitude of"
+                                              f" max 10m wind at time {ind_timestep}")
+                lonmax = self._check_variable(lonmax_temp, n_ens, varname="Longitude of"
+                                              f" max 10m wind at time {ind_timestep}")
 
                 # appending values into dictionaries
                 for ind_ens in range(n_ens):
@@ -365,6 +378,8 @@ class TCForecast(TCTracks):
                     longitude[ind_ens] = np.append(longitude[ind_ens], lon[ind_ens])
                     pressure[ind_ens] = np.append(pressure[ind_ens], pre[ind_ens])
                     max_wind[ind_ens] = np.append(max_wind[ind_ens], wnd[ind_ens])
+                    latitudemax[ind_ens] = np.append(latitudemax[ind_ens], latmax[ind_ens])
+                    longitudemax[ind_ens] = np.append(longitudemax[ind_ens], lonmax[ind_ens])
 
             # storing information into a dictionary
             msg = {
@@ -372,6 +387,8 @@ class TCForecast(TCTracks):
                 'latitude': latitude,
                 'longitude': longitude,
                 'wind_10m': max_wind,
+                'latitude_max': latitudemax,
+                'longitude_max': longitudemax,
                 'pressure': pressure,
                 'timestamp': timesteps_int,
 
@@ -401,6 +418,8 @@ class TCForecast(TCTracks):
                     self.append(track)
                 else:
                     LOGGER.debug('Dropping empty track %s, subset %d', name, i)
+            # release the BUFR message
+            ec.codes_release(bufr)
 
     def write_hdf5(self, file_name, complevel=5):
         """Write TC tracks in NetCDF4-compliant HDF5 format. This method
@@ -468,6 +487,15 @@ class TCForecast(TCTracks):
         lon = np.array(msg['longitude'][index], dtype='float')
         wnd = np.array(msg['wind_10m'][index], dtype='float')
         pre = np.array(msg['pressure'][index], dtype='float')
+        # calculate radius of maximum wind
+        lat_max = np.array(msg['latitude_max'][index], dtype='float')
+        lon_max = np.array(msg['longitude_max'][index], dtype='float')
+        rad = dist_approx(lat[:,None],
+                          lon[:,None],
+                          lat_max[:,None],
+                          lon_max[:,None],
+                          normalize=True,
+                          units='km')[:,0,0] / NM_TO_KM
 
         sid = msg['storm_id'].strip()
 
@@ -484,6 +512,7 @@ class TCForecast(TCTracks):
                 data_vars={
                     'max_sustained_wind': ('time', np.squeeze(wnd)),
                     'central_pressure': ('time', np.squeeze(pre)/100),
+                    'radius_max_wind': ('time', np.squeeze(rad)),
                     'ts_int': ('time', timestep_int),
                 },
                 coords={
@@ -523,9 +552,6 @@ class TCForecast(TCTracks):
 
         track = track.drop_vars(['ts_int'])
 
-        track['radius_max_wind'] = (('time'), np.full_like(
-            track.time, np.nan, dtype=float)
-        )
         track['environmental_pressure'] = (('time'), np.full_like(
             track.time, DEF_ENV_PRESSURE, dtype=float)
         )

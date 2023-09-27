@@ -54,10 +54,10 @@ class WildFire(Hazard):
     consistency, we consider an event as a whole fire season. A fire season
     is defined as a whole year (Jan-Dec in the NHS, Jul-Jun in SHS). This allows
     consistent risk assessment across the globe and over time. Hazard for
-    which events refer to a fire season have the tag 'WFseason'.
+    which events refer to a fire season have the haz_type 'WFseason'.
 
     In order to perform concrete case studies or calibrate impact functions,
-    events can be displayed as single fires. In that case they have the tag
+    events can be displayed as single fires. In that case they have the haz_type
     'WFsingle'.
 
     Attributes
@@ -606,7 +606,7 @@ class WildFire(Hazard):
                     df_firms_viirs = df_firms_viirs.drop(df_firms_viirs[ \
                         df_firms_viirs.confidence == 'l'].index)
                     df_firms_viirs = df_firms_viirs.rename(columns={'bright_ti4':'brightness'})
-                    temp = temp.append(df_firms_viirs, sort=True)
+                    temp = pd.concat([temp, df_firms_viirs], sort=True)
                     temp = temp.drop(columns=['bright_ti4'])
 
                 df_firms = temp
@@ -875,7 +875,7 @@ class WildFire(Hazard):
         # of these points (maximal damages).
         tree_centr = BallTree(centroids.coord, metric='chebyshev')
         if self.pool:
-            chunksize = min(num_ev//self.pool.ncpus, 1000)
+            chunksize = max(min(num_ev//self.pool.ncpus, 1000), 1)
             bright_list = self.pool.map(self._brightness_one_fire,
                                         itertools.repeat(df_firms, num_ev),
                                         itertools.repeat(tree_centr, num_ev),

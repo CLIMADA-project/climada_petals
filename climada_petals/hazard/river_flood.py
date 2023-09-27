@@ -223,7 +223,6 @@ class RiverFlood(Hazard):
             )
 
         haz.units = 'm'
-        haz.tag.file_name = str(dph_path) + ';' + str(frc_path)
         haz.event_id = np.arange(1, haz.intensity.shape[0] + 1)
         haz.event_name = list(map(str, years))
 
@@ -236,9 +235,11 @@ class RiverFlood(Hazard):
 
         with xr.open_dataset(dph_path) as flood_dph:
             haz.date = np.array([
-                dt.datetime(flood_dph.time[i].dt.year,
-                            flood_dph.time[i].dt.month,
-                            flood_dph.time[i].dt.day).toordinal()
+                dt.datetime(
+                    flood_dph.time.dt.year.values[i],
+                    flood_dph.time.dt.month.values[i],
+                    flood_dph.time.dt.day.values[i],
+                ).toordinal()
                 for i in event_index
             ])
 
