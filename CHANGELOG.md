@@ -1,18 +1,12 @@
 # Changelog
 
-## Unreleased
+## 4.0.2
 
-Release date: YYYY-MM-DD
-
-Code freeze date: YYYY-MM-DD
-
-### Description
+Release date: 2023-09-27
 
 ### Dependency Changes
 
 - `pandas` >=1.5,<2.0 &rarr; >=1.5 (compatibility with pandas 2.x)
-
-### Added
 
 ### Changed
 
@@ -21,10 +15,6 @@ Code freeze date: YYYY-MM-DD
 ### Fixed
 
 - implicit casting from `DataArray` to `int` in reading mehtods made explicit [#95](https://github.com/CLIMADA-project/climada_petals/pull/95/files)
-
-### Deprecated
-
-### Removed
 
 ## 4.0.1
 
