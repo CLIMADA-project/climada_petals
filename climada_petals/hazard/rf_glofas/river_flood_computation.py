@@ -296,7 +296,7 @@ class RiverFloodInundation:
             **download_glofas_discharge_kwargs,
         )
         if self.store_intermediates:
-            save_file(reanalysis, self.cache_paths.discharge)
+            save_file(reanalysis, self.cache_paths.discharge, zlib=False)
         return reanalysis
 
     def return_period(
@@ -394,6 +394,7 @@ class RiverFloodInundation:
                 save_file(
                     return_period_regrid_protect,
                     self.cache_paths.return_period_regrid_protect,
+                    zlib=False,
                 )
             return return_period_regrid_protect
 
@@ -410,8 +411,8 @@ class RiverFloodInundation:
         ) as return_period_regrid:
             inundation = flood_depth(return_period_regrid, self.flood_maps)
 
-            if self.store_intermediates:
-                save_file(inundation, store_path)
+            # if self.store_intermediates:
+            #     save_file(inundation, store_path)
             return inundation
 
     # TODO: Remove
