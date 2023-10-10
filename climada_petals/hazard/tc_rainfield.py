@@ -311,8 +311,8 @@ class TCRain(Hazard):
                 proposed in Lu et al. 2018. Default: 0.5
             elevation_tif : Path or str, optional
                 Path to a GeoTIFF file containing digital elevation model data (in m). If not
-                specified, a topography at 0.1 degree resolution provided with CLIMADA is used.
-                Default: None
+                specified, an SRTM-based topography at 0.1 degree resolution provided with CLIMADA
+                is used. Default: None
             matlab_ref_mode : bool, optional
                 This implementation is based on a (proprietary) reference implementation in MATLAB.
                 However, some (minor) changes have been applied in the CLIMADA implementation
@@ -1164,8 +1164,8 @@ def _compute_vertical_velocity(
     wind_model : str, optional
         Parametric wind field model to use, see TropCyclone. Default: "ER11".
     elevation_tif : Path or str, optional
-        Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, a
-        topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
+        Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, an
+        SRTM-based topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
     c_drag_tif : Path or str, optional
         Path to a GeoTIFF file containing gridded drag coefficients (bottom friction). If not
         specified, an ERA5-based data set provided with CLIMADA is used. Default: None
@@ -1403,8 +1403,8 @@ def _w_topo(
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     elevation_tif : Path or str, optional
-        Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, a
-        topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
+        Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, an
+        SRTM-based topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
 
     Returns
     -------
