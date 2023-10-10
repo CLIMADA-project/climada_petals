@@ -111,7 +111,7 @@ important for precipitation than for wind effects.
 DEF_ELEVATION_TIF = u_const.SYSTEM_DIR / "topography_land_360as.tif"
 """Topography (land surface elevation, 0 over oceans) raster data at 0.1 degree resolution
 
-The data is copied from the reference MATLAB implementation (source unknown)
+SRTM data upscaled to 0.1 degree resolution using the "average" method of gdalwarp.
 """
 
 DEF_DRAG_TIF = u_const.SYSTEM_DIR / "c_drag_500.tif"
