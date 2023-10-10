@@ -198,31 +198,35 @@ class TestModel(unittest.TestCase):
 
     def test_r_from_t_same_level(self):
         """Test the derivative of _r_from_t_same_level"""
-        t0 = 270.0
-        pref = 950
+        for tetens_coeffs in ["Alduchov1996", "Buck1981", "Bolton1980", "Murray1967"]:
+            t0 = 270.0
+            pref = 950
+            kwargs = dict(tetens_coeffs=tetens_coeffs)
 
-        # With h going to zero, the error of the Taylor approximation should go to zero
-        # at the order of h^2.
-        hs = np.array([1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5])
-        ts = t0 + hs
+            # With h going to zero, the error of the Taylor approximation should go to zero
+            # at the order of h^2.
+            hs = np.array([1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5])
+            ts = t0 + hs
 
-        [r0], [dr0] = _r_from_t_same_level(pref, np.array([t0]), gradient=True)
-        r_mix, _ = _r_from_t_same_level(pref, ts, gradient=False)
-        diffs_rel = np.abs(r0 + dr0 * hs - r_mix) / hs**2
-        diffs_rel_mean = diffs_rel.mean()
-        orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
-        np.testing.assert_array_less(orders, 0.1)
+            [r0], [dr0] = _r_from_t_same_level(pref, np.array([t0]), gradient=True, **kwargs)
+            r_mix, _ = _r_from_t_same_level(pref, ts, gradient=False, **kwargs)
+            diffs_rel = np.abs(r0 + dr0 * hs - r_mix) / hs**2
+            diffs_rel_mean = diffs_rel.mean()
+            orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
+            np.testing.assert_array_less(orders, 0.1)
 
-        # Because of a bug in the reference MATLAB implementation,
-        # the same doesn't work for `matlab_ref_mode=True`.
-        [r0], [dr0] = _r_from_t_same_level(
-            pref, np.array([t0]), gradient=True, matlab_ref_mode=True,
-        )
-        r_mix, _ = _r_from_t_same_level(pref, ts, gradient=False, matlab_ref_mode=True)
-        diffs_rel = np.abs(r0 + dr0 * hs - r_mix) / hs**2
-        diffs_rel_mean = diffs_rel.mean()
-        orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
-        self.assertGreater(orders.max(), 1)
+            # The same doesn't work if the approximative form of the derivative is used
+            # with `use_cc_derivative=True`:
+            kwargs = dict(use_cc_derivative=True, **kwargs)
+
+            [r0], [dr0] = _r_from_t_same_level(
+                pref, np.array([t0]), gradient=True, **kwargs
+            )
+            r_mix, _ = _r_from_t_same_level(pref, ts, gradient=False, **kwargs)
+            diffs_rel = np.abs(r0 + dr0 * hs - r_mix) / hs**2
+            diffs_rel_mean = diffs_rel.mean()
+            orders = np.abs(diffs_rel - diffs_rel_mean) / diffs_rel_mean
+            self.assertGreater(orders.max(), 1)
 
     def test_qs_from_t_diff_level(self):
         tracks = TCTracks.from_hdf5(DEMO_DIR / "tcrain_examples.nc")

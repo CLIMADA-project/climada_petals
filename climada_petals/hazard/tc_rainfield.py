@@ -262,44 +262,6 @@ class TCRain(Hazard):
         to a universal estimate of 0.01 kg/kg. Both assumptions can have a large effect on the
         results (see Lu et al. 2018).
 
-        The implementation of the R-CLIPER model currently does not allow modifications, so that
-        `model_kwargs` is ignored with `model="R-CLIPER"`. While the TCR model can be configured in
-        several ways, it is usually safe to go with the default settings. Here is the complete list
-        of `model_kwargs` and their meaning with `model="TCR"` (in alphabetical order):
-
-        c_drag_tif : Path or str, optional
-            Path to a GeoTIFF file containing gridded drag coefficients (bottom friction). If not
-            specified, an ERA5-based data set provided with CLIMADA is used. Default: None
-        e_precip : float, optional
-            Precipitation efficiency (unitless), the fraction of the vapor flux falling to the
-            surface as rainfall (Lu et al. 2018, eq. (14)). Note that we follow the MATLAB
-            reference implementation and use 0.5 as a default value instead of the 0.9 that was
-            proposed in Lu et al. 2018. Default: 0.5
-        elevation_tif : Path or str, optional
-            Path to a GeoTIFF file containing digital elevation model data (in m). If not
-            specified, a topography at 0.1 degree resolution provided with CLIMADA is used.
-            Default: None
-        matlab_ref_mode : bool, optional
-            This implementation is based on a (proprietary) reference implementation in MATLAB.
-            However, some bug fixes have been applied in the CLIMADA implementation compared to the
-            reference. If this parameter is True, do not apply the bug fixes, but reproduce the
-            exact behavior of the reference implementation. Default: False
-        max_w_foreground : float, optional
-            The maximum value (in m/s) at which to clip the vertical velocity w before subtracting
-            the background subsidence velocity w_rad. Default: 7.0
-        min_c_drag : float, optional
-            The drag coefficient is clipped to this minimum value (esp. over ocean). Default: 0.001
-        q_950 : float, optional
-            If the track data does not include "t600" values, assume this constant value of
-            saturation specific humidity (in kg/kg) at 950 hPa. Default: 0.01
-        res_radial_m : float, optional
-            Resolution (in m) in radial direction. This is used for the computation of discrete
-            derivatives of the horizontal wind fields and derived quantities. Default: 2000.0
-        w_rad : float, optional
-            Background subsidence velocity (in m/s) under radiative cooling. Default: 0.005
-        wind_model : str, optional
-            Parametric wind field model to use, see the `TropCyclone` class. Default: "ER11".
-
         Emanuel (2017): Assessing the present and future probability of Hurricane Harvey’s
         rainfall. Proceedings of the National Academy of Sciences 114(48): 12681–12684.
         https://doi.org/10.1073/pnas.1716222114
@@ -333,7 +295,61 @@ class TCRain(Hazard):
             approach, requires non-standard along-track variables, Zhu et al. 2013).
             Default: "R-CLIPER".
         model_kwargs: dict, optional
-            If given, forward these kwargs to the selected model. Default: None
+            If given, forward these kwargs to the selected model. The implementation of the
+            R-CLIPER model currently does not allow modifications, so that `model_kwargs` is
+            ignored with `model="R-CLIPER"`. While the TCR model can be configured in several ways,
+            it is usually safe to go with the default settings. Here is the complete list of
+            `model_kwargs` and their meaning with `model="TCR"` (in alphabetical order):
+
+            c_drag_tif : Path or str, optional
+                Path to a GeoTIFF file containing gridded drag coefficients (bottom friction). If
+                not specified, an ERA5-based data set provided with CLIMADA is used. Default: None
+            e_precip : float, optional
+                Precipitation efficiency (unitless), the fraction of the vapor flux falling to the
+                surface as rainfall (Lu et al. 2018, eq. (14)). Note that we follow the MATLAB
+                reference implementation and use 0.5 as a default value instead of the 0.9 that was
+                proposed in Lu et al. 2018. Default: 0.5
+            elevation_tif : Path or str, optional
+                Path to a GeoTIFF file containing digital elevation model data (in m). If not
+                specified, a topography at 0.1 degree resolution provided with CLIMADA is used.
+                Default: None
+            matlab_ref_mode : bool, optional
+                This implementation is based on a (proprietary) reference implementation in MATLAB.
+                However, some (minor) changes have been applied in the CLIMADA implementation
+                compared to the reference:
+
+                * In the computation of horizontal wind speeds, we compute the Coriolis parameter
+                  from latitude. The MATLAB code assumes a constant parameter value (5e-5).
+                * As a rescaling factor from surface to gradient winds, we use a factor from the
+                  literature. The factor in MATLAB is very similar, but does not specify a
+                  source.
+                * Instead of the "specific humidity", the (somewhat simpler) formula for the
+                  "mixing ratio" is used in the MATLAB code. These quantities are almost the same
+                  in practice.
+                * We use the approximation of the Clausius-Clapeyron equation used by the ECMWF
+                  (Buck 1981) instead of the one used in the MATLAB code (Bolton 1980).
+
+                Since it might be useful to have a version that replicates the behavior of the
+                reference implementation, this parameter can be set to True to enforce the exact
+                behavior of the reference implementation. Default: False
+            max_w_foreground : float, optional
+                The maximum value (in m/s) at which to clip the vertical velocity w before
+                subtracting the background subsidence velocity w_rad. Default: 7.0
+            min_c_drag : float, optional
+                The drag coefficient is clipped to this minimum value (esp. over ocean).
+                Default: 0.001
+            q_950 : float, optional
+                If the track data does not include "t600" values, assume this constant value of
+                saturation specific humidity (in kg/kg) at 950 hPa. Default: 0.01
+            res_radial_m : float, optional
+                Resolution (in m) in radial direction. This is used for the computation of discrete
+                derivatives of the horizontal wind fields and derived quantities. Default: 2000.0
+            w_rad : float, optional
+                Background subsidence velocity (in m/s) under radiative cooling. Default: 0.005
+            wind_model : str, optional
+                Parametric wind field model to use, see the `TropCyclone` class. Default: "ER11".
+
+            Default: None
         ignore_distance_to_coast : boolean, optional
             If True, centroids far from coast are not ignored. Default: False.
         store_rainrates : boolean, optional
@@ -865,7 +881,7 @@ def _track_to_si_with_q_and_shear(
         If the track data does not include "t600" values, assume this constant value of saturation
         specific humidity (in kg/kg) at 950 hPa. Default: 0.01
     matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
+        Do not apply the changes to the reference MATLAB implementation. Default: False
     _kwargs : dict
         Additional kwargs are ignored.
 
@@ -1164,7 +1180,7 @@ def _compute_vertical_velocity(
         background subsidence velocity w_rad. The default value is taken from the MATLAB reference
         implementation. Default: 7.0
     matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
+        Do not apply the changes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
@@ -1215,7 +1231,7 @@ def _horizontal_winds(
     model : int
         Wind profile model selection according to MODEL_VANG.
     matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
+        Do not apply the changes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
@@ -1291,16 +1307,15 @@ def _windprofile(
         If True, don't apply the influence of the Coriolis force (set the Coriolis terms to 0).
         Default: False
     matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
+        Do not apply the changes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
     ndarray of shape (npositions, ncentroids)
     """
     if matlab_ref_mode:
-        # Following formula (2) and the remark in Section 3 of Emanuel & Rotunno (2011), the
-        # Coriolis parameter is chosen to be 5e-5 (independent of latitude) in the MATLAB
-        # implementation.
+        # In the MATLAB implementation, the Coriolis parameter is chosen to be 5e-5 (independent of
+        # latitude), following formula (2) and the remark in Section 3 of Emanuel & Rotunno (2011).
         si_track = si_track.copy(deep=True)
         si_track["cp"].values[:] = 5e-5
     return compute_angular_windspeeds(
@@ -1592,7 +1607,7 @@ def _qs_from_t_diff_level(
     max_iter : int, optional
         The number of Newton-Raphson steps to take. Default: 5
     matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
+        Do not apply the changes to the reference MATLAB implementation. Default: False
 
     Returns
     -------
@@ -1601,13 +1616,19 @@ def _qs_from_t_diff_level(
         at the pressure level pres_out.
     """
     # c_vmax : rescale factor from (squared) surface to (squared) gradient winds
-    #          MATLAB code uses c_vmax=1.6 (source unknown), but this is almost the same as the
-    #          value used here (0.8**-2)
+    #          In the MATLAB implementation, c_vmax=1.6 is used, but this is almost the same as the
+    #          value used here (0.8**-2).
     c_vmax = 1.6 if matlab_ref_mode else GRADIENT_LEVEL_TO_SURFACE_WINDS**-2
 
+    # In the MATLAB implementation, the "Bolton1980" coefficients, and an approximative form of the
+    # derivative are used in the computation of the mixing ratio.
+    r_from_t_kwargs = dict(
+        tetens_coeffs="Bolton1980" if matlab_ref_mode else "Buck1981",
+        use_cc_derivative=matlab_ref_mode,
+    )
+
     # first, calculate mixing ratio r_in from temps_in
-    r_in, _ = _r_from_t_same_level(
-        pres_in, np.fmax(T_ICE_K - 50, temps_in), matlab_ref_mode=matlab_ref_mode)
+    r_in, _ = _r_from_t_same_level(pres_in, np.fmax(T_ICE_K - 50, temps_in), **r_from_t_kwargs)
 
     # derive (temps_out, r_out) from (temps_in, r_in) iteratively (Newton-Raphson method)
     r_out = np.zeros_like(r_in)
@@ -1640,7 +1661,7 @@ def _qs_from_t_diff_level(
     for it in range(max_iter):
         # compute new estimate of r_out from current estimate of T_out
         r_out[mask], drdT = _r_from_t_same_level(
-            pres_out, temps_out[mask], gradient=True, matlab_ref_mode=matlab_ref_mode,
+            pres_out, temps_out[mask], gradient=True, **r_from_t_kwargs,
         )
         s_out = (
             cap_heat_air * np.log(temps_out[mask])
@@ -1668,7 +1689,7 @@ def _r_from_t_same_level(
     temps: np.ndarray,
     gradient: bool = False,
     tetens_coeffs: str = "Buck1981",
-    matlab_ref_mode: bool = False,
+    use_cc_derivative: bool = False,
 ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     """Compute the mixing ratio from temperature at a given pressure level
 
@@ -1708,10 +1729,17 @@ def _r_from_t_same_level(
         If True, compute the derivative of the functional relationship between Q and T.
     tetens_coeffs : str, optional
         Coefficients to use for the Tetens formula. One of "Alduchov1996", "Buck1981",
-        "Bolton1980", or "Murray1967". This is overwritten if `matlab_ref_mode` is True because the
-        reference MATLAB implementation uses the "Bolton1980" coefficients. Default: "Buck1981"
-    matlab_ref_mode : bool, optional
-        Do not apply the fixes to the reference MATLAB implementation. Default: False
+        "Bolton1980", or "Murray1967". Default: "Buck1981"
+    use_cc_derivative : bool, optional
+        Instead of the actual derivative, use an approximation of the derivative (that is used in
+        the MATLAB code) based on the original Clausius-Clapeyron equation for water vapor under
+        typical atmospheric conditions:
+
+          des/dT = (Lv * es) / (Rv * T**2)
+
+        The approximation is used in the MATLAB reference implementation under the assumption that
+        it is only used in the Newton-Raphson iteration where little errors do not matter.
+        Default: False
 
     Returns
     -------
@@ -1721,9 +1749,6 @@ def _r_from_t_same_level(
         If `gradient` is False, this is None. Otherwise, the derivative of Q with respect to T is
         returned.
     """
-    if matlab_ref_mode:
-        tetens_coeffs = "Bolton1980"
-
     try:
         a, b, c = {
             "Murray1967": (17.2693882, 35.86, 6.1078),
@@ -1742,23 +1767,13 @@ def _r_from_t_same_level(
 
     drdT = None
     if gradient:
-        if matlab_ref_mode:
+        if use_cc_derivative:
             # Specific gas constant of water vapor (in J / kgK)
             r_water = 1000 * R_GAS / M_WATER
-
-            # This approximation of the derivative is used in the MATLAB code, cf. the original
-            # Clausius-Clapeyron equation for water vapor under typical atmospheric conditions:
-            #
-            #   des/dT = (Lv * es) / (Rv * T**2)
-            #
-            # However, the following expression is missing the derivative of r_mix with
-            # respect to es (dr/dT = dr/des * des/dT), correct Clausius-Clapeyron would be:
-            #
-            #   drdT = (L_EVAP_WATER / r_water) / temps**2 * r_mix * (1 + r_mix / fact)
-            #
-            # The authors assume that this is fine because "the derivative is only used in the
-            # Newton-Raphson relaxation; it does not really matter if it is off by a little".
             drdT = (L_EVAP_WATER / r_water) / temps**2 * r_mix
+            # Note that the full C-C formula including the deriative of r_mix with respect to es
+            # (as in dr/dT = dr/des * des/dT) would be as follows:
+            # drdT = (L_EVAP_WATER / r_water) / temps**2 * r_mix * (1 + r_mix / fact)
         else:
             drdT = a * (T_ICE_K - b) / (temps - b)**2 * r_mix * (1 + r_mix / fact)
 
