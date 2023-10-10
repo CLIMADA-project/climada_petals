@@ -91,9 +91,8 @@ def calc_B(Z, x):
     Returns
     -------
     pandas.DataFrame or numpy.array
-        Symmetric input output table (allocation matrix) B
-        The type is determined by the type of Z.
-        If DataFrame index/columns as Z
+        Allocation coefficients matrix B.
+        Same type as input parameter ``Z``.
 
     Notes
     -----
@@ -103,7 +102,7 @@ def calc_B(Z, x):
 
     if isinstance(x, (pd.DataFrame, pd.Series)):
         x = x.to_numpy()
-    if (type(x) is not np.ndarray) and (x == 0):
+    if not isinstance(x, np.ndarray) and (x == 0):
         recix = 0
     else:
         with warnings.catch_warnings():
@@ -114,8 +113,8 @@ def calc_B(Z, x):
 
     if isinstance(Z, pd.DataFrame):
         return pd.DataFrame(Z.to_numpy() * recix, index=Z.index, columns=Z.columns)
-    else:
-        return Z * recix
+
+    return Z * recix
 
 
 def calc_x_from_G(G, v):
@@ -135,8 +134,8 @@ def calc_x_from_G(G, v):
     Returns
     -------
     pandas.DataFrame or numpy.array
-        Industry output x as column vector
-        The type is determined by the type of G. If DataFrame index as G
+        Industry output x as column vector.
+        Same type as input parameter ``G``.
 
     Notes
     -----
@@ -167,10 +166,10 @@ def parse_mriot_from_df(
     col_sectors : int
         Column's position of sectors' names
     rows_data : (int, int)
-        Tuple of integers with positions of rows 
+        Tuple of integers with positions of rows
         containing the MRIOT data
     cols_data : (int, int)
-        Tuple of integers with positions of columns 
+        Tuple of integers with positions of columns
         containing the MRIOT data
     """
 
@@ -212,19 +211,18 @@ def mriot_file_name(mriot_type, mriot_year):
     if mriot_type == "EXIOBASE3":
         return f"IOT_{mriot_year}_ixi.zip"
 
-    elif mriot_type == "WIOD16":
+    if mriot_type == "WIOD16":
         return f"WIOT{mriot_year}_Nov16_ROW.xlsb"
 
-    elif mriot_type == "OECD21":
+    if mriot_type == "OECD21":
         return f"ICIO2021_{mriot_year}.csv"
 
-    else:
-        raise ValueError("Unknown MRIOT type")
+    raise ValueError("Unknown MRIOT type")
 
 
 def download_mriot(mriot_type, mriot_year, download_dir):
-    """Download EXIOBASE3, WIOD16 or OECD21 Multi-Regional Input Output Tables 
-    for specific years. 
+    """Download EXIOBASE3, WIOD16 or OECD21 Multi-Regional Input Output Tables
+    for specific years.
 
     Parameters
     ----------
@@ -332,18 +330,18 @@ class SupplyChain:
                 mriot.x : industry or total output
                 mriot.meta : metadata
     secs_exp : pd.DataFrame
-            Exposure dataframe of each country/sector in the MRIOT. Columns are the 
+            Exposure dataframe of each country/sector in the MRIOT. Columns are the
             same as the chosen MRIOT.
     secs_imp : pd.DataFrame
-            Impact dataframe for the directly affected countries/sectors for each event with impacts.
-            Columns are the same as the chosen MRIOT and rows are the hazard events ids.
+            Impact dataframe for the directly affected countries/sectors for each event with
+            impacts. Columns are the same as the chosen MRIOT and rows are the hazard events ids.
     secs_shock : pd.DataFrame
             Shocks (i.e. impact / exposure) dataframe for the directly affected countries/sectors
             for each event with impacts. Columns are the same as the chosen MRIOT and rows are the
             hazard events ids.
     inverse : dict
             Dictionary with keys being the chosen approach (ghosh, leontief or eeioa)
-            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if 
+            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if
             approach is ghosh) inverse matrix.
     coeffs : dict
             Dictionary with keys being the chosen approach (ghosh, leontief or eeioa)
@@ -382,7 +380,7 @@ class SupplyChain:
     def from_mriot(
         cls, mriot_type, mriot_year, mriot_dir=MRIOT_DIRECTORY, del_downloads=True
     ):
-        """Download, parse and read WIOD16, EXIOBASE3, or OECD21 Multi-Regional 
+        """Download, parse and read WIOD16, EXIOBASE3, or OECD21 Multi-Regional
         Input-Output Tables.
 
         Parameters
@@ -448,15 +446,15 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_shock_to_sectors(self, 
-                              exposure, 
-                              impact, 
-                              impacted_secs=None, 
+    def calc_shock_to_sectors(self,
+                              exposure,
+                              impact,
+                              impacted_secs=None,
                               shock_factor=None
                               ):
         """Calculate exposure, impact and shock at the sectorial level.
-        This function translate spatially-distrubted exposure and impact 
-        information into exposure and impact of MRIOT's country/sectors and 
+        This function translate spatially-distrubted exposure and impact
+        information into exposure and impact of MRIOT's country/sectors and
         for each hazard event.
 
         Parameters
@@ -544,8 +542,8 @@ class SupplyChain:
             self.secs_shock[self.secs_shock > 1] = 1
 
     def calc_matrices(self, io_approach):
-        """Build technical coefficient and Leontief inverse matrixes 
-        (if leontief or eeioa approach) or allocation coefficients and 
+        """Build technical coefficient and Leontief inverse matrixes
+        (if leontief or eeioa approach) or allocation coefficients and
         Ghosh matrixes (if ghosh approach).
 
         Parameters
@@ -571,7 +569,7 @@ class SupplyChain:
                     exposure=None,
                     impact=None,
                     impacted_secs=None):
-        """Calculate indirect production impacts based on to the 
+        """Calculate indirect production impacts based on to the
         chosen input-output approach.
 
         Parameters
