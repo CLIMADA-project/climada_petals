@@ -756,7 +756,7 @@ class SupplyChain:
 
                 events_list = [EventKapitalRebuild.from_series(
                                         impact=self.secs_imp.iloc[i],
-                                        occurrence = (self.events_date[i]-self.events_date[0]+1),
+                                        occurrence = (self.events_date[i]-self.events_date.min()+1),
                                         # event monetary factor equal to the impact units. self.secs_imp
                                         # was rescaled by the conversion_factor upon its construction so
                                         # we pass the conversion_factor as unit
@@ -768,7 +768,7 @@ class SupplyChain:
             elif boario_type == 'shockprod':
                 events_list = [EventArbitraryProd.from_series(
                                         impact=self.secs_shock.iloc[i],
-                                        occurrence = (self.events_date[i]-self.events_date[0]+1),
+                                        occurrence = (self.events_date[i]-self.events_date.min()+1),
                                         **boario_params['event']
                             ) for i in range(n_events)
                 ]
