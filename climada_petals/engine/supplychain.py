@@ -234,8 +234,8 @@ def mriot_file_name(mriot_type, mriot_year):
 
 
 def download_mriot(mriot_type, mriot_year, download_dir):
-    """Download EXIOBASE3, WIOD16 or OECD21 Multi-Regional Input Output Tables 
-    for specific years. 
+    """Download EXIOBASE3, WIOD16 or OECD21 Multi-Regional Input Output Tables
+    for specific years.
 
     Parameters
     ----------
@@ -368,7 +368,7 @@ class SupplyChain:
             1 has ordinal 1 (ordinal format of datetime library) of events leading to impact.
             Deafult is None.
     supchain_imp : dict
-            Dictionary with keys the chosen approach (ghosh, leontief, eeioa or boario 
+            Dictionary with keys the chosen approach (ghosh, leontief, eeioa or boario
             and its variations) and values dataframes of production losses (ghosh, leontief, eeioa)
             or production dynamics (boario and its variations) to countries/sectors for each event.
             For each dataframe, columns are the same as the chosen MRIOT and rows are the
@@ -403,7 +403,7 @@ class SupplyChain:
     def from_mriot(
         cls, mriot_type, mriot_year, mriot_dir=MRIOT_DIRECTORY, del_downloads=True
     ):
-        """Download, parse and read WIOD16, EXIOBASE3, or OECD21 Multi-Regional 
+        """Download, parse and read WIOD16, EXIOBASE3, or OECD21 Multi-Regional
         Input-Output Tables.
 
         Parameters
@@ -478,15 +478,15 @@ class SupplyChain:
 
         return cls(mriot=mriot)
 
-    def calc_shock_to_sectors(self, 
-                              exposure, 
-                              impact, 
-                              impacted_secs=None, 
+    def calc_shock_to_sectors(self,
+                              exposure,
+                              impact,
+                              impacted_secs=None,
                               shock_factor=None
                               ):
         """Calculate exposure, impact and shock at the sectorial level.
-        This function translate spatially-distrubted exposure and impact 
-        information into exposure and impact of MRIOT's country/sectors and 
+        This function translate spatially-distrubted exposure and impact
+        information into exposure and impact of MRIOT's country/sectors and
         for each hazard event.
 
         Parameters
@@ -576,8 +576,8 @@ class SupplyChain:
             self.secs_shock[self.secs_shock > 1] = 1
 
     def calc_matrices(self, io_approach):
-        """Build technical coefficient and Leontief inverse matrixes 
-        (if leontief or eeioa approach) or allocation coefficients and 
+        """Build technical coefficient and Leontief inverse matrixes
+        (if leontief or eeioa approach) or allocation coefficients and
         Ghosh matrixes (if ghosh approach).
 
         Parameters
@@ -609,7 +609,7 @@ class SupplyChain:
                     boario_type='recovery',
                     boario_aggregate='agg'
                     ):
-        """Calculate indirect production impacts based on to the 
+        """Calculate indirect production impacts based on to the
         chosen input-output approach.
 
         Parameters
@@ -629,19 +629,19 @@ class SupplyChain:
         shock_factor : np.array
             It has lenght equal to the number of sectors. For each sector, it defines to
             what extent the fraction of indirect losses differs from the one of direct
-            losses (i.e., impact / exposure). Deafult value is None, which means that shock 
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock
             factors for all sectors are equal to 1, i.e., that production and stock losses
             fractions are the same.
         boario_params: dict
-            Dictionary containing parameters to instantiate boario's ARIOPsiModel (key 'model'), 
+            Dictionary containing parameters to instantiate boario's ARIOPsiModel (key 'model'),
             Simulation (key 'sim') and Event (key 'event') classes. Parameters instantiating
             each class need to be stored in a dictionary, e.g., {'model': {}, 'sim': {}, 'event': {}}.
             Only meangingful when io_approach='boario'. Default is None.
         boario_type: str
-            The chosen boario type. Possible choices are 'recovery', 'rebuild' and 
+            The chosen boario type. Possible choices are 'recovery', 'rebuild' and
             'production_shock'. Only meangingful when io_approach='boario'. Default 'recovery'.
         boario_aggregate: str
-            Whether events are aggregated or not. Possible choices are 'agg' or 'sep'. 
+            Whether events are aggregated or not. Possible choices are 'agg' or 'sep'.
             Only meangingful when io_approach='boario'. Default is 'agg'.
         References
         ----------
@@ -720,11 +720,11 @@ class SupplyChain:
 
                 LOGGER.debug(f"BoARIO {boario_type} event parameters were not specified."
                               "This is not recommended.")
-                
+
             # call ARIOPsiModel with default params
             model = ARIOPsiModel(self.mriot,
-                                 # productive capital vector (i.e. exposure) needs to be in 
-                                 # MRIOT's unit, this is the case as self.secs_exp was rescaled 
+                                 # productive capital vector (i.e. exposure) needs to be in
+                                 # MRIOT's unit, this is the case as self.secs_exp was rescaled
                                  # with the conversion_factor upon its construction
                                  productive_capital_vector = self.secs_exp,
                                  # model monetary factor equals the MRIOT's unit
@@ -780,7 +780,7 @@ class SupplyChain:
                 self.sim.add_events(events_list)
                 self.sim.loop()
                 self.supchain_imp.update({
-                    f'{io_approach}_{boario_type}_{boario_aggregate}' : 
+                    f'{io_approach}_{boario_type}_{boario_aggregate}' :
                     self.sim.production_realised.copy()[
                                 self.secs_imp.columns]
                 })
