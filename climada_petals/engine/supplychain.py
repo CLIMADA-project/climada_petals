@@ -653,7 +653,7 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        n_events = self.secs_shock.shape[0]
+        #n_events = self.secs_shock.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
         if self.secs_shock is None:
