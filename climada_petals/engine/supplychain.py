@@ -735,7 +735,7 @@ class SupplyChain:
             # run simulation up to one year after the last event
             self.sim = Simulation(
                         model,
-                        n_temporal_units_to_sim = (self.events_date[-1]-self.events_date[0]+365),
+                        n_temporal_units_to_sim = int(self.events_date.max()-self.events_date.min()+365),
                         **boario_params['sim']
                         )
 
@@ -743,7 +743,7 @@ class SupplyChain:
 
                 events_list = [EventKapitalRecover.from_series(
                                         impact=self.secs_imp.iloc[i],
-                                        occurrence = (self.events_date[i]-self.events_date[0]+1),
+                                        occurrence = int(self.events_date[i]-self.events_date.min()+1),
                                         # event monetary factor equals the impact units. self.secs_imp
                                         # was rescaled by the conversion_factor upon its construction so
                                         # we pass the conversion_factor as unit
