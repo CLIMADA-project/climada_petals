@@ -20,6 +20,30 @@ Code freeze date: YYYY-MM-DD
 
 ### Removed
 
+## 4.0.2
+
+Release date: 2023-09-27
+
+### Dependency Changes
+
+- `pandas` >=1.5,<2.0 &rarr; >=1.5 (compatibility with pandas 2.x)
+
+### Changed
+
+- improved integration tests for notebooks and external data apis
+
+### Fixed
+
+- implicit casting from `DataArray` to `int` in reading mehtods made explicit [#95](https://github.com/CLIMADA-project/climada_petals/pull/95/files)
+
+## 4.0.1
+
+Release date: 2023-09-06
+
+### Fixed
+
+- `TCForecast` now skips "untrackable" TCs when reading multi-message `.bufr` files [#91](https://github.com/CLIMADA-project/climada_petals/pull/91)
+
 ## 4.0.0
 
 Release date: 2023-09-01
