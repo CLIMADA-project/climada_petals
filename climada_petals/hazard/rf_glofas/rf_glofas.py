@@ -29,52 +29,12 @@ import pandas as pd
 import geopandas as gpd
 from dask.distributed import Client
 
-import dantro as dtr
-from dantro.data_loaders import AllAvailableLoadersMixin, add_loader
-from dantro.containers import XrDataContainer, PassthroughContainer
-from dantro.tools import load_yml
-
 from climada.util.constants import SYSTEM_DIR
 from climada.hazard import Hazard
-
 
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = SYSTEM_DIR / "river-flood-computation"
-DEFAULT_SETUP_CFG = Path(__file__).parent.absolute() / "setup.yml"
-DEFAULT_GLOFAS_CFG = Path(__file__).parent.absolute() / "rf_glofas.yml"
-
-# pylint: disable=too-few-public-methods
-class GeoDataFrameLoaderMixin:
-    """A Mixin for loading GeoDataFrames"""
-
-    @add_loader(TargetCls=PassthroughContainer)
-    def _load_geodataframe(  # pylint: disable=no-self-argument
-        path: str,
-        *,
-        TargetCls: type,  # pylint: disable=invalid-name
-        engine: Optional[str] = None,
-        **kwargs,
-    ):
-        """Read a file supported by geopandas and return the data"""
-        data = gpd.read_file(path, engine=engine, **kwargs)
-        return TargetCls(data=data, attrs=dict(filepath=path))
-
-
-# pylint: disable-next=too-few-public-methods
-class ClimadaDataManager(
-    AllAvailableLoadersMixin, GeoDataFrameLoaderMixin, dtr.DataManager
-):
-    """A DataManager that can load many different file formats"""
-
-    _HDF5_DSET_DEFAULT_CLS = XrDataContainer
-    """Tells the HDF5 loader which container class to use"""
-
-    _NEW_CONTAINER_CLS = XrDataContainer
-    """Which container class to use when adding new containers"""
-
-
-# pylint: enable=too-few-public-methods
 
 
 @contextmanager
@@ -116,92 +76,6 @@ def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
     finally:
         LOGGER.info("Closing dask.distributed.Client")
         client.close()
-
-
-def dantro_transform(
-    yaml_cfg_path: Union[Path, str] = DEFAULT_GLOFAS_CFG
-) -> dtr.DataManager:
-    """Perform a transformation with the dantro Transformation DAG
-
-    We supply a default configuration that computes a flood hazard for a specific
-    scenario. Copy this configuration somewhere, change it to your liking, and then
-    pass the path to this file as ``cfg`` parameter here.
-
-    The default pipeline requires the Gumbel distribution fits and the flood maps to be
-    stored as netCDF files in the ``data_dir`` specified in the ``cfg``. If you did not
-    retrieve these files, execute `py:func:climada_petals.hazard.rf_glofas.setup`.
-
-    Parameters
-    ----------
-    yaml_cfg_path : Path or str
-        The path to the configuration file specifying the transformation(s). Defaults
-        to the example configuration ``rf_glofas.yml``.
-
-    Returns
-    -------
-    dantro.DataManager
-        The DataManager instance created with the settings from ``yaml_cfg_path``,
-        after all evaluation routines are completed.
-    """
-    # Load the config
-    cfg = load_yml(yaml_cfg_path)
-
-    # Check data directory
-    data_dir = Path(cfg.get("data_dir", DEFAULT_DATA_DIR)).expanduser().absolute()
-    if not data_dir.exists():
-        # Default dir can be created
-        if data_dir == DEFAULT_DATA_DIR:
-            data_dir.mkdir(parents=False)
-        # Custom dir should exist
-        else:
-            raise RuntimeError(
-                f"Input data required, but data_dir does not exist: {data_dir}"
-            )
-
-    # Set up DataManager
-    data_mngr = ClimadaDataManager(data_dir, **cfg.get("data_manager", {}))
-    data_mngr.load_from_cfg(load_cfg=cfg["data_manager"]["load_cfg"], print_tree=True)
-
-    # Set up the PlotManager ...
-    plot_mngr = dtr.PlotManager(dm=data_mngr, **cfg.get("plot_manager"))
-
-    # ... and use it to invoke some evaluation routine
-    plot_mngr.plot_from_cfg(plots_cfg=cfg.get("eval"))
-
-    # Return the DataManager
-    print(data_mngr.tree)
-    return data_mngr
-
-
-def setup(cfg: Union[str, Path] = DEFAULT_SETUP_CFG):
-    """Set up the data required for computing flood footprints from GloFAS discharge data
-
-    This function will download historical GloFAS data from the Copernicus Data Store
-    and compute a right-handed Gumbel distribution at every pixel from the yearly maximum
-    of the time series.
-
-    Additionally, it will load flood hazard maps and merge them into a single NetCDF file.
-
-    This is a simple wrapper around :py:func:`climada_petals.hazard.rf_glofas.dantro_transform`.
-
-    Note
-    ----
-    Prerequisites for successfully executing this function:
-
-    1. Make sure you can download data from the Copernicus Data Store API following the
-       instructions in :py:func:`climada_petals.util.glofas_request`.
-    2. Download the River Flood Hazard Maps at Global Scale from the
-       `JRC Data Catalogue <https://data.jrc.ec.europa.eu/collection/id-0054>`_. Create
-       the directory ``~/climdada/data/glofas-computation``, unzip the downloaded files
-       and place the resulting directories into this directory.
-
-    Parameters
-    ----------
-    cfg : Path or str
-        Path to the configuration file to use. DO NOT CHANGE THIS except you know exactly
-        what you are doing.
-    """
-    dantro_transform(cfg)
 
 
 def hazard_series_from_dataset(
