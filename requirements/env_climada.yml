@@ -4,3 +4,4 @@ channels:
   - defaults
 dependencies:
   - scikit-image>=0.21
+  - pymrio>=0.5.2
