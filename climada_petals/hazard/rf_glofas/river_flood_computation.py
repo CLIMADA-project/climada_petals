@@ -99,7 +99,6 @@ RiverFloodCachePaths = namedtuple(
 class RiverFloodInundation:
     """Class for computing river flood inundations"""
 
-    # Definitions for intermediate file paths
     def __init__(
         self,
         store_intermediates: bool = True,
@@ -261,7 +260,7 @@ class RiverFloodInundation:
         countries: Union[str, Iterable[str]],
         forecast_date: str,
         lead_time_days: int = 10,
-        preprocess: Optional[str] = None,
+        preprocess: Optional[Callable] = None,
         **download_glofas_discharge_kwargs,
     ):
         leadtime_hour = list(
@@ -284,7 +283,7 @@ class RiverFloodInundation:
         self,
         countries: Union[str, Iterable[str]],
         year: str,
-        preprocess: Optional[str] = None,
+        preprocess: Optional[Callable] = None,
         **download_glofas_discharge_kwargs,
     ):
         reanalysis = download_glofas_discharge(

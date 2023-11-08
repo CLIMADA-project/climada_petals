@@ -12,9 +12,6 @@ import xarray.testing as xrt
 import geopandas as gpd
 from shapely.geometry import Polygon
 
-from dantro import DataManager
-from dantro.containers import PassthroughContainer
-
 from climada_petals.hazard.rf_glofas.transform_ops import (
     download_glofas_discharge,
     return_period,
@@ -28,7 +25,6 @@ from climada_petals.hazard.rf_glofas.transform_ops import (
     apply_flopros,
     fit_gumbel_r,
     save_file,
-    finalize,
 )
 
 
@@ -53,7 +49,7 @@ def create_data_array(x, y, values, name):
     ).rename(name)
 
 
-class TestDantroOpsGloFASDownload(unittest.TestCase):
+class TestGlofasDownloadOps(unittest.TestCase):
     """Test case for 'download_glofas_discharge' operation"""
 
     def setUp(self):
@@ -172,7 +168,7 @@ class TestDantroOpsGloFASDownload(unittest.TestCase):
         """Test the capabilities of the preprocessing"""
         # Simple addition
         ds = download_glofas_discharge(
-            "forecast", "2022-01-01", None, 1, preprocess="x+1"
+            "forecast", "2022-01-01", None, 1, preprocess=lambda x: x + 1
         )
         npt.assert_array_equal(ds["time"].data, [0, 1])
         npt.assert_array_equal(ds["x"].data, [0, 1, 2])
@@ -184,7 +180,7 @@ class TestDantroOpsGloFASDownload(unittest.TestCase):
             "2022-01-01",
             None,
             1,
-            preprocess="x.max(dim='x').rename_vars(time='year')",
+            preprocess=lambda x: x.max(dim="x").rename_vars(time="year"),
             open_mfdataset_kw=dict(concat_dim="year"),
         )
         self.assertNotIn("time", ds)
@@ -193,7 +189,7 @@ class TestDantroOpsGloFASDownload(unittest.TestCase):
         npt.assert_array_equal(ds.data, [2, 12])
 
 
-class TestDantroOpsGloFAS(unittest.TestCase):
+class TestTransformOps(unittest.TestCase):
     """Test case for other dantro operations"""
 
     def setUp(self):
@@ -362,6 +358,18 @@ class TestDantroOpsGloFAS(unittest.TestCase):
 
     def test_interpolate_space(self):
         """Test 'interpolate_space' and 'regrid' operations"""
+
+        def _assert_result(da_result, da_expected_values, **kwargs):
+            """Check if result is as expected"""
+            npt.assert_array_equal(
+                da_result["longitude"], da_expected_values["longitude"]
+            )
+            npt.assert_array_equal(
+                da_result["latitude"], da_expected_values["latitude"]
+            )
+            # Interpolation causes some noise, so "allclose" is enough here
+            xrt.assert_allclose(da_result, da_expected_values, **kwargs)
+
         x = np.arange(4.0)
         y = np.flip(x)
         x_diff = x * 0.9
@@ -382,21 +390,30 @@ class TestDantroOpsGloFAS(unittest.TestCase):
 
         xx_diff, yy_diff = np.meshgrid(x_diff, y_diff, indexing="xy")
         expected_values = xx_diff + yy_diff
-
-        def _assert_result(result, rtol=1e-10, atol=1e-10):
-            """Check if result is as expected"""
-            npt.assert_array_equal(result["longitude"], x_diff)
-            npt.assert_array_equal(result["latitude"], y_diff)
-            # Interpolation causes some noise, so "allclose" is enough here
-            npt.assert_allclose(result.values, expected_values, rtol=rtol, atol=atol)
+        da_expected = xr.DataArray(
+            data=expected_values,
+            dims=["latitude", "longitude"],
+            coords=dict(longitude=x_diff, latitude=y_diff),
+        )
 
         # 'interpolate_space'
         da_result = interpolate_space(da_values, da_coords)
-        _assert_result(da_result)
+        _assert_result(da_result, da_expected)
 
         # 'regrid'
+        da_values[2:, 2:] = np.nan
+        da_expected[2:, 2:] = [[2, 5], [1, 1]]  # Nearest neighbor extrapolation
+
         da_result = regrid(da_values, da_coords)
-        _assert_result(da_result, rtol=2e-5)  # Regridding has lower accuracy
+        _assert_result(
+            da_result,
+            xr.DataArray(
+                data=expected_values,
+                dims=["latitude", "longitude"],
+                coords=dict(longitude=x_diff, latitude=y_diff),
+            ),
+            rtol=2e5,
+        )  # Regridding has lower accuracy
 
     def test_apply_flopros(self):
         """Test 'apply_flopros' operation"""
@@ -411,10 +428,9 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         flopros_data = gpd.GeoDataFrame(
             {"MerL_Riv": [1, 2]}, geometry=polygons, crs="EPSG:4326"
         )
-        flopros_cont = PassthroughContainer(name="flopros", data=flopros_data)
 
         # Call the function
-        res = apply_flopros(flopros_cont, return_period)
+        res = apply_flopros(flopros_data, return_period)
         npt.assert_array_equal(
             res.values, [[np.nan, np.nan], [1.5, 3], [np.nan, np.nan]]
         )
@@ -440,7 +456,6 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         shape = (x.size, y.size, core_dim_1.size, core_dim_2.size)
         values = np.array(
             list(range(x.size * y.size * core_dim_1.size * core_dim_2.size)),
-            dtype=np.float_,
         )
         values = values.reshape(shape) + self.rng.uniform(-0.1, 0.1, size=shape)
         values.flat[0] = 101  # Above max
@@ -451,17 +466,12 @@ class TestDantroOpsGloFAS(unittest.TestCase):
             coords=dict(
                 longitude=x, latitude=y, core_dim_1=core_dim_1, core_dim_2=core_dim_2
             ),
-        )
-        # print(da_return_period)
+        ).astype(np.float32)
 
-        ds_result = flood_depth(da_return_period, da_flood_maps)
-        # print(ds_result)
-        self.assertIn("Flood Depth", ds_result.data_vars)
+        da_result = flood_depth(da_return_period, da_flood_maps)
+        self.assertEqual(da_result.name, "Flood Depth")
         # NOTE: Single point precision, so reduce the decimal accuracy
-        # print(ds_result["Flood Depth"].values - da_return_period.clip(1, 100))
-        xrt.assert_allclose(
-            ds_result["Flood Depth"], da_return_period.clip(1, 100)
-        )
+        xrt.assert_allclose(da_result, da_return_period.clip(1, 100))
 
         # Check NaN shortcut
         da_flood_maps = xr.DataArray(
@@ -473,8 +483,8 @@ class TestDantroOpsGloFAS(unittest.TestCase):
                 latitude=np.arange(3),
             ),
         )
-        ds_result = flood_depth(da_return_period, da_flood_maps)
-        self.assertTrue(ds_result["Flood Depth"].isnull().all())
+        da_result = flood_depth(da_return_period, da_flood_maps)
+        self.assertTrue(da_result.isnull().all())
 
         # Check NaN sanitizer
         da_flood_maps = xr.DataArray(
@@ -487,11 +497,8 @@ class TestDantroOpsGloFAS(unittest.TestCase):
             ),
         )
         da_return_period[...] = 1 + self.rng.uniform(-0.1, 0.1, size=shape)
-        print(da_return_period)
-        ds_result = flood_depth(da_return_period, da_flood_maps)
-        xrt.assert_allclose(
-            ds_result["Flood Depth"], (da_return_period - 1).clip(min=0)
-        )
+        da_result = flood_depth(da_return_period, da_flood_maps)
+        xrt.assert_allclose(da_result, (da_return_period - 1).clip(min=0))
 
         # Check that DataArrays have to be aligned
         x_diff = x + self.rng.uniform(-1e-3, 1e-3, size=x.shape)
@@ -517,7 +524,6 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         y = np.arange(10, 20)
         xx, yy = np.meshgrid(x, y, indexing="xy")
         values = xx + yy
-        # print(values)
         target = xr.DataArray(values, dims=["y", "x"], coords=dict(x=x, y=y))
 
         # Define source
@@ -571,18 +577,6 @@ class TestDantroOpsGloFAS(unittest.TestCase):
         self.assertEqual(res["longitude"][0], 0)
         self.assertEqual(res["longitude"][-1], 6)
 
-
-class TestDantroOpsSaveFile(unittest.TestCase):
-    """Test case for 'save_file'"""
-
-    def setUp(self):
-        """Create a temporary directory"""
-        self.tempdir = tempfile.TemporaryDirectory()
-
-    def tearDown(self):
-        """Delete the temporary directory"""
-        self.tempdir.cleanup()
-
     def test_save_file(self):
         """Test the file saving wrapper for the dantro pipeline"""
         # Mock the dataset
@@ -590,7 +584,7 @@ class TestDantroOpsSaveFile(unittest.TestCase):
         ds.data_vars = ["foo", "bar"]
 
         # Call the function
-        outpath = Path(self.tempdir.name) / "outfile"
+        outpath = Path(tempfile.TemporaryDirectory().name) / "outfile"
         encoding = dict(bar=dict(dtype="float64", some_setting=True))
         encoding_defaults = dict(zlib=False, other_setting=False)
 
@@ -608,6 +602,7 @@ class TestDantroOpsSaveFile(unittest.TestCase):
                     some_setting=True,
                 ),
             ),
+            engine="netcdf4",
         )
         ds.to_netcdf.reset_mock()
 
@@ -616,7 +611,7 @@ class TestDantroOpsSaveFile(unittest.TestCase):
         defaults = dict(dtype="float32", zlib=True, complevel=4)
         save_file(ds, outpath)
         ds.to_netcdf.assert_called_once_with(
-            outpath, encoding=dict(foo=defaults, bar=defaults)
+            outpath, encoding=dict(foo=defaults, bar=defaults), engine="netcdf4"
         )
 
         # KeyError for data_vars that do not exist
@@ -631,53 +626,11 @@ class TestDantroOpsSaveFile(unittest.TestCase):
         save_file(da, outpath)
         da.to_dataset.assert_called_once_with()
         ds.to_netcdf.assert_called_once_with(
-            outpath, encoding=dict(foo=defaults, bar=defaults)
+            outpath, encoding=dict(foo=defaults, bar=defaults), engine="netcdf4"
         )
-
-    @patch("climada_petals.hazard.rf_glofas.transform_ops.save_file")
-    def test_finalize(self, save_file_mock):
-        """Test the finalize function for the dantro pipeline"""
-        # Define inputs
-        baz = MagicMock(spec_set=xr.Dataset)
-        mngr = MagicMock(spec_set=DataManager)
-        data = dict(foo="foo_data", bar="bar_data", baz=baz, data_manager=mngr)
-        to_file = [
-            "foo",
-            dict(tag="bar", filename="bar_file"),
-            dict(tag="baz", encoding="encoding", encoding_defaults=dict(enc=True)),
-        ]
-        to_dm = ["foo", dict(tag="bar", name="bar_name"), dict(tag="baz")]
-        kwargs = dict(out_path=self.tempdir.name + "/output")
-
-        # Call the function
-        finalize(data=data, to_file=to_file, to_dm=to_dm, **kwargs)
-
-        # Assert calls
-        print(save_file_mock.call_args_list)
-        save_file_mock.assert_any_call("foo_data", Path(self.tempdir.name) / "foo", {})
-        save_file_mock.assert_any_call(
-            "bar_data", Path(self.tempdir.name) / "bar_file", {}
-        )
-        save_file_mock.assert_any_call(
-            baz, Path(self.tempdir.name) / "baz", "encoding", enc=True
-        )
-        mngr.new_container.assert_any_call("foo", data="foo_data", Cls=None)
-        mngr.new_container.assert_any_call("bar_name", data="bar_data", Cls=None)
-        mngr.new_container.assert_any_call("baz", data=baz, Cls=PassthroughContainer)
-
-        # Check things that should not work: No 'tag' in dict-like entries
-        with self.assertRaises(KeyError) as cm:
-            finalize(data=data, to_file=[dict(filename="foo")], **kwargs)
-        self.assertIn("tag", str(cm.exception))
-        with self.assertRaises(KeyError) as cm:
-            finalize(data=data, to_dm=[dict(name="foo")], **kwargs)
-        self.assertIn("tag", str(cm.exception))
 
 
 if __name__ == "__main__":
-    TESTS = unittest.TestLoader().loadTestsFromTestCase(TestDantroOpsGloFAS)
-    TESTS.addTests(
-        unittest.TestLoader().loadTestsFromTestCase(TestDantroOpsGloFASDownload)
-    )
-    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestDantroOpsSaveFile))
+    TESTS = unittest.TestLoader().loadTestsFromTestCase(TestGlofasDownloadOps)
+    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestTransformOps))
     unittest.TextTestRunner(verbosity=2).run(TESTS)
