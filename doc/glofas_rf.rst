@@ -17,12 +17,8 @@ The idea is to compute equivalent return periods for the discharge data at every
 For computing these return periods, we require an extreme value distribution at every point.
 In practice, we fit such distributions from the historical discharge data.
 
-Note that computing river flood hazards with this module still is computationally expensive.
-We recommend using a powerful machine or even a server cluster for large computations – or likewise a lot of time to spare.
-
-All computations within this module are executed as a Transformation DAG pipeline of the `dantro <https://dantro.readthedocs.io/en/latest/>`_ package.
-It handles the data management, caches results for later use and can be controlled via `YAML <https://yaml.org/>`_ configuration files.
-We provide one configuration file for the setup (``climada_petals/hazard/rf_glofas/setup.yml``) and one exemplary configuration file for a river flood foodprint computation task (``climada_petals/hazard/rf_glofas/rf_glofas.yml``).
+Depending on your area and time series of interest the computational cost and the amount of data produced can be immense.
+For a larger country, however, a single flood inundation footprint can be computed within few minutes on a decently modern machine.
 
 ------------
 Preparations
@@ -37,104 +33,36 @@ Copernicus Data Store API Access
    In the section "Install the CDS API key", copy the content of the black box on the right.
 3. Create a file called ``.cdsapirc`` in your home directory and paste the contents of the black box into it.
 
-  If you are unsure where to put the file and you are working on a Linux or macOS system, open a terminal and execute
+   If you are unsure where to put the file and you are working on a Linux or macOS system, open a terminal and execute
 
-  .. code-block:: shell
+   .. code-block:: shell
 
-    cd $HOME
-    touch .cdsapirc
+      cd $HOME
+      touch .cdsapirc
 
-  Now the file is created and can be opened with your favorite text editor.
+   Now the file is created and can be opened with your favorite text editor.
 
-Create Data Directory
+Use Prepared Datasets
 ^^^^^^^^^^^^^^^^^^^^^
 
-1. Enter the CLIMADA data directory.
-   If you did not change the default configuration, this is located in ``$HOME/climada/data``.
+The Gumbel distribution fit parameter data has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience: `Gumbel distribution fit parameters for historical GloFAS river discharge data (1979–2015) <https://doi.org/10.3929/ethz-b-000641667>`_
 
-  If this directory does not exist, make sure you activated the CLIMADA environment and execute
-
-  .. code-block:: shell
-
-    python -c "import climada"
-
-2. Create a new directory called ``glofas-computation`` in the data directory.
-
-Download Prepared Datasets from the ETH Research Collection
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The data required for flood footprint computation has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience:
-
-* `Gumbel distribution fit parameters for historical GloFAS river discharge data <https://doi.org/10.3929/ethz-b-000587207>`_
-* `Flood hazard map of the World <https://doi.org/10.3929/ethz-b-000587202>`_
-
-Place the downloaded files in the ``glofas-computation`` data directory you created in the last section.
-If you did that, you can directly proceed with :ref:`computing flood footprints <compute>`.
-
-If not, you will have to follow the next steps to compute the input data yourself:
-
-Optional: Create Input Data Using ``setup``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-If you cannot download the data, you can re-create it on your machine using the :py:func:`climada_petals.hazard.rf_glofas.setup` function.
-To do so, follow the optional instructions below.
-
-First, download the global flood hazard map source data.
-Freely accessible global flood hazard maps are available from the Joint Research Centre (JRC) Data Catalogue as GeoTIFF files: https://data.jrc.ec.europa.eu/collection/id-0054
-
-1. Download all "Flood hazard map of the World" from the JRC Data Catalogue.
-   Click on each respective entry, navigate to the "Data access" section and click "Download".
-2. Unzip the downloaded files.
-3. Copy or move the unzipped folders into the data directory.
-
-Now we will execute the ``setup`` function.
-It will run two data transformation tasks.
-Both tasks are defined in the ``climada_petals/hazard/rf_glofas/setup.yml`` configuration file.
-
-* Task 1: ``glofas_historical_fits``
-
-  1. Download historical river discharge data from 1979 to 2021.
-  2. Compute the yearly maximum for each grid cell.
-  3. Fit a right-skewed Gumbel distribution to the resulting time series of every cell.
-  4. Store the fit parameters ``loc`` and ``scale`` as data variables in a NetCDF file.
-
-  .. literalinclude:: /../climada_petals/hazard/rf_glofas/setup.yml
-    :lines: 62-94
-    :lineno-match:
-    :caption: setup.yml
-
-* Task 2: ``flood_maps_merge``
-
-  1. Load the flood hazard map GeoTIFF files.
-  2. Merge them into a single dataset with ``return_period`` as new dimension.
-  3. Store the inundation depth as data variable in a NetCDF file.
-
-  .. literalinclude:: /../climada_petals/hazard/rf_glofas/setup.yml
-    :lines: 96-111
-    :lineno-match:
-    :caption: setup.yml
-
-Task 1 is computationally intensive and might take some time.
-It is best to run this function on a capable private computer or a server cluster, if available.
-
-By default, the function will execute using the multithreading capabilities of the system you run on.
-Alternatively, you can use the :py:func:`climada_petals.hazard.rf_glofas.dask_client` context manager.
-It will instantiate a ``dask.distributed.Client``, which creates a ``dask.distributed.LocalCluster`` to exploit multi-processing for computing the tasks.
-The settings for the cluster strongly depend on the machine you run the code on, and on the workload.
+This dataset and the global flood hazard maps will be automatically downloaded when executing
 
 .. code-block:: python
 
-  from climada_petals.hazard.rf_glofas import setup, dask_client
+    from climada_petals.hazard.rf_glofas import setup_all
 
-  # Option 1: Execute `setup` with default multithreading
-  setup()
+    setup_all()
 
-  # Option 2: Execute `setup` in parallel.
-  # 4 processes, each with 2 threads and a memory budget of 4GB
-  with dask_client(n_workers=4, threads_per_worker=2, memory_limit="8G"):
-      setup()
+Alternatively, you can download the data yourself or specify custom paths to datasets on
+your machine.
 
-The ``setup`` function actually is just a wrapper around :py:func:`climada_petals.hazard.rf_glofas.dantro_transform` with a defaulted configuration path and no return value.
+After this step, you should have the following files in your ``<climada-dir>/data/river-flood-computation``:
+
+* ``gumbel-fit.nc``: A NetCDF file containing ``loc``, ``scale`` and ``samples`` variables with dimensions ``latitude`` and ``longitude`` on a grid matching the input discharge data (here: GloFAS).
+* ``flood-maps.nc``: A NetCDF file giving the ``flood_depth`` with dimensions ``latitude``, ``longitude``, and ``return_period``. The grid is allowed to differ from that of the discharge and the Gumbel fit parameters and is expected to have a higher resolution.
+* ``FLOPROS_shp_V1/FLOPROS_shp_V1.shp``: A shapefile containing flood protection standards for the entire world, encoded as return period against which the local measures are protecting against. 
 
 .. _compute:
 
@@ -147,10 +75,19 @@ In the end, we want to arrive at a ``Hazard`` object we can use for computations
 
 The overall procedure is as follows:
 
-1. Copy the file ``climada_petals/hazard/rf_glofas/rf_glofas.yml`` into another directory.
-   It contains the default configuration for the hazard computation pipeline.
-2. Adjust the configuration file to fit your use case.
-3. Execute the ``compute_hazard_series`` function with the adjusted configuration file as argument.
+1. Instantiate an object of :py:class:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodComputation`.
+2. Use it to download discharge data (either ensemble forecasts or historical reanalysis) from the CDS.
+3. Compute flood inundation footprints from the downloaded data with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodComputation.compute`.
+4. Create a series of hazard objects from the data using :py:func:`~climada_petals.hazard.rf_glofas.rf_glofas.hazard_series_from_dataset`.
+
+.. code-block:: python
+
+    from climada_petals.hazard.rf_glofas import RiverFloodInundation
+
+Step-By-Step Instructions
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
 
 The Pipeline Configuration File
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

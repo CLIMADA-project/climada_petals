@@ -18,13 +18,13 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Module preparing data for the river flood inundation model
 """
-import os
-from typing import Union, Optional
+from typing import Union
 from pathlib import Path
-from tempfile import TemporaryFile
+from tempfile import TemporaryFile, TemporaryDirectory
 from urllib.parse import urlparse
 from zipfile import ZipFile
 import logging
+import shutil
 
 import xarray as xr
 import requests
@@ -35,9 +35,9 @@ from .transform_ops import (
     fit_gumbel_r,
     save_file,
 )
-from .rf_glofas import dask_client, DEFAULT_DATA_DIR
+from .rf_glofas import DEFAULT_DATA_DIR
 
-LOGGER = logging.getLogger(__file__)
+LOGGER = logging.getLogger(__name__)
 
 JRC_FLOOD_HAZARD_MAPS = [
     "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp10y.zip",
@@ -48,6 +48,38 @@ JRC_FLOOD_HAZARD_MAPS = [
     "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp500y.zip",
 ]
 
+FLOPROS_DATA = "https://nhess.copernicus.org/articles/16/1049/2016/nhess-16-1049-2016-supplement.zip"
+
+GUMBEL_FIT_DATA = "https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/641667/gumbel-fit.nc"
+
+
+def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):
+    """Download the FLOPROS database and place it into the output directory.
+
+    Download the supplementary material of `P. Scussolini et al.: "FLOPROS: an evolving
+    global database of flood protection standards" <https://dx.doi.org/10.5194/nhess-16-1049-2016>`_,
+    extract the zipfile, and retrieve the shapefile within. Discard the temporary data
+    afterwards.
+    """
+    LOGGER.debug("Downloading FLOPROS database")
+
+    # Download the file
+    response = requests.get(FLOPROS_DATA, stream=True)
+    with TemporaryFile(suffix=".zip") as file:
+        for chunk in response.iter_content(chunk_size=10 * 1024):
+            file.write(chunk)
+
+        # Unzip the folder
+        with TemporaryDirectory() as tmpdir:
+            with ZipFile(file) as zipfile:
+                zipfile.extractall(tmpdir)
+
+            shutil.copytree(
+                Path(tmpdir) / "Scussolini_etal_Suppl_info/FLOPROS_shp_V1",
+                Path(output_dir) / "FLOPROS_shp_V1",
+                dirs_exist_ok=True,
+            )
+
 
 def download_flood_hazard_maps(output_dir: Union[str, Path]):
     """Download the JRC flood hazard maps and unzip them
@@ -55,6 +87,7 @@ def download_flood_hazard_maps(output_dir: Union[str, Path]):
     This stores the downloaded zip files as temporary files which are discarded after
     unzipping.
     """
+    LOGGER.debug("Downloading flood hazard maps")
     for url in JRC_FLOOD_HAZARD_MAPS:
         # Set output path for the archive
         file_name = Path(urlparse(url).path).stem
@@ -72,26 +105,68 @@ def download_flood_hazard_maps(output_dir: Union[str, Path]):
                 zipfile.extractall(output_path)
 
 
-def setup_flood_hazard_maps(output_dir, flood_maps_dir):
-    # Download flood maps if no directory is given
-    if flood_maps_dir is None:
-        LOGGER.debug("Downloading and unzipping flood hazard maps")
-        flood_maps_dir = output_dir / "flood-maps"
-        flood_maps_dir.mkdir(exist_ok=True)
+def setup_flood_hazard_maps(flood_maps_dir: Path, output_dir=DEFAULT_DATA_DIR):
+    """Download the flood hazard maps and merge them into a single NetCDF file
+
+    Maps will be downloaded into ``flood_maps_dir`` if it does not exist. Then, the
+    single maps are re-written as NetCDF files, if these do not exist. Finally, all maps
+    are merged into a single dataset and written to the ``output_dir``. Because NetCDF
+    files are more flexibly read and written, this procedure is more efficient that
+    directly merging the GeoTIFF files into a single dataset.
+
+    Parameters
+    ----------
+    flood_maps_dir : Path
+        Storage directory of the flood maps as GeoTIFF files. Will be created if it does
+        not exist, in which case the files are automatically downloaded.
+    output_dir : Path
+        Directory to store the flood maps dataset.
+    """
+    # Download flood maps if directory does not exist
+    if not flood_maps_dir.is_dir():
+        LOGGER.debug(
+            "No flood maps found. Downloading GeoTIFF files to %s", flood_maps_dir
+        )
+        flood_maps_dir.mkdir()
         download_flood_hazard_maps(flood_maps_dir)
 
-    # Load flood maps
+    # Find flood maps
+    flood_maps_paths = list(Path(flood_maps_dir).glob("**/floodMapGL_rp*y.tif"))
+    flood_maps_paths_nc = [path.with_suffix(".nc") for path in flood_maps_paths]
+
+    # Rewrite GeoTIFFs as NetCDFs
+    LOGGER.debug("Rewriting flood hazard maps to NetCDF files")
+    for path, path_nc in zip(flood_maps_paths, flood_maps_paths_nc):
+        if not path_nc.is_file():
+            with xr.open_dataarray(path, engine="rasterio", chunks="auto") as da:
+                save_file(da, path_nc, zlib=True)
+
+    # Load NetCDFs and merge
     LOGGER.debug("Merging flood hazard maps into single dataset")
-    flood_maps_paths = Path(flood_maps_dir).glob("**/floodMapGL_rp*y.tif")
     flood_maps = {
-        str(path): xr.open_dataarray(path, engine="rasterio", chunks="auto")
-        for path in flood_maps_paths
+        str(path): xr.open_dataset(path, engine="netcdf4", chunks="auto")["band_data"]
+        for path in flood_maps_paths_nc
     }
     da_flood_maps = merge_flood_maps(flood_maps)
-    save_file(da_flood_maps, output_dir / "flood-maps.nc")
+    save_file(da_flood_maps, output_dir / "flood-maps.nc", zlib=True)
 
 
-def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False):
+def setup_gumbel_fit(
+    output_dir=DEFAULT_DATA_DIR, num_downloads: int = 1, parallel: bool = False
+):
+    """Download historical discharge data and compute the Gumbel distribution fits.
+
+    Data is downloaded from the Copernicus Climate Data Store (CDS).
+
+    Parameters
+    ----------
+    output_dir
+        The directory to place the resulting file
+    num_downloads : int
+        Number of parallel downloads from the CDS. Defaults to 1.
+    parallel : bool
+        Whether to preprocess data in parallel. Defaults to ``False``.
+    """
     # Download discharge and preprocess
     LOGGER.debug("Downloading historical discharge data")
     discharge = download_glofas_discharge(
@@ -115,48 +190,46 @@ def setup_gumbel_fit(output_dir, num_downloads: int = 1, parallel: bool = False)
     with xr.open_dataarray(
         discharge_file, chunks=dict(time=-1, longitude=50, latitude=50)
     ) as discharge:
-
         fit = fit_gumbel_r(discharge, min_samples=10)
         fit.to_netcdf(output_dir / "gumbel-fit.nc", engine="netcdf4")
 
 
-def setup(
+def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
+    """Download the pre-computed Gumbel parameters from the ETH research collection.
+
+    Download dataset of https://doi.org/10.3929/ethz-b-000641667
+    """
+    LOGGER.debug("Downloading Gumbel fit parameters")
+    response = requests.get(GUMBEL_FIT_DATA, stream=True)
+    with open(output_dir / "gumbel-fit.nc", "wb") as file:
+        for chunk in response.iter_content(chunk_size=10 * 1024):
+            file.write(chunk)
+
+
+def setup_all(
     output_dir: Union[str, Path] = DEFAULT_DATA_DIR,
-    flood_maps_dir: Optional[Union[str, Path]] = None,
-    num_workers: int = 1,
-    memory_limit: str = "4G",
 ):
-    """Set up the data for river flood computations
+    """Set up the data for river flood computations.
 
     This performs two tasks:
 
-    1. Merging the JRC river flood hazard maps into a single NetCDF dataset.
-    2. Fitting right-handed Gumbel distributions to every grid cell in the GloFAS
-       river discharge reanalysis data from 1979 to 2015, and storing the fit parameters
-       as NetCDF dataset.
-
-    If no data is provided, all will be downloaded automatically from the internet.
+    #. Downloading the JRC river flood hazard maps and merging them into a single NetCDF
+       dataset.
+    #. Downloading the FLOPROS flood protection database.
+    #. Downloading the Gumbel distribution parameters fitted to GloFAS river discharge
+       reanalysis data from 1979 to 2015.
 
     Parameters
     ----------
     output_dir : Path or str, optional
         The directory to store the datasets into.
-    flood_maps_dir : Path or str, optional
-        The directory containing the single flood hazard map GeoTIFF files. If ``None``
-        (default), these will be downloaded the the JRC data catalogue automatically.
-        See :py:func:`download_flood_hazard_maps`.
-    num_workers : int, optional
-        The number of worker processes to use for fitting the Gumbel distributions in
-        parallel. Defaults to 1.
     """
     # Make sure the path exists
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
 
-    setup_flood_hazard_maps(output_dir, flood_maps_dir)
-
-    if num_workers > 1:
-        with dask_client(num_workers, 1, memory_limit):
-            setup_gumbel_fit(output_dir, num_downloads=num_workers, parallel=True)
-    else:
-        setup_gumbel_fit(output_dir, parallel=False)
+    setup_flood_hazard_maps(
+        flood_maps_dir=DEFAULT_DATA_DIR / "flood-maps", output_dir=output_dir
+    )
+    download_flopros_database(output_dir)
+    download_gumbel_fit(output_dir)

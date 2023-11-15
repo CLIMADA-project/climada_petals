@@ -20,13 +20,11 @@ User Interface for GloFAS River Flood Module
 """
 
 import logging
-from pathlib import Path
 from contextlib import contextmanager
-from typing import Union, Optional
+from typing import Union
 
 import xarray as xr
 import pandas as pd
-import geopandas as gpd
 from dask.distributed import Client
 
 from climada.util.constants import SYSTEM_DIR
@@ -60,7 +58,7 @@ def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
     Example
     -------
     >>> with dask_client(n_workers=2, threads_per_worker=2, memory_limit="4G"):
-    ...     data_manager = dantro_transform("my_cfg.yml")
+    ...     xr.open_dataset("data.nc", chunks="auto").median()
     """
     # Yield the client with the arguments, and close it afterwards
     LOGGER.info("Creating dask.distributed.Client")
@@ -79,8 +77,8 @@ def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
 
 
 def hazard_series_from_dataset(
-    data: Union[Path, str, xr.Dataset], intensity: str, event_dim: str
-) -> pd.Series:
+    data: xr.Dataset, intensity: str, event_dim: str
+) -> Union[pd.Series, Hazard]:
     """Create a series of Hazard objects from a multi-dimensional dataset
 
     The input flood data is usually multi-dimensional. For example, you might have
@@ -98,6 +96,8 @@ def hazard_series_from_dataset(
     data : xarray.Dataset or Path or str
         Data to load a hazard series from. May be an opened Dataset or a path to a file
         that can be opened by xarray.
+    intensity : str
+        Name of the dataset variable to read as hazard intensity.
     event_dim : str
         Name of the dimension to be used as event dimension in the hazards. All other
         dimension names except the dimensions for longitude and latitude will make up the
@@ -114,24 +114,21 @@ def hazard_series_from_dataset(
 
     Execute the default pipeline and retrieve the Hazard series
 
-    >>> from climada_petals.hazard.rf_glofas import dantro_transform
-    >>> data_manager = dantro_transform()
-    >>> dset = data_manager["flood_depth"].data
+    >>> import xarray as xr
+    >>> dset = xr.open_dataset("flood.nc")
     >>> sorted(list(dset.dims.keys()))
-    ["date", "latitude", "longitude", "number", "select"]
+    ["date", "latitude", "longitude", "number", "sample"]
 
     >>> from climada_petals.hazard.rf_glofas import hazard_series_from_dataset
-    >>> hazard_series_from_dataset(dset)
-    select  time
-    0       2022-08-10    <climada_petals.hazard.river_flood.RiverFlood ...
-            2022-08-11    <climada_petals.hazard.river_flood.RiverFlood ...
-    1       2022-08-10    <climada_petals.hazard.river_flood.RiverFlood ...
-            2022-08-11    <climada_petals.hazard.river_flood.RiverFlood ...
+    >>> with xr.open_dataset("flood.nc") as dset:
+    >>>     hazard_series_from_dataset(dset, "flood_depth_flopros", "number")
+    date        sample
+    2022-08-10  0       <climada.hazard.base.Hazard ...
+                1       <climada.hazard.base.Hazard ...
+    2022-08-11  0       <climada.hazard.base.Hazard ...
+                1       <climada.hazard.base.Hazard ...
     Length: 4, dtype: object
     """
-    if not isinstance(data, xr.Dataset):
-        data = xr.open_dataset(data, chunks="auto")
-
     def create_hazard(dataset: xr.Dataset) -> Hazard:
         """Create hazard from a GloFASRiverFlood hazard dataset"""
         return Hazard.from_xarray_raster(
@@ -154,8 +151,6 @@ def hazard_series_from_dataset(
             create_hazard(data.sel(dict(zip(iter_dims, idx))))
             for idx in index.to_flat_index()
         ]
-    else:
-        index = None
-        hazards = [create_hazard(data)]
+        return pd.Series(hazards, index=index)
 
-    return pd.Series(hazards, index=index)
+    return create_hazard(data)
