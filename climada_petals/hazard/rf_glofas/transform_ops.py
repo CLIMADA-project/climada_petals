@@ -168,7 +168,10 @@ def merge_flood_maps(flood_maps: Mapping[str, xr.DataArray]) -> xr.DataArray:
     years = [int(expr.search(name).group(1)) for name in flood_maps]
     idx = np.argsort(years)
     darrs = list(flood_maps.values())
-    darrs = [darrs[i].drop_vars("spatial_ref").squeeze("band", drop=True) for i in idx]
+    darrs = [
+        darrs[i].drop_vars("spatial_ref", errors="ignore").squeeze("band", drop=True)
+        for i in idx
+    ]
 
     # Add zero flood map
     # NOTE: Return period of 1 is the minimal value
@@ -784,14 +787,14 @@ def save_file(
         The engine used for writing the file. Defaults to ``"netcdf4"``.
     encoding_defaults
         Encoding settings shared by all data variables. This will update the default
-        encoding settings, which are ``dict(dtype="float32", zlib=True, complevel=4)``.
+        encoding settings, which are ``dict(dtype="float32", zlib=False, complevel=4)``.
     """
     # Promote to Dataset for accessing the data_vars
     if isinstance(data, xr.DataArray):
         data = data.to_dataset()
 
     # Store encoding
-    default_encoding = dict(dtype="float32", zlib=True, complevel=4)
+    default_encoding = dict(dtype="float32", zlib=False, complevel=4)
     default_encoding.update(**encoding_defaults)
     enc = {var: deepcopy(default_encoding) for var in data.data_vars}
     if encoding is not None:

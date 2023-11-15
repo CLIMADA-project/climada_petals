@@ -586,17 +586,17 @@ class TestTransformOps(unittest.TestCase):
         # Call the function
         outpath = Path(tempfile.TemporaryDirectory().name) / "outfile"
         encoding = dict(bar=dict(dtype="float64", some_setting=True))
-        encoding_defaults = dict(zlib=False, other_setting=False)
+        encoding_defaults = dict(zlib=True, other_setting=False)
 
         # Assert calls
         save_file(ds, outpath, encoding, **encoding_defaults)
         ds.to_netcdf.assert_called_once_with(
             outpath.with_suffix(".nc"),
             encoding=dict(
-                foo=dict(dtype="float32", zlib=False, complevel=4, other_setting=False),
+                foo=dict(dtype="float32", zlib=True, complevel=4, other_setting=False),
                 bar=dict(
                     dtype="float64",
-                    zlib=False,
+                    zlib=True,
                     complevel=4,
                     other_setting=False,
                     some_setting=True,
@@ -608,7 +608,7 @@ class TestTransformOps(unittest.TestCase):
 
         # Any suffix will be forwarded
         outpath = outpath.with_suffix(".suffix")
-        defaults = dict(dtype="float32", zlib=True, complevel=4)
+        defaults = dict(dtype="float32", zlib=False, complevel=4)
         save_file(ds, outpath)
         ds.to_netcdf.assert_called_once_with(
             outpath, encoding=dict(foo=defaults, bar=defaults), engine="netcdf4"

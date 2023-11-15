@@ -2,28 +2,36 @@
 River Flood from GloFAS River Discharge Data Module
 ===================================================
 
------------------------
-Public Module Functions
------------------------
+-----------
+Main Module
+-----------
 
-These are the functions exposed by the module.
-
-.. autofunction:: climada_petals.hazard.rf_glofas.dantro_transform
-
-.. autofunction:: climada_petals.hazard.rf_glofas.setup
-
-.. autofunction:: climada_petals.hazard.rf_glofas.dask_client
-
-.. autofunction:: climada_petals.hazard.rf_glofas.hazard_series_from_dataset
+.. automodule:: climada_petals.hazard.rf_glofas.river_flood_computation
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
 -------------------------
 Transformation Operations
 -------------------------
 
-These are custom operations available in the dantro transformation pipeline.
-Listed arguments ``args`` and keyword arguments ``kwargs`` will be passed to the respective Python function.
-
 .. automodule:: climada_petals.hazard.rf_glofas.transform_ops
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+----------------
+Helper Functions
+----------------
+
+These are the functions exposed by the module.
+
+.. automodule:: climada_petals.hazard.rf_glofas.rf_glofas
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: climada_petals.hazard.rf_glofas.setup
     :members:
     :undoc-members:
     :show-inheritance:

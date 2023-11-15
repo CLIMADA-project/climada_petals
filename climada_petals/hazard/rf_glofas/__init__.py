@@ -19,4 +19,10 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Export functions of the GloFAS River Flood Module
 """
 
-from .rf_glofas import setup, dantro_transform, dask_client, hazard_series_from_dataset
+# OLD
+# from .rf_glofas import setup, dantro_transform, dask_client, hazard_series_from_dataset
+
+from .setup import setup_all
+from .river_flood_computation import RiverFloodInundation
+from .rf_glofas import hazard_series_from_dataset
+from .transform_ops import save_file
