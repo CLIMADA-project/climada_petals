@@ -26,10 +26,8 @@ pipeline {
 
             # first install xemsf, then activate environment, so .../envs/.../etc/conda/activate.d/esmpy.sh is executed
             # otherwise the environment varibalbe ESMFMKFILE is not initialized
-            mamba install -n petals_env xesmf -c conda-forge -y
+            mamba install -n petals_env -c conda-forge -y xesmf ruamel.yaml cdsapi
             conda activate petals_env
-
-            pip install --upgrade cdsapi dantro matplotlib==3.5.* ruamel.yaml
             rm -rf tests_xml/
             rm -rf coverage/
             make unit_test'''
