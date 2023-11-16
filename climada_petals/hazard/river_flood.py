@@ -419,7 +419,3 @@ class RiverFlood(Hazard):
         centroids.id = np.arange(centroids.lon.shape[0])
         # centroids.set_region_id()
         return centroids, country_isos, natIDs
-
-if __name__ == "__main__":
-    import sys
-    run(*sys.argv)
