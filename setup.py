@@ -38,8 +38,9 @@ setup(
 
     install_requires=[
         'climada>=4.0',
-        'scikit-image',
+        "boario",
         "pymrio",
+        'scikit-image',
     ],
 
     packages=find_namespace_packages(include=['climada_petals*']),
