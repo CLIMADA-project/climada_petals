@@ -4,4 +4,5 @@ channels:
   - defaults
 dependencies:
   - scikit-image>=0.21
-  - xesmf
+  - xesmf>=0.8
+  - pymrio>=0.5

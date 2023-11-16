@@ -40,6 +40,7 @@ setup(
         'climada>=4.0',
         'scikit-image',
         'xesmf',
+        "pymrio",
     ],
 
     packages=find_namespace_packages(include=['climada_petals*']),
