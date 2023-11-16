@@ -77,8 +77,7 @@ class RiverFlood(Hazard):
 
     def __init__(self, *args, **kwargs):
         """Empty constructor"""
-        haz_type = kwargs.pop("haz_type", HAZ_TYPE)
-        super().__init__(self, *args, haz_type=haz_type, **kwargs)
+        Hazard.__init__(self, *args, haz_type=HAZ_TYPE, **kwargs)
 
     @classmethod
     def from_nc(cls, dph_path=None, frc_path=None, origin=False,
