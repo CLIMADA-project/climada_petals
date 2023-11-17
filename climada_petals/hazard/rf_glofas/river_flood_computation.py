@@ -42,7 +42,7 @@ from .transform_ops import (
     save_file,
 )
 
-LOGGER = logging.getLogger(__file__)
+LOGGER = logging.getLogger(__name__)
 
 
 @contextmanager
