@@ -75,223 +75,95 @@ In the end, we want to arrive at a ``Hazard`` object we can use for computations
 
 The overall procedure is as follows:
 
-1. Instantiate an object of :py:class:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodComputation`.
+1. Instantiate an object of :py:class:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation`.
 2. Use it to download discharge data (either ensemble forecasts or historical reanalysis) from the CDS.
-3. Compute flood inundation footprints from the downloaded data with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodComputation.compute`.
-4. Create a series of hazard objects from the data using :py:func:`~climada_petals.hazard.rf_glofas.rf_glofas.hazard_series_from_dataset`.
+3. Compute flood inundation footprints from the downloaded data with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute`.
+4. Create a series of hazard objects (or a single object) from the data using :py:func:`~climada_petals.hazard.rf_glofas.rf_glofas.hazard_series_from_dataset`.
 
 .. code-block:: python
 
-    from climada_petals.hazard.rf_glofas import RiverFloodInundation
+    from climada_petals.hazard.rf_glofas import (
+        RiverFloodInundation,
+        hazard_series_from_dataset,
+    )
+
+    forecast_date = "2023-08-01"
+    rf = RiverFloodInundation()
+    rf.download_forecast(
+        countries="Switzerland",
+        forecast_date=forecast_date,
+        lead_time_days=5,
+        preprocess=lambda x: x.max(dim="step"),
+    )
+    ds_flood = rf.compute()
+    hazard = hazard_series_from_dataset(ds_flood, "flood_depth", "number")
 
 Step-By-Step Instructions
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
+The :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` method is a shortcut for the steps of the flood model algorithm that compute flood depth from the discharge input.
 
+The single steps are as follows:
 
-The Pipeline Configuration File
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#. Computing the return period from the input discharge with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period`.
+   To that end, the fitted Gumbel distributions are used and a return period is computed by :math:`r(q) = (1 - \text{cdf}(q))^{-1}`, where :math:`\text{cdf}` is the cumulative distribution function of the fitted Gumbel distribution and :math:`q` is the input discharge.
 
-.. seealso::
+   .. code-block:: python
 
-    In order to understand everything that is going on in the pipeline and its configuration file, you will have to take a look at the `dantro documentation <https://dantro.readthedocs.io/en/latest/index.html>`_, in particular:
+        discharge = rf.download_forecast(
+            countries="Switzerland",
+            forecast_date=forecast_date,
+            lead_time_days=5,
+            preprocess=lambda x: x.max(dim="step"),
+        )
+        return_period = rf.return_period(discharge)
 
-    * `Data Manager <https://dantro.readthedocs.io/en/latest/data_io/data_mngr.html>`_
-    * `Data Processing <https://dantro.readthedocs.io/en/latest/data_io/data_ops.html>`_
-    * `Data Transformation Framework <https://dantro.readthedocs.io/en/latest/data_io/transform.html>`_
+   Alternatively, bootstrap sampling can be employed to represent the statistical uncertainty in the return period computation with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period_resample`.
+   In bootstrap sampling, we draw random samples from the fitted Gumbel distribution and fit a new distribution from them.
+   This process can be repeated an arbitrary number of times.
+   The resulting distribution quantifies the uncertainty in the original fit.
+   The first argument to the method is the number of samples to draw while bootstrapping (i.e., how many samples the resulting distribution should have).
 
-First, we'll have a detailed look at the default configuration file: ``climada_petals/hazard/rf_glofas/rf_glofas.yml``
-Open it with a text editor.
+   .. code-block:: python
 
-The first entry ``data_dir`` is commented out.
-In that case, the directory ``glofas-computation`` in the CLIMADA data directory will be used.
-Where this directory is located depends on the `configuration <https://climada-python.readthedocs.io/en/latest/guide/Guide_Configuration.html#2.A.--Configuration-files>`_ of your CLIMADA setup.
-The default location is ``~/climada/data/glofas-computation``:
+        return_period = rf.return_period_resample(10, discharge)
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 3-5
-    :emphasize-lines: 3
-    :lineno-match:
-    :caption: rf_glofas.yml
+#. Regridding the return period onto the higher resolution grid of the flood hazard maps with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.regrid`:
 
-The second entry is the ``data_manager`` tree.
-It specifies which data is to be loaded before the transformation pipeline commences and where the output is stored.
-The ``load_cfg`` simply loads the data created in the previous section.
-You need not change these settings:
+   .. code-block:: python
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 8-24
-    :lineno-match:
-    :caption: rf_glofas.yml
+        return_period_regrid = rf.regrid(return_period)
 
-The third entry is the ``plot_manager`` tree.
-We are "hijacking" the dantro Plot Manager for computing the transformation.
-Instead of a plot function at the end of the pipeline, we call a ``finalize`` function that stores the result in the Data Manager or in a file, depending on our settings in the transformation configuration.
-The output directory is set with ``out_dir`` and will be a subdirectory of the ``data_manager: out_dir`` whose name is the time stamp at which the transformation pipeline was started.
-You need not change these settings:
+#. *Optional:* Applying the protection level with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.apply_protection`:
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 26-31
-    :emphasize-lines: 3
-    :lineno-match:
-    :caption: rf_glofas.yml
+   .. code-block:: python
 
-The last entry is the ``eval`` tree and specifies the evaluation tasks and their respective transformation pipelines.
-It can define multiple tasks, as in case of ``setup.yml``, but for computing a hazard we should only need one.
-First, we define some defaults for each task (this is technically not needed because we only use a single task here, but it declutters the actual task a bit).
-The ``plot_func`` is the function receiving the data resulting from the transformation pipeline.
-Again, we do not use this for plotting, but for our own purposes.
-In this case, we always call the :py:func:`climada_petals.hazard.rf_glofas.transform_ops.finalize` function, which writes datasets to files or stores them in the dantro ``DataManager``, depending on (keyword) arguments present in the task (see below):
+        return_period_regrid_protect = rf.apply_protection(return_period_regrid)
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 38-43
-    :emphasize-lines: 6
-    :lineno-match:
-    :caption: rf_glofas.yml
+#. Computing the flood depth from the regridded return period by interpolating between flood hazard maps for various return periods with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.flood_depth`
 
-The other default config sets the default settings for the `dantro file cache <https://dantro.readthedocs.io/en/latest/data_io/transform.html#the-file-cache>`_.
-It can write the result of every single transformation to a file and retrieve it if the same set of operations that created the cache file is executed again.
-This is based on the exact configuration that created the cache file in the first place and therefore safe against changes to arguments of the transform operations.
-It is obviously very useful – we do not need to compute all nodes of the transform DAG again if only a single operation was changed.
+   .. code-block:: python
 
-.. note::
+        flood_depth = rf.flood_depth(return_period_regrid)
+        flood_depth_protect = rf.flood_depth(return_period_regrid_protect)
 
-  We explicitly set ``netcdf4`` as the engine/backend for reading and writing cache files because it is the only backend that supports writing files in the multi-processing environment of ``dask.distributed``.
-  See the `xarray docs <https://docs.xarray.dev/en/stable/user-guide/dask.html#reading-and-writing-data>`_ for further information.
+   If :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` was executed with ``apply_protection="both"`` (default), it will merge the data arrays for flood depth without protection applied and with protection applied, respectively, into a single dataset and return it.
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 52-65
-    :lineno-match:
-    :caption: rf_glofas.yml
+Passing Keyword-Arguments to ``compute``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Next, we define our actual evaluation task for computing the flood hazard, and we base it on the default settings given above:
+If you want to pass custom arguments to the methods called by :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` without calling each method individually, you can do so via the ``resample_kws`` and ``regrid_kws`` arguments.
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 67-71
-    :lineno-match:
-    :caption: rf_glofas.yml
+If you add ``resample_kws``, :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` will call :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period_resample` instead of :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period` and pass the mapping as keyword arguments.
 
-Before the transformation, we select data from the data manager and give them specific tags to use them in the transform pipeline:
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 73-75
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-Now, we finally specify the actual data transformation.
-The first operation calls :py:func:`climada_petals.hazard.rf_glofas.transform_ops.download_glofas_discharge` to download the forecast data from the CDS.
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 77-83
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-The second operation computes the maximum over multiple slices along the time ``step`` dimension.
-Here, we compute the maximum over the first 3 and the first 5 days of the forecast.
-See :py:func:`climada_petals.hazard.rf_glofas.transform_ops.max_from_isel` for details.
-This operation reduces over the ``step`` dimension, and adds a new ``select`` dimension with integer values.
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 85-92
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-Next, we select the ``loc`` and ``scale`` arrays from the ``gumbel-fit.nc`` dataset.
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 94-98
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-Then, we compute the return period with :py:func:`climada_petals.hazard.rf_glofas.transform_ops.return_period`.
-Here, we add particular settings for the file cache.
-We always want a cache file to be written (except when the file already exists), and we always want it to be read in again before continuing to the next operation.
-We use this feature to load the file with new chunking.
-This is important because chunking has significant performance implications.
-In the next operation, we will interpolate the data in space, which benefits significantly from chunks which span the entire latitude/longitude grid (the interpolated data fits into a single chunk).
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 100-112
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-Next, we interpolate in space using :py:func:`climada_petals.hazard.rf_glofas.transform_ops.interpolate_space`.
-Again, we use the cache read-write mechanism of dantro to reload the result with different chunking.
-In this case, we want to fit all data at a single lat/lon coordinate into one chunk, and still have as few chunks as reasonably possible.
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 114-126
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-Finally, we compute the flood depth from the interpolated data with :py:func:`climada_petals.hazard.rf_glofas.transform_ops.flood_depth`.
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 129-131
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-To store the data in a dantro ``DataManager`` instance, we pass said data manager as DAG node as well:
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 133-135
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-All other keywords that are not recognized by dantro will be passed to the ``plot_func`` :py:func:`climada_petals.hazard.rf_glofas.transform_ops.finalize`.
-We want the final result ``flood_depth`` to be stored in the data manager so we can later retrieve it in the code.
-Therefore, we add:
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 137-139
-    :lineno-match:
-    :caption: rf_glofas.yml
-
-Adjusting the Configuration
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Now that you are familiar with the configuration, copy the file ``rf_glofas.yml`` to another location and optionally rename it (e.g., to ``my_cfg.yml``).
-You can now adjust the ``transform`` to fit your use case.
-The most common changes will be to the data downloaded from the CDS, in particular w.r.t. the date parameters, the ``country``, and the ``leadtime_hour``:
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 78-83
-    :lineno-match:
-    :emphasize-lines: 2,4,5
-    :caption: my_cfg.yml
-
-Depending on the ``leadtime_hour`` and your particular use case, you might then want to adjust the time ranges over which to compute the maxima:
-
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 85-92
-    :lineno-match:
-    :emphasize-lines: 5-7
-    :caption: my_cfg.yml
-
-Then you can finally execute the pipeline!
-
-Executing the Pipeline
-^^^^^^^^^^^^^^^^^^^^^^
-
-The pipeline is executed with :py:func:`climada_petals.hazard.rf_glofas.dantro_transform`.
-The first argument of this function is the location of the pipeline configuration file.
-Pass the path to your adjusted configuration, or use the default value, which is the default file ``rf_glofas.yml``.
-Like with :py:func:`climada_petals.hazard.rf_glofas.setup`, additional keyword arguments will be passed to the ``dask.distributed.Client`` constructor.
+Likewise, ``regrid_kws`` will be passed as keyword arguments to :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.regrid`.
 
 .. code-block:: python
 
-  from pathlib import Path
-  from climada_petals.hazard.rf_glofas import dantro_transform, dask_client
-
-  # Default pipeline
-  data_manager = dantro_transform()
-
-  # Custom pipeline with multi-processing
-  with dask_client(4, 2, "4G"):
-      data_manager = dantro_transform(Path("~/my_cfg.yml").expanduser())
-
-``dantro_transform`` returns the ``DataManager`` for the pipeline.
-If you stored the flood depth via the ``to_dm`` node in the configuration file, this data manager will contain the dataset we are looking for to build ``Hazard`` objects.
+    ds_flood = rf.compute(
+        resample_kws=dict(num_bootstrap_samples=20, num_workers=4),
+        regrid_kws=dict(reuse_regridder=True)
+    )
 
 Creating Hazards from the Data
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -301,86 +173,122 @@ The resulting data is usually multi-dimensional, which is why we typically creat
 Two obvious dimensions are the spatial ones, longitude and latitude.
 Ignoring these (as they must persist into the ``Hazard`` object), we can decide on one more dimension to merge into a single hazard.
 
-Given the default configuration ``rf_glofas.yml``, there are three more dimensions:
-The number of the forecast ensemble member (``number``), the date at which the forecast was issued (``date``), and the selection dimension from ``max_from_isel`` (``select``).
-A straightforward way of merging each event is by the ensemble dimension (``number``).
-Then we receive a ``Hazard`` for every combination of ``date`` and ``select``, containing as many events as ``number`` has coordinates (the size of the ensemble in this case).
+If we use an ensemble forecast like in the above example, and decide *not* to compute the maximum in time, the dataset has four coodinates: ``latitude``, ``longitude``, ``step``, and ``number``, with the latter two indicating the lead time step and the ensemble member, respectively.
+Employing bootstrap sampling would add another dimension ``sample``.
+To create hazard objects, we would have to decide which of these dimensions should encode the "event" dimension in the ``Hazard``.
+For each combination of the remaining dimension coordinates, a new Hazard object would then be created.
 
-The task of splitting and concatenating along particular dimensions of the dataset and creating Hazard objects is performed by :py:func:`climada_petals.hazard.rf_glofas.transform_ops.hazard_series_from_dataset`.
+The task of splitting and concatenating along particular dimensions of the dataset and creating Hazard objects is performed by :py:func:`climada_petals.hazard.rf_glofas.rf_glofas.hazard_series_from_dataset`.
 We put in the data as file path or xarray ``Dataset`` and receive a `pandas.Series <https://pandas.pydata.org/pandas-docs/stable/user_guide/dsintro.html#series>`_ with the hazard objects as values and the remaining dimension coordinates as `MultiIndex <https://pandas.pydata.org/pandas-docs/stable/user_guide/advanced.html>`_.
 The dimension name which is to be considered the event dimension in a ``Hazard`` instance must be specified as the ``event_dim`` argument.
 
 .. tip::
 
-    You can, but need not, execute ``hazard_series_from_dataset`` within the same dask client context.
+    If the dataset is three-dimensional, :py:func:`climada_petals.hazard.rf_glofas.rf_glofas.hazard_series_from_dataset` will return a single Hazard object instead of a ``pandas.Series``.
 
 .. code-block:: python
 
-  from climada_petals.hazard.rf_glofas import (
-      dask_client,
-      dantro_transform,
-      hazard_series_from_dataset,
-  )
+    discharge = rf.download_forecast(
+        countries="Switzerland",
+        forecast_date="2023-08-01",
+        lead_time_days=5,
+    )
 
-  # Default pipeline
-  with dask_client(4, 2, "4G"):
-      data_manager = dantro_transform()
+    # Compute flood for maximum over lead time
+    ds_flood = rf.compute(discharge.max(dim="step"))
 
-      # Pass dataset in data manager container to function
-      hazards = hazard_series_from_dataset(
-          data_manager["flood_depth"].data, event_dim="number"
-      )
+    # Single hazard return (no remaining dimensions)
+    hazard = hazard_series_from_dataset(ds_flood, "flood_depth", "number")
 
-  # Select the Hazard object for the 5-day-maximum of the forecast on 2022-08-11
-  hazard = hazards[1, "2022-08-11"]
+    # Compute flood for each lead time day *and* bootstrap sample
+    ds_flood_multidim = rf.compute(discharge, resample_kws=dict(num_bootstrap_samples=20))
 
-Great! We have a ``Hazard``!
+    # Series with MultiIndex: step, member
+    # Each hazard with 20 events (samples)
+    hazard_series = hazard_series_from_dataset(ds_flood, "flood_depth", "sample")
 
-.. note::
 
-    The actual ``Hazard`` instance returned is a subclass of ``Hazard``, :py:class:`climada_petals.hazard.river_flood.RiverFlood`.
+Storing Data
+^^^^^^^^^^^^
 
-Handling Very Large Data
-^^^^^^^^^^^^^^^^^^^^^^^^
+Use :py:func:`climada_petals.hazard.rf_glofas.transform_ops.save_file` to store xarray Datasets or DataArrays conveniently.
 
-In case of very large amounts of data, it might be suitable to *not* pass the dataset to the data manager but only write it into a file.
-For this, add a ``to_file`` node to the pipeline configuration, as present in the ``setup.yml``, e.g.:
+.. tip::
 
-.. code-block:: yaml
+    Storing your result is important for two reasons:
 
-  eval:
-    with_cache:
-      to_file:
-        - flood_maps
+    #. Computing flood footprints for larger areas or multiple events can take a lot of time.
+    #. Loading flood footprints into ``Hazard`` objects requires transpositions that do not commute well with the lazy computations and evaluations by xarray.
+       Storing the data and re-loading it before plugging it into :py:func:`~climada_petals.hazard.rf_glofas.rf_glofas.hazard_series_from_dataset` will likely increase performance.
 
-.. hint::
+By default, data is stored without compression and encoded in 32-bit floats.
+This maintains a reasonable accuracy while reducing file size by half even though no compression is applied.
+Compression will drastically reduce the storage space needed for the data.
+However, it also creates a heavy burden on the CPU and especially multiprocessing and multithreading tasks suffer heavily.
+If storage space permits, it is therefore recommended to store the data without compression.
 
-    See :py:func:`climada_petals.hazard.rf_glofas.transform_ops.finalize` for information on how to specify ``to_file``.
+.. warning::  Saving results of computations **with** compression is **not** recommended, because performance might be impeded **a lot**!
 
-Then you can read this file again when building hazard objects.
-Note that you might want to customize the ``out_dir`` of both the ``data_manager`` and the ``plot_manager`` nodes in this case:
+To enable compression, add ``zlib=True`` as argument to :py:func:`~climada_petals.hazard.rf_glofas.transform_ops.save_file`.
+The default compression level is ``complevel=4``.
+The compression level may range from 1 to 9.
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 8-9
-    :lineno-match:
-    :emphasize-lines: 2
-    :caption: my_cfg.yml
+Because storing without compression does not compromise multiprocessing performance, it might be feasible to first write *without* compression after computing the result, and then to re-write *with* compression separately to save storage space.
+The reason for this is that xarray uses dask to perform computations lazily.
+Only when data is required, dask will compute it according to the transformations applied on the data.
+This does not commute well with compression.
 
-.. literalinclude:: /../climada_petals/hazard/rf_glofas/rf_glofas.yml
-    :lines: 26-28
-    :lineno-match:
-    :emphasize-lines: 3
-    :caption: my_cfg.yml
-
-The function :py:func:`climada_petals.hazard.rf_glofas.transform_ops.hazard_series_from_dataset` also accepts a file path as ``data`` parameter:
+The following code will likely run much faster than directly writing ``ds_flood`` with compression, especially when the data is large.
+However, it requires the space to once store the entire dataset without compression.
 
 .. code-block:: python
 
-  from climada_petals.hazard.rf_glofas import (
-      dantro_transform,
-      hazard_series_from_dataset,
-  )
+    from pathlib import Path
+    import xarray as xr
+    from climada_petals.hazard.rf_glofas import save_file
 
-  # Custom pipeline might write data into a file using 'to_file'
-  dantro_transform(Path("~/my_cfg.yml").expanduser())
-  hazards = hazard_series_from_dataset("my_output_file.nc", event_dim="number")
+    rf.download_forecast(
+        countries="Switzerland",
+        forecast_date="2023-08-01",
+        lead_time_days=5,
+    )
+    ds_flood = rf.compute()
+
+    # Save without compression (default)
+    outpath = Path("out.nc")
+    save_file(ds_flood, outpath)
+    ds_flood.close()  # Release data
+
+    # Re-open, and save with compression into "out-comp.nc"
+    with xr.open_dataset(outpath, chunks="auto") as ds:
+        save_file(ds, outpath.with_stem(outpath.stem + "-comp"), zlib=True)
+
+    # Delete initial file
+    outpath.unlink()
+
+Storing Intermediate Data
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By default, :py:class:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation` stores the result of each computation step in a cache directory and reloads it for the next step.
+The reason for this is similar to the issue with compression:
+To perform our computations, the data has to be transposed often.
+Multiple transpositions of a dataset in memory are costly, but storing data and reopening it transposed is fast.
+Especially for larger data that do not fit into memory at once, :py:attr:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.store_intermediates` should therefore be set to ``True`` (default).
+
+The intermediate data is stored in a cache directory which is deleted after the :py:class:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation` instance is closed or deleted.
+While it exists, the cached data can be accessed via the :py:attr:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.cache_paths` after the computation:
+
+.. code-block:: python
+
+    import xarray as xr
+
+    rf.download_forecast(
+        countries="Switzerland",
+        forecast_date="2023-08-01",
+        lead_time_days=5,
+    )
+    ds_flood = rf.compute()
+
+    # Plot regridded return period
+    with xr.open_dataarray(rf.cache_paths.return_period_regrid, chunks="auto") as da_rp:
+        da_rp.isel(step=0).max(dim="member").plot()

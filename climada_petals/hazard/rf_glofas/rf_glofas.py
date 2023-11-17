@@ -106,8 +106,18 @@ def hazard_series_from_dataset(
     Returns
     -------
     pandas.Series
-        Series of ``RiverFlood`` objects with events along ``event_dim`` and with
+        Series of ``Hazard`` objects with events along ``event_dim`` and with
         a ``MultiIndex`` of the remaining dimensions.
+
+    Tip
+    ---
+    This function must transpose the underlying data in the dataset to convenietly build
+    ``Hazard`` objects. To ensure that this is an efficient operation, avoid plugging
+    the return value of
+    :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute`
+    directly into this function, especially for **large data**. Instead, save the data
+    first using :py:func:`~climada_petals.hazard.rf_glofas.transform_ops.save_file`,
+    then re-open the data with xarray and call this function on it.
 
     Examples
     --------

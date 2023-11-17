@@ -258,14 +258,15 @@ def download_glofas_discharge(
     """Download the GloFAS data and return the resulting dataset
 
     Several parameters are passed directly to
-    :py:func:`climada_petals.util.glofas_request`. See this functions documentation for
-    further information.
+    :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`. See
+    this functions documentation for further information.
 
     Parameters
     ----------
     product : str
         The string identifier of the product to download. See
-        :py:func:`climada_petals.util.glofas_request` for supported products.
+        :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`
+        for supported products.
     date_from : str
         Earliest date to download. Specification depends on the ``product`` chosen.
     date_to : str or None
