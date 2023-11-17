@@ -43,6 +43,7 @@ from climada.hazard.trop_cyclone import (
     MODEL_VANG,
 )
 from climada.util import ureg
+from climada.util.api_client import Client
 import climada.util.constants as u_const
 import climada.util.coordinates as u_coord
 
@@ -108,22 +109,33 @@ focus is not only on the eyewall region, but also on the outer vortex, which is 
 important for precipitation than for wind effects.
 """
 
-DEF_ELEVATION_TIF = u_const.SYSTEM_DIR / "topography_land_360as.tif"
-"""Topography (land surface elevation, 0 over oceans) raster data at 0.1 degree resolution
 
-SRTM data upscaled to 0.1 degree resolution using the "average" method of gdalwarp.
-"""
+def default_elevation_tif():
+    """Topography (land surface elevation, 0 over oceans) raster data at 0.1 degree resolution
 
-DEF_DRAG_TIF = u_const.SYSTEM_DIR / "c_drag_500.tif"
-"""Gradient-level drag coefficient raster data at 0.25 degree resolution
+    SRTM data upscaled to 0.1 degree resolution using the "average" method of gdalwarp.
+    """
+    client = Client()
+    dsi = client.get_dataset_info(name='topography_land_360as', status='package-data')
+    _, [elevation_tif] = client.download_dataset(dsi)
+    return elevation_tif
 
-The ERA5 'forecast_surface_roughness' (fsr) variable has been transformed into drag
-coefficients (C_D) following eqs. (7) and (8) in the following work:
 
-    Feldmann et al. (2019): Estimation of Atlantic Tropical Cyclone Rainfall Frequency in the
-    United States. Journal of Applied Meteorology and Climatology 58(8): 1853–1866.
-    https://doi.org/10.1175/JAMC-D-19-0011.1
-"""
+def default_drag_tif():
+    """Gradient-level drag coefficient raster data at 0.25 degree resolution
+
+    The ERA5 'forecast_surface_roughness' (fsr) variable has been transformed into drag
+    coefficients (C_D) following eqs. (7) and (8) in the following work:
+
+        Feldmann et al. (2019): Estimation of Atlantic Tropical Cyclone Rainfall Frequency in the
+        United States. Journal of Applied Meteorology and Climatology 58(8): 1853–1866.
+        https://doi.org/10.1175/JAMC-D-19-0011.1
+    """
+    client = Client()
+    dsi = client.get_dataset_info(name='c_drag_500', status='package-data')
+    _, [drag_tif] = client.download_dataset(dsi)
+    return drag_tif
+
 
 class TCRain(Hazard):
     """
@@ -1411,7 +1423,7 @@ def _w_topo(
     ndarray of shape (ntime, ncentroids)
     """
     if elevation_tif is None:
-        elevation_tif = DEF_ELEVATION_TIF
+        elevation_tif = default_elevation_tif()
 
     # Note that the gradient of the raster products is smoothed (as in the reference MATLAB
     # implementation), even though it should be piecewise constant since the data itself is read
@@ -1478,7 +1490,7 @@ def _w_frict_stretch(
     """
     # sum of frictional and stretching components w_f and w_t
     if c_drag_tif is None:
-        c_drag_tif = DEF_DRAG_TIF
+        c_drag_tif = default_drag_tif()
 
     # vnet : absolute value of the total surface wind
     vnet = {

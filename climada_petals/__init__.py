@@ -52,11 +52,6 @@ REPO_DATA = {
         DEMO_DIR.joinpath('Portugal_firms_June_2017.csv'),
         DEMO_DIR.joinpath('Portugal_firms_2016_17_18_MODIS.csv'),
     ],
-    'climada_petals/data/tc_rainfield': [
-        SYSTEM_DIR.joinpath('topography_land_360as.tif'),
-        SYSTEM_DIR.joinpath('c_drag_500.tif'),
-        DEMO_DIR.joinpath('tcrain_examples.nc'),
-    ],
 }
 
 

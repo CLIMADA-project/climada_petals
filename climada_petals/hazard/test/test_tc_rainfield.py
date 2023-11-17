@@ -53,6 +53,13 @@ def getTestData():
 CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_MAT = getTestData()
 
 
+def tcrain_examples():
+    client = Client()
+    dsi = client.get_dataset_info(name='tcrain_examples', status='package-data')
+    _, [drag_tif] = client.download_dataset(dsi)
+    return drag_tif
+
+
 class TestReader(unittest.TestCase):
     """Test loading funcions from the TCRain class"""
 
@@ -229,7 +236,7 @@ class TestModel(unittest.TestCase):
             self.assertGreater(orders.max(), 1)
 
     def test_qs_from_t_diff_level(self):
-        tracks = TCTracks.from_hdf5(DEMO_DIR / "tcrain_examples.nc")
+        tracks = TCTracks.from_hdf5(tcrain_examples())
         track_ds = tracks.data[0]
         temps_in = track_ds["t600"].values.copy()
         temps_in[3] = -9999.0  # test fill value
@@ -246,7 +253,7 @@ class TestModel(unittest.TestCase):
         np.testing.assert_allclose(q_out, q_out_ref, rtol=1e-4)
 
     def test_track_to_si(self):
-        tracks = TCTracks.from_hdf5(DEMO_DIR / "tcrain_examples.nc")
+        tracks = TCTracks.from_hdf5(tcrain_examples())
         track_ds = tracks.data[0]
         si_track = _track_to_si_with_q_and_shear(track_ds)
         self.assertIn("q950", si_track.variables)
