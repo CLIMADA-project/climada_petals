@@ -83,7 +83,7 @@ def _maybe_open_dataarray(
         yield arr
 
 
-RiverFloodCachePaths_ = namedtuple(
+_RiverFloodCachePaths = namedtuple(
     "RiverFloodCachePaths",
     [
         "discharge",
@@ -94,7 +94,7 @@ RiverFloodCachePaths_ = namedtuple(
 )
 
 
-class RiverFloodCachePaths(RiverFloodCachePaths_):
+class RiverFloodCachePaths(_RiverFloodCachePaths):
     """Container for storing paths to caches for :py:class:`RiverFloodInundation`
 
     Depending on the state of the corresponding :py:class:`RiverFloodInundation`
