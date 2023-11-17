@@ -149,8 +149,8 @@ class RiverFloodInundation:
     def __init__(
         self,
         store_intermediates: bool = True,
-        cache_dir: Union[Path, str] = DEFAULT_DATA_DIR / ".cache",
         data_dir: Union[Path, str] = DEFAULT_DATA_DIR,
+        cache_dir: Union[Path, str] = DEFAULT_DATA_DIR / ".cache",
     ):
         """Initialize the instance
 
@@ -161,28 +161,29 @@ class RiverFloodInundation:
             directory. This is recommended especially for larger data. Only set this
             to ``False`` if the data operated on is very small (e.g., for a small
             country or region). Defaults to ``True``.
-        cache_dir : Path or str, optional
-            The top-level cache directory where computation caches of this instance will
-            be placed. Defaults to ``<climada>/data/river-flood-computation``, where
-            ``<climada>`` is the Climada data directory indicated by
-            ``local_data : system`` in the ``climada.conf``.
         data_dir : Path or str, optional
             The directory where flood maps, Gumbel distribution parameters and the
             FLOPROS database are located. Defaults to
-            ``<climada>/data/river-flood-computation`` (see above).
+            ``<climada>/data/river-flood-computation``, where ``<climada>`` is the
+            Climada data directory indicated by ``local_data : system`` in the
+            ``climada.conf``. This directory must exist.
+        cache_dir : Path or str, optional
+            The top-level cache directory where computation caches of this instance will
+            be placed. Defaults to ``<climada>/data/river-flood-computation/.cache``
+            (see above for configuration). This directory (and all its parents) will be
+            created.
         """
         data_dir = Path(data_dir)
+        if not data_dir.is_dir():
+            raise FileNotFoundError(f"'data_dir' does not exist: {data_dir}")
+
         self.store_intermediates = store_intermediates
         self.flood_maps = xr.open_dataarray(
             data_dir / "flood-maps.nc",
             chunks=dict(return_period=-1, latitude="auto", longitude="auto"),
         )
-        self.gumbel_fits = xr.open_dataset(
-            data_dir / "gumbel-fit.nc", chunks="auto"
-        )
-        self.flopros = gpd.read_file(
-            data_dir / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp"
-        )
+        self.gumbel_fits = xr.open_dataset(data_dir / "gumbel-fit.nc", chunks="auto")
+        self.flopros = gpd.read_file(data_dir / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp")
         self.regridder = None
         self._create_tempdir(cache_dir=cache_dir)
 
@@ -198,17 +199,15 @@ class RiverFloodInundation:
         """
         # Create cache directory
         cache_dir = Path(cache_dir)
-        if not cache_dir.is_dir():
-            cache_dir.mkdir(parents=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Create temporary directory for cache
         self._tempdir = TemporaryDirectory(
             dir=cache_dir, prefix=datetime.today().strftime("%y%m%d-%H%M%S-")
         )
 
-        # Define paths
-        tempdir = Path(self._tempdir.name)
-        self.cache_paths = RiverFloodCachePaths.from_dir(tempdir)
+        # Define cache paths
+        self.cache_paths = RiverFloodCachePaths.from_dir(Path(self._tempdir.name))
 
     def clear_cache(self):
         """Clear the cache of this instance
