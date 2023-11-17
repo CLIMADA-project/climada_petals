@@ -254,17 +254,6 @@ class RiverFlood(Hazard):
                        "Use LowFlow.from_nc instead.")
         self.__dict__ = RiverFlood.from_nc(*args, **kwargs).__dict__
 
-    @classmethod
-    def from_glofas_discharge(cls, cfg_file: Union[str, Path]):
-        rf = GloFASRiverFlood(cfg_file)
-        ds = rf.compute_hazard()
-        return cls.from_raster_xarray(
-            rf.compute_hazard(),
-            hazard_type=HAZ_TYPE,
-            intensity="Flood Depth",
-            intensity_unit="m",
-        )
-
     def exclude_trends(self, fld_trend_path, dis):
         """
         Function allows to exclude flood impacts that are caused in areas

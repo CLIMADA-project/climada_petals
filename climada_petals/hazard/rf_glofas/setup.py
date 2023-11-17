@@ -57,9 +57,9 @@ def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):
     """Download the FLOPROS database and place it into the output directory.
 
     Download the supplementary material of `P. Scussolini et al.: "FLOPROS: an evolving
-    global database of flood protection standards" <https://dx.doi.org/10.5194/nhess-16-1049-2016>`_,
-    extract the zipfile, and retrieve the shapefile within. Discard the temporary data
-    afterwards.
+    global database of flood protection standards"
+    <https://dx.doi.org/10.5194/nhess-16-1049-2016>`_, extract the zipfile, and retrieve
+    the shapefile within. Discard the temporary data afterwards.
     """
     LOGGER.debug("Downloading FLOPROS database")
 
@@ -138,8 +138,8 @@ def setup_flood_hazard_maps(flood_maps_dir: Path, output_dir=DEFAULT_DATA_DIR):
     LOGGER.debug("Rewriting flood hazard maps to NetCDF files")
     for path, path_nc in zip(flood_maps_paths, flood_maps_paths_nc):
         if not path_nc.is_file():
-            with xr.open_dataarray(path, engine="rasterio", chunks="auto") as da:
-                save_file(da, path_nc, zlib=True)
+            with xr.open_dataarray(path, engine="rasterio", chunks="auto") as d_arr:
+                save_file(d_arr, path_nc, zlib=True)
 
     # Load NetCDFs and merge
     LOGGER.debug("Merging flood hazard maps into single dataset")

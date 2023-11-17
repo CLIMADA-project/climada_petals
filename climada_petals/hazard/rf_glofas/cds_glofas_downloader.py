@@ -1,3 +1,25 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Functions for downloading GloFAS river discharge data from the Copernicus Climate Data
+Store (CDS).
+"""
+
 from pathlib import Path
 import multiprocessing as mp
 from copy import deepcopy
@@ -183,10 +205,10 @@ def glofas_request(
     # Check if product exists
     try:
         default_request = deepcopy(DEFAULT_REQUESTS[product])
-    except KeyError:
+    except KeyError as err:
         raise NotImplementedError(
             f"product = {product}. Choose from {list(DEFAULT_REQUESTS.keys())}"
-        )
+        ) from err
 
     # Update with request_kw
     if request_kw is not None:
@@ -221,22 +243,17 @@ def glofas_request(
         # Switch file extension based on selected format
         file_ext = "grib" if default_request["format"] == "grib" else "nc"
 
-        # Range iterator over dates
-        def date_range(begin: date, end: date):
-            for day in range((end - begin).days):
-                yield begin + timedelta(days=day)
-
         # Create request dict
-        def get_request_forecast(date: date):
+        def get_request_forecast(ddate: date):
             request = deepcopy(default_request)
             request.update(
-                year=str(date.year), month=f"{date.month:02d}", day=f"{date.day:02d}"
+                year=str(ddate.year), month=f"{ddate.month:02d}", day=f"{ddate.day:02d}"
             )
             return request
 
         # List up all requests
         glofas_product = f"cems-glofas-{product}"
-        dates = list(date_range(date_from, date_to + timedelta(days=1)))
+        dates = pd.date_range(date_from, date_to, freq="D", inclusive="both").date
         requests = [get_request_forecast(d) for d in dates]
         product_id = default_request["product_type"].split("_")[0]
         outfiles = [

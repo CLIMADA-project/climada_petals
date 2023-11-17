@@ -71,12 +71,12 @@ def _maybe_open_dataarray(
         closed when this context manager closes.
     """
     if arr is None:
-        LOGGER.debug(f"Opening file: {filename}")
+        LOGGER.debug("Opening file: %s", filename)
         arr = xr.open_dataarray(filename, **open_dataarray_kwargs)
         try:
             yield arr
         finally:
-            LOGGER.debug(f"Closing file: {filename}")
+            LOGGER.debug("Closing file: %s", filename)
             arr.close()
 
     else:
@@ -425,7 +425,7 @@ class RiverFloodInundation:
 
         Returns
         -------
-        rp : xr.DataArray
+        r_period : xr.DataArray
             Return period for each location of the input discharge.
 
         See Also
@@ -435,13 +435,13 @@ class RiverFloodInundation:
         with _maybe_open_dataarray(
             discharge, self.cache_paths.discharge, chunks="auto"
         ) as discharge:
-            rp = return_period(
+            r_period = return_period(
                 discharge, self.gumbel_fits["loc"], self.gumbel_fits["scale"]
             )
 
             if self.store_intermediates:
-                save_file(rp, self.cache_paths.return_period)
-            return rp
+                save_file(r_period, self.cache_paths.return_period)
+            return r_period
 
     def return_period_resample(
         self,
@@ -480,7 +480,7 @@ class RiverFloodInundation:
 
         Returns
         -------
-        rp : xr.DataArray
+        r_period : xr.DataArray
             Return period samples for each location of the input discharge.
 
         See Also
@@ -492,9 +492,9 @@ class RiverFloodInundation:
             discharge,
             self.cache_paths.discharge,
             chunks=dict(longitude=50, latitude=50),
-        ) as discharge:
+        ) as discharge_data:
             kwargs = dict(
-                discharge=discharge,
+                discharge=discharge_data,
                 gev_loc=self.gumbel_fits["loc"],
                 gev_scale=self.gumbel_fits["scale"],
                 gev_samples=self.gumbel_fits["samples"],
@@ -503,10 +503,10 @@ class RiverFloodInundation:
             )
 
             def work():
-                rp = return_period_resample(**kwargs)
+                r_period = return_period_resample(**kwargs)
                 if self.store_intermediates:
-                    save_file(rp, self.cache_paths.return_period, zlib=False)
-                return rp
+                    save_file(r_period, self.cache_paths.return_period, zlib=False)
+                return r_period
 
             if num_workers > 1:
                 with dask_client(num_workers, 1, memory_per_worker):
@@ -516,7 +516,7 @@ class RiverFloodInundation:
 
     def regrid(
         self,
-        return_period: Optional[xr.DataArray] = None,
+        r_period: Optional[xr.DataArray] = None,
         method: str = "bilinear",
         reuse_regridder: bool = False,
     ):
@@ -533,7 +533,7 @@ class RiverFloodInundation:
 
         Parameters
         ----------
-        return_period : xr.DataArray, optional
+        r_period : xr.DataArray, optional
             The return period data to regrid. Defaults to ``None``, which indicates that
             data should be loaded from the cache.
         method : str, optional
@@ -555,14 +555,14 @@ class RiverFloodInundation:
         """
         # NOTE: Chunks must be small because resulting array is huge!
         with _maybe_open_dataarray(
-            return_period,
+            r_period,
             self.cache_paths.return_period,
             chunks=dict(longitude=-1, latitude=-1, time=1, sample=1, number=1, step=1),
-        ) as return_period:
+        ) as return_period_data:
             if not reuse_regridder:
                 self.regridder = None
             return_period_regrid, self.regridder = regrid(
-                return_period,
+                return_period_data,
                 self.flood_maps,
                 method=method,
                 regridder=self.regridder,
@@ -605,9 +605,9 @@ class RiverFloodInundation:
         """
         with _maybe_open_dataarray(
             return_period_regrid, self.cache_paths.return_period_regrid, chunks="auto"
-        ) as return_period_regrid:
+        ) as return_period_regrid_data:
             return_period_regrid_protect = apply_flopros(
-                self.flopros, return_period_regrid
+                self.flopros, return_period_regrid_data
             )
 
             if self.store_intermediates:
@@ -654,6 +654,6 @@ class RiverFloodInundation:
 
         with _maybe_open_dataarray(
             return_period_regrid, file_path, chunks="auto"
-        ) as return_period_regrid:
-            inundation = flood_depth(return_period_regrid, self.flood_maps)
+        ) as return_period_regrid_data:
+            inundation = flood_depth(return_period_regrid_data, self.flood_maps)
             return inundation
