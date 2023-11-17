@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - ruamel.yaml>=0.18
   - scikit-image>=0.21
   - xesmf>=0.8
   - pymrio>=0.5

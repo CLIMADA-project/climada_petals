@@ -38,6 +38,7 @@ setup(
 
     install_requires=[
         'climada>=4.0',
+        'ruamel.yaml',
         'scikit-image',
         'xesmf',
         "pymrio",
