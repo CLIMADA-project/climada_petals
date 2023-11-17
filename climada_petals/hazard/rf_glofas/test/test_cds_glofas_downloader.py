@@ -3,15 +3,14 @@ import unittest
 import unittest.mock as mock
 from copy import deepcopy
 from pathlib import Path
-from multiprocessing import Pool
 
 import cdsapi
 from ruamel.yaml import YAML
 
-from climada_petals.util import glofas_request
-from climada_petals.util.cds_glofas_downloader import (
-    DEFAULT_REQUESTS,
+from climada_petals.hazard.rf_glofas.cds_glofas_downloader import (
+    glofas_request,
     glofas_request_single,
+    DEFAULT_REQUESTS,
 )
 
 
@@ -26,7 +25,9 @@ class TestGloFASRequest(unittest.TestCase):
         """Clean up the temporary directory"""
         self.tempdir.cleanup()
 
-    @mock.patch("climada_petals.util.cds_glofas_downloader.Client", autospec=True)
+    @mock.patch(
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.Client", autospec=True
+    )
     def test_request_single(self, client_mock):
         """Test execution of a single request without actually downloading stuff"""
         product = "product"
@@ -85,7 +86,7 @@ class TestGloFASRequest(unittest.TestCase):
             )
 
     @mock.patch(
-        "climada_petals.util.cds_glofas_downloader.glofas_request_multiple",
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
         autospec=True,
     )
     def test_forecast_single(self, mock_req):
@@ -97,14 +98,14 @@ class TestGloFASRequest(unittest.TestCase):
         mock_req.assert_called_once_with(
             "cems-glofas-forecast",
             [request],
-            [Path(self.tempdir.name, "glofas-forecast-ensemble-2022-01-01.nc")],
+            [Path(self.tempdir.name, "glofas-forecast-ensemble-2022-01-01.grib")],
             1,
             True,
             None,
         )
 
     @mock.patch(
-        "climada_petals.util.cds_glofas_downloader.glofas_request_multiple",
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
         autospec=True,
     )
     def test_forecast_filetype(self, mock_req):
@@ -124,7 +125,7 @@ class TestGloFASRequest(unittest.TestCase):
             glofas_request("forecast", "2022-01-01", "2022-01111", self.tempdir.name)
 
     @mock.patch(
-        "climada_petals.util.cds_glofas_downloader.glofas_request_multiple",
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
         autospec=True,
     )
     def test_forecast_iter(self, mock_req):
@@ -140,13 +141,13 @@ class TestGloFASRequest(unittest.TestCase):
         self.assertEqual(
             mock_req.call_args.args[2],
             [
-                Path(self.tempdir.name, "glofas-forecast-ensemble-2022-12-31.nc"),
-                Path(self.tempdir.name, "glofas-forecast-ensemble-2023-01-01.nc"),
+                Path(self.tempdir.name, "glofas-forecast-ensemble-2022-12-31.grib"),
+                Path(self.tempdir.name, "glofas-forecast-ensemble-2023-01-01.grib"),
             ],
         )
 
     @mock.patch(
-        "climada_petals.util.cds_glofas_downloader.glofas_request_multiple",
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
         autospec=True,
     )
     def test_historical_single(self, mock_req):
@@ -164,7 +165,7 @@ class TestGloFASRequest(unittest.TestCase):
         )
 
     @mock.patch(
-        "climada_petals.util.cds_glofas_downloader.glofas_request_multiple",
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
         autospec=True,
     )
     def test_historical_iter(self, mock_req):

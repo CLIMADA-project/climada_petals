@@ -35,3 +35,13 @@ These are the functions exposed by the module.
     :members:
     :undoc-members:
     :show-inheritance:
+
+---------------------
+CDS Glofas Downloader
+---------------------
+
+.. autofunction:: climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request
+
+The default configuration for each product will be updated with the ``request_kw`` from :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`:
+
+.. autodata:: climada_petals.hazard.rf_glofas.cds_glofas_downloader.DEFAULT_REQUESTS

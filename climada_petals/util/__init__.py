@@ -20,4 +20,3 @@ init util
 """
 from .config import *
 from .constants import *
-from .cds_glofas_downloader import glofas_request

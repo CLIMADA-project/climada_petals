@@ -36,7 +36,7 @@ from numba import guvectorize
 
 from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries, country_to_iso
-from climada_petals.util import glofas_request
+from .cds_glofas_downloader import glofas_request
 
 LOGGER = logging.getLogger(__name__)
 
