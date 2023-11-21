@@ -38,6 +38,11 @@ TEST_BUFR_FILE_MULTIMESSAGE = DATA_DIR.joinpath('test202204181200.bufr')
 https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
 """
 
+TEST_BUFR_FILE_MULTIMESSAGE_MISSING_TIMEPERIOD = DATA_DIR.joinpath('test202308220000.bufr')
+"""TC tracks in four BUFR formats as provided by ECMWF. Sourced from
+https://confluence.ecmwf.int/display/FCST/New+Tropical+Cyclone+Wind+Radii+product
+"""
+
 TEST_CXML_FILE = DATA_DIR.joinpath("cxml_sample_track.xml")
 """A sample CXML file holding forecast data, subset from the ECMWF archive at
 https://confluence.ecmwf.int/display/TIGGE/Tools#Tools-ECMWFTropicalCycloneTrackData(XMLformat)
@@ -60,8 +65,13 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].lat[2], -27.)
         self.assertEqual(forecast.data[0].lon[2], 73.5)
         self.assertEqual(forecast.data[1].time_step[2], 6)
+        self.assertEqual(forecast.data[1].time_step.dtype, np.float64)
         self.assertEqual(forecast.data[1].max_sustained_wind[2], 14.9)
         self.assertEqual(forecast.data[0].central_pressure[1], 1000.)
+        self.assertAlmostEqual(forecast.data[0].radius_max_wind[1],
+                               43.3,
+                               delta=0.01)
+        self.assertEqual(forecast.data[0].radius_max_wind[1], 43.29955029743889)
         self.assertEqual(forecast.data[0]['time.year'][1], 2020)
         self.assertEqual(forecast.data[16]['time.month'][7], 3)
         self.assertEqual(forecast.data[16]['time.day'][7], 21)
@@ -75,7 +85,6 @@ class TestECMWF(unittest.TestCase):
                          np.datetime64('2020-03-19T12:00:00.000000'))
         self.assertEqual(forecast.data[1].is_ensemble, True)
 
-
     def test_ecmwf_multimessage(self):
         """Test ECMWF reader in multimessage format"""
         forecast = TCForecast()
@@ -84,14 +93,33 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.size, 122)
         self.assertEqual(forecast.data[121].lat[2], 9.6)
         self.assertEqual(forecast.data[121].lon[2], -126.8)
+        self.assertAlmostEqual(forecast.data[121].radius_max_wind[1],
+                               146.78,
+                               delta=0.01)
         np.testing.assert_array_equal(
             np.unique(
                 [forecast.data[ind_i].name
                  for ind_i in np.arange(122)]
                 ),
-            np.array(['70E', '70W', '71E', '71W', '72W'], dtype='<U3')
+            np.array(['70E', '70W', '71E', '71W', '72W'], dtype=str)
             )
 
+    def test_ecmwf_multimessage_missing_timeperiod(self):
+        """Test ECMWF reader should continue reading messages if one track misses timePeriod"""
+        with self.assertLogs('climada_petals.hazard.tc_tracks_forecast', level='INFO') as cm:
+            forecast = TCForecast()
+            forecast.fetch_ecmwf(files=TEST_BUFR_FILE_MULTIMESSAGE_MISSING_TIMEPERIOD)
+        self.assertIn(
+            "Track 07L has no defined timePeriod. Track is discarded.", cm.output[0]
+        )
+        self.assertEqual(forecast.size, 125)
+        np.testing.assert_array_equal(
+            np.unique(
+                [forecast.data[ind_i].name
+                 for ind_i in np.arange(122)]
+            ),
+            np.array(['09L', 'FRANKLIN', 'GERT'], dtype=str)
+        )
 
     def test_equal_timestep(self):
         """Test equal timestep"""
@@ -109,7 +137,7 @@ class TestECMWF(unittest.TestCase):
         self.assertEqual(forecast.data[1].time_step[2], 1.)
 
     def test_hdf5_io(self):
-        """Test writting and reading hdf5 TCTracks instances"""
+        """Test writing and reading hdf5 TCTracks instances"""
         tc_track = TCForecast()
         tc_track.fetch_ecmwf(files=TEST_BUFR_FILES)
         path = DATA_DIR.joinpath("tc_tracks_forecast.h5")
@@ -177,6 +205,7 @@ class TestCXML(unittest.TestCase):
             forecast.data[2].run_datetime,
             pd.Timestamp('2022-03-02 12:00:00+0000', tz='UTC'),
         )
+        self.assertEqual(forecast.data[1].time_step.dtype, np.float64)
         self.assertTrue(forecast.data[4].is_ensemble)
 
     def test_custom_xsl(self):
