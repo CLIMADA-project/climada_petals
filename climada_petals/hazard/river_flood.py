@@ -37,22 +37,27 @@ from shapely.geometry import Polygon, MultiPolygon
 
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV
 import climada.util.coordinates as u_coord
+from climada.util import files_handler as u_fh
 from climada.hazard.base import Hazard
 from climada.hazard.centroids import Centroids
 
 NATID_INFO = pd.read_csv(RIVER_FLOOD_REGIONS_CSV)
 
+AQUEDUCT_SOURCE_LINK = 'http://wri-projects.s3.amazonaws.com/AqueductFloodTool/download/v2/'
+
+DOWNLOAD_DIRECTORY = Path.cwd() # TODO: we'll rather need something like CONFIG.hazard.coastal_flood.dir()
 
 LOGGER = logging.getLogger(__name__)
 
 HAZ_TYPE = 'RF'
 """Hazard type acronym RiverFlood"""
 
-
 class RiverFlood(Hazard):
     """Contains flood events
-    Flood intensities are calculated by means of the
-    CaMa-Flood global hydrodynamic model
+    Flood intensities are pulled either by 
+    PIK/ISIMIP or  AQUEDUCT
+
+    TODO: add links
 
     Attributes
     ----------
@@ -77,7 +82,96 @@ class RiverFlood(Hazard):
         Hazard.__init__(self, *args, haz_type=HAZ_TYPE, **kwargs)
 
     @classmethod
-    def from_nc(cls, dph_path=None, frc_path=None, origin=False,
+    def from_aqueduct_tif(cls, rcp=None, year=None, return_periods=None,
+                           gcm=None, centroids=None, countries=None, shape=None,
+                           boundaries=None, dwd_dir=DOWNLOAD_DIRECTORY):
+        """Extracts coastal flood events pulled by
+        the Acqueduct project : https://www.wri.org/data/aqueduct-floods-hazard-maps
+
+        rcps : str
+            RCPs scenarios. Possible values are ...
+        years : int
+            simulations' reference year. Possible values are ...
+        return_periods : list or str
+            simulations' return periods. Possible values are ...
+        gcm : str
+        centroids : Centroids
+            centroids to extract
+        countries : list of countries ISO3
+            selection of countries
+        shape : 
+        boundaries:
+        """
+
+        # assess number of files and from there the event_ids, these should be then passed one
+        # by one as attrs in haz.from_raster, otherwise it wont concat properly
+
+        if isinstance(return_periods, str):
+            return_periods = [return_periods]
+
+        file_names = [
+                f'inunriver_{rcp}_{gcm.zfill(14)}_{year}_rp{rp.zfill(5)}.tif'
+                for rp in return_periods
+                ]
+
+        hazs = []
+
+        # TODO: move this into a downloading function
+        for i, file_name in enumerate(file_names):
+            link_to_file = "".join([AQUEDUCT_SOURCE_LINK, file_name])
+            downloaded_file = dwd_dir / file_name
+
+            if not downloaded_file.exists():
+                u_fh.download_file(
+                link_to_file,
+                download_dir = dwd_dir,
+                )
+
+            if countries:
+                geom = u_coord.get_land_geometry(countries).geoms
+
+            # TODO: implement shape
+            elif shape:
+                # shapes = gpd.read_file(shape) # set projection
+                # geom = shapes.geometry[0]
+                pass
+
+            # TODO: implement centroids
+            elif centroids:
+                pass
+
+            elif len(boundaries) > 0:
+                min_lon, min_lat, max_lon, max_lat = boundaries
+                geom = [Polygon([(min_lon, min_lat),
+                                (max_lon, min_lat),
+                                (max_lon, max_lat),
+                                (min_lon, max_lat)])]
+
+            else:
+                geom = None
+                # TODO: LOGGER(loading for the whole world)
+
+            _, rcp, gcm, year, rp = file_name.split('.tif')[0].split('_')
+            rp = rp.lstrip('rp0')
+
+            haz = cls().from_raster(files_intensity=downloaded_file,
+                                    geometry=geom,
+                                    # check type of these two (array, list etc)
+                                    attrs={'event_id': np.array([i+1]),
+                                           'event_name': np.array([f'{rcp}_{gcm}_{year}_{rp}rp']),
+                                            #TODO: check if proper assignment
+                                            'frequency': np.array([1 / int(rp)])})
+            haz.units = 'm'
+            haz.centroids.set_meta_to_lat_lon()
+            hazs.append(haz)
+
+        haz = cls().concat(hazs)
+        haz.frequency = np.diff(haz.frequency, prepend=0)
+
+        return haz
+
+    @classmethod
+    def from_isimip_nc(cls, dph_path=None, frc_path=None, origin=False,
                 centroids=None, countries=None, reg=None, shape=None, ISINatIDGrid=False,
                 years=None):
         """Wrapper to fill hazard from nc_flood file
@@ -245,11 +339,11 @@ class RiverFlood(Hazard):
 
         return haz
 
-    def set_from_nc(self, *args, **kwargs):
+    def set_from_isimip_nc(self, *args, **kwargs):
         """This function is deprecated, use RiverFlood.from_nc instead."""
         LOGGER.warning("The use of RiverFlood.set_from_nc is deprecated."
                        "Use LowFlow.from_nc instead.")
-        self.__dict__ = RiverFlood.from_nc(*args, **kwargs).__dict__
+        self.__dict__ = RiverFlood.from_isimip_nc(*args, **kwargs).__dict__
 
     def exclude_trends(self, fld_trend_path, dis):
         """
