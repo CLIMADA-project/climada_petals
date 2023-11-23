@@ -13,7 +13,7 @@ with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
 setup(
     name='climada_petals',
 
-    version='4.0.2-dev',
+    version='4.0.3-dev',
 
     description='CLIMADA Extensions in Python',
 
@@ -39,6 +39,7 @@ setup(
     install_requires=[
         'climada>=4.0',
         'scikit-image',
+        "pymrio",
     ],
 
     packages=find_namespace_packages(include=['climada_petals*']),
