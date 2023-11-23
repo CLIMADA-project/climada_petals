@@ -8,3 +8,4 @@ dependencies:
   - scikit-image>=0.21
   - xesmf>=0.8
   - pymrio>=0.5
+  - rioxarray>=0.13

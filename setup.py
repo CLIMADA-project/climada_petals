@@ -43,6 +43,7 @@ setup(
         'scikit-image',
         'xesmf',
         "pymrio",
+        'rioxarray',
     ],
 
     packages=find_namespace_packages(include=['climada_petals*']),
