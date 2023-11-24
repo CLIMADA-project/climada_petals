@@ -5,3 +5,4 @@ channels:
 dependencies:
   - scikit-image>=0.21
   - pymrio>=0.5.2
+  - osm-flex>=1.1.1
