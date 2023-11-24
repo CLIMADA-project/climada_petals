@@ -29,8 +29,8 @@ class CoastalFlood(Hazard):
     @classmethod
     def from_aqueduct_tif(cls,
                           rcp: str,
-                          target_year : int,
-                          return_periods: Union[str, Iterable[str]],
+                          target_year : str,
+                          return_periods: Union[int, Iterable[int]],
                           subsidence: Optional[str] = 'wtsub',
                           percentile: str = '95',
                           countries: Optional[Union[str, Iterable[str]]] = None,
@@ -44,10 +44,10 @@ class CoastalFlood(Hazard):
         Parameters
         ----------
         rcp : str
-            RCPs scenario. Possible values are historical, 4.5 and 8.5.
-        target_year : int
-            future target year. Possible values are hist, 2030, 2050, 2080.
-        return_periods : list or str
+            RCPs scenario. Possible values are historical, 45 and 85.
+        target_year : str
+            future target year. Possible values are hist, 2030, 2050 and 2080.
+        return_periods : int or list of int
             events' return periods.
             Possible values are 2, 5, 10, 25, 50, 100, 250, 500, 1000.
         subsidence : str
@@ -62,7 +62,6 @@ class CoastalFlood(Hazard):
             geographical boundaries in the order:
                 minimum longitude, minimum latitude,
                 maximum longitude, maximum latitude
-
         Returns
         -------
         haz : CoastalFlood instance
@@ -74,15 +73,17 @@ class CoastalFlood(Hazard):
         if (rcp == 'historical') & (subsidence == 'nosub') & (target_year != 'hist'):
             raise ValueError("Historical without subsidence can only have hist as target year")
 
-        if isinstance(return_periods, str):
+        if isinstance(return_periods, int):
             return_periods = [return_periods]
+
+        return_periods.sort(reverse=True)
 
         if isinstance(countries, str):
             countries = [countries]
 
-        rcp_name = f"rcp{rcp[0]}p{rcp[1]}" if rcp in ['4.5', '8.5'] else rcp
-        rps_name = [f"{rp.zfill(4)}" for rp in return_periods]
-        perc_name = f"0_perc{percentile.zfill(2)}" if percentile in ['05', '50'] else '0'
+        rcp_name = f"rcp{rcp[0]}p{rcp[1]}" if rcp in ['45', '85'] else rcp
+        rps_name = [f"{str(rp).zfill(4)}" for rp in return_periods]
+        perc_name = f"0_perc_{percentile.zfill(2)}" if percentile in ['05', '50'] else '0'
 
         file_names = [
                 f'inuncoast_{rcp_name}_{subsidence}_{target_year}_rp{rp.zfill(4)}_{perc_name}.tif'
