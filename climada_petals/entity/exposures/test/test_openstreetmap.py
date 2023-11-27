@@ -16,110 +16,17 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Test openstreetmap modules.
+Test openstreetmap module.
 """
 
-
 import unittest
-from pathlib import Path
 import shapely
 from random import randint
 
-from climada_petals.entity.exposures.openstreetmap import osm_dataloader as osm_dl
+from climada_petals.entity.exposures import osm_dataloader as osm_dl
 from climada import CONFIG
 
 DATA_DIR = CONFIG.exposures.test_data.dir()
-
-class TestOSMRaw(unittest.TestCase):
-    """Test OSMRaw class"""
-
-    def test_create_gf_download_url(self):
-        """ test methods of osmraw"""
-        OSMRawTest = osm_dl.OSMRaw()
-        url_shp = OSMRawTest._create_gf_download_url('DEU', 'shp')
-        url_pbf = OSMRawTest._create_gf_download_url('ESP', 'pbf')
-        
-        self.assertEqual('https://download.geofabrik.de/europe/germany-latest-free.shp.zip',
-        url_shp)
-        self.assertEqual('https://download.geofabrik.de/europe/spain-latest.osm.pbf',
-        url_pbf)
-        self.assertRaises(KeyError,
-                             OSMRawTest._create_gf_download_url, 'RUS', 'pbf') 
-        self.assertRaises(KeyError,
-                             OSMRawTest._create_gf_download_url,'XYZ', 'pbf')
-
-    def test_get_data_geofabrik(self):
-        """test methods of osmraw" """
-        
-        OSMRawTest = osm_dl.OSMRaw()
-        OSMRawTest.get_data_geofabrik('PCN', file_format='pbf', 
-                                      save_path=DATA_DIR)
-        OSMRawTest.get_data_geofabrik('PCN', file_format='shp', 
-                                      save_path=DATA_DIR)
-        self.assertTrue(Path(DATA_DIR,'pitcairn-islands-latest.osm.pbf').is_file())
-        self.assertTrue(Path(DATA_DIR,'pitcairn-islands-latest-free.shp.zip').is_file())
-
-        Path.unlink(Path(DATA_DIR,'pitcairn-islands-latest-free.shp.zip'))
-        Path.unlink(Path(DATA_DIR,'pitcairn-islands-latest.osm.pbf'))
-
-
-    def test_simplify_shapelist(self):
-        """test _simplify_shapelist"""
-        pass
-
-    def test_shapely2poly(self):
-        """test _shapely2poly"""
-        pass
-    
-    def test_build_osmosis_cmd(self):
-        """test _build_osmosis_cmd"""
-        pass
-
-    def test_osmosis_extract(self):
-        """test _osmosis_extract"""
-        pass
-                
-    def test_extract_from_bbox(self):
-        """test extract_from_bbox"""
-        pass
-
-    def get_data_planetextract(self):
-        """test get_data_planetextract """
-        pass
-
-    def test_get_data_fileextract(self):
-        """test get_data_fileextract"""
-        pass
-
-class TestOSMFileQuery(unittest.TestCase):
-    """Test OSMFileQuery class"""
-
-    def test_OSMFileQuery(self):
-        """ test OSMFileQuery"""
-        OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
-        self.assertTrue(hasattr(OSM_FQ, 'osm_path'))
-
-    def test_query_builder(self):
-        """test _query_builder"""
-        OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
-        constraint_dict1 = {'osm_keys' : ['highway'],
-                           'osm_query' : """highway='primary'"""}
-        q1 = OSM_FQ._query_builder('points', constraint_dict1)
-        self.assertEqual(q1, "SELECT osm_id,highway FROM points WHERE highway='primary'")
-
-    def test_retrieve(self):
-        OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
-        gdf = OSM_FQ.retrieve('lines', ['highway'], 'highway')
-
-        self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'geometry'])
-
-
-    def test_retrieve_cis(self):
-        OSM_FQ = osm_dl.OSMFileQuery(Path(DATA_DIR, 'test_piece.osm.pbf'))
-        gdf = OSM_FQ.retrieve_cis('road')
-        self.assertEqual(len(gdf),191)
-        self.assertEqual(list(gdf.columns.values), ['osm_id', 'highway', 'man_made', 'public_transport', 'bus', 'name',
-       'geometry'])
 
 
 class TestOSMApiQuery(unittest.TestCase):
@@ -210,7 +117,5 @@ class TestOSMApiQuery(unittest.TestCase):
     
 # Execute Tests
 if __name__ == "__main__":
-    TESTS = unittest.TestLoader().loadTestsFromTestCase(TestOSMRaw)
-    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestOSMFileQuery))
-    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestOSMApiQuery))
+    TESTS = unittest.TestLoader().loadTestsFromTestCase(TestOSMApiQuery)
     unittest.TextTestRunner(verbosity=2).run(TESTS)
