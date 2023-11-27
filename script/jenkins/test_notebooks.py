@@ -2,6 +2,7 @@
 # coding: utf-8
 
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -9,11 +10,12 @@ import nbformat
 
 import climada
 
-NOTEBOOK_DIR = Path(__file__).parent.joinpath('doc', 'tutorial')
-'''The path to the notebook directories.'''
 
 BOUND_TO_FAIL = '# Note: execution of this cell will fail'
 '''Cells containing this line will not be executed in the test'''
+
+EXCLUDED_FROM_NOTEBOOK_TEST = ['climada_installation_step_by_step.ipynb']
+'''These notebooks are excluded from being tested'''
 
 
 class NotebookTest(unittest.TestCase):
@@ -69,9 +71,9 @@ class NotebookTest(unittest.TestCase):
 
                 # skip multiprocessing cells
                 if any([ tabu in c['source'].split() for tabu in [
-                    'pathos.pools',
-                    'mulitprocessing',
-                ]]): 
+                    'import multiprocessing',
+                    'from multiprocessing import',
+                ]]):
                     print('\n'.join([
                         f'\nskip multiprocessing cell {i} in {self.notebook}',
                         '+'+'-'*68+'+',
@@ -80,11 +82,17 @@ class NotebookTest(unittest.TestCase):
                     continue
 
                 # remove non python lines and help calls which require user input
-                python_code = "\n".join([ln for ln in c['source'].split("\n") 
+                # or involve pools being opened/closed
+                python_code = "\n".join([
+                    re.sub(r'pool=\w+', 'pool=None', ln)
+                    for ln in c['source'].split("\n")
                     if not ln.startswith('%')
                     and not ln.startswith('help(')
                     and not ln.startswith('ask_ok(')
+                    and not ln.startswith('ask_ok(')
+                    and not ln.startswith('pool')  # by convention Pool objects are called pool
                     and not ln.strip().endswith('?')
+                    and not re.search(r'(\W|^)Pool\(', ln)  # prevent Pool object creation
                 ])
 
                 # execute the python code
@@ -108,11 +116,19 @@ class NotebookTest(unittest.TestCase):
             os.chdir(cwd)
 
 
-def main():
+def main(install_dir):
+    import xmlrunner
+    
+    sys.path.append(str(install_dir))
+    
+    notebook_dir = install_dir.joinpath('doc', 'tutorial')
+    '''The path to the notebook directories.'''
+
     # list notebooks in the NOTEBOOK_DIR
     notebooks = [f.absolute()
-                 for f in sorted(NOTEBOOK_DIR.iterdir())
-                 if os.path.splitext(f)[1] == ('.ipynb')]
+                 for f in sorted(notebook_dir.iterdir())
+                 if os.path.splitext(f)[1] == ('.ipynb')
+                 and not f.name in EXCLUDED_FROM_NOTEBOOK_TEST]
 
     # build a test suite with a test for each notebook
     suite = unittest.TestSuite()
@@ -122,22 +138,16 @@ def main():
         setattr(NBTest, test_name, NBTest.test_notebook)
         suite.addTest(NBTest(test_name, notebook.parent, notebook.name))
 
-    # run the tests depending on the first input argument: None or 'report'.
-    # write xml reports for 'report'
-    if sys.argv[1:]:
-        arg = sys.argv[1]
-        if arg == 'report':
-            import xmlrunner
-            outdirstr = str(Path(__file__).parent.joinpath('tests_xml'))
-            xmlrunner.XMLTestRunner(output=outdirstr).run(suite)
-        else:
-            jd, nb = os.path.split(arg)
-            unittest.TextTestRunner(verbosity=2).run(NotebookTest('test_notebook', jd, nb))
-    # with no argument just run the test
-    else:
-        unittest.TextTestRunner(verbosity=2).run(suite)
+    # run the tests and write xml reports to tests_xml
+    output_dir = install_dir.joinpath('tests_xml')
+    xmlrunner.XMLTestRunner(output=str(output_dir)).run(suite)
 
 
 if __name__ == '__main__':
-    sys.path.append(str(Path.cwd()))
-    main()
+    if sys.argv[1] == 'report':
+        install_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path.cwd()
+        main(install_dir)
+    
+    else:
+        jd, nb = os.path.split(sys.argv[1])
+        unittest.TextTestRunner(verbosity=2).run(NotebookTest('test_notebook', jd, nb))

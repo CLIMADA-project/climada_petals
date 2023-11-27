@@ -20,11 +20,8 @@ pipeline {
         export PATH=$PATH:$CONDAPATH
         source activate petals_env
         rm -rf tests_xml/
-        python -m coverage run --parallel-mode --concurrency=multiprocessing tests_runner.py unit
-        python -m coverage run --parallel-mode --concurrency=multiprocessing tests_runner.py integ
-        python -m coverage combine
-        python -m coverage xml -o coverage.xml
-        python -m coverage html -d coverage'''
+        rm -rf coverage/
+        make test'''
       }
     }
   }

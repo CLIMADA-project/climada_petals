@@ -19,28 +19,303 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Define the SupplyChain class.
 """
 
-__all__ = ['SupplyChain']
+__all__ = ["SupplyChain"]
 
 import logging
-import datetime as dt
-from tqdm import tqdm
-import numpy as np
+from pathlib import Path
+import zipfile
+import warnings
 import pandas as pd
+import numpy as np
+
+import pymrio
 
 from climada import CONFIG
 from climada.util import files_handler as u_fh
 import climada.util.coordinates as u_coord
-from climada.engine import Impact
-from climada.entity.exposures.base import Exposures
 
 LOGGER = logging.getLogger(__name__)
 WIOD_FILE_LINK = CONFIG.engine.supplychain.resources.wiod16.str()
 """Link to the 2016 release of the WIOD tables."""
 
-WIOD_DIRECTORY = CONFIG.engine.supplychain.local_data.wiod.dir()
-"""Directory where WIOD tables are downloaded into."""
+MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
+"""Directory where Multi-Regional Input-Output Tables (MRIOT) are downloaded."""
 
-class SupplyChain():
+calc_G = pymrio.calc_L
+
+
+def calc_v(Z, x):
+    """Calculate value added (v) from Z and x
+
+    value added = industry output (x) - inter-industry inputs (sum_rows(Z))
+
+    Parameters
+    ----------
+    Z : pandas.DataFrame or numpy.array
+        Symmetric input output table (flows)
+    x : pandas.DataFrame or numpy.array
+        industry output
+
+    Returns
+    -------
+    pandas.DataFrame or numpy.array
+        Value added v as row vector
+
+    Notes
+    -----
+    This function adapts pymrio.tools.iomath.calc_x to compute
+    value added (v).
+    """
+
+    value_added = np.diff(np.vstack((Z.sum(0), x.T)), axis=0)
+    if isinstance(Z, pd.DataFrame):
+        value_added = pd.DataFrame(value_added, columns=Z.index, index=["indout"])
+    if isinstance(value_added, pd.Series):
+        value_added = pd.DataFrame(value_added)
+    if isinstance(value_added, pd.DataFrame):
+        value_added.index = ["indout"]
+    return value_added
+
+
+def calc_B(Z, x):
+    """Calculate the B matrix (allocation coefficients matrix)
+    from Z matrix and x vector
+
+    Parameters
+    ----------
+    Z : pandas.DataFrame or numpy.array
+        Symmetric input output table (flows)
+    x : pandas.DataFrame or numpy.array
+        Industry output column vector
+
+    Returns
+    -------
+    pandas.DataFrame or numpy.array
+        Allocation coefficients matrix B.
+        Same type as input parameter ``Z``.
+
+    Notes
+    -----
+    This function adapts pymrio.tools.iomath.calc_A to compute
+    the allocation coefficients matrix B.
+    """
+
+    if isinstance(x, (pd.DataFrame, pd.Series)):
+        x = x.to_numpy()
+    if not isinstance(x, np.ndarray) and (x == 0):
+        recix = 0
+    else:
+        with warnings.catch_warnings():
+            # Ignore devide by zero warning, we set to 0 afterwards
+            warnings.filterwarnings("ignore", message="divide by zero")
+            recix = 1 / x
+        recix[np.isinf(recix)] = 0
+
+    if isinstance(Z, pd.DataFrame):
+        return pd.DataFrame(Z.to_numpy() * recix, index=Z.index, columns=Z.columns)
+
+    return Z * recix
+
+
+def calc_x_from_G(G, v):
+    """Calculate the industry output x from a v vector and G matrix
+
+    x = vG
+
+    The industry output x is computed from a value-added vector v
+
+    Parameters
+    ----------
+    v : pandas.DataFrame or numpy.array
+        a row vector of the total final added-value
+    G : pandas.DataFrame or numpy.array
+        Symmetric input output Ghosh table
+
+    Returns
+    -------
+    pandas.DataFrame or numpy.array
+        Industry output x as column vector.
+        Same type as input parameter ``G``.
+
+    Notes
+    -----
+    This function adapts the function pymrio.tools.iomath.calc_x_from_L to
+    compute total output (x) from the Ghosh inverse.
+    """
+
+    x = v.dot(G)
+    if isinstance(x, pd.Series):
+        x = pd.DataFrame(x)
+    if isinstance(x, pd.DataFrame):
+        x.columns = ["indout"]
+    return x
+
+
+def parse_mriot_from_df(
+    mriot_df=None, col_iso3=None, col_sectors=None, rows_data=None, cols_data=None
+):
+    """Build multi-index dataframes of the transaction matrix, final demand and total
+       production from a Multi-Regional Input-Output Table dataframe.
+
+    Parameters
+    ----------
+    mriot_df : pandas.DataFrame
+        The Multi-Regional Input-Output Table
+    col_iso3 : int
+        Column's position of regions' iso names
+    col_sectors : int
+        Column's position of sectors' names
+    rows_data : (int, int)
+        Tuple of integers with positions of rows
+        containing the MRIOT data
+    cols_data : (int, int)
+        Tuple of integers with positions of columns
+        containing the MRIOT data
+    """
+
+    start_row, end_row = rows_data
+    start_col, end_col = cols_data
+
+    sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
+    regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
+    multiindex = pd.MultiIndex.from_product(
+        [regions, sectors], names=["region", "sector"]
+    )
+
+    Z = mriot_df.iloc[start_row:end_row, start_col:end_col].values.astype(float)
+    Z = pd.DataFrame(data=Z, index=multiindex, columns=multiindex)
+
+    Y = mriot_df.iloc[start_row:end_row, end_col:-1].sum(1).values.astype(float)
+    Y = pd.DataFrame(data=Y, index=multiindex, columns=["final demand"])
+
+    x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
+    x = pd.DataFrame(data=x, index=multiindex, columns=["total production"])
+
+    return Z, Y, x
+
+
+def mriot_file_name(mriot_type, mriot_year):
+    """Retrieve the original EXIOBASE3, WIOD16 or OECD21 MRIOT file name
+
+    Parameters
+    ----------
+    mriot_type : str
+    mriot_year : int
+
+    Returns
+    -------
+    str
+        name of MRIOT file
+    """
+
+    if mriot_type == "EXIOBASE3":
+        return f"IOT_{mriot_year}_ixi.zip"
+
+    if mriot_type == "WIOD16":
+        return f"WIOT{mriot_year}_Nov16_ROW.xlsb"
+
+    if mriot_type == "OECD21":
+        return f"ICIO2021_{mriot_year}.csv"
+
+    raise ValueError("Unknown MRIOT type")
+
+
+def download_mriot(mriot_type, mriot_year, download_dir):
+    """Download EXIOBASE3, WIOD16 or OECD21 Multi-Regional Input Output Tables
+    for specific years.
+
+    Parameters
+    ----------
+    mriot_type : str
+    mriot_year : int
+    download_dir : pathlib.PosixPath
+
+    Notes
+    -----
+    The download of EXIOBASE3 and OECD21 tables makes use of pymrio functions.
+    The download of WIOD16 tables requires ad-hoc functions, since the
+    related pymrio functions were broken at the time of implementation
+    of this function.
+    """
+
+    if mriot_type == "EXIOBASE3":
+        pymrio.download_exiobase3(
+            storage_folder=download_dir, system="ixi", years=[mriot_year]
+        )
+
+    elif mriot_type == "WIOD16":
+        download_dir.mkdir(parents=True, exist_ok=True)
+        downloaded_file_name = u_fh.download_file(
+            WIOD_FILE_LINK,
+            download_dir=download_dir,
+        )
+        downloaded_file_zip_path = Path(downloaded_file_name + ".zip")
+        Path(downloaded_file_name).rename(downloaded_file_zip_path)
+
+        with zipfile.ZipFile(downloaded_file_zip_path, "r") as zip_ref:
+            zip_ref.extractall(download_dir)
+
+    elif mriot_type == "OECD21":
+        years_groups = ["1995-1999", "2000-2004", "2005-2009", "2010-2014", "2015-2018"]
+        year_group = years_groups[int(np.floor((mriot_year - 1995) / 5))]
+
+        pymrio.download_oecd(storage_folder=download_dir, years=year_group)
+
+
+def parse_mriot(mriot_type, downloaded_file):
+    """Parse EXIOBASE3, WIOD16 or OECD21 MRIOT for specific years
+
+    Parameters
+    ----------
+    mriot_type : str
+    downloaded_file : pathlib.PosixPath
+
+    Notes
+    -----
+    The parsing of EXIOBASE3 and OECD21 tables makes use of pymrio functions.
+    The parsing of WIOD16 tables requires ad-hoc functions, since the
+    related pymrio functions were broken at the time of implementation
+    of this function.
+    """
+
+    if mriot_type == "EXIOBASE3":
+        mriot = pymrio.parse_exiobase3(path=downloaded_file)
+        # no need to store A
+        mriot.A = None
+
+    elif mriot_type == "WIOD16":
+        mriot_df = pd.read_excel(downloaded_file, engine="pyxlsb")
+
+        Z, Y, x = parse_mriot_from_df(
+            mriot_df,
+            col_iso3=2,
+            col_sectors=1,
+            rows_data=(5, 2469),
+            cols_data=(4, 2468),
+        )
+
+        mriot = pymrio.IOSystem(Z=Z, Y=Y, x=x)
+
+        multiindex_unit = pd.MultiIndex.from_product(
+                [mriot.get_regions(), mriot.get_sectors()],
+                names = ['region', 'sector']
+                )
+        mriot.unit = pd.DataFrame(
+                    data = np.repeat(["M.EUR"], len(multiindex_unit)),
+                    index = multiindex_unit,
+                    columns = ["unit"]
+                    )
+
+    elif mriot_type == "OECD21":
+        mriot = pymrio.parse_oecd(path=downloaded_file)
+        mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
+
+    else:
+        raise RuntimeError(f"Unknown mriot_type: {mriot_type}")
+    return mriot
+
+
+class SupplyChain:
     """SupplyChain class.
 
     The SupplyChain class provides methods for loading Multi-Regional Input-Output
@@ -48,187 +323,274 @@ class SupplyChain():
 
     Attributes
     ----------
-    mriot_data : np.array
-        The input-output table data.
-    mriot_reg_names : np.array
-        Names of regions considered in the input-output table.
-    sectors : np.array
-        Sectors considered in the input-output table.
-    total_prod : np.array
-        Countries' total production.
-    mriot_type : str
-        Type of the adopted input-output table.
-    reg_pos : dict
-        Regions' positions within the input-output table and impact arrays.
-    reg_dir_imp : list
-        Regions undergoing direct impacts.
-    years : np.array
-        Years of the considered hazard events for which impact is calculated.
-    direct_impact : np.array
-        Direct impact array.
-    direct_aai_agg : np.array
-        Average annual direct impact array.
-    indirect_impact : np.array
-        Indirect impact array.
-    indirect_aai_agg : np.array
-        Average annual indirect impact array.
-    total_impact : np.array
-        Total impact array.
-    total_aai_agg : np.array
-        Average annual total impact array.
-    io_data : dict
-        Dictionary with the coefficients, inverse and risk_structure matrixes and
-        the selected input-output modeling approach.
+    mriot : pymrio.IOSystem
+            An object containing all MRIOT related info (see also pymrio package):
+                mriot.Z : transaction matrix, or interindustry flows matrix
+                mriot.Y : final demand
+                mriot.x : industry or total output
+                mriot.meta : metadata
+    secs_exp : pd.DataFrame
+            Exposure dataframe of each country/sector in the MRIOT. Columns are the
+            same as the chosen MRIOT.
+    secs_imp : pd.DataFrame
+            Impact dataframe for the directly affected countries/sectors for each event with
+            impacts. Columns are the same as the chosen MRIOT and rows are the hazard events ids.
+    secs_shock : pd.DataFrame
+            Shocks (i.e. impact / exposure) dataframe for the directly affected countries/sectors
+            for each event with impacts. Columns are the same as the chosen MRIOT and rows are the
+            hazard events ids.
+    inverse : dict
+            Dictionary with keys being the chosen approach (ghosh, leontief or eeioa)
+            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if
+            approach is ghosh) inverse matrix.
+    coeffs : dict
+            Dictionary with keys being the chosen approach (ghosh, leontief or eeioa)
+            and values the Technical (A, if approach is leontief or eeioa) or allocation
+            (B, if approach is ghosh) coefficients matrix.
+    supchain_imp : dict
+            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
+            and values dataframes of indirect impacts to countries/sectors for each event
+            with direct impacts. For each dataframe, columns are the same as the chosen
+            MRIOT and rows are the hazard events ids.
     """
 
-    def __init__(self):
-        """Initialize SupplyChain."""
-        self.mriot_data = np.array([], dtype='f')
-        self.mriot_reg_names = np.array([], dtype='str')
-        self.sectors = np.array([], dtype='str')
-        self.total_prod = np.array([], dtype='f')
-        self.mriot_type = ''
-        self.reg_pos = {}
-        self.years = np.array([], dtype='f')
-        self.direct_impact = np.array([], dtype='f')
-        self.direct_aai_agg = np.array([], dtype='f')
-        self.indirect_impact = np.array([], dtype='f')
-        self.indirect_aai_agg = np.array([], dtype='f')
-        self.total_impact = np.array([], dtype='f')
-        self.total_aai_agg = np.array([], dtype='f')
-        self.io_data = {}
+    def __init__(self, mriot):
 
-    def read_wiod16(self, year=2014, range_rows=(5,2469),
-                    range_cols=(4,2468), col_iso3=2,
-                    col_sectors=1):
-        """Read multi-regional input-output tables of the 2016 release of the
-        WIOD project: http://www.wiod.org/database/wiots16
+        """Initialize SupplyChain.
 
         Parameters
         ----------
-        year : int
-            Year of WIOD table to use. Valid years go from 2000 to 2014.
-            Default year is 2014.
-        range_rows : tuple
-            initial and end positions of data along rows. Default is (5,2469).
-        range_cols : tuple
-            initial and end positions of data along columns. Default is (4,2468).
-        col_iso3 : int
-            column with countries names in ISO3 codes. Default is 2.
-        col_sectors : int
-            column with sector names. Default is 1.
-        References
-        ----------
-        [1] Timmer, M. P., Dietzenbacher, E., Los, B., Stehrer, R. and de Vries, G. J.
-        (2015), "An Illustrated User Guide to the World Input–Output Database: the Case
-        of Global Automotive Production", Review of International Economics., 23: 575–605
-
+        mriot : pymrio.IOSystem
+                An object containing all MRIOT related info (see also pymrio package):
+                    mriot.Z : transaction matrix, or interindustry flows matrix
+                    mriot.Y : final demand
+                    mriot.x : industry or total output
+                    mriot.meta : metadata
         """
 
-        file_name = 'WIOT{}_Nov16_ROW.xlsb'.format(year)
-        file_loc = WIOD_DIRECTORY / file_name
+        self.mriot = mriot
+        self.secs_exp = None
+        self.secs_imp = None
+        self.secs_shock = None
+        self.inverse = dict()
+        self.coeffs = dict()
+        self.supchain_imp = dict()
 
-        if not file_loc in WIOD_DIRECTORY.iterdir():
-            download_link = WIOD_FILE_LINK + file_name
-            u_fh.download_file(download_link, download_dir=WIOD_DIRECTORY)
-            LOGGER.info('Downloading WIOD table for year %s', year)
-        mriot = pd.read_excel(file_loc, engine='pyxlsb')
-
-        start_row, end_row = range_rows
-        start_col, end_col = range_cols
-
-        self.sectors = mriot.iloc[start_row:end_row, col_sectors].unique()
-        self.mriot_reg_names = mriot.iloc[start_row:end_row, col_iso3].unique()
-        self.mriot_data = mriot.iloc[start_row:end_row,
-                                     start_col:end_col].values
-        self.total_prod = mriot.iloc[start_row:end_row, -1].values
-        self.reg_pos = {
-            name: range(len(self.sectors)*i, len(self.sectors)*(i+1))
-            for i, name in enumerate(self.mriot_reg_names)
-            }
-        self.mriot_type = 'WIOD'
-
-    def calc_sector_direct_impact(self, hazard, exposure, imp_fun_set,
-                                  selected_subsec="service"):
-        """Calculate direct impacts.
+    @classmethod
+    def from_mriot(
+        cls, mriot_type, mriot_year, mriot_dir=MRIOT_DIRECTORY, del_downloads=True
+    ):
+        """Download, parse and read WIOD16, EXIOBASE3, or OECD21 Multi-Regional
+        Input-Output Tables.
 
         Parameters
         ----------
-        hazard : Hazard
-            Hazard object for impact calculation.
-        exposure : Exposures
-            Exposures object for impact calculation. For WIOD tables, exposure.region_id
-            must be country names following ISO3 codes.
-        imp_fun_set : ImpactFuncSet
-            Set of impact functions.
-        selected_subsec : str or list
-            Positions of the selected sectors. These positions can be either
-            defined by the user by passing a list of values, or by using built-in
-            sectors' aggregations for the WIOD data passing a string with possible
-            values being "service", "manufacturing", "agriculture" or "mining".
-            Default is "service".
+        mriot_type : str
+            Type of mriot table to use.
+            The three possible types are: 'EXIOBASE3', 'WIOD16', 'OECD21'
+        mriot_year : int
+            Year of MRIOT
+        mriot_dir : pathlib.PosixPath
+            Path to the MRIOT folder. Default is CLIMADA storing directory.
+        del_downloads : bool
+            If the downloaded files are deleted after saving the parsed data. Default is
+            True. WIOD16 and OECD21 data are downloaded as group of years.
 
+        Returns
+        -------
+        mriot : pymrio.IOSystem
+            An object containing all MRIOT related info (see also pymrio package):
+                mriot.Z : transaction matrix, or interindustry flows matrix
+                mriot.Y : final demand
+                mriot.x : total output
+                mriot.meta : metadata
         """
 
-        if isinstance(selected_subsec, str):
-            built_in_subsec_pos = {'service': range(26, 56),
-                                   'manufacturing': range(4, 23),
-                                   'agriculture': range(0, 1),
-                                   'mining': range(3, 4)}
-            selected_subsec = built_in_subsec_pos[selected_subsec]
+        # download directory and file of interest
+        downloads_dir = mriot_dir / mriot_type / "downloads"
+        downloaded_file = downloads_dir / mriot_file_name(mriot_type, mriot_year)
 
-        dates = [
-            dt.datetime.strptime(date, "%Y-%m-%d")
-            for date in hazard.get_event_date()
-            ]
-        self.years = np.unique([date.year for date in dates])
+        # parsed data directory
+        parsed_data_dir = mriot_dir / mriot_type / str(mriot_year)
 
-        unique_exp_regid = exposure.gdf.region_id.unique()
-        self.direct_impact = np.zeros(shape=(len(self.years),
-                                             len(self.mriot_reg_names)*len(self.sectors)))
+        # if data were not downloaded nor parsed: download, parse and save parsed
+        if not downloaded_file.exists() and not parsed_data_dir.exists():
+            download_mriot(mriot_type, mriot_year, downloads_dir)
 
-        self.reg_dir_imp = []
-        for exp_regid in unique_exp_regid:
-            reg_exp = Exposures(exposure.gdf[exposure.gdf.region_id == exp_regid])
-            reg_exp.check()
+            mriot = parse_mriot(mriot_type, downloaded_file)
+            mriot.save(parsed_data_dir)
 
-            # Normalize exposure
-            total_reg_value = reg_exp.gdf['value'].sum()
-            reg_exp.gdf['value'] /= total_reg_value
+            if del_downloads:
+                for dwn in downloads_dir.iterdir():
+                    dwn.unlink()
+                downloads_dir.rmdir()
 
-            # Calc impact for country
-            imp = Impact()
-            imp.calc(reg_exp, imp_fun_set, hazard)
-            imp_year_set = np.array(list(imp.calc_impact_year_set(imp).values()))
+        # if data were downloaded but not parsed: parse and save parsed
+        elif downloaded_file.exists() and not parsed_data_dir.exists():
+            mriot = parse_mriot(mriot_type, downloaded_file)
+            mriot.save(parsed_data_dir)
 
-            mriot_reg_name = self._map_exp_to_mriot(exp_regid, self.mriot_type)
+        # if data were parsed and saved: load them
+        else:
+            mriot = pymrio.load(path=parsed_data_dir)
 
-            self.reg_dir_imp.append(mriot_reg_name)
+        # aggregate ROWs for EXIOBASE:
+        if mriot_type == 'EXIOBASE3':
+            agg_regions = mriot.get_regions().tolist()[:-5] + ['ROW']*5
+            mriot = mriot.aggregate(region_agg = agg_regions)
 
-            subsec_reg_pos = np.array(selected_subsec) + self.reg_pos[mriot_reg_name][0]
-            subsec_reg_prod = self.mriot_data[subsec_reg_pos].sum(axis=1)
+        mriot.meta.change_meta(
+            "description", "Metadata for pymrio Multi Regional Input-Output Table"
+        )
+        mriot.meta.change_meta("name", f"{mriot_type}-{mriot_year}")
 
-            imp_year_set = np.repeat(imp_year_set, len(selected_subsec)
-                                     ).reshape(len(self.years),
-                                               len(selected_subsec))
-            direct_impact_reg = np.multiply(imp_year_set, subsec_reg_prod)
+        return cls(mriot=mriot)
 
-            # Sum needed below in case of many ROWs, which are aggregated into
-            # one country as per WIOD table.
-            self.direct_impact[:, subsec_reg_pos] += direct_impact_reg.astype(np.float32)
+    def calc_shock_to_sectors(self,
+                              exposure,
+                              impact,
+                              impacted_secs=None,
+                              shock_factor=None
+                              ):
+        """Calculate exposure, impact and shock at the sectorial level.
+        This function translate spatially-distrubted exposure and impact
+        information into exposure and impact of MRIOT's country/sectors and
+        for each hazard event.
 
-        # average impact across years
-        self.direct_aai_agg = self.direct_impact.mean(axis=0)
+        Parameters
+        ----------
+        exposure : climada.entity.Exposure
+            CLIMADA Exposure object of direct impact calculation
+        impact : climada.engine.Impact
+            CLIMADA Impact object of direct impact calculation
+        impacted_secs : (range, np.ndarray, str, list)
+            Information regarding the impacted sectors. This can be provided
+            as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
+            or as sector names (as string or list).
+        shock_factor : np.array
+            It has lenght equal to the number of sectors. For each sector, it defines to
+            what extent the fraction of indirect losses differs from the one of direct
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock
+            factors for all sectors are equal to 1, i.e., that production and stock losses
+            fractions are the same.
+        """
 
-    def calc_indirect_impact(self, io_approach='ghosh'):
-        """Calculate indirect impacts according to the specified input-output
-        appraoch. This function needs to be run after calc_sector_direct_impact.
+        if impacted_secs is None:
+            warnings.warn(
+                "No impacted sectors were specified. It is assumed that the exposure is "
+                "representative of all sectors in the IO table"
+            )
+            impacted_secs = self.mriot.get_sectors().tolist()
+
+        elif isinstance(impacted_secs, (range, np.ndarray)):
+            impacted_secs = self.mriot.get_sectors()[impacted_secs].tolist()
+
+        elif isinstance(impacted_secs, str):
+            impacted_secs = [impacted_secs]
+
+        if shock_factor is None:
+            shock_factor = np.repeat(1, self.mriot.x.shape[0])
+
+        events_w_imp_bool = np.asarray(impact.imp_mat.sum(1)!=0).flatten()
+
+        self.secs_exp = pd.DataFrame(
+            0,
+            index=["total_value"],
+            columns=self.mriot.Z.columns
+        )
+        self.secs_imp = pd.DataFrame(
+            0,
+            index=impact.event_id[events_w_imp_bool],
+            columns=self.mriot.Z.columns
+        )
+        self.secs_imp.index = self.secs_imp.index.set_names('event_id')
+
+        mriot_type = self.mriot.meta.name.split("-")[0]
+
+        for exp_regid in exposure.gdf.region_id.unique():
+            exp_bool = exposure.gdf.region_id == exp_regid
+            tot_value_reg_id = exposure.gdf[exp_bool].value.sum()
+            tot_imp_reg_id = impact.imp_mat[events_w_imp_bool][:,exp_bool].sum(1)
+
+            mriot_reg_name = self.map_exp_to_mriot(exp_regid, mriot_type)
+
+            secs_prod = self.mriot.x.loc[(mriot_reg_name, impacted_secs), :]
+            secs_prod_ratio = (secs_prod / secs_prod.sum()).values.flatten()
+
+            # Overall sectorial stock exposure and impact are distributed among
+            # subsectors proportionally to their their own contribution to overall
+            # sectorial production: Sum needed below in case of many ROWs, which are
+            # aggregated into one country as per WIOD table.
+            self.secs_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
+                tot_value_reg_id * secs_prod_ratio
+            )
+            self.secs_imp.loc[:, (mriot_reg_name, impacted_secs)] += (
+                tot_imp_reg_id * secs_prod_ratio
+            )
+
+        self.secs_shock = self.secs_imp.divide(
+            self.secs_exp.values
+        ).fillna(0) * shock_factor
+
+        if not np.all(self.secs_shock <= 1):
+            warnings.warn(
+                "Consider changing the provided provided stock-to-production losses "
+                "ratios, as some of them lead to some sectors' production losses to "
+                "exceed the maximum sectorial production. For these sectors, total "
+                "production loss is assumed."
+            )
+            self.secs_shock[self.secs_shock > 1] = 1
+
+    def calc_matrices(self, io_approach):
+        """Build technical coefficient and Leontief inverse matrixes
+        (if leontief or eeioa approach) or allocation coefficients and
+        Ghosh matrixes (if ghosh approach).
 
         Parameters
         ----------
         io_approach : str
-            The adopted input-output modeling approach. Possible approaches
-            are 'leontief', 'ghosh' and 'eeioa'. Default is 'gosh'.
+            The adopted input-output modeling approach.
+            Possible choices are 'leontief', 'ghosh' and 'eeioa'.
+        """
+
+        io_model = {
+            "leontief": (pymrio.calc_A, pymrio.calc_L),
+            "eeioa": (pymrio.calc_A, pymrio.calc_L),
+            "ghosh": (calc_B, calc_G),
+        }
+
+        coeff_func, inv_func = io_model[io_approach]
+
+        self.coeffs.update({io_approach: coeff_func(self.mriot.Z, self.mriot.x)})
+        self.inverse.update({io_approach: inv_func(self.coeffs[io_approach])})
+
+    def calc_impacts(self,
+                    io_approach,
+                    exposure=None,
+                    impact=None,
+                    impacted_secs=None):
+        """Calculate indirect production impacts based on to the
+        chosen input-output approach.
+
+        Parameters
+        ----------
+        io_approach : str
+            The adopted input-output modeling approach.
+            Possible choices are 'leontief', 'ghosh' and 'eeioa'.
+        exposure : climada.entity.Exposure
+            CLIMADA Exposure object of direct impact calculation. Default is None.
+        impact : climada.engine.Impact
+            CLIMADA Impact object of direct impact calculation. Default is None.
+        impacted_secs : (range, np.ndarray, str, list)
+            Information regarding the impacted sectors. This can be provided
+            as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
+            or as sector names (as string or list). Default is None.
+        shock_factor : np.array
+            It has lenght equal to the number of sectors. For each sector, it defines to
+            what extent the fraction of indirect losses differs from the one of direct
+            losses (i.e., impact / exposure). Deafult value is None, which means that shock
+            factors for all sectors are equal to 1, i.e., that production and stock losses
+            fractions are the same.
 
         References
         ----------
@@ -240,101 +602,72 @@ class SupplyChain():
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        io_switch = {'leontief': self._leontief_calc, 'ghosh': self._ghosh_calc,
-                     'eeioa': self._eeioa_calc}
+        self.calc_matrices(io_approach=io_approach)
 
-        # Compute coefficients based on selected IO approach
-        coefficients = np.zeros_like(self.mriot_data, dtype=np.float32)
-        if io_approach in ['leontief', 'eeioa']:
-            for col_i, col in enumerate(self.mriot_data.T):
-                if self.total_prod[col_i] > 0:
-                    coefficients[:, col_i] = np.divide(col, self.total_prod[col_i])
-                else:
-                    coefficients[:, col_i] = 0
+        if self.secs_shock is None:
+            self.calc_shock_to_sectors(exposure, impact, impacted_secs)
+
+        n_events = self.secs_shock.shape[0]
+        if io_approach == "leontief":
+            degr_demand = (
+                self.secs_shock * self.mriot.Y.sum(1)
+            )
+
+            self.supchain_imp.update({io_approach : pd.concat(
+                [
+                    pymrio.calc_x_from_L(self.inverse[io_approach], degr_demand.iloc[i])
+                    for i in range(n_events)
+                ],
+                axis=1,
+            ).T.set_index(self.secs_shock.index)})
+
+        elif io_approach == "ghosh":
+            value_added = calc_v(self.mriot.Z, self.mriot.x)
+            degr_value_added = (
+                self.secs_shock * value_added.values
+            )
+
+            self.supchain_imp.update({io_approach : pd.concat(
+                [
+                    calc_x_from_G(self.inverse[io_approach], degr_value_added.iloc[i])
+                    for i in range(n_events)
+                ],
+                axis=1,
+            ).T.set_index(self.secs_shock.index)})
+
+        elif io_approach == "eeioa":
+            self.supchain_imp.update({io_approach : (
+                pd.DataFrame(
+                    self.secs_shock.dot(self.inverse[io_approach])
+                    * self.mriot.x.values.flatten()
+                )
+            )})
+
         else:
-            for row_i, row in enumerate(self.mriot_data):
-                if self.total_prod[row_i] > 0:
-                    coefficients[row_i, :] = np.divide(row, self.total_prod[row_i])
-                else:
-                    coefficients[row_i, :] = 0
+            raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
-        inverse = np.linalg.inv(np.identity(len(self.mriot_data)) - coefficients)
-        inverse = inverse.astype(np.float32)
-
-        # Calculate indirect impacts
-        self.indirect_impact = np.zeros_like(self.direct_impact, dtype=np.float32)
-        risk_structure = np.zeros(np.shape(self.mriot_data) + (len(self.years),),
-                                  dtype=np.float32)
-
-        # Loop over years indices:
-        for year_i, _ in enumerate(tqdm(self.years)):
-            direct_impact_yearly = self.direct_impact[year_i, :]
-
-            direct_intensity = np.zeros_like(direct_impact_yearly)
-            for idx, (impact, production) in enumerate(zip(direct_impact_yearly,
-                                                           self.total_prod)):
-                if production > 0:
-                    direct_intensity[idx] = impact/production
-                else:
-                    direct_intensity[idx] = 0
-
-            # Calculate risk structure based on selected IO approach
-            risk_structure = io_switch[io_approach](direct_intensity, inverse,
-                                                    risk_structure, year_i)
-            # Total indirect risk per sector/country-combination:
-            self.indirect_impact[year_i, :] = np.nansum(
-                risk_structure[:, :, year_i], axis=0)
-
-        self.indirect_aai_agg = self.indirect_impact.mean(axis=0)
-
-        self.io_data = {}
-        self.io_data.update({'coefficients': coefficients, 'inverse': inverse,
-                             'risk_structure' : risk_structure,
-                             'io_approach' : io_approach})
-
-    def calc_total_impact(self):
-        """Calculate total impacts summing direct and indirect impacts."""
-        self.total_impact = self.indirect_impact + self.direct_impact
-        self.total_aai_agg = self.total_impact.mean(axis=0)
-
-    def _map_exp_to_mriot(self, exp_regid, mriot_type):
+    def map_exp_to_mriot(self, exp_regid, mriot_type):
         """
-        Map regions names in exposure into Input-output regions names.
-        exp_regid must be according to ISO 3166 numeric country codes.
+        Map regions names in exposure into Input-Output regions names.
+        exp_regid must follow ISO 3166 numeric country codes.
         """
 
-        if mriot_type == 'WIOD':
+        if mriot_type == "EXIOBASE3":
+            mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha2")
+
+        elif mriot_type in ["WIOD16", "OECD21"]:
             mriot_reg_name = u_coord.country_to_iso(exp_regid, "alpha3")
-            idx_country = np.where(self.mriot_reg_names == mriot_reg_name)[0]
 
-            if not idx_country.size > 0.:
-                mriot_reg_name = 'ROW'
+        else:
+            warnings.warn(
+                "For a correct calculation the format of regions' names in exposure and "
+                "the IO table must match."
+            )
+            return exp_regid
 
-        elif mriot_type == '':
-            mriot_reg_name = exp_regid
+        idx_country = np.where(self.mriot.get_regions() == mriot_reg_name)[0]
+
+        if not idx_country.size > 0.0:
+            mriot_reg_name = "ROW"
 
         return mriot_reg_name
-
-    def _leontief_calc(self, direct_intensity, inverse, risk_structure, year_i):
-        """Calculate the risk_structure based on the Leontief approach."""
-        demand = self.total_prod - np.nansum(self.mriot_data, axis=1)
-        degr_demand = direct_intensity*demand
-        for idx, row in enumerate(inverse):
-            risk_structure[:, idx, year_i] = row * degr_demand
-        return risk_structure
-
-    def _ghosh_calc(self, direct_intensity, inverse, risk_structure, year_i):
-        """Calculate the risk_structure based on the Ghosh approach."""
-        value_added = self.total_prod - np.nansum(self.mriot_data, axis=0)
-        degr_value_added = np.maximum(direct_intensity*value_added,\
-                                      np.zeros_like(value_added))
-        for idx, col in enumerate(inverse.T):
-           # Here, we iterate across columns of inverse (hence transpose used).
-            risk_structure[:, idx, year_i] = degr_value_added * col
-        return risk_structure
-
-    def _eeioa_calc(self, direct_intensity, inverse, risk_structure, year_i):
-        """Calculate the risk_structure based on the EEIOA approach."""
-        for idx, col in enumerate(inverse.T):
-            risk_structure[:, idx, year_i] = (direct_intensity * col) * self.total_prod[idx]
-        return risk_structure
