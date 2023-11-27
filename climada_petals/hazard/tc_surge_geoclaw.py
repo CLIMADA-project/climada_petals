@@ -853,7 +853,6 @@ include $(CLAW)/clawutil/src/Makefile.common
 
     def write_rundata(self) -> None:
         """Create rundata config files in work directory or read if already existent."""
-        # pylint: disable=import-outside-toplevel
         if not self._read_rundata():
             self._set_rundata_claw()
             self._set_rundata_amr()
@@ -872,6 +871,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         -------
         bool
         """
+        # pylint: disable=import-outside-toplevel
         import clawpack.amrclaw.data
         import clawpack.geoclaw.data
         self._clear_rundata()
@@ -889,6 +889,12 @@ include $(CLAW)/clawutil/src/Makefile.common
             read_kwargs = dict(data_path=self.work_dir) if is_gauge_data else {}
             with contextlib.redirect_stdout(None):
                 dataobject.read(*read_args, **read_kwargs)
+
+        # the "in_domain" gauge attribute is determined from the gaugedata settings
+        gauge_nos = [g_no for g_no, _, _, _, _ in self.rundata.gaugedata.gauges]
+        for i_gauge, gauge in enumerate(self.gauge_data):
+            gauge["in_domain"] = i_gauge + 1 in gauge_nos
+
         # resume from checkpoint if it exists and the previous run didn't finish
         chk_files = list(self.work_dir.glob("_output/fort.chk*"))
         if len(chk_files) > 1 and not self.work_dir.joinpath("gc_terminated").exists():
