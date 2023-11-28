@@ -27,8 +27,6 @@ import shapely
 from tqdm import tqdm
 import pyproj
 
-# from climada_petals.engine.networks.nw_base import Network
-
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
 
