@@ -20,7 +20,6 @@ Make network base classes (data containers)
 """
 
 import logging
-import numpy as np
 import geopandas as gpd
 import igraph as ig
 
@@ -30,30 +29,29 @@ class Network:
     
     def __init__(self, 
                  edges=gpd.GeoDataFrame(), 
-                 nodes=gpd.GeoDataFrame(), 
-                 ci_type=None):
+                 nodes=gpd.GeoDataFrame()):
         """
         initialize a network object given edges and nodes dataframes
         """
         if edges.empty:
             edges = gpd.GeoDataFrame(
-                columns=['from_id', 'to_id', 'orig_id', 'ci_type'])
-        if not hasattr(edges, 'orig_id'):
-            edges['orig_id'] = self._add_orig_id(edges)
-    
+                columns=['from_id', 'to_id', 'orig_id', 'geometry'],
+                geometry='geometry', crs='EPSG:4326')
         if nodes.empty:
             nodes = gpd.GeoDataFrame(
-                columns=[['name_id', 'orig_id', 'ci_type']])    
+                columns=['name_id', 'orig_id', 'geometry'], 
+                geometry='geometry', crs='EPSG:4326')   
+        
+        if not hasattr(edges, 'orig_id'):
+            edges['orig_id'] = range(len(edges))
         if not hasattr(nodes, 'orig_id'):
-            nodes['orig_id'] = self._add_orig_id(nodes)
-    
-        if not ci_type:
-            ci_type = self._update_ci_types(edges, nodes)
+            nodes['orig_id'] = range(len(nodes))
+        if not hasattr(edges, 'osm_id'):
+            edges['osm_id'] = range(len(edges))
         
         self.edges = edges
         self.nodes = nodes
-        self.ci_type = ci_type
-
+        
           
     @classmethod
     def from_nws(cls, networks):
@@ -94,34 +92,4 @@ class Network:
                 ).rename({'vertex ID':'name_id'}, axis=1))           
         
         return Network(edges=edges, nodes=nodes)
-
-
-    @classmethod
-    def _update_ci_types(cls, edges, nodes):
-        return np.unique(np.unique(edges.ci_type).tolist().append(
-                         np.unique(nodes.ci_type).tolist()))
-
-    @classmethod
-    def _add_orig_id(cls, gdf):
-        return range(len(gdf))
-    
-    
-    def initialize_funcstates(self):
-        """ 
-        
-        """
-        self.edges[['func_internal','func_tot']] = 1
-        self.nodes[['func_internal','func_tot']] = 1
-        self.edges['imp_dir'] = 0
-        self.nodes['imp_dir'] = 0
-        
-    def initialize_capacity(self, source, target):
-        self.nodes[f'capacity_{source}_{target}'] = 0
-        self.nodes.loc[self.nodes['ci_type']==f'{source}',f'capacity_{source}_{target}'] = 1
-        self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
-        
-    def initialize_supply(self, source):
-        self.nodes[f'actual_supply_{source}_people'] = 0
-        self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{source}_people'] = 1
-        
     
