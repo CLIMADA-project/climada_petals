@@ -22,13 +22,15 @@ Make network base classes (data containers)
 import logging
 import geopandas as gpd
 import igraph as ig
+import pandas as pd
 
 LOGGER = logging.getLogger(__name__)
 
+
 class Network:
-    
-    def __init__(self, 
-                 edges=gpd.GeoDataFrame(), 
+
+    def __init__(self,
+                 edges=gpd.GeoDataFrame(),
                  nodes=gpd.GeoDataFrame()):
         """
         initialize a network object given edges and nodes dataframes
@@ -39,42 +41,45 @@ class Network:
                 geometry='geometry', crs='EPSG:4326')
         if nodes.empty:
             nodes = gpd.GeoDataFrame(
-                columns=['name_id', 'orig_id', 'geometry'], 
-                geometry='geometry', crs='EPSG:4326')   
-        
+                columns=['name_id', 'orig_id', 'geometry'],
+                geometry='geometry', crs='EPSG:4326')
+
         if not hasattr(edges, 'orig_id'):
             edges['orig_id'] = range(len(edges))
         if not hasattr(nodes, 'orig_id'):
             nodes['orig_id'] = range(len(nodes))
         if not hasattr(edges, 'osm_id'):
             edges['osm_id'] = range(len(edges))
-        
+
         self.edges = edges
         self.nodes = nodes
-        
-          
+
     @classmethod
     def from_nws(cls, networks):
         """
         make one network object out of several network objects
         """
-        edges = gpd.GeoDataFrame(columns=['from_id', 'to_id', 'ci_type'])
-        nodes = gpd.GeoDataFrame(columns=['name_id', 'ci_type'])
-        
+        edges = gpd.GeoDataFrame(
+            columns=['from_id', 'to_id', 'orig_id', 'geometry'],
+            geometry='geometry', crs='EPSG:4326')
+        nodes = gpd.GeoDataFrame(
+            columns=['name_id', 'orig_id', 'geometry'],
+            geometry='geometry', crs='EPSG:4326')
+
         id_counter_nodes = 0
-        
-        for nw in networks:
-            edge_gdf = nw.edges.reset_index(drop=True)
-            node_gdf = nw.nodes.reset_index(drop=True)
-            edge_gdf['from_id'] = edge_gdf['from_id']  + id_counter_nodes
-            edge_gdf['to_id'] = edge_gdf['to_id']  + id_counter_nodes
-            node_gdf['name_id'] = range(id_counter_nodes, 
+
+        for net in networks:
+            edge_gdf = net.edges.reset_index(drop=True)
+            node_gdf = net.nodes.reset_index(drop=True)
+            edge_gdf['from_id'] = edge_gdf['from_id'] + id_counter_nodes
+            edge_gdf['to_id'] = edge_gdf['to_id'] + id_counter_nodes
+            node_gdf['name_id'] = range(id_counter_nodes,
                                         id_counter_nodes+len(node_gdf))
-            id_counter_nodes+=len(node_gdf)
-            edges = edges.append(edge_gdf)
-            nodes = nodes.append(node_gdf)
-    
-        return Network(edges=edges.reset_index(drop=True), 
+            id_counter_nodes += len(node_gdf)
+            edges = pd.concat([edges, edge_gdf])
+            nodes = pd.concat([nodes, node_gdf])
+
+        return Network(edges=edges.reset_index(drop=True),
                        nodes=nodes.reset_index(drop=True))
 
     @classmethod
@@ -83,13 +88,14 @@ class Network:
         make one network object out of several graph objects
         """
         graph = ig.Graph(directed=graphs[0].is_directed())
-        for g in graphs:
-            graph += g
-        
+        for gra in graphs:
+            graph += gra
+
         edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
-            {'source':'from_id', 'target':'to_id'}, axis=1))
+            {'source': 'from_id', 'target': 'to_id'}, axis=1),
+            geometry='geometry', crs='EPSG:4326')
         nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
-                ).rename({'vertex ID':'name_id'}, axis=1))           
-        
+        ).rename({'vertex ID': 'name_id'}, axis=1),
+            geometry='geometry', crs='EPSG:4326')
+
         return Network(edges=edges, nodes=nodes)
-    
