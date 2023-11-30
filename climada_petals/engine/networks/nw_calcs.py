@@ -16,7 +16,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 """
 import logging
-
 import igraph as ig
 import numpy as np
 import pyproj
@@ -31,6 +30,48 @@ from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
+
+
+class Graph():
+    """
+    creates an igraph graph object 
+    """
+
+    def __init__(self, network, directed=False):
+        """
+        network : instance of networks.nw_base.Network
+        """
+        self.directed = directed
+
+        if not network.edges.empty:
+            self.graph = self._from_es(
+                gdf_edges=network.edges, gdf_nodes=network.nodes)
+        else:
+            self.graph = self._from_vs(
+                gdf_nodes=network.nodes)
+
+    def _remove_namecol(self, gdf_nodes):
+        if gdf_nodes is not None:
+            if hasattr(gdf_nodes, 'name'):
+                gdf_nodes = gdf_nodes.drop('name', axis=1)
+        return gdf_nodes
+
+    def _from_es(self, gdf_edges, gdf_nodes=None):
+        return ig.Graph.DataFrame(
+            gdf_edges,
+            vertices=self._remove_namecol(gdf_nodes),
+            directed=self.directed)
+
+    def _from_vs(self, gdf_nodes):
+        gdf_nodes = self._remove_namecol(gdf_nodes)
+        vertex_attrs = gdf_nodes.to_dict('list')
+        return ig.Graph(
+            n=len(gdf_nodes),
+            vertex_attrs=vertex_attrs,
+            directed=self.directed)
+
+    def return_network(self):
+        return Network.from_graphs([self.graph])
 
 
 class GraphCalcs():
@@ -55,12 +96,12 @@ class GraphCalcs():
 
         if lengths is None:
             lengths = [pyproj.Geod(ellps='WGS84').geometry_length(edge_geom) for
-                     edge_geom in edge_geoms]
+                       edge_geom in edge_geoms]
 
-        self.graph.add_edges(pairs, attributes= {
-            'geometry' : edge_geoms, 'ci_type' : [link_name],
-            'distance' : lengths, 'func_internal' : 1,
-            'func_tot' : 1, 'imp_dir' : 0})
+        self.graph.add_edges(pairs, attributes={
+            'geometry': edge_geoms, 'ci_type': [link_name],
+            'distance': lengths, 'func_internal': 1,
+            'func_tot': 1, 'imp_dir': 0})
 
     def link_clusters(self, dist_thresh=np.inf):
         """
@@ -78,12 +119,15 @@ class GraphCalcs():
         dist_thresh = dist_thresh/(ONE_LAT_KM*1000)
 
         for member in range(len(self.graph.clusters())):
-            gdf_a = gdf_vs[gdf_vs['membership']==member]
-            gdf_b = gdf_vs[gdf_vs['membership']!=member]
+            gdf_a = gdf_vs[gdf_vs['membership'] == member]
+            gdf_b = gdf_vs[gdf_vs['membership'] != member]
             try:
-                dists, ix_match = _ckdnearest(gdf_a, gdf_b, dist_thresh=dist_thresh)
-                source = gdf_a.iloc[np.where(dists==min(dists))[0]].name.values[0]
-                target = gdf_b.loc[ix_match[np.where(dists==min(dists))[0]]].name.values[0]
+                dists, ix_match = _ckdnearest(
+                    gdf_a, gdf_b, dist_thresh=dist_thresh)
+                source = gdf_a.iloc[np.where(dists == min(dists))[
+                    0]].name.values[0]
+                target = gdf_b.loc[ix_match[np.where(dists == min(dists))[
+                    0]]].name.values[0]
                 source_ix.append(source)
                 target_ix.append(target)
                 link_name = gdf_vs.ci_type[0]
@@ -91,16 +135,15 @@ class GraphCalcs():
                 # if no match within given distance
                 continue
 
-        if len(source_ix)>0:
+        if len(source_ix) > 0:
             self._edges_from_vlists(source_ix, target_ix, link_name)
 
-
-    def _select_closest_k(self, gdf_vs_source, gdf_vs_target, dist_thresh=None, 
+    def _select_closest_k(self, gdf_vs_source, gdf_vs_target, dist_thresh=None,
                           bidir=False, k=5):
-        
+
         # crappy conversion of metres to degrees
-        dist_thresh/=(ONE_LAT_KM*1000)
-        
+        dist_thresh /= (ONE_LAT_KM*1000)
+
         # index matches, in format (#target vs, k). nans for those without matches
         __, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k,
                                      dist_thresh=dist_thresh)
@@ -108,40 +151,39 @@ class GraphCalcs():
         ix_matches = ix_matches.flatten()
         v_ids_target = np.array(
             np.broadcast_to(np.array([gdf_vs_target.name]).T,
-                            (len(gdf_vs_target),k)
+                            (len(gdf_vs_target), k)
                             ).flatten())
         v_ids_target = v_ids_target[~np.isnan(ix_matches)]
         v_ids_source = np.array(
             gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].name)
 
         if bidir:
-            v_ids_target = np.append(v_ids_target,v_ids_source)
-            v_ids_source = np.append(v_ids_source,v_ids_target)
-            
+            v_ids_target = np.append(v_ids_target, v_ids_source)
+            v_ids_source = np.append(v_ids_source, v_ids_target)
+
         return list(v_ids_source), list(v_ids_target)
-    
-    
-    def link_vertices_closest_k_cond(self, source_ci, target_ci, cond, 
-                                     link_name=None, dist_thresh=None, 
+
+    def link_vertices_closest_k_cond(self, source_ci, target_ci, cond,
+                                     link_name=None, dist_thresh=None,
                                      bidir=False, k=5):
         """
         find k nearest source_ci vertices for each target_ci vertex,
         given distance constraints
         """
         gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[(gdf_vs.ci_type==target_ci) &
-                               (gdf_vs[cond[0]]==cond[1])]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
-                               (gdf_vs.func_tot==1)]
+        gdf_vs_target = gdf_vs[(gdf_vs.ci_type == target_ci) &
+                               (gdf_vs[cond[0]] == cond[1])]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type == source_ci) &
+                               (gdf_vs.func_tot == 1)]
         del gdf_vs
-        
+
         v_ids_source, v_ids_target = self._select_closest_k(
             gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
-        
+
         if not link_name:
             link_name = f'dependency_{source_ci}_{target_ci}'
 
-        self._edges_from_vlists(v_ids_source, v_ids_target, link_name) 
+        self._edges_from_vlists(v_ids_source, v_ids_target, link_name)
 
     def link_vertices_edgecond(self, source_ci, target_ci, link_name, edge_type):
         """
@@ -152,14 +194,15 @@ class GraphCalcs():
         directly at people node.
         """
         vs_target = self.graph.vs.select(ci_type=target_ci)
-        pot_edges = [self.graph.incident(v_target, mode='in') for v_target in vs_target]
+        pot_edges = [self.graph.incident(v_target, mode='in')
+                     for v_target in vs_target]
         pot_edges = [item for sublist in pot_edges for item in sublist]
-        select_edges = self.graph.es[pot_edges].select(ci_type=edge_type).select(func_tot_gt=0)
-        
-        self._edges_from_vlists([edge.source for edge in select_edges],
-                                [edge.target for edge in select_edges], link_name) 
+        select_edges = self.graph.es[pot_edges].select(
+            ci_type=edge_type).select(func_tot_gt=0)
 
-        
+        self._edges_from_vlists([edge.source for edge in select_edges],
+                                [edge.target for edge in select_edges], link_name)
+
     def link_vertices_closest_k(self, source_ci, target_ci, link_name=None,
                                 dist_thresh=None, bidir=False, k=5):
         """
@@ -167,95 +210,95 @@ class GraphCalcs():
         given distance constraints
         """
         gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
-                               (gdf_vs.func_tot==1)]
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type == target_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type == source_ci) &
+                               (gdf_vs.func_tot == 1)]
         del gdf_vs
-        
+
         v_ids_source, v_ids_target = self._select_closest_k(
             gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
-        
+
         if not link_name:
             link_name = f'dependency_{source_ci}_{target_ci}'
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_name)
 
     def _calc_friction(self, edge_geoms, friction_surf):
-        
+
         from climada.entity.exposures.base import Exposures
         from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
         from climada.engine import Impact
         from climada.util import lines_polys_handler as u_lp
         import geopandas as gpd
-        
+
         # define mapping as impact function.
-        impf_fric = ImpactFunc() 
+        impf_fric = ImpactFunc()
         impf_fric.id = 1
         impf_fric.haz_type = ''
         impf_fric.name = 'friction surface mapping'
         impf_fric.intensity_unit = 'min/m'
         impf_fric.intensity = np.linspace(friction_surf.intensity.data.min(),
-                                          friction_surf.intensity.data.max(), 
-                                          num=500) 
+                                          friction_surf.intensity.data.max(),
+                                          num=500)
         impf_fric.mdd = np.linspace(friction_surf.intensity.data.min(),
-                                    friction_surf.intensity.data.max(), 
+                                    friction_surf.intensity.data.max(),
                                     num=500)
         impf_fric.paa = np.sort(np.linspace(1, 1, num=500))
         impf_fric.check()
         impf_set = ImpactFuncSet()
         impf_set.append(impf_fric)
-        
+
         # perform impact calc for mapping.
         exp_links = Exposures(gpd.GeoDataFrame({'geometry': edge_geoms}))
         exp_links.gdf['impf_'] = 1
 
         # step-by-step to avoid 0 duration sections
         exp_pnt = u_lp.exp_geom_to_pnt(
-            exp_links, res=100, to_meters=True, 
+            exp_links, res=100, to_meters=True,
             disagg_met=u_lp.DisaggMethod.FIX, disagg_val=100)
-        
+
         impact_pnt = Impact()
         impact_pnt.calc(exp_pnt, impf_set, friction_surf, save_mat=True)
         if impact_pnt.imp_mat.size < len(exp_pnt.gdf):
             imp_arry = np.array(impact_pnt.imp_mat.todense()).flatten()
-            imp_arry[imp_arry==0] = \
-                exp_pnt.gdf.value[imp_arry==0]*friction_surf.intensity.data.min()
-            impact_pnt.imp_mat = scipy.sparse.csr_matrix(imp_arry)      
-        
+            imp_arry[imp_arry == 0] = \
+                exp_pnt.gdf.value[imp_arry == 0] * \
+                friction_surf.intensity.data.min()
+            impact_pnt.imp_mat = scipy.sparse.csr_matrix(imp_arry)
+
         friction = u_lp.impact_pnt_agg(
             impact_pnt, exp_pnt.gdf, u_lp.AggMethod.SUM)
-        
+
         return friction.eai_exp
-        
-    def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf, 
-                                    link_name=None, dist_thresh=None, 
+
+    def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf,
+                                    link_name=None, dist_thresh=None,
                                     bidir=False, k=5, dur_thresh=None):
-        
+
         gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) & 
-                               (gdf_vs.func_tot==1)]
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type == target_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type == source_ci) &
+                               (gdf_vs.func_tot == 1)]
         del gdf_vs
-        
+
         if not (gdf_vs_source.empty or gdf_vs_target.empty):
             v_ids_source, v_ids_target = self._select_closest_k(
                 gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
-                
+
             edge_geoms = make_edge_geometries(
                 self.graph.vs[v_ids_source]['geometry'],
                 self.graph.vs[v_ids_target]['geometry'])
-            
+
             friction = self._calc_friction(edge_geoms, friction_surf)
-            v_ids_source = np.array(v_ids_source)[friction<dur_thresh]
-            v_ids_target = np.array(v_ids_target)[friction<dur_thresh]
-            
+            v_ids_source = np.array(v_ids_source)[friction < dur_thresh]
+            v_ids_target = np.array(v_ids_target)[friction < dur_thresh]
+
             if not link_name:
                 link_name = f'dependency_{source_ci}_{target_ci}'
-            
+
             self._edges_from_vlists(
                 list(v_ids_source), list(v_ids_target), link_name)
-                
-    
+
     def _create_subgraph_paths(self, source_ci, target_ci, via_ci):
         """
         Create a subgraph from the original graph to perform a shortest path
@@ -268,16 +311,16 @@ class GraphCalcs():
         To be used in link_vertices_shortest_paths() and 
         link_vertices_shortest_path()
         """
-        
+
         # excluded targets that already have a valid dependency link
         # e.g. from walking assignment
-        
+
         v_all = [vertex.index for vertex in self.graph.vs.select(
             ci_type_in=[source_ci, target_ci, via_ci], func_tot_gt=0)]
         v_exc = [edge.target for edge in self.graph.es.select(
-                ci_type=f'dependency_{source_ci}_{target_ci}')]
+            ci_type=f'dependency_{source_ci}_{target_ci}')]
         v_inc = np.setdiff1d(np.array(v_all), np.array(v_exc)).tolist()
-        
+
         v_seq = self.graph.vs[v_inc]
 
         subgraph = self.graph.induced_subgraph(v_seq)
@@ -285,12 +328,12 @@ class GraphCalcs():
         wrong_edges = set(subgraph.es['ci_type']).difference(
             {via_ci})
         subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
-        
+
         return v_seq, subgraph
-        
+
     def link_vertices_shortest_paths(self, source_ci, target_ci, via_ci,
-                                    dist_thresh=10e6, criterion='distance',
-                                    link_name=None, bidir=False, preselect='auto'):
+                                     dist_thresh=10e6, criterion='distance',
+                                     link_name=None, bidir=False, preselect='auto'):
         """
         make all links below certain dist_thresh along shortest paths length
         between all possible sources & targets --> doesnt matter whether search
@@ -319,7 +362,7 @@ class GraphCalcs():
         lengths = []
 
         if preselect == 'auto':
-            preselect = True if len(subgraph.es)>200000 else False
+            preselect = True if len(subgraph.es) > 200000 else False
 
         if preselect:
             # metres to degree conversion assumption is imprecise
@@ -332,7 +375,7 @@ class GraphCalcs():
                 path_dists = subgraph.shortest_paths(
                     source=vs_source[ix_match], target=v_target, weights=criterion)
 
-                if len(path_dists)>0:
+                if len(path_dists) > 0:
                     path_dists = np.hstack(path_dists)
                     bool_link = path_dists < dist_thresh
                     v_ids_target.extend(
@@ -343,9 +386,9 @@ class GraphCalcs():
         else:
             path_dists = subgraph.shortest_paths(
                 source=vs_source, target=vs_target, weights='distance')
-            path_dists = np.array(path_dists) # dim: (#sources, #targets)
-            if len(path_dists)>0:
-                ix_source, ix_target = np.where(path_dists<dist_thresh)
+            path_dists = np.array(path_dists)  # dim: (#sources, #targets)
+            if len(path_dists) > 0:
+                ix_source, ix_target = np.where(path_dists < dist_thresh)
                 v_ids_source = [subgraph_graph_vsdict[vs.index]
                                 for vs in vs_source[list(ix_source)]]
                 v_ids_target = [subgraph_graph_vsdict[vs.index]
@@ -363,7 +406,7 @@ class GraphCalcs():
         self._edges_from_vlists(v_ids_source, v_ids_target,
                                 link_name=link_name,
                                 lengths=lengths)
-        
+
     def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
                        dist_thresh, dur_thresh, criterion='distance',
                        link_name=None, bidir=False):
@@ -375,51 +418,52 @@ class GraphCalcs():
         """
         es_check = self.graph.es.select(
             ci_type=f'dependency_{source_ci}_{target_ci}')
-        
-        bools_check = [self.graph.vs[edge.source]['func_tot'] > 0 
+
+        bools_check = [self.graph.vs[edge.source]['func_tot'] > 0
                        for edge in es_check]
-        
-        es_check = [edge for edge, bool_check in zip(es_check, bools_check) 
+
+        es_check = [edge for edge, bool_check in zip(es_check, bools_check)
                     if bool_check]
-        
-        if len(es_check)>0:
-            
+
+        if len(es_check) > 0:
+
             edge_geoms = [edge['geometry'] for edge in es_check]
             v_ids_target = [edge.target for edge in es_check]
             v_ids_source = [edge.source for edge in es_check]
-            v_ids_via = [vs.index for vs in 
+            v_ids_via = [vs.index for vs in
                          self.graph.vs.select(ci_type=f'{via_ci}')]
-            
+
             # first check friction
             friction = self._calc_friction(edge_geoms, friction_surf)
             bool_keep = friction < dur_thresh
-            
+
             # then check shortest paths
             v_seq = self.graph.vs(list(np.unique([*v_ids_target, *v_ids_source,
                                                   *v_ids_via])))
             subgraph = self.graph.induced_subgraph(v_seq)
             subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
-            graph_subgraph_vsdict = {v: k for k, v in subgraph_graph_vsdict.items()}
+            graph_subgraph_vsdict = {v: k for k,
+                                     v in subgraph_graph_vsdict.items()}
             subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
             wrong_edges = set(subgraph.es['ci_type']).difference(
                 {via_ci})
             subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
-            
+
             for ix, source, target, bool_f in (zip(np.arange(len(bool_keep)),
                                                    v_ids_source, v_ids_target,
                                                    bool_keep)):
                 if not bool_f:
                     dist = subgraph.shortest_paths(
-                        source=graph_subgraph_vsdict[source], 
-                        target=graph_subgraph_vsdict[target], 
+                        source=graph_subgraph_vsdict[source],
+                        target=graph_subgraph_vsdict[target],
                         weights='distance')
                     if dist[0][0] < dist_thresh:
                         bool_keep[ix] = True
                         es_check[ix]['distance'] = dist[0][0]
-            self.graph.delete_edges([edge.index for edge, bool_f in 
-                                     zip(es_check , bool_keep)
+            self.graph.delete_edges([edge.index for edge, bool_f in
+                                     zip(es_check, bool_keep)
                                      if not bool_f])
-    
+
     def link_vertices_shortest_path(self, source_ci, target_ci, via_ci,
                                     dist_thresh=10e6, criterion='distance',
                                     link_name=None, bidir=False, preselect='auto'):
@@ -427,10 +471,10 @@ class GraphCalcs():
         Per target, choose single shortest path to source which is
         below dist_thresh.
         """
-        
+
         v_seq, subgraph = self._create_subgraph_paths(
             source_ci, target_ci, via_ci)
-        
+
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
 
         vs_source = subgraph.vs.select(ci_type=source_ci)
@@ -441,7 +485,7 @@ class GraphCalcs():
         lengths = []
 
         if preselect == 'auto':
-            preselect = True if len(subgraph.es)>200000 else False
+            preselect = True if len(subgraph.es) > 200000 else False
 
         if preselect:
             # metres to degree conversion assumption is imprecise
@@ -454,26 +498,29 @@ class GraphCalcs():
                 path_dists = subgraph.shortest_paths(
                     source=vs_source[ix_match], target=v_target, weights=criterion)
 
-                if len(path_dists)>0:
+                if len(path_dists) > 0:
                     path_dists = np.hstack(path_dists)
 
                     if min(path_dists) < dist_thresh:
-                        v_ids_target.append(subgraph_graph_vsdict[v_target.index])
-                        ix = ix_match[int(np.where(path_dists==min(path_dists))[0])]
-                        v_ids_source.append(subgraph_graph_vsdict[vs_source[ix].index])
+                        v_ids_target.append(
+                            subgraph_graph_vsdict[v_target.index])
+                        ix = ix_match[int(
+                            np.where(path_dists == min(path_dists))[0])]
+                        v_ids_source.append(
+                            subgraph_graph_vsdict[vs_source[ix].index])
                         lengths.append(min(path_dists))
         else:
-           path_dists = subgraph.shortest_paths(
-               source=vs_source, target=vs_target, weights='distance')
-           path_dists = np.array(path_dists) # dim: (#sources, #targets)
-           if len(path_dists)>0:
-               ix_source, ix_target = np.where(((path_dists == path_dists.min(axis=0)) &
-                                               (path_dists<=dist_thresh))) # min dist. per target
-               v_ids_source = [subgraph_graph_vsdict[vs.index]
-                               for vs in vs_source[list(ix_source)]]
-               v_ids_target = [subgraph_graph_vsdict[vs.index]
-                               for vs in vs_target[list(ix_target)]]
-               lengths = path_dists[(ix_source, ix_target)]
+            path_dists = subgraph.shortest_paths(
+                source=vs_source, target=vs_target, weights='distance')
+            path_dists = np.array(path_dists)  # dim: (#sources, #targets)
+            if len(path_dists) > 0:
+                ix_source, ix_target = np.where(((path_dists == path_dists.min(axis=0)) &
+                                                (path_dists <= dist_thresh)))  # min dist. per target
+                v_ids_source = [subgraph_graph_vsdict[vs.index]
+                                for vs in vs_source[list(ix_source)]]
+                v_ids_target = [subgraph_graph_vsdict[vs.index]
+                                for vs in vs_target[list(ix_target)]]
+                lengths = path_dists[(ix_source, ix_target)]
 
         if bidir:
             v_ids_target.extend(v_ids_source)
@@ -516,20 +563,20 @@ class GraphCalcs():
             if single_link:
                 if cond is not None:
                     self.link_vertices_closest_k_cond(source, target, link_name=dep_name,
-                                                 cond=cond, dist_thresh=dist_thresh, k=1)
+                                                      cond=cond, dist_thresh=dist_thresh, k=1)
                 else:
                     self.link_vertices_closest_k(source, target, link_name=dep_name,
                                                  dist_thresh=dist_thresh, k=1)
             else:
                 if cond is not None:
                     self.link_vertices_closest_k_cond(source, target, link_name=dep_name,
-                                                 cond=cond, dist_thresh=dist_thresh, k=5)
+                                                      cond=cond, dist_thresh=dist_thresh, k=5)
                 else:
                     self.link_vertices_closest_k(source, target, link_name=dep_name,
                                                  dist_thresh=dist_thresh, k=5)
         else:
             self.graph.delete_edges(ci_type=f'dependency_{source}_{target}')
-            if source=='road':
+            if source == 'road':
                 self.link_vertices_edgecond(source, target, link_name=dep_name,
                                             edge_type='road')
             elif single_link:
@@ -538,17 +585,16 @@ class GraphCalcs():
                                                  dist_thresh=dur_thresh*83.3,
                                                  k=1, dur_thresh=dur_thresh)
                 self.link_vertices_shortest_path(source, target, via_ci='road',
-                                    dist_thresh=dist_thresh, criterion='distance',
-                                    link_name=dep_name, preselect=preselect)
+                                                 dist_thresh=dist_thresh, criterion='distance',
+                                                 link_name=dep_name, preselect=preselect)
             else:
                 self.link_vertices_friction_surf(source, target, friction_surf,
                                                  link_name=dep_name,
                                                  dist_thresh=dur_thresh*83.3,
                                                  k=5, dur_thresh=dur_thresh)
                 self.link_vertices_shortest_paths(source, target, via_ci='road',
-                                    dist_thresh=dist_thresh, criterion='distance',
-                                    link_name=dep_name, preselect=preselect)
-
+                                                  dist_thresh=dist_thresh, criterion='distance',
+                                                  link_name=dep_name, preselect=preselect)
 
     def _funcstates_sum(self):
         """
@@ -580,7 +626,8 @@ class GraphCalcs():
             LOGGER.info('Updating roads')
             targets_dys = [edge.target for edge in self.graph.es.select(
                 ci_type='road').select(func_tot_eq=0)]
-            self.graph.vs.select(targets_dys).select(ci_type='road')['func_tot'] = 0
+            self.graph.vs.select(targets_dys).select(
+                ci_type='road')['func_tot'] = 0
 
         # specifically for powerlines: check power clusters
         if {p_source, p_sink}.issubset(set(self.graph.vs['ci_type'])):
@@ -588,19 +635,18 @@ class GraphCalcs():
             # For another version using pandapower, see nw_utils.py
             # Since powerlines are directed in a directed graph,
             # make sure 'reverse' lines are also down
-            
+
             edges_dys = self.graph.es.select(ci_type='power_line'
                                              ).select(func_tot_eq=0)
             reverse_edges = [(edge.target, edge.source) for edge in edges_dys]
             eids = self.graph.get_eids(pairs=reverse_edges, path=None,
                                        directed=True, error=True)
-            self.graph.es[eids]['func_tot']=0
+            self.graph.es[eids]['func_tot'] = 0
             LOGGER.info(f"""Using updated power line algorithm: dysfunc edges before:
                   {len(edges_dys)}, after: {len(self.graph.es.select(ci_type='power_line'
                                              ).select(func_tot_eq=0))}""")
             self.powercap_from_clusters(p_source=p_source, p_sink=p_sink,
-                demand_ci='people', source_var=source_var, demand_var=demand_var)
-
+                                        demand_ci='people', source_var=source_var, demand_var=demand_var)
 
     def powercap_from_clusters(self, p_source, p_sink, demand_ci, source_var,
                                demand_var):
@@ -634,60 +680,65 @@ class GraphCalcs():
             for var in capacity_vars:
                 self.graph.vs[
                     [subgraph_graph_vsdict[sink.index] for sink in sinks]
-                    ].set_attribute_values(var, sd_ratio)
-
+                ].set_attribute_values(var, sd_ratio)
 
     def _update_functional_dependencies(self, df_dependencies):
 
         for __, row in df_dependencies[
-                df_dependencies['type_I']=='functional'].iterrows():
+                df_dependencies['type_I'] == 'functional'].iterrows():
 
             if row.access_cnstr:
                 # TODO: Implement
-                LOGGER.warning('Road access condition for CI-CI deps not yet implemented')
-            
+                LOGGER.warning(
+                    'Road access condition for CI-CI deps not yet implemented')
+
             self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
     def _update_enduser_dependencies(self, df_dependencies, preselect,
                                      friction_surf, dur_thresh):
         import timeit
-        
+
         for __, row in df_dependencies[
-                df_dependencies['type_I']=='enduser'].iterrows():
+                df_dependencies['type_I'] == 'enduser'].iterrows():
 
             if row.access_cnstr:
-                LOGGER.info(f'Re-calculating paths from {row.source} to {row.target}')
-                if (row.source == 'road'): # separate checking algorithm for road access
-                    self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
-                    self.link_vertices_edgecond(row.source, row.target, 
+                LOGGER.info(
+                    f'Re-calculating paths from {row.source} to {row.target}')
+                if (row.source == 'road'):  # separate checking algorithm for road access
+                    self.graph.delete_edges(
+                        ci_type=f'dependency_{row.source}_{row.target}')
+                    self.link_vertices_edgecond(row.source, row.target,
                                                 link_name=f'dependency_{row.source}_{row.target}',
                                                 edge_type='road')
-                elif row.single_link: # those need to be re-checked on their fixed s-t pairs
+                elif row.single_link:  # those need to be re-checked on their fixed s-t pairs
                     starttime = timeit.default_timer()
                     self.recheck_access(row.source, row.target, via_ci='road',
                                         friction_surf=friction_surf, dist_thresh=row.thresh_dist,
                                         dur_thresh=dur_thresh, criterion='distance',
                                         link_name=f'dependency_{row.source}_{row.target}',
                                         bidir=False)
-                    print(f"Time for recalculating from {row.source} to {row.target} :", timeit.default_timer() - starttime)
+                    print(f"Time for recalculating from {row.source} to {row.target} :", timeit.default_timer(
+                    ) - starttime)
                 else:
                     # the re-checking takes much longer than checking completely
                     # from scratch, hence check from scratch.
                     starttime = timeit.default_timer()
-                    self.graph.delete_edges(ci_type=f'dependency_{row.source}_{row.target}')
+                    self.graph.delete_edges(
+                        ci_type=f'dependency_{row.source}_{row.target}')
                     self.link_vertices_friction_surf(row.source, row.target, friction_surf,
                                                      link_name=f'dependency_{row.source}_{row.target}',
                                                      dist_thresh=dur_thresh*83.33,
                                                      k=5, dur_thresh=dur_thresh)
-                    print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer() - starttime)
+                    print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
+                    ) - starttime)
                     starttime = timeit.default_timer()
                     self.link_vertices_shortest_paths(row.source, row.target, via_ci='road',
-                                        dist_thresh=row.thresh_dist, criterion='distance',
-                                        link_name=f'dependency_{row.source}_{row.target}',
-                                        bidir=False, preselect=preselect)
-                    print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer() - starttime)
+                                                      dist_thresh=row.thresh_dist, criterion='distance',
+                                                      link_name=f'dependency_{row.source}_{row.target}',
+                                                      bidir=False, preselect=preselect)
+                    print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
+                    ) - starttime)
             self._propagate_check_fail(row.source, row.target, row.thresh_func)
-
 
     def _propagate_check_fail(self, source, target, thresh_func):
         """
@@ -701,7 +752,7 @@ class GraphCalcs():
         try:
             adj_sub = subgraph.get_adjacency_sparse()
         except TypeError:
-            #treats case where empty adjacency matrix!
+            # treats case where empty adjacency matrix!
             adj_sub = scipy.sparse.csr_matrix(subgraph.get_adjacency().data)
         # Hadamard product func_tot (*) capacity
         func_capa = np.multiply(v_seq['func_tot'],
@@ -709,33 +760,33 @@ class GraphCalcs():
         # propagate capacities down from source --> target along adj
         capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
         # functionality thesholds for recieved capacity
-        
+
         # TODO: this is a quickfix for the healthcare study in MOZ, to deal
         # with different func thresholds for the same types of cis. (Hospitals level 3 & 4 --> 0 power thresh.)
         # delete again and think about a more general solution.
         func_thresh = np.array([thresh_func if vx['ci_type'] == target
                                 else 0 for vx in v_seq])
-        if (target=='health') & ('Level' in self.graph.vs.attribute_names()):  
-            func_thresh = np.array([thresh_func if 
+        if (target == 'health') & ('Level' in self.graph.vs.attribute_names()):
+            func_thresh = np.array([thresh_func if
                                     ((vx['ci_type'] == target) &
-                                     (vx['Level']<3)) 
+                                     (vx['Level'] < 3))
                                     else 0 for vx in v_seq])
         # boolean vector whether received capacity great enough to supply endusers
-        capa_suff = (np.array(capa_rec.todense()).squeeze()>=func_thresh).astype(int)
-         
+        capa_suff = (np.array(capa_rec.todense()).squeeze()
+                     >= func_thresh).astype(int)
+
         # This is under the assumption that subgraph retains the same
         # relative ordering of vertices as in v_seq extracted from graph!
         # This further assumes that any operation on a VertexSeq equally modifies its graph.
         # Both should be the case, but the igraph doc is always a bit ambiguous
-        if target=='people':
+        if target == 'people':
             v_seq[f'actual_supply_{source}_{target}'] = capa_suff
         else:
             func_tot = np.minimum(capa_suff, v_seq['func_tot'])
             v_seq['func_tot'] = func_tot
 
-
     def _get_subgraph2graph_vsdict(self, vertex_seq):
-        return dict((k,v) for k, v in zip(
+        return dict((k, v) for k, v in zip(
             [subvx.index for subvx in self.graph.subgraph(vertex_seq).vs],
             [vx.index for vx in vertex_seq]))
 
@@ -749,13 +800,13 @@ class GraphCalcs():
         delta = -1
         cycles = 0
         while delta != 0:
-            cycles+=1
-            LOGGER.info('Updating functional states.'+
+            cycles += 1
+            LOGGER.info('Updating functional states.' +
                         f' Current func.-state delta : {delta}')
             func_states_vs, func_states_es = self._funcstates_sum()
             self._update_internal_dependencies(p_source=p_source,
-                                        p_sink=p_sink, source_var=source_var,
-                                        demand_var=demand_var)
+                                               p_sink=p_sink, source_var=source_var,
+                                               demand_var=demand_var)
             self._update_functional_dependencies(df_dependencies)
             func_states_vs2, func_states_es2 = self._funcstates_sum()
             delta = max(abs(func_states_vs-func_states_vs2),
@@ -766,42 +817,3 @@ class GraphCalcs():
         if (cycles > 1) or (initial):
             self._update_enduser_dependencies(
                 df_dependencies, preselect, friction_surf, dur_thresh)
-
-    def return_network(self):
-        return Network.from_graphs([self.graph])
-
-
-
-class Graph(GraphCalcs):
-    """
-    creates a graph object 
-    """
-
-    def __init__(self, network, directed=False):
-        """
-        network : instance of networks.base.Network
-        """
-        if network.edges is not None:
-            self.graph = self.from_es(
-                gdf_edges=network.edges, gdf_nodes=network.nodes,
-                directed=directed)
-        else:
-            self.graph = self.from_vs(
-                gdf_nodes=network.nodes, directed=directed)
-
-    def _remove_namecol(self, gdf_nodes):
-        if gdf_nodes is not None:
-            if hasattr(gdf_nodes, 'name'):
-                gdf_nodes = gdf_nodes.drop('name', axis=1)
-        return gdf_nodes
-    
-    def from_es(self, gdf_edges, gdf_nodes=None, directed=False):
-        return ig.Graph.DataFrame(
-            gdf_edges, vertices=self._remove_namecol(gdf_nodes), directed=directed)
-
-    def from_vs(self, gdf_nodes, directed=False):
-        gdf_nodes = self._remove_namecol(gdf_nodes)
-        vertex_attrs = gdf_nodes.to_dict('list')
-        return ig.Graph(
-            n=len(gdf_nodes),vertex_attrs=vertex_attrs, directed=directed)
-
