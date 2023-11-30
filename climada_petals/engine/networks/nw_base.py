@@ -78,6 +78,7 @@ class Network:
             id_counter_nodes += len(node_gdf)
             edges = pd.concat([edges, edge_gdf])
             nodes = pd.concat([nodes, node_gdf])
+        edges[['from_id', 'to_id']] = edges[['from_id', 'to_id']].astype(int)
 
         return Network(edges=edges.reset_index(drop=True),
                        nodes=nodes.reset_index(drop=True))
