@@ -16,7 +16,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Make network base classes (data containers)
+Make network base classes and Graph base class (data containers)
 """
 
 import logging
@@ -100,3 +100,45 @@ class Network:
             geometry='geometry', crs='EPSG:4326')
 
         return Network(edges=edges, nodes=nodes)
+
+
+class Graph():
+    """
+    creates an igraph graph object 
+    """
+
+    def __init__(self, network, directed=False):
+        """
+        network : instance of networks.nw_base.Network
+        """
+        self.directed = directed
+
+        if not network.edges.empty:
+            self.graph = self._from_es(
+                gdf_edges=network.edges, gdf_nodes=network.nodes)
+        else:
+            self.graph = self._from_vs(
+                gdf_nodes=network.nodes)
+
+    def _remove_namecol(self, gdf_nodes):
+        if gdf_nodes is not None:
+            if hasattr(gdf_nodes, 'name'):
+                gdf_nodes = gdf_nodes.drop('name', axis=1)
+        return gdf_nodes
+
+    def _from_es(self, gdf_edges, gdf_nodes=None):
+        return ig.Graph.DataFrame(
+            gdf_edges,
+            vertices=self._remove_namecol(gdf_nodes),
+            directed=self.directed)
+
+    def _from_vs(self, gdf_nodes):
+        gdf_nodes = self._remove_namecol(gdf_nodes)
+        vertex_attrs = gdf_nodes.to_dict('list')
+        return ig.Graph(
+            n=len(gdf_nodes),
+            vertex_attrs=vertex_attrs,
+            directed=self.directed)
+
+    def return_network(self):
+        return Network.from_graphs([self.graph])

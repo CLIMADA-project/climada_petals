@@ -22,7 +22,7 @@ import pyproj
 from tqdm import tqdm
 import scipy
 
-from climada_petals.engine.networks.nw_base import Network
+from climada_petals.engine.networks.nw_base import Network, Graph
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
                                                      _ckdnearest,
                                                      _preselect_destinations)
@@ -30,48 +30,6 @@ from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
-
-
-class Graph():
-    """
-    creates an igraph graph object 
-    """
-
-    def __init__(self, network, directed=False):
-        """
-        network : instance of networks.nw_base.Network
-        """
-        self.directed = directed
-
-        if not network.edges.empty:
-            self.graph = self._from_es(
-                gdf_edges=network.edges, gdf_nodes=network.nodes)
-        else:
-            self.graph = self._from_vs(
-                gdf_nodes=network.nodes)
-
-    def _remove_namecol(self, gdf_nodes):
-        if gdf_nodes is not None:
-            if hasattr(gdf_nodes, 'name'):
-                gdf_nodes = gdf_nodes.drop('name', axis=1)
-        return gdf_nodes
-
-    def _from_es(self, gdf_edges, gdf_nodes=None):
-        return ig.Graph.DataFrame(
-            gdf_edges,
-            vertices=self._remove_namecol(gdf_nodes),
-            directed=self.directed)
-
-    def _from_vs(self, gdf_nodes):
-        gdf_nodes = self._remove_namecol(gdf_nodes)
-        vertex_attrs = gdf_nodes.to_dict('list')
-        return ig.Graph(
-            n=len(gdf_nodes),
-            vertex_attrs=vertex_attrs,
-            directed=self.directed)
-
-    def return_network(self):
-        return Network.from_graphs([self.graph])
 
 
 class GraphCalcs():
