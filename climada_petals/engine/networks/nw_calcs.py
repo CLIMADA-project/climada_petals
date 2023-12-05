@@ -65,7 +65,7 @@ def link_clusters(graph, dist_thresh=np.inf, metres=True, link_attrs=None):
     v_ids_target = []
 
     # very rough conversion from metres to degrees
-    dist_thresh = dist_thresh/(ONE_LAT_KM*1000)
+    dist_thresh /= (ONE_LAT_KM*1000)
 
     for member in np.unique(gdf_vs['membership']):
         gdf_a = gdf_vs[gdf_vs['membership'] == member]
@@ -91,7 +91,7 @@ def link_clusters(graph, dist_thresh=np.inf, metres=True, link_attrs=None):
 
 
 def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
-                            dist_thresh=None, bidir=False, k=5):
+                            dist_thresh=np.inf, bidir=False, k=5):
     """
     find k nearest source vertices for each target vertex,
     given distance constraints and identifying attributes
@@ -107,6 +107,7 @@ def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
     -------
     graph
     """
+
     # select only those for which specified attrs apply
     gdf_vs_target = graph.graph.get_vertex_dataframe()
     for key, value in target_attrs.items():
@@ -117,10 +118,10 @@ def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
     for key, value in target_attrs.items():
         gdf_vs_source = gdf_vs_source[gdf_vs_source[key] == value]
 
-    v_ids_source, v_ids_target = graph._select_closest_k(
+    v_ids_source, v_ids_target = _select_closest_k(
         gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
 
-    graph._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
+    graph = _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs)
 
     return graph
 
@@ -164,6 +165,14 @@ def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
     """
     add edges to graph given source and target vertex lists
     adds geometries, edge lengths, edge names and func states as attributes
+
+    Parameters
+    ----------
+    graph : nw_base.Graph object
+
+    Returns
+    -------
+    graph : nw_base.Graph object
     """
     pairs = list(zip(v_ids_source, v_ids_target))
 
@@ -178,6 +187,42 @@ def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
 
     return graph
 
+
+def _select_closest_k(gdf_vs_source, gdf_vs_target, dist_thresh,
+                      bidir=False, k=5):
+    """
+    Parameters
+    ----------
+
+    Returns
+    -------
+    list, list
+    """
+
+    # crappy conversion of metres to degrees
+    dist_thresh /= (ONE_LAT_KM*1000)
+
+    # index matches, in format (#target vs, k). nans for those without matches
+    __, ix_matches = _ckdnearest(gdf_vs_target, gdf_vs_source, k=k,
+                                 dist_thresh=dist_thresh)
+    # broadcast target indices to same format
+    ix_matches = ix_matches.flatten()
+    v_ids_target = np.array(np.broadcast_to(
+        np.array([gdf_vs_target.id]).T, (len(gdf_vs_target), k)).flatten())
+    v_ids_target = v_ids_target[~np.isnan(ix_matches)]
+    v_ids_source = np.array(
+        gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].id)
+
+    if bidir:
+        v_ids_target = np.append(v_ids_target, v_ids_source)
+        v_ids_source = np.append(v_ids_source, v_ids_target)
+
+    return list(v_ids_source), list(v_ids_target)
+
+
+# =============================================================================
+# Old class methods
+# =============================================================================
 
 class GraphCalcs():
 
