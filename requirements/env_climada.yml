@@ -3,7 +3,8 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - scikit-image>=0.21
-  - pymrio>=0.5.2
-  - osm-flex>=1.1.1
   - overpy
+  - pymrio>=0.5
+  - scikit-image>=0.22
+  #- pip:
+  #    - osm-flex>=1.1.1
