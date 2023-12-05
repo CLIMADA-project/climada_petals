@@ -14,7 +14,7 @@ Added dependencies:
 
 - `pymrio` >=5.2.0
 - `overpy`
--  `osm-flex` >=1.1.1
+- `osm-flex` >=1.1.1
 
 ### Added
 
