@@ -98,7 +98,7 @@ class OSMApiQuery:
 
     def _assemble_from_relations(self, result):
         """
-        pick out those nodes and ways from resul instance that belong to
+        pick out those nodes and ways from result instance that belong to
         relations. Assemble relations into gdfs. Keep track of which nodes
         and ways have been "used up" already
 
