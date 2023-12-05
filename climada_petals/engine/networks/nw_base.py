@@ -41,7 +41,7 @@ class Network:
                 geometry='geometry', crs='EPSG:4326')
         if nodes.empty:
             nodes = gpd.GeoDataFrame(
-                columns=['name_id', 'orig_id', 'geometry'],
+                columns=['id', 'orig_id', 'geometry'],
                 geometry='geometry', crs='EPSG:4326')
 
         if not hasattr(edges, 'orig_id'):
@@ -63,7 +63,7 @@ class Network:
             columns=['from_id', 'to_id', 'orig_id', 'geometry'],
             geometry='geometry', crs='EPSG:4326')
         nodes = gpd.GeoDataFrame(
-            columns=['name_id', 'orig_id', 'geometry'],
+            columns=['id', 'orig_id', 'geometry'],
             geometry='geometry', crs='EPSG:4326')
 
         id_counter_nodes = 0
@@ -73,8 +73,8 @@ class Network:
             node_gdf = net.nodes.reset_index(drop=True)
             edge_gdf['from_id'] = edge_gdf['from_id'] + id_counter_nodes
             edge_gdf['to_id'] = edge_gdf['to_id'] + id_counter_nodes
-            node_gdf['name_id'] = range(id_counter_nodes,
-                                        id_counter_nodes+len(node_gdf))
+            node_gdf['id'] = range(id_counter_nodes,
+                                   id_counter_nodes+len(node_gdf))
             id_counter_nodes += len(node_gdf)
             edges = pd.concat([edges, edge_gdf])
             nodes = pd.concat([nodes, node_gdf])
@@ -96,7 +96,7 @@ class Network:
             {'source': 'from_id', 'target': 'to_id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
         nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
-        ).rename({'vertex ID': 'name_id'}, axis=1),
+        ).rename({'vertex ID': 'id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
 
         return Network(edges=edges, nodes=nodes)

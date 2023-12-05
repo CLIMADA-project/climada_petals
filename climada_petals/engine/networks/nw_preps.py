@@ -888,8 +888,8 @@ def _vcols_to_graphorder(nodes):
     Parameters
     ----------
     """
-    return nodes.reindex(['name_id'] + [x for x in list(nodes)
-                         if x not in ['name_id']], axis=1)
+    return nodes.reindex(['id'] + [x for x in list(nodes)
+                         if x not in ['id']], axis=1)
 
 
 # =============================================================================

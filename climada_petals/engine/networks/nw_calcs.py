@@ -21,6 +21,7 @@ import numpy as np
 import pyproj
 from tqdm import tqdm
 import scipy
+from copy import deepcopy
 
 from climada_petals.engine.networks.nw_base import Network, Graph
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
@@ -32,6 +33,152 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
 
 
+# =============================================================================
+# Making links
+# =============================================================================
+
+def link_clusters(graph, dist_thresh=np.inf, metres=True, link_attrs=None):
+    """
+    link nodes from different clusters to their nearest nodes in other
+    clusters to generate one connected graph.
+
+    Parameters
+    ----------
+    graph : nw_base.Graph object
+    dist_thresh : float
+        distance threshold up to where clusters can be linked
+    metres : bool
+        whether distance is in metres
+
+    Returns
+    -------
+    graph_linked
+    """
+
+    # TODO: this may cause a memory failure for large graphs on a normal computer
+    graph_linked = deepcopy(graph)
+
+    gdf_vs = graph_linked.graph.get_vertex_dataframe()
+    gdf_vs['membership'] = graph_linked.graph.connected_components().membership
+
+    v_ids_source = []
+    v_ids_target = []
+
+    # very rough conversion from metres to degrees
+    dist_thresh = dist_thresh/(ONE_LAT_KM*1000)
+
+    for member in np.unique(gdf_vs['membership']):
+        gdf_a = gdf_vs[gdf_vs['membership'] == member]
+        gdf_b = gdf_vs[gdf_vs['membership'] != member]
+        try:
+            dists, ix_match = _ckdnearest(
+                gdf_a, gdf_b, dist_thresh=dist_thresh)
+            source = gdf_a.iloc[np.where(dists == min(dists))[
+                0]].index[0]
+            target = gdf_b.loc[ix_match[np.where(dists == min(dists))[
+                0]]].index[0]
+            v_ids_source.append(source)
+            v_ids_target.append(target)
+        except (IndexError, KeyError):
+            # if no match within given distance
+            continue
+
+    if len(v_ids_source) > 0:
+        graph_linked = _edges_from_vlists(
+            graph_linked, v_ids_source, v_ids_target, link_attrs)
+
+    return graph_linked
+
+
+def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
+                            dist_thresh=None, bidir=False, k=5):
+    """
+    find k nearest source vertices for each target vertex,
+    given distance constraints and identifying attributes
+
+    Parameters
+    ----------
+    graph : nw_base.Graph object
+    source_attrs : dict {attr_name_s1 : attr_val_s1, ..., }
+    target_attrs : dict {attr_name_t1 : attr_val_t1, ..., }
+
+
+    Returns
+    -------
+    graph
+    """
+    # select only those for which specified attrs apply
+    gdf_vs_target = graph.graph.get_vertex_dataframe()
+    for key, value in target_attrs.items():
+        gdf_vs_target = gdf_vs_target[gdf_vs_target[key] == value]
+
+    # select only those for which specified attrs apply
+    gdf_vs_source = graph.graph.get_vertex_dataframe()
+    for key, value in target_attrs.items():
+        gdf_vs_source = gdf_vs_source[gdf_vs_source[key] == value]
+
+    v_ids_source, v_ids_target = graph._select_closest_k(
+        gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
+
+    graph._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
+
+    return graph
+
+
+def link_vertices_edgecond(graph, source_attrs, target_attrs, edge_attrs,
+                           link_attrs):
+    """
+    make a dependency edge between two vertices if another edge with a 
+    certain attribute (specified in edge_attrs) already exists between those 
+    two.
+    Primarily intended for dependency_road_people, given that a road exists
+    directly at people node.
+
+    Parameters
+    ----------
+    graph : nw_base.Graph object
+
+    Returns
+    -------
+    graph
+    """
+    vs_target = graph.graph.vs.select(ci_type=target_ci)
+
+    pot_edges = [graph.graph.incident(v_target, mode='in')
+                 for v_target in vs_target]
+    pot_edges = [item for sublist in pot_edges for item in sublist]
+    select_edges = graph.graph.es[pot_edges].select(
+        ci_type=edge_type).select(func_tot_gt=0)
+
+    graph._edges_from_vlists([edge.source for edge in select_edges],
+                             [edge.target for edge in select_edges], link_attrs)
+
+    return graph
+
+
+# =============================================================================
+# Helper funcs for making links
+# =============================================================================
+
+def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
+    """
+    add edges to graph given source and target vertex lists
+    adds geometries, edge lengths, edge names and func states as attributes
+    """
+    pairs = list(zip(v_ids_source, v_ids_target))
+
+    link_attrs['geometry'] = make_edge_geometries(
+        graph.graph.vs[v_ids_source]['geometry'],
+        graph.graph.vs[v_ids_target]['geometry'])
+
+    link_attrs['distance'] = [pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
+                              for edge_geom in link_attrs['geometry']]
+
+    graph.graph.add_edges(pairs, attributes=link_attrs)
+
+    return graph
+
+
 class GraphCalcs():
 
     def __init__(self, graph):
@@ -39,62 +186,6 @@ class GraphCalcs():
         graph : instance of igraph.Graph
         """
         self.graph = graph
-
-    def _edges_from_vlists(self, v_ids_source, v_ids_target, link_name=None,
-                           lengths=None):
-        """
-        add edges to graph given source and target vertex lists
-        adds geometries, edge lengths, edge names and func states as attributes
-        """
-        pairs = list(zip(v_ids_source, v_ids_target))
-
-        edge_geoms = make_edge_geometries(
-            self.graph.vs[v_ids_source]['geometry'],
-            self.graph.vs[v_ids_target]['geometry'])
-
-        if lengths is None:
-            lengths = [pyproj.Geod(ellps='WGS84').geometry_length(edge_geom) for
-                       edge_geom in edge_geoms]
-
-        self.graph.add_edges(pairs, attributes={
-            'geometry': edge_geoms, 'ci_type': [link_name],
-            'distance': lengths, 'func_internal': 1,
-            'func_tot': 1, 'imp_dir': 0})
-
-    def link_clusters(self, dist_thresh=np.inf):
-        """
-        link nodes from different clusters to their nearest nodes in other
-        clusters to generate one connected graph.
-        """
-
-        gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs['membership'] = self.graph.clusters().membership
-
-        source_ix = []
-        target_ix = []
-
-        # very rough conversion from metres to degrees
-        dist_thresh = dist_thresh/(ONE_LAT_KM*1000)
-
-        for member in range(len(self.graph.clusters())):
-            gdf_a = gdf_vs[gdf_vs['membership'] == member]
-            gdf_b = gdf_vs[gdf_vs['membership'] != member]
-            try:
-                dists, ix_match = _ckdnearest(
-                    gdf_a, gdf_b, dist_thresh=dist_thresh)
-                source = gdf_a.iloc[np.where(dists == min(dists))[
-                    0]].name.values[0]
-                target = gdf_b.loc[ix_match[np.where(dists == min(dists))[
-                    0]]].name.values[0]
-                source_ix.append(source)
-                target_ix.append(target)
-                link_name = gdf_vs.ci_type[0]
-            except (IndexError, KeyError):
-                # if no match within given distance
-                continue
-
-        if len(source_ix) > 0:
-            self._edges_from_vlists(source_ix, target_ix, link_name)
 
     def _select_closest_k(self, gdf_vs_source, gdf_vs_target, dist_thresh=None,
                           bidir=False, k=5):
