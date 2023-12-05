@@ -343,3 +343,4 @@ class OSMApiQuery:
         gdf_result['geometry'] = self._osm_geoms_to_gis(gdf_result)
 
         return gdf_result
+        
