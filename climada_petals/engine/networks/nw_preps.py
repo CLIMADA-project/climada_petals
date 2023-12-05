@@ -95,7 +95,7 @@ def add_topology(network, id_col='id'):
     nodes = network.nodes.copy()
     edges = network.edges.copy()
 
-    sindex = shapely.STRtree(network.nodes.geometry)
+    sindex = shapely.STRtree(nodes.geometry)
     for edge in tqdm(
             edges.itertuples(), desc="topology", total=len(edges)):
         start, end = line_endpoints(edge.geometry)
@@ -207,7 +207,7 @@ def get_endpoints(network):
             endpoints.append(end)
 
     # create dataframe to match the nodes geometry column name
-    return gpd.GeoSeries(endpoints, crs='EPSG:4326')
+    return gpd.GeoDataFrame(geometry=endpoints, crs='EPSG:4326')
 
 
 def add_endpoints(network):

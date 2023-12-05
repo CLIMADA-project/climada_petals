@@ -37,7 +37,7 @@ class Network:
         """
         if edges.empty:
             edges = gpd.GeoDataFrame(
-                columns=['from_id', 'to_id', 'orig_id', 'geometry'],
+                columns=['from_id', 'to_id', 'id', 'orig_id', 'geometry'],
                 geometry='geometry', crs='EPSG:4326')
         if nodes.empty:
             nodes = gpd.GeoDataFrame(
@@ -48,6 +48,12 @@ class Network:
             edges['orig_id'] = range(len(edges))
         if not hasattr(nodes, 'orig_id'):
             nodes['orig_id'] = range(len(nodes))
+
+        if not hasattr(edges, 'id'):
+            edges['id'] = range(len(edges))
+        if not hasattr(nodes, 'id'):
+            nodes['id'] = range(len(nodes))
+
         if not hasattr(edges, 'osm_id'):
             edges['osm_id'] = range(len(edges))
 
@@ -88,15 +94,18 @@ class Network:
         """
         make one network object out of several graph objects
         """
-        graph = ig.Graph(directed=graphs[0].is_directed())
+        graph = ig.Graph(directed=graphs[0].directed)
         for gra in graphs:
-            graph += gra
+            graph += gra.graph
 
         edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
             {'source': 'from_id', 'target': 'to_id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
-        nodes = gpd.GeoDataFrame(graph.get_vertex_dataframe().reset_index(
-        ).rename({'vertex ID': 'id'}, axis=1),
+        nodes = graph.get_vertex_dataframe()
+        if 'id' in nodes.columns:
+            nodes.pop('id')
+        nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
+            {'vertex ID': 'id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
 
         return Network(edges=edges, nodes=nodes)
@@ -141,4 +150,4 @@ class Graph():
             directed=self.directed)
 
     def return_network(self):
-        return Network.from_graphs([self.graph])
+        return Network.from_graphs([self])
