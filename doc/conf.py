@@ -247,10 +247,6 @@ def remove_module_docstring(app, what, name, obj, options, lines):
 
 autodoc_member_order = "bysource"
 
-# Mock these modules instead of importing them when creating the docs
-# TODO: Mocking modules should not be necessary when the docs environment is up-to-date
-autodoc_mock_imports = ["dantro", "cdsapi", "xesmf"]
-
 def setup(app):
     app.connect("autodoc-skip-member", skip)
     app.connect("autodoc-process-docstring", remove_module_docstring)
