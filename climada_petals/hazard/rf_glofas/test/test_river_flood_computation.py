@@ -349,7 +349,6 @@ class TestRiverFloodInundation(unittest.TestCase):
         return_period_resample.assert_not_called()
         regrid.assert_called_once()
         self.assertEqual(flood_depth.call_count, 2)
-        print(ds_result["flood_depth"])
         xrt.assert_equal(ds_result["flood_depth"], self.flood_maps)
         xrt.assert_equal(ds_result["flood_depth_flopros"], self.flood_maps)
 
