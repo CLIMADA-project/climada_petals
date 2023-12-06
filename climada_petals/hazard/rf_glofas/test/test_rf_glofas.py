@@ -180,11 +180,12 @@ class TestGlofasDownloadOps(unittest.TestCase):
             "2022-01-01",
             None,
             1,
-            preprocess=lambda x: x.max(dim="x").rename_vars(time="year"),
+            preprocess=lambda x: x.max(dim="x").rename(time="year"),
             open_mfdataset_kw=dict(concat_dim="year"),
         )
-        self.assertNotIn("time", ds)
-        self.assertNotIn("x", ds)
+        self.assertIn("year", ds.dims)
+        self.assertNotIn("time", ds.dims)
+        self.assertNotIn("x", ds.dims)
         npt.assert_array_equal(ds["year"].data, [0, 1])
         npt.assert_array_equal(ds.data, [2, 12])
 
