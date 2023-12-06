@@ -21,7 +21,6 @@ Define RiverFlood class.
 
 __all__ = ['RiverFlood']
 
-from typing import Union
 import logging
 import datetime as dt
 import copy
@@ -40,8 +39,6 @@ from climada.util.constants import RIVER_FLOOD_REGIONS_CSV
 import climada.util.coordinates as u_coord
 from climada.hazard.base import Hazard
 from climada.hazard.centroids import Centroids
-
-# from .rf_glofas import GloFASRiverFlood
 
 NATID_INFO = pd.read_csv(RIVER_FLOOD_REGIONS_CSV)
 
