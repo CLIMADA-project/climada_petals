@@ -25,7 +25,7 @@ import multiprocessing as mp
 from copy import deepcopy
 from typing import Iterable, Mapping, Any, Optional, List, Union
 from itertools import repeat
-from datetime import date, timedelta
+from datetime import date
 import logging
 
 from cdsapi import Client
@@ -68,7 +68,7 @@ DEFAULT_REQUESTS = {
         "year": "2022",
         "month": "08",
         "day": "01",
-        "leadtime_hour": list(map(str, (np.arange(1, 31, dtype=np.int_) * 24).flat)),
+        "leadtime_hour": (np.arange(1, 31) * 24).astype(str).tolist(),
     },
 }
 """Default request keyword arguments to be updated by the user requests"""
@@ -219,52 +219,34 @@ def glofas_request(
         year_from = int(date_from)
         year_to = int(date_to) if date_to is not None else year_from
 
-        # Create request dict
-        def get_request_historical(year: int):
-            request = deepcopy(default_request)
-            request.update(hyear=str(year))
-            return request
-
         # List up all requests
-        glofas_product = f"cems-glofas-{product}"
         years = list(range(year_from, year_to + 1))
-        requests = [get_request_historical(year) for year in years]
-        outfiles = [
-            Path(output_dir, f"glofas-{product}-{year:04}.grib") for year in years
-        ]
+        requests = [{"hyear": str(year)} for year in years]
+        outfiles = [f"{product}-{year:04}" for year in years]
 
     elif product == "forecast":
         # Download single date if 'date_to' is 'None'
         date_from: date = date.fromisoformat(date_from)
-        date_to: date = (
-            date.fromisoformat(date_to) if date_to is not None else date_from
-        )
-
-        # Switch file extension based on selected format
-        file_ext = "grib" if default_request["format"] == "grib" else "nc"
-
-        # Create request dict
-        def get_request_forecast(ddate: date):
-            request = deepcopy(default_request)
-            request.update(
-                year=str(ddate.year), month=f"{ddate.month:02d}", day=f"{ddate.day:02d}"
-            )
-            return request
+        date_to: date = date.fromisoformat(date_to) if date_to is not None else date_from
 
         # List up all requests
-        glofas_product = f"cems-glofas-{product}"
         dates = pd.date_range(date_from, date_to, freq="D", inclusive="both").date
-        requests = [get_request_forecast(d) for d in dates]
-        product_id = default_request["product_type"].split("_")[0]
-        outfiles = [
-            Path(
-                output_dir, f"glofas-{product}-{product_id}-{d.isoformat()}.{file_ext}"
-            )
+        requests = [
+            {"year": str(d.year), "month": f"{d.month:02d}", "day": f"{d.day:02d}"}
             for d in dates
         ]
+        product_id = default_request["product_type"].split("_")[0]
+        outfiles = [f"{product}-{product_id}-{d.isoformat()}" for d in dates]
 
     else:
         NotImplementedError()
+
+    # Switch file extension based on selected format
+    file_ext = "grib" if default_request["format"] == "grib" else "nc"
+
+    requests = [{**default_request, **req} for req in requests]
+    outfiles = [Path(output_dir, f"glofas-{stem}.{file_ext}") for stem in outfiles]
+    glofas_product = f"cems-glofas-{product}"
 
     # Execute request
     glofas_request_multiple(
