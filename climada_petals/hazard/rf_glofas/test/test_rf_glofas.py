@@ -219,7 +219,9 @@ class TestTransformOps(unittest.TestCase):
         #       (we typically compute a maximum over multiple time steps)
         da = xr.DataArray(
             data=[[0], [1], [2], [3]],
-            coords=dict(step=np.arange(np.timedelta64(4, "D")).astype("timedelta64[ns]"), x=[0]),
+            coords=dict(
+                step=np.arange(np.timedelta64(4, "D")).astype("timedelta64[ns]"), x=[0]
+            ),
         )
 
         # Test how it's regularly called
@@ -303,13 +305,17 @@ class TestTransformOps(unittest.TestCase):
         x = np.arange(10)
         y = np.arange(20, 10, -1)
         z = np.linspace(0, 5, 11)
-        values = np.multiply.outer(np.outer(x, y), z)
+
+        # NOTE: np.multiply.outer does not flatten input
+        values = np.multiply.outer(np.outer(x, y), z).astype("float")
         discharge = xr.DataArray(values, coords=dict(longitude=x, latitude=y, time=z))
-        gev = xr.DataArray(np.outer(x, y), coords=dict(longitude=x, latitude=y))
+        gev = xr.DataArray(
+            np.outer(x, y).astype("float"), coords=dict(longitude=x, latitude=y)
+        )
 
         # Test special sample values
         samples = gev.copy()
-        samples[0, 0] = 0
+        samples[0, 0] = 0.0
         samples[0, 1] = np.nan
         samples[1, 0] = np.inf
 
@@ -439,7 +445,7 @@ class TestTransformOps(unittest.TestCase):
     def test_flood_depth(self):
         """Test 'flood_depth' operation"""
         # Create dummy datasets
-        ones = np.ones((4, 3))
+        ones = np.ones((4, 3), dtype="float")
         da_flood_maps = xr.DataArray(
             data=[ones, ones * 10, ones * 100],
             dims=["return_period", "longitude", "latitude"],
@@ -457,6 +463,7 @@ class TestTransformOps(unittest.TestCase):
         shape = (x.size, y.size, core_dim_1.size, core_dim_2.size)
         values = np.array(
             list(range(x.size * y.size * core_dim_1.size * core_dim_2.size)),
+            dtype="float",
         )
         values = values.reshape(shape) + self.rng.uniform(-0.1, 0.1, size=shape)
         values.flat[0] = 101  # Above max
@@ -525,7 +532,9 @@ class TestTransformOps(unittest.TestCase):
         y = np.arange(10, 20)
         xx, yy = np.meshgrid(x, y, indexing="xy")
         values = xx + yy
-        target = xr.DataArray(values, dims=["y", "x"], coords=dict(x=x, y=y))
+        target = xr.DataArray(
+            values.astype("float"), dims=["y", "x"], coords=dict(x=x, y=y)
+        )
 
         # Define source
         x_diff = x + self.rng.uniform(-0.1, 0.1, size=x.shape)
