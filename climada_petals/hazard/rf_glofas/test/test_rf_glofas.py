@@ -219,7 +219,7 @@ class TestTransformOps(unittest.TestCase):
         #       (we typically compute a maximum over multiple time steps)
         da = xr.DataArray(
             data=[[0], [1], [2], [3]],
-            coords=dict(step=[np.timedelta64(i, "D") for i in range(4)], x=[0]),
+            coords=dict(step=np.arange(np.timedelta64(4, "D")).astype("timedelta64[ns]"), x=[0]),
         )
 
         # Test how it's regularly called
