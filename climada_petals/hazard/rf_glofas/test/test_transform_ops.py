@@ -610,7 +610,7 @@ class TestTransformOps(unittest.TestCase):
         ds.data_vars = ["foo", "bar"]
 
         # Call the function
-        outpath = Path(tempfile.TemporaryDirectory().name) / "outfile"
+        outpath = Path(tempfile.gettempdir()) / "outpath"
         encoding = dict(bar=dict(dtype="float64", some_setting=True))
         encoding_defaults = dict(zlib=True, other_setting=False)
 

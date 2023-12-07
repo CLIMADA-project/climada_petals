@@ -26,6 +26,10 @@ class TestMaybeOpenDataArray(unittest.TestCase):
         self.filename = Path(self.tempdir.name) / "file.nc"
         self.arr_2.to_netcdf(self.filename)
 
+    def tearDown(self):
+        """Clean up temporary directory"""
+        self.tempdir.cleanup()
+
     @patch("climada_petals.hazard.rf_glofas.river_flood_computation.xr.open_dataarray")
     def test_with_arr(self, open_dataarray_mock):
         """Check behavior if array is given"""
@@ -92,6 +96,11 @@ class TestRiverFloodInundation(unittest.TestCase):
         )
         Path(cls.temppath / "FLOPROS_shp_V1").mkdir()
         cls.flopros.to_file(cls.temppath / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp")
+
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up the temporary directory"""
+        cls.tempdir.cleanup()
 
     def setUp(self):
         """Initialize the class instance"""

@@ -173,6 +173,7 @@ class RiverFloodInundation:
             (see above for configuration). This directory (and all its parents) will be
             created.
         """
+        self._tempdir = None
         data_dir = Path(data_dir)
         if not data_dir.is_dir():
             raise FileNotFoundError(f"'data_dir' does not exist: {data_dir}")
@@ -186,6 +187,12 @@ class RiverFloodInundation:
         self.flopros = gpd.read_file(data_dir / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp")
         self.regridder = None
         self._create_tempdir(cache_dir=cache_dir)
+
+    def __del__(self):
+        """Upon deletion, make sure the temporary directory is cleaned up"""
+        # NOTE: Deletion might also happen when __init__ did not succeed/conclude!
+        if self._tempdir is not None:
+            self._tempdir.cleanup()
 
     def _create_tempdir(self, cache_dir: Union[Path, str]):
         """Create a temporary directory inside the top-level cache dir
