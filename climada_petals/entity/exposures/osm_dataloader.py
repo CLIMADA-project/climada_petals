@@ -34,33 +34,26 @@ class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
 
-    area: tuple (xmin, ymin, xmax, ymax), list [xmin, ymin, xmax, ymax]
-        or shapely.geometry.Polygon
-    query: str
+    area: tuple (xmin, ymin, xmax, ymax)
+    condition: str
         must be of format '["key"]' or '["key"="value"]', etc.
     """
 
     def __init__(self, area, condition):
-        self.area = self._area_to_queryformat(area)
-        self.condition = condition
+    self.area = area
+    self.condition = condition
 
-    def _area_to_queryformat(self, area):
-        """
-        reformat lat/lon info as in OSM convention, meaning
-        bbox: (S,W,N,E) instead of (xmin, ymin, xmax, ymax)
-        Points: lat / lon instead of (x,y)
-        """
-        if isinstance(area, (tuple, list)):
-            xmin, ymin, xmax, ymax = area
-            return (ymin, xmin, ymax, xmax)
+    @classmethod
+    def from_bounding_box(cls, bbox, condition):
+        # Maybe need to make sure that bbox is what you expect it is?
+        xmin, ymin, xmax, ymax = bbox
+        return cls((ymin, xmin, ymax, xmax), condition)
 
-        if isinstance(area, shapely.geometry.Polygon):
-            lon, lat = area.exterior.coords.xy
-            lat_lon_str = " ".join([str(y)+" "+str(x)
-                                   for y, x in zip(lat, lon)])
-            return f'(poly:"{lat_lon_str}")'
-
-        return None
+    @classmethod
+    def from_polygon(cls, polygon, condition):
+        lon, lat = polygon.exterior.coords.xy
+        lat_lon_str = " ".join([str(y)+" "+str(x) for y, x in zip(lat, lon)])
+        return cls(area=f'(poly:"{lat_lon_str}")', condition=condition)
 
     def _insistent_osm_api_query(self, query_clause, read_chunk_size=100000,
                                  end_of_patience=127):

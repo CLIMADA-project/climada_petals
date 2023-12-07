@@ -36,7 +36,7 @@ class TestOSMApiQuery(unittest.TestCase):
         """test OSMAPIQuery instance"""
         area = (8.5327506, 47.368260, 8.5486078, 47.376877)
         cond = '["building"]'
-        TestAPIQuery = osm_dl.OSMApiQuery(area, cond)
+        TestAPIQuery = osm_dl.OSMApiQuery().from_bounding_box(area, cond)
         self.assertTrue(hasattr(TestAPIQuery, 'area'))
         self.assertTrue(hasattr(TestAPIQuery, 'condition'))
 
@@ -52,15 +52,13 @@ class TestOSMApiQuery(unittest.TestCase):
         # Two examples for query conditions:
         cond = '["amenity"="place_of_worship"]'
 
-        area_test_bb = osm_dl.OSMApiQuery(
-            area_bbox, cond)._area_to_queryformat(area_bbox)
-        area_test_poly = osm_dl.OSMApiQuery(
-            area_poly, cond)._area_to_queryformat(area_poly)
+        osm_qu_bb = osm_dl.OSMApiQuery().from_bounding_box(area_bbox, cond)
+        osm_qu_py = osm_dl.OSMApiQuery().from_polygon(area_poly, cond)
 
         self.assertEqual(
-            area_test_bb, (47.36826, 8.5327506, 47.376877, 8.5486078))
+            osm_qu_bb.area, (47.36826, 8.5327506, 47.376877, 8.5486078))
         self.assertEqual(
-            area_test_poly,
+            osm_qu_py.area,
             '(poly:"47.36826 8.5327506 47.376877 8.5486078 47.39 8.5486078 47.36826 8.5327506")')
 
     def test_insistent_osm_api_query(self):
@@ -77,9 +75,9 @@ class TestOSMApiQuery(unittest.TestCase):
         condition_building = '["building"]'
         condition_church = '["amenity"="place_of_worship"]'
 
-        q1 = osm_dl.OSMApiQuery(
+        q1 = osm_dl.OSMApiQuery().from_bounding_box(
             area_bbox, condition_building)._overpass_query_string()
-        q2 = osm_dl.OSMApiQuery(
+        q2 = osm_dl.OSMApiQuery.from_polygon(
             area_poly, condition_church)._overpass_query_string()
 
         self.assertEqual(
@@ -121,9 +119,9 @@ class TestOSMApiQuery(unittest.TestCase):
              (8.5486078, 47.39)])
         condition_building = '["building"]'
         condition_church = '["amenity"="place_of_worship"]'
-        gdf1 = osm_dl.OSMApiQuery(
+        gdf1 = osm_dl.OSMApiQuery().from_bounding_box(
             area_bbox, condition_building).get_data_overpass()
-        gdf2 = osm_dl.OSMApiQuery(
+        gdf2 = osm_dl.OSMApiQuery().from_polygon(
             area_poly, condition_church).get_data_overpass()
 
         self.assertTrue(len(gdf1) > 0)
