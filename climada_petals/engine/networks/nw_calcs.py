@@ -115,7 +115,7 @@ def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
 
     # select only those for which specified attrs apply
     gdf_vs_source = graph.graph.get_vertex_dataframe()
-    for key, value in target_attrs.items():
+    for key, value in source_attrs.items():
         gdf_vs_source = gdf_vs_source[gdf_vs_source[key] == value]
 
     v_ids_source, v_ids_target = _select_closest_k(
