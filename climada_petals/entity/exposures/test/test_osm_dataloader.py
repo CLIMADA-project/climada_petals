@@ -36,7 +36,7 @@ class TestOSMApiQuery(unittest.TestCase):
         """test OSMAPIQuery instance"""
         area = (8.5327506, 47.368260, 8.5486078, 47.376877)
         cond = '["building"]'
-        TestAPIQuery = osm_dl.OSMApiQuery().from_bounding_box(area, cond)
+        TestAPIQuery = osm_dl.OSMApiQuery.from_bounding_box(area, cond)
         self.assertTrue(hasattr(TestAPIQuery, 'area'))
         self.assertTrue(hasattr(TestAPIQuery, 'condition'))
 
@@ -52,8 +52,8 @@ class TestOSMApiQuery(unittest.TestCase):
         # Two examples for query conditions:
         cond = '["amenity"="place_of_worship"]'
 
-        osm_qu_bb = osm_dl.OSMApiQuery().from_bounding_box(area_bbox, cond)
-        osm_qu_py = osm_dl.OSMApiQuery().from_polygon(area_poly, cond)
+        osm_qu_bb = osm_dl.OSMApiQuery.from_bounding_box(area_bbox, cond)
+        osm_qu_py = osm_dl.OSMApiQuery.from_polygon(area_poly, cond)
 
         self.assertEqual(
             osm_qu_bb.area, (47.36826, 8.5327506, 47.376877, 8.5486078))
@@ -75,7 +75,7 @@ class TestOSMApiQuery(unittest.TestCase):
         condition_building = '["building"]'
         condition_church = '["amenity"="place_of_worship"]'
 
-        q1 = osm_dl.OSMApiQuery().from_bounding_box(
+        q1 = osm_dl.OSMApiQuer.from_bounding_box(
             area_bbox, condition_building)._overpass_query_string()
         q2 = osm_dl.OSMApiQuery.from_polygon(
             area_poly, condition_church)._overpass_query_string()
