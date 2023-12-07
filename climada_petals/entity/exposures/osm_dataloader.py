@@ -28,6 +28,7 @@ import shapely
 
 LOGGER = logging.getLogger(__name__)
 
+
 class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
@@ -48,15 +49,16 @@ class OSMApiQuery:
         bbox: (S,W,N,E) instead of (xmin, ymin, xmax, ymax)
         Points: lat / lon instead of (x,y)
         """
-        if isinstance(area,(tuple, list)):
+        if isinstance(area, (tuple, list)):
             xmin, ymin, xmax, ymax = area
             return (ymin, xmin, ymax, xmax)
 
-        if isinstance(area,shapely.geometry.Polygon):
+        if isinstance(area, shapely.geometry.Polygon):
             lon, lat = area.exterior.coords.xy
-            lat_lon_str = " ".join([str(y)+" "+str(x) for y, x in zip(lat, lon)])
+            lat_lon_str = " ".join([str(y)+" "+str(x)
+                                   for y, x in zip(lat, lon)])
             return f'(poly:"{lat_lon_str}")'
-    
+
         return None
 
     def _insistent_osm_api_query(self, query_clause, read_chunk_size=100000,
@@ -89,7 +91,8 @@ class OSMApiQuery:
                     LOGGER.warning(f"""{exc}
                                    Trying again in {waiting_period} seconds""")
                 else:
-                    raise Exception("The Overpass API is consistently unavailable")
+                    raise Exception(
+                        "The Overpass API is consistently unavailable")
             time.sleep(waiting_period)
             waiting_period *= 2
 
@@ -148,15 +151,15 @@ class OSMApiQuery:
 
             # step 1: polygons to multipolygons
             inner_mp = shapely.geometry.MultiPolygon(
-                gdf_polys.geometry[(gdf_polys.geometry.type=='Polygon') &
-                                   (gdf_polys.role=='inner')].values)
+                gdf_polys.geometry[(gdf_polys.geometry.type == 'Polygon') &
+                                   (gdf_polys.role == 'inner')].values)
             outer_mp = shapely.geometry.MultiPolygon(
-                gdf_polys.geometry[(gdf_polys.geometry.type=='Polygon') &
-                                   (gdf_polys.role=='outer')].values)
+                gdf_polys.geometry[(gdf_polys.geometry.type == 'Polygon') &
+                                   (gdf_polys.role == 'outer')].values)
 
             # step 2: poly from lines --> multiline --> line --> polygon
             lines = gdf_polys.geometry[
-                (gdf_polys.geometry.type=='LineString')].values
+                (gdf_polys.geometry.type == 'LineString')].values
             if len(lines) > 0:
                 poly = shapely.geometry.Polygon(
                     shapely.ops.linemerge(shapely.geometry.MultiLineString(lines)))
@@ -170,8 +173,9 @@ class OSMApiQuery:
             if multipoly.area == 0:
                 LOGGER.info('Empty geometry encountered.')
 
-        gdf_rels =  gpd.GeoDataFrame(
-            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
+        gdf_rels = gpd.GeoDataFrame(
+            data={'osm_id': data_id, 'geometry': data_geom, 'tags': data_tags},
+            geometry='geometry', crs='epsg:4326')
 
         # list of lists into list:
         nodes_taken = list(itertools.chain.from_iterable(nodes_taken))
@@ -180,7 +184,6 @@ class OSMApiQuery:
         return nodes_taken, ways_taken, gdf_rels
 
     def _assemble_from_ways(self, result, ways_avail, closed_lines_are_polys):
-
         """
         pick out those nodes and ways from result instance that belong to
         ways. Assemble ways into gdfs. Keep track of which nodes
@@ -227,7 +230,8 @@ class OSMApiQuery:
                              else way for way in data_geom]
 
         gdf_ways = gpd.GeoDataFrame(
-            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
+            data={'osm_id': data_id, 'geometry': data_geom, 'tags': data_tags},
+            geometry='geometry', crs='epsg:4326')
 
         return nodes_taken, gdf_ways
 
@@ -260,7 +264,8 @@ class OSMApiQuery:
                 data_tags.append(node.tags)
 
         gdf_nodes = gpd.GeoDataFrame(
-            data={'osm_id': data_id,'geometry': data_geom, 'tags':data_tags})
+            data={'osm_id': data_id, 'geometry': data_geom, 'tags': data_tags},
+            geometry='geometry', crs='epsg:4326')
 
         return gdf_nodes
 
@@ -288,12 +293,14 @@ class OSMApiQuery:
             Result-gdf from the overpass query.
         """
         gdf_results = gdf_ways = gdf_nodes = gpd.GeoDataFrame(
-            columns=['osm_id','geometry','tags'])
+            columns=['osm_id', 'geometry', 'tags'],
+            geometry='geometry', crs='epsg:4326')
         nodes_avail = result.node_ids
         ways_avail = result.way_ids
 
         if len(result.relations) > 0:
-            nodes_taken, ways_taken, gdf_rels = self._assemble_from_relations(result)
+            nodes_taken, ways_taken, gdf_rels = self._assemble_from_relations(
+                result)
             gdf_results = gdf_results.append(gdf_rels)
             nodes_avail = self._update_availability(nodes_avail, nodes_taken)
             ways_avail = self._update_availability(ways_avail, ways_taken)
@@ -306,7 +313,7 @@ class OSMApiQuery:
 
         if len(nodes_avail) > 0:
             gdf_nodes = self._assemble_from_nodes(result, nodes_avail)
-            gdf_results =  gdf_results.append(gdf_nodes)
+            gdf_results = gdf_results.append(gdf_nodes)
 
         if len(result.nodes) == 0:
             LOGGER.warning('empty result gdf returned.')
@@ -343,4 +350,3 @@ class OSMApiQuery:
         gdf_result['geometry'] = self._osm_geoms_to_gis(gdf_result)
 
         return gdf_result
-        
