@@ -198,3 +198,4 @@ class TestGloFASRequest(unittest.TestCase):
 # Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestGloFASRequest)
+    unittest.TextTestRunner(verbosity=2).run(TESTS)
