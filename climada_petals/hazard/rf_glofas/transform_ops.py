@@ -81,7 +81,9 @@ def rp_comp(
     np.ndarray
         The return period(s) for the input parameters
     """
-    return np.minimum(1.0 / (1.0 - gumbel_r.cdf(sample, loc=loc, scale=scale)), max_rp)
+    cdf = gumbel_r.cdf(sample, loc=loc, scale=scale)
+    rp_from_cdf = np.where(cdf >= 1.0, np.inf, 1.0 / np.fmax(1.0 - cdf, np.spacing(1)))
+    return np.fmin(rp_from_cdf, max_rp)
 
 
 def reindex(
