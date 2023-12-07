@@ -34,14 +34,14 @@ class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
 
-    area: tuple (xmin, ymin, xmax, ymax)
+    area: tuple (ymin, xmin, ymax, xmax)
     condition: str
         must be of format '["key"]' or '["key"="value"]', etc.
     """
 
     def __init__(self, area, condition):
-    self.area = area
-    self.condition = condition
+        self.area = area
+        self.condition = condition
 
     @classmethod
     def from_bounding_box(cls, bbox, condition):
@@ -341,6 +341,7 @@ class OSMApiQuery:
         query_clause = self._overpass_query_string()
         result = self._insistent_osm_api_query(query_clause)
         gdf_result = self._assemble_results(result, closed_lines_are_polys)
-        gdf_result = gdf_result.set_geometry(self._osm_geoms_to_gis(gdf_result))
+        gdf_result = gdf_result.set_geometry(
+            self._osm_geoms_to_gis(gdf_result))
 
         return gdf_result
