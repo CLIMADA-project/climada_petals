@@ -75,7 +75,7 @@ class TestOSMApiQuery(unittest.TestCase):
         condition_building = '["building"]'
         condition_church = '["amenity"="place_of_worship"]'
 
-        q1 = osm_dl.OSMApiQuer.from_bounding_box(
+        q1 = osm_dl.OSMApiQuery.from_bounding_box(
             area_bbox, condition_building)._overpass_query_string()
         q2 = osm_dl.OSMApiQuery.from_polygon(
             area_poly, condition_church)._overpass_query_string()
@@ -119,9 +119,9 @@ class TestOSMApiQuery(unittest.TestCase):
              (8.5486078, 47.39)])
         condition_building = '["building"]'
         condition_church = '["amenity"="place_of_worship"]'
-        gdf1 = osm_dl.OSMApiQuery().from_bounding_box(
+        gdf1 = osm_dl.OSMApiQuery.from_bounding_box(
             area_bbox, condition_building).get_data_overpass()
-        gdf2 = osm_dl.OSMApiQuery().from_polygon(
+        gdf2 = osm_dl.OSMApiQuery.from_polygon(
             area_poly, condition_church).get_data_overpass()
 
         self.assertTrue(len(gdf1) > 0)

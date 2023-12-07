@@ -34,9 +34,19 @@ class OSMApiQuery:
     """
     Queries features directly via the overpass turbo API.
 
+    Parameters
+    ----------    
     area: tuple (ymin, xmin, ymax, xmax)
     condition: str
         must be of format '["key"]' or '["key"="value"]', etc.
+
+    Note
+    -----
+    The area (bounding box) ordering in the overpass query language is different
+    from the convention in shapely / geopandas. If you directly pass area as 
+    bbox, make sure the order is (ymin, xmin, ymax, xmax).
+    If you use a classib bbox from shapely or geopandas, use the f
+    rom_bounding_box() method, which reorders the inputs!
     """
 
     def __init__(self, area, condition):
@@ -45,12 +55,28 @@ class OSMApiQuery:
 
     @classmethod
     def from_bounding_box(cls, bbox, condition):
+        """
+        Parameters
+        ----------    
+        bbox: tuple
+            bbox as given from the standard convention of a shapely / geopandas
+        bounding box as (xmin, ymin, xmax, ymax)
+        condition: str
+            must be of format '["key"]' or '["key"="value"]', etc.
+        """
         # Maybe need to make sure that bbox is what you expect it is?
         xmin, ymin, xmax, ymax = bbox
         return cls((ymin, xmin, ymax, xmax), condition)
 
     @classmethod
     def from_polygon(cls, polygon, condition):
+        """
+        Parameters
+        ----------    
+        polygon: shapely.geometry.polygon
+        condition: str
+            must be of format '["key"]' or '["key"="value"]', etc.
+        """
         lon, lat = polygon.exterior.coords.xy
         lat_lon_str = " ".join([str(y)+" "+str(x) for y, x in zip(lat, lon)])
         return cls(area=f'(poly:"{lat_lon_str}")', condition=condition)
