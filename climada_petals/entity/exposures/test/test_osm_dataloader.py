@@ -111,7 +111,7 @@ class TestOSMApiQuery(unittest.TestCase):
         """test methods of OSMApiQuery" """
         pass
 
-    def skip_test_get_data_overpass(self):
+    def test_get_data_overpass(self):
         """test methods of OSMApiQuery"""
 
         area_bbox = (8.5327506, 47.368260, 8.5486078, 47.376877)
