@@ -301,19 +301,19 @@ class OSMApiQuery:
         if len(result.relations) > 0:
             nodes_taken, ways_taken, gdf_rels = self._assemble_from_relations(
                 result)
-            gdf_results = gdf_results.append(gdf_rels)
+            gdf_results = pd.concat([gdf_results, gdf_rels], axis=0)
             nodes_avail = self._update_availability(nodes_avail, nodes_taken)
             ways_avail = self._update_availability(ways_avail, ways_taken)
 
         if len(ways_avail) > 0:
             nodes_taken, gdf_ways = self._assemble_from_ways(
                 result,  ways_avail, closed_lines_are_polys)
-            gdf_results = gdf_results.append(gdf_ways)
+            gdf_results = pd.concat([gdf_results, gdf_ways], axis=0)
             nodes_avail = self._update_availability(nodes_avail, nodes_taken)
 
         if len(nodes_avail) > 0:
             gdf_nodes = self._assemble_from_nodes(result, nodes_avail)
-            gdf_results = gdf_results.append(gdf_nodes)
+            gdf_results = pd.concat([gdf_results, gdf_nodes], axis=0)
 
         if len(result.nodes) == 0:
             LOGGER.warning('empty result gdf returned.')
