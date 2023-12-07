@@ -36,85 +36,106 @@ class TestOSMApiQuery(unittest.TestCase):
         """test OSMAPIQuery instance"""
         area = (8.5327506, 47.368260, 8.5486078, 47.376877)
         cond = '["building"]'
-        TestAPIQuery =  osm_dl.OSMApiQuery(area,cond)
+        TestAPIQuery = osm_dl.OSMApiQuery(area, cond)
         self.assertTrue(hasattr(TestAPIQuery, 'area'))
         self.assertTrue(hasattr(TestAPIQuery, 'condition'))
 
     def test_area_to_queryformat(self):
         """ test methods of OSMApiQuery"""
-        
+
         area_bbox = (8.5327506, 47.368260, 8.5486078, 47.376877)
-        area_poly = shapely.geometry.Polygon([(8.5327506, 47.368260), (8.5486078, 47.376877), (8.5486078, 47.39)])
+        area_poly = shapely.geometry.Polygon(
+            [(8.5327506, 47.368260),
+             (8.5486078, 47.376877),
+             (8.5486078, 47.39)])
 
         # Two examples for query conditions:
         cond = '["amenity"="place_of_worship"]'
 
-        area_test_bb =  osm_dl.OSMApiQuery(area_bbox,cond)._area_to_queryformat(area_bbox)
-        area_test_poly =  osm_dl.OSMApiQuery(area_poly,cond)._area_to_queryformat(area_poly)
-        
-        self.assertEqual(area_test_bb, (47.36826, 8.5327506, 47.376877, 8.5486078))
+        area_test_bb = osm_dl.OSMApiQuery(
+            area_bbox, cond)._area_to_queryformat(area_bbox)
+        area_test_poly = osm_dl.OSMApiQuery(
+            area_poly, cond)._area_to_queryformat(area_poly)
+
         self.assertEqual(
-            area_test_poly, '(poly:"47.36826 8.5327506 47.376877 8.5486078 47.39 8.5486078 47.36826 8.5327506")')
+            area_test_bb, (47.36826, 8.5327506, 47.376877, 8.5486078))
+        self.assertEqual(
+            area_test_poly,
+            '(poly:"47.36826 8.5327506 47.376877 8.5486078 47.39 8.5486078 47.36826 8.5327506")')
 
     def test_insistent_osm_api_query(self):
         """test methods of OSMApiQuery" """
         pass
-    
+
     def test_overpass_query_string(self):
         """test methods of OSMApiQuery" """
         area_bbox = (8.5327506, 47.368260, 8.5486078, 47.376877)
-        area_poly = shapely.geometry.Polygon([(8.5327506, 47.368260), (8.5486078, 47.376877), (8.5486078, 47.39)])
+        area_poly = shapely.geometry.Polygon(
+            [(8.5327506, 47.368260),
+             (8.5486078, 47.376877),
+             (8.5486078, 47.39)])
         condition_building = '["building"]'
         condition_church = '["amenity"="place_of_worship"]'
-        
-        q1 = osm_dl.OSMApiQuery(area_bbox,condition_building)._overpass_query_string()
-        q2 = osm_dl.OSMApiQuery(area_poly,condition_church)._overpass_query_string()
-        
+
+        q1 = osm_dl.OSMApiQuery(
+            area_bbox, condition_building)._overpass_query_string()
+        q2 = osm_dl.OSMApiQuery(
+            area_poly, condition_church)._overpass_query_string()
+
         self.assertEqual(
             q1, '[out:json][timeout:180];(nwr["building"](47.36826, 8.5327506, 47.376877, 8.5486078);(._;>;););out;')
         self.assertEqual(
             q2, '[out:json][timeout:180];(nwr["amenity"="place_of_worship"](poly:"47.36826 8.5327506 47.376877 8.5486078 47.39 8.5486078 47.36826 8.5327506");(._;>;););out;')
-    
+
     def test_assemble_from_relations(self):
         """test methods of OSMApiQuery" """
         pass
-    
+
     def test_assemble_from_ways(self):
         """test methods of OSMApiQuery" """
         pass
-    
+
     def test_assemble_from_nodes(self):
         """test methods of OSMApiQuery" """
         pass
-    
+
     def test_update_availability(self):
         """test methods of OSMApiQuery" """
         pass
-    
+
     def test_assemble_results(self):
         """test methods of OSMApiQuery" """
         pass
-    
+
     def test_osm_geoms_to_gis(self):
         """test methods of OSMApiQuery" """
         pass
-    
+
     def skip_test_get_data_overpass(self):
-        """test methods of OSMApiQuery" 
-        skipping: test causes a segfault on Jenkins"""
+        """test methods of OSMApiQuery"""
+
         area_bbox = (8.5327506, 47.368260, 8.5486078, 47.376877)
-        area_poly = shapely.geometry.Polygon([(8.5327506, 47.368260), (8.5486078, 47.376877), (8.5486078, 47.39)])
+        area_poly = shapely.geometry.Polygon(
+            [(8.5327506, 47.368260),
+             (8.5486078, 47.376877),
+             (8.5486078, 47.39)])
         condition_building = '["building"]'
         condition_church = '["amenity"="place_of_worship"]'
-        gdf1 = osm_dl.OSMApiQuery(area_bbox,condition_building).get_data_overpass()
-        gdf2 = osm_dl.OSMApiQuery(area_poly,condition_church).get_data_overpass()
-        
-        self.assertTrue(len(gdf1)>0)
-        self.assertTrue(len(gdf2)>0)
-        self.assertTrue('building' in gdf1.iloc[randint(0,len(gdf1)-1)].tags.keys())
-        self.assertTrue('amenity' in gdf2.iloc[randint(0,len(gdf2)-1)].tags.keys())
-        self.assertTrue('place_of_worship' in gdf2.iloc[randint(0,len(gdf2)-1)].tags['amenity'])
-    
+        gdf1 = osm_dl.OSMApiQuery(
+            area_bbox, condition_building).get_data_overpass()
+        gdf2 = osm_dl.OSMApiQuery(
+            area_poly, condition_church).get_data_overpass()
+
+        self.assertTrue(len(gdf1) > 0)
+        self.assertTrue(len(gdf2) > 0)
+        self.assertTrue(
+            'building' in gdf1.iloc[randint(0, len(gdf1)-1)].tags.keys())
+        self.assertTrue(
+            'amenity' in gdf2.iloc[randint(0, len(gdf2)-1)].tags.keys())
+        self.assertTrue('place_of_worship' in gdf2.iloc[randint(
+            0, len(gdf2)-1)].tags['amenity'])
+
+
 # Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestOSMApiQuery)
