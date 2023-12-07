@@ -341,6 +341,6 @@ class OSMApiQuery:
         query_clause = self._overpass_query_string()
         result = self._insistent_osm_api_query(query_clause)
         gdf_result = self._assemble_results(result, closed_lines_are_polys)
-        gdf_result['geometry'] = self._osm_geoms_to_gis(gdf_result)
+        gdf_result = gdf_result.set_geometry(self._osm_geoms_to_gis(gdf_result))
 
         return gdf_result
