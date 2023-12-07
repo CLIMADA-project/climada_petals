@@ -313,23 +313,37 @@ class TestTransformOps(unittest.TestCase):
             np.outer(x, y).astype("float"), coords=dict(longitude=x, latitude=y)
         )
 
-        # Test special sample values
-        samples = gev.copy()
-        samples[0, 0] = 0.0
-        samples[0, 1] = np.nan
-        samples[1, 0] = np.inf
+        # Test special values
+        samples = gev.copy().astype("int")
+        samples[0, 1] = 0
+        gev[1, 0] = np.inf
+        gev[1, 1] = np.nan
+        discharge[0, 0, 1] = np.nan
 
         # Check result
-        result = return_period_resample(discharge, gev, gev, samples, 5)
+        max_return_period = 10
+        result = return_period_resample(
+            discharge, gev, gev, samples, 5, max_return_period=max_return_period
+        )
         self.assertIn("sample", result.dims)
         self.assertEqual(result.sizes["sample"], 5)
 
-        # Results should be NaN if there are no samples
-        for time in z:
-            with self.subTest(time=time):
-                npt.assert_array_equal(result.sel(time=time).values[0, 0], [np.nan] * 5)
-                npt.assert_array_equal(result.sel(time=time).values[0, 1], [np.nan] * 5)
-                npt.assert_array_equal(result.sel(time=time).values[1, 0], [np.nan] * 5)
+        # Check if new dimension is ordered last
+        self.assertListEqual(
+            list(result.sizes.keys()), list(discharge.sizes.keys()) + ["sample"]
+        )
+
+        # Results should be NaN if there are no samples or non-finite value
+        npt.assert_array_equal(result.values[0, 1, :], np.full((11, 5), np.nan))
+        npt.assert_array_equal(result.values[1, 0, :], np.full((11, 5), np.nan))
+        npt.assert_array_equal(result.values[1, 1, :], np.full((11, 5), np.nan))
+
+        # Result should be NaN if discharge is NaN
+        npt.assert_array_equal(result.values[0, 0, 1], [np.nan] * 5)
+        mask_nan = np.isnan((result.values))
+        self.assertTrue(np.any(~mask_nan))
+        self.assertTrue(np.all(result.values[~mask_nan] <= max_return_period))
+        self.assertTrue(np.all(result.values[~mask_nan] >= 1))
 
         # Checks calls to 'fit' and 'rvs'
         with patch.multiple(
@@ -342,10 +356,12 @@ class TestTransformOps(unittest.TestCase):
             return_period_resample(discharge, gev, gev, samples, bootstrap_samples)
 
             # Test number of calls
-            # NOTE: 'samples' is zero for x=0, and not finite for one more case, hence
-            #       we subtract 11 cases
+            print(samples.values)
+            expected_calls = np.count_nonzero(
+                np.isfinite(gev.values) & (samples.values > 0)
+            )
             self.assertEqual(
-                len(mocks["fit"].call_args_list), (gev.size - 11) * bootstrap_samples
+                len(mocks["fit"].call_args_list), expected_calls * bootstrap_samples
             )
 
             # Test that kwargs align

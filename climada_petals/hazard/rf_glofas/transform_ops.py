@@ -540,7 +540,15 @@ def return_period_resample(
             output_sizes=dict(sample=bootstrap_samples), allow_rechunk=True
         ),
     ).rename("Return Period")
-    ret["sample"] = np.arange(bootstrap_samples)
+    ret = ret.assign_coords(sample=np.arange(bootstrap_samples))
+
+    # Transpose makes for a nicer result?
+    dims = list(ret.sizes.keys())
+    dims.remove("sample")
+    dims.append("sample")
+    ret = ret.transpose(*dims)
+
+    # Return result
     return ret
 
 
