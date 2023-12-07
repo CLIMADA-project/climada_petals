@@ -6,5 +6,3 @@ dependencies:
   - overpy
   - pymrio>=0.5
   - scikit-image>=0.22
-  #- pip:
-  #    - osm-flex>=1.1.1
