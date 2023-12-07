@@ -3,5 +3,6 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - scikit-image>=0.22
+  - overpy
   - pymrio>=0.5
+  - scikit-image>=0.22

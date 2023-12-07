@@ -13,12 +13,15 @@ Code freeze date: YYYY-MM-DD
 Added dependencies:
 
 - `pymrio` >=5.2.0
+- `overpy`
+- `osm-flex` >=1.1.1
 
 ### Added
 
 ### Changed
 
 - Restructured `Supplychain` module, which now uses `pymrio` to download and handle multi-regional input output tables [#66](https://github.com/CLIMADA-project/climada_petals/pull/66)
+- Restructured `openstreetmap` module to draw functionalities from external package osm-flex [#103](https://github.com/CLIMADA-project/climada_petals/pull/103)
 
 ### Fixed
 
