@@ -109,14 +109,10 @@ def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
     """
 
     # select only those for which specified attrs apply
-    gdf_vs_target = graph.graph.get_vertex_dataframe()
-    for key, value in target_attrs.items():
-        gdf_vs_target = gdf_vs_target[gdf_vs_target[key] == value]
+    gdf_vs_target = _filter_vertices(graph, target_attrs)
 
     # select only those for which specified attrs apply
-    gdf_vs_source = graph.graph.get_vertex_dataframe()
-    for key, value in source_attrs.items():
-        gdf_vs_source = gdf_vs_source[gdf_vs_source[key] == value]
+    gdf_vs_source = _filter_vertices(graph, source_attrs)
 
     v_ids_source, v_ids_target = _select_closest_k(
         gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
@@ -126,11 +122,11 @@ def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
     return graph
 
 
-def link_vertices_edgecond(graph, source_attrs, target_attrs, edge_attrs,
-                           link_attrs):
+def link_vertices_edgecond(graph, target_attrs, edge_attrs, link_attrs,
+                           bidir=False):
     """
-    make a dependency edge between two vertices if another edge with a 
-    certain attribute (specified in edge_attrs) already exists between those 
+    make a dependency edge between two vertices if another edge with a
+    certain attribute (specified in edge_attrs) already exists between those
     two.
     Primarily intended for dependency_road_people, given that a road exists
     directly at people node.
@@ -143,16 +139,25 @@ def link_vertices_edgecond(graph, source_attrs, target_attrs, edge_attrs,
     -------
     graph
     """
-    vs_target = graph.graph.vs.select(ci_type=target_ci)
+    df_vs_target = _filter_vertices(graph, target_attrs)
+
+    vs_target = graph.graph.vs[df_vs_target.index.values]
 
     pot_edges = [graph.graph.incident(v_target, mode='in')
                  for v_target in vs_target]
+    # flatten nested list
     pot_edges = [item for sublist in pot_edges for item in sublist]
-    select_edges = graph.graph.es[pot_edges].select(
-        ci_type=edge_type).select(func_tot_gt=0)
 
-    graph._edges_from_vlists([edge.source for edge in select_edges],
-                             [edge.target for edge in select_edges], link_attrs)
+    # select those edges which fulfill edge_attrs
+    for key, value in edge_attrs.items():
+        pot_edges = [graph.graph.es[item] for item in pot_edges
+                     if graph.graph.es[item][key] == value]
+
+    _edges_from_vlists(graph, [edge.source for edge in pot_edges],
+                       [edge.target for edge in pot_edges], link_attrs)
+    if bidir:
+        _edges_from_vlists(graph, [edge.target for edge in pot_edges],
+                           [edge.source for edge in pot_edges], link_attrs)
 
     return graph
 
@@ -160,6 +165,13 @@ def link_vertices_edgecond(graph, source_attrs, target_attrs, edge_attrs,
 # =============================================================================
 # Helper funcs for making links
 # =============================================================================
+
+def _filter_vertices(graph, attr_dict):
+    df_vs = graph.graph.get_vertex_dataframe()
+    for key, value in attr_dict.items():
+        df_vs = df_vs[df_vs[key] == value]
+    return df_vs
+
 
 def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
     """
