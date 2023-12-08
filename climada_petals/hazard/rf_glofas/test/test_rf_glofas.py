@@ -108,19 +108,20 @@ class TestHazardSeriesFromDataset(unittest.TestCase):
         )
 
         # Use time as event
-        haz_series = hazard_series_from_dataset(ds, "intensity", "number")
+        haz_series = hazard_series_from_dataset(ds, "intensity", "time")
         self.assertIsInstance(haz_series, pd.Series)
 
         # Check index
         index = haz_series.index
         self.assertEqual(index.nlevels, 1)
-        self.assertSetEqual(set(index.names), {"time"})
+        self.assertSetEqual(set(index.names), {"number"})
+        npt.assert_array_equal(index.get_level_values("number"), ds["number"].values)
 
         # Check series
         self._check_series(
             haz_series,
-            length=ds.sizes["time"],
-            num_events=ds.sizes["number"],
+            length=ds.sizes["number"],
+            num_events=ds.sizes["time"],
             num_centroids=ds.sizes["latitude"] * ds.sizes["longitude"],
         )
 
