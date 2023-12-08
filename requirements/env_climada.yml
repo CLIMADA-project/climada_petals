@@ -5,7 +5,9 @@ channels:
 dependencies:
   - cdsapi>=0.6
   - ruamel.yaml>=0.18
-  - scikit-image>=0.21
   - xesmf>=0.8
   - pymrio>=0.5
   - rioxarray>=0.13
+  - overpy
+  - pymrio>=0.5
+  - scikit-image>=0.22

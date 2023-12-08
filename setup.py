@@ -44,6 +44,7 @@ setup(
         'xesmf',
         "pymrio",
         'rioxarray',
+        'osm-flex>=1.1.1',
     ],
 
     packages=find_namespace_packages(include=['climada_petals*']),
