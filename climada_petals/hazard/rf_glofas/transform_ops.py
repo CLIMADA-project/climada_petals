@@ -45,9 +45,7 @@ CDS_DOWNLOAD_DIR = Path(SYSTEM_DIR, "cds-download")
 
 def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
     """Select a lon/lat slice from 'target' using coordinates of 'source'"""
-    lon = source["longitude"][[0, -1]]
-    lat = source["latitude"][[0, -1]]
-    return target.sel(longitude=slice(*lon), latitude=slice(*lat))
+    return target.sel({c: slice(*source[c][[0, -1]]) for c in ["longitude", "latitude"]})
 
 
 def rp_comp(
