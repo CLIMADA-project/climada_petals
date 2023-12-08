@@ -138,6 +138,7 @@ def setup_flood_hazard_maps(flood_maps_dir: Path, output_dir=DEFAULT_DATA_DIR):
     LOGGER.debug("Rewriting flood hazard maps to NetCDF files")
     for path, path_nc in zip(flood_maps_paths, flood_maps_paths_nc):
         if not path_nc.is_file():
+            # This uses rioxarray to open a GeoTIFF as an xarray DataArray:
             with xr.open_dataarray(path, engine="rasterio", chunks="auto") as d_arr:
                 save_file(d_arr, path_nc, zlib=True)
 
