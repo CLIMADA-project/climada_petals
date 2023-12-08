@@ -20,9 +20,8 @@ dependencies:
     - coverage>=4.5
     - descartes
     - markdown
-    - myst-parser    
-    - nbformat
-    - nbsphinx
+    - myst-parser
+    - myst-nb
     - pylint
     - readthedocs-sphinx-ext>=2.1
     - sphinx-markdown-tables
