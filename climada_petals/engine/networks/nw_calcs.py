@@ -18,10 +18,10 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 import logging
 import igraph as ig
 import numpy as np
+import pandas as pd
 import pyproj
 from tqdm import tqdm
 import scipy
-from copy import deepcopy
 
 from climada_petals.engine.networks.nw_base import Network, Graph
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
@@ -52,11 +52,8 @@ def link_clusters(graph, dist_thresh=np.inf, metres=True, link_attrs=None):
 
     Returns
     -------
-    graph_linked
+    graph
     """
-
-    # TODO: this may cause a memory failure for large graphs on a normal computer
-    graph_linked = deepcopy(graph)
 
     gdf_vs = graph_linked.graph.get_vertex_dataframe()
     gdf_vs['membership'] = graph_linked.graph.connected_components().membership
@@ -109,13 +106,13 @@ def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
     """
 
     # select only those for which specified attrs apply
-    gdf_vs_target = _filter_vertices(graph, target_attrs)
+    df_vs_target = _filter_vertices(graph.graph, target_attrs)
 
     # select only those for which specified attrs apply
-    gdf_vs_source = _filter_vertices(graph, source_attrs)
+    df_vs_source = _filter_vertices(graph.graph, source_attrs)
 
     v_ids_source, v_ids_target = _select_closest_k(
-        gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
+        df_vs_source, df_vs_target, dist_thresh, bidir, k)
 
     graph = _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs)
 
@@ -134,12 +131,16 @@ def link_vertices_edgecond(graph, target_attrs, edge_attrs, link_attrs,
     Parameters
     ----------
     graph : nw_base.Graph object
+    target_attrs : dict
+    edge_attrs : dict
+    link_attrs : dict
+    bidir : bool
 
     Returns
     -------
     graph
     """
-    df_vs_target = _filter_vertices(graph, target_attrs)
+    df_vs_target = _filter_vertices(graph.graph, target_attrs)
 
     vs_target = graph.graph.vs[df_vs_target.index.values]
 
@@ -162,15 +163,110 @@ def link_vertices_edgecond(graph, target_attrs, edge_attrs, link_attrs,
     return graph
 
 
+def link_vertices_shortest_path(graph, source_attrs, target_attrs, via_attrs,
+                                link_attrs, dist_thresh=10e6, criterion='distance',
+                                bidir=False):
+    """
+    Per target, choose single shortest path to source which is
+    below dist_thresh.
+
+    Parameters
+    ----------
+    graph : nw_base.Graph object
+    source_attrs : dict
+    target_attrs : dict
+    via_attrs : dict
+    link_attrs : dict
+    bidir : bool
+
+    Returns
+    -------
+    graph
+    """
+
+    # subgraph containing only "allowed" elements
+    subgraph = _create_subgraph(
+        graph, source_attrs, target_attrs, via_attrs)
+
+    # mapping from subgraph to graph indices
+    subgraph_graph_vsdict = _get_subgraph2graph_vsdict(graph.graph, subgraph)
+
+    # select only those for which specified attrs apply
+    df_vs_target = _filter_vertices(subgraph, target_attrs)
+
+    # select only those for which specified attrs apply
+    df_vs_source = _filter_vertices(subgraph, source_attrs)
+
+    path_dists = subgraph.distances(
+        source=df_vs_source.index.values, target=df_vs_target.index.values,
+        weights=criterion)
+    path_dists = np.array(path_dists)  # dim: (#sources, #targets)
+
+    if len(path_dists) == 0:
+        return graph
+
+    ix_source, ix_target = np.where(
+        ((path_dists == path_dists.min(axis=0)) &
+         (path_dists <= dist_thresh)))  # min dist. per target
+
+    # re-map sources to original graph
+    v_ids_source = [subgraph_graph_vsdict[v_id_source] for v_id_source
+                    in df_vs_source.index.values[list(ix_source)]]
+
+    # re-map targets to original graph
+    v_ids_target = [subgraph_graph_vsdict[v_id_target] for v_id_target
+                    in df_vs_target.index.values[list(ix_target)]]
+
+    link_attrs['distance'] = path_dists[(ix_source, ix_target)]
+
+    _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs)
+
+    if bidir:
+        _edges_from_vlists(graph, v_ids_target, v_ids_source, link_attrs)
+
+    return graph
+
+
 # =============================================================================
 # Helper funcs for making links
 # =============================================================================
 
 def _filter_vertices(graph, attr_dict):
-    df_vs = graph.graph.get_vertex_dataframe()
+    """
+    get vertices of graph to which given attributes apply
+
+    Parameters
+    ----------
+    graph : igraph.Graph object
+
+    Returns
+    -------
+    df_vs : pd.Dataframe
+    """
+
+    df_vs = graph.get_vertex_dataframe()
     for key, value in attr_dict.items():
         df_vs = df_vs[df_vs[key] == value]
     return df_vs
+
+
+def _filter_edges(graph, attr_dict):
+    """
+    get edges of graph to which given attributes apply
+
+    Parameters
+    ----------
+    graph : igraph.Graph object
+
+    Returns
+    -------
+    df_es : pd.Dataframe
+    """
+
+    df_es = graph.get_edge_dataframe()
+    for key, value in attr_dict.items():
+        df_es = df_es[df_es[key] == value]
+    return df_es
 
 
 def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
@@ -186,14 +282,18 @@ def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
     -------
     graph : nw_base.Graph object
     """
+
     pairs = list(zip(v_ids_source, v_ids_target))
 
     link_attrs['geometry'] = make_edge_geometries(
         graph.graph.vs[v_ids_source]['geometry'],
         graph.graph.vs[v_ids_target]['geometry'])
 
-    link_attrs['distance'] = [pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
-                              for edge_geom in link_attrs['geometry']]
+    if 'distance' not in link_attrs.keys():
+        link_attrs['distance'] = [
+            pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
+            for edge_geom in link_attrs['geometry']
+        ]
 
     graph.graph.add_edges(pairs, attributes=link_attrs)
 
@@ -232,9 +332,101 @@ def _select_closest_k(gdf_vs_source, gdf_vs_target, dist_thresh,
     return list(v_ids_source), list(v_ids_target)
 
 
+def _create_subgraph(graph, source_attrs, target_attrs, via_attrs):
+    """
+    Create a subgraph from the original graph. Includes only vertices and edges
+    from source, target and via types.
+
+    Parameters
+    ----------
+    graph : nw_base.Graph object
+    source_attrs : dict
+    target_attrs : dict
+    via_attrs : dict
+    link_attrs : dict
+
+
+    Returns
+    -------
+    vs_keep : list
+        vertex ids of original graph that is kept in subgraph
+
+    subgraph : igraph.Graph
+        induced subgraph of graph, given v_seq
+
+
+    See also
+    --------
+    link_vertices_shortest_paths(), link_vertices_shortest_path()
+    """
+
+    # select only those for which specified attrs apply
+    df_vs_source = _filter_vertices(graph.graph, source_attrs)
+    df_vs_target = _filter_vertices(graph.graph, target_attrs)
+    df_vs_via = _filter_vertices(graph.graph, via_attrs)
+
+    vs_keep = np.concatenate((df_vs_source.index.values,
+                              df_vs_target.index.values,
+                              df_vs_via.index.values))
+
+    # vs_keep has indexing of original graph, subgraph has new indexing. There
+    # is no way of keeping track of the re-ordering, other than to have a named
+    # attribute!
+    graph.graph.vs['orig_id'] = range(len(graph.graph.vs))
+    graph.graph.es['orig_id'] = range(len(graph.graph.es))
+    subgraph = graph.graph.induced_subgraph(vs_keep)
+
+    # delete remaining edges that have wrong attributes
+    df_es_target = _filter_edges(graph.graph, target_attrs)
+    df_es_source = _filter_edges(graph.graph, source_attrs)
+    df_es_via = _filter_edges(graph.graph, via_attrs)
+
+    correct_edges = np.concatenate((df_es_target.index.values,
+                                   df_es_source.index.values,
+                                   df_es_via.index.values))
+
+    wrong_edges = set(range(len(subgraph.es))).difference(set(correct_edges))
+
+    subgraph.delete_edges(wrong_edges)
+
+    return subgraph
+
+
+def _get_subgraph2graph_vsdict(graph, subgraph):
+    """
+    Keep track of which vertices in induced subgraph represent which vertices
+    in original graph. dict[subgraph_vs_ind] = graph_vs_ind
+    Goes via the named attribute 'orig_id' created before making the subgraph.
+
+    Parameters
+    ----------
+    graph : igraph.Graph
+    subgraph : igraph.Graph 
+        induced subgraph of graph
+
+    Returns
+    -------
+    dict
+        mapping from subgraph to graph indices.
+    """
+    subgraph_vs_indices = [subvx.index for subvx in subgraph.vs]
+    subgraph_orig_ids = subgraph.vs.get_attribute_values('orig_id')
+    df_subg = pd.DataFrame(
+        subgraph_vs_indices, index=subgraph_orig_ids, columns=['index_sub'])
+
+    graph_vs_indices = [vx.index for vx in graph.vs]
+    graph_orig_ids = graph.vs.get_attribute_values('orig_id')
+    df_g = pd.DataFrame(
+        graph_vs_indices, index=graph_orig_ids,  columns=['index_g'])
+
+    df_conc = pd.concat([df_subg, df_g], axis=1)
+
+    return dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g']))
+
 # =============================================================================
 # Old class methods
 # =============================================================================
+
 
 class GraphCalcs():
 
@@ -293,8 +485,8 @@ class GraphCalcs():
 
     def link_vertices_edgecond(self, source_ci, target_ci, link_name, edge_type):
         """
-        make a dependency edge between two vertices if another edge with a 
-        certain attribute (specified in edge_type) already exists between those 
+        make a dependency edge between two vertices if another edge with a
+        certain attribute (specified in edge_type) already exists between those
         two.
         Primarily intended for dependency_road_people, given that a road exists
         directly at people node.
@@ -367,8 +559,7 @@ class GraphCalcs():
         impact_pnt.calc(exp_pnt, impf_set, friction_surf, save_mat=True)
         if impact_pnt.imp_mat.size < len(exp_pnt.gdf):
             imp_arry = np.array(impact_pnt.imp_mat.todense()).flatten()
-            imp_arry[imp_arry == 0] = \
-                exp_pnt.gdf.value[imp_arry == 0] * \
+            imp_arry[imp_arry == 0] = exp_pnt.gdf.value[imp_arry == 0] * \
                 friction_surf.intensity.data.min()
             impact_pnt.imp_mat = scipy.sparse.csr_matrix(imp_arry)
 
@@ -410,11 +601,11 @@ class GraphCalcs():
         Create a subgraph from the original graph to perform a shortest path
         search on.
         Includes only vertices from source, target and via types.
-        Deletes all edges that do not belong to appropriate via-type or are 
+        Deletes all edges that do not belong to appropriate via-type or are
         not fully functional.
         Deletes all vertices that are either not fully functional or already
         have a valid connection.
-        To be used in link_vertices_shortest_paths() and 
+        To be used in link_vertices_shortest_paths() and
         link_vertices_shortest_path()
         """
 
@@ -517,7 +708,7 @@ class GraphCalcs():
                        dist_thresh, dur_thresh, criterion='distance',
                        link_name=None, bidir=False):
         """
-        for links with access constraints, re-check those with functional 
+        for links with access constraints, re-check those with functional
         sources where paths may however be broken now.
         Those with dysfunctional sources don't need to be checked, since
         dysfunctionality will anyways propagate to target later.
@@ -621,7 +812,7 @@ class GraphCalcs():
             path_dists = np.array(path_dists)  # dim: (#sources, #targets)
             if len(path_dists) > 0:
                 ix_source, ix_target = np.where(((path_dists == path_dists.min(axis=0)) &
-                                                (path_dists <= dist_thresh)))  # min dist. per target
+                                                 (path_dists <= dist_thresh)))  # min dist. per target
                 v_ids_source = [subgraph_graph_vsdict[vs.index]
                                 for vs in vs_source[list(ix_source)]]
                 v_ids_target = [subgraph_graph_vsdict[vs.index]
