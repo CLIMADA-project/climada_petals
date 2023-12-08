@@ -163,9 +163,9 @@ def link_vertices_edgecond(graph, target_attrs, edge_attrs, link_attrs,
     return graph
 
 
-def link_vertices_shortest_path(graph, source_attrs, target_attrs, via_attrs,
-                                link_attrs, dist_thresh=10e6, criterion='distance',
-                                bidir=False):
+def link_vertices_shortest_paths(graph, source_attrs, target_attrs, via_attrs,
+                                 link_attrs, dist_thresh=10e6, criterion='distance',
+                                 single_shortest=True, bidir=False):
     """
     Per target, choose single shortest path to source which is
     below dist_thresh.
@@ -177,6 +177,10 @@ def link_vertices_shortest_path(graph, source_attrs, target_attrs, via_attrs,
     target_attrs : dict
     via_attrs : dict
     link_attrs : dict
+    single_shortest : bool
+        Whether to make a link between all sources and targets for which the
+        shortest path is < dist_thresh, or whether to only make a link for the
+        shortest of all. 
     bidir : bool
 
     Returns
@@ -205,9 +209,12 @@ def link_vertices_shortest_path(graph, source_attrs, target_attrs, via_attrs,
     if len(path_dists) == 0:
         return graph
 
-    ix_source, ix_target = np.where(
-        ((path_dists == path_dists.min(axis=0)) &
-         (path_dists <= dist_thresh)))  # min dist. per target
+    if single_shortest:
+        ix_source, ix_target = np.where(
+            ((path_dists == path_dists.min(axis=0)) &
+             (path_dists <= dist_thresh)))  # min dist. per target
+    else:
+        ix_source, ix_target = np.where(path_dists < dist_thresh)
 
     # re-map sources to original graph
     v_ids_source = [subgraph_graph_vsdict[v_id_source] for v_id_source
