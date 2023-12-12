@@ -259,6 +259,13 @@ def remove_module_docstring(app, what, name, obj, options, lines):
 
 autodoc_member_order = "bysource"
 
+# Mock imports that do not work in the readthedocs environment
+autodoc_mock_imports = [
+    # Does not work because it would require a reload of the environment after
+    # installation (which is not done by readthedocs.org)
+    "xesmf"
+]
+
 def setup(app):
     app.connect("autodoc-skip-member", skip)
     app.connect("autodoc-process-docstring", remove_module_docstring)
