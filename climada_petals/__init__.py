@@ -51,7 +51,7 @@ REPO_DATA = {
     'climada_petals/data/wildfire': [
         DEMO_DIR.joinpath('Portugal_firms_June_2017.csv'),
         DEMO_DIR.joinpath('Portugal_firms_2016_17_18_MODIS.csv'),
-    ]
+    ],
 }
 
 
