@@ -334,9 +334,10 @@ def download_glofas_discharge(
     if open_mfdataset_kw is not None:
         open_kwargs.update(open_mfdataset_kw)
 
-    # Open the data and return it
-    return xr.open_mfdataset(files, **open_kwargs)["dis24"].squeeze()
-
+    # Squeeze all dimensions except time
+    arr = xr.open_mfdataset(files, **open_kwargs)["dis24"]
+    dims = {dim for dim, size in arr.sizes.items() if size == 1} - {"time"}
+    return arr.squeeze(dim=dims)
 
 def max_from_isel(
     array: xr.DataArray, dim: str, selections: List[Union[Iterable, slice]]
