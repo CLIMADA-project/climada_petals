@@ -49,7 +49,7 @@ class tmp_artifical_topo(object):
         self.shape = (lat.size, lon.size)
         self.transform = rasterio.Affine(res_deg, 0, bounds[0], 0, -res_deg, bounds[3])
         centroids = Centroids.from_lat_lon(*[ar.ravel() for ar in np.meshgrid(lon, lat)][::-1])
-        centroids.set_dist_coast(signed=True, precomputed=True)
+        centroids.set_dist_coast(signed=True)
         self.dist_coast = centroids.dist_coast
 
     def __enter__(self):
@@ -94,7 +94,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
         centroids = Centroids.from_lat_lon(lat, lon)
-        centroids.set_dist_coast(signed=True, precomputed=True)
+        centroids.set_dist_coast(signed=True)
 
         dem_bounds = (bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
         dem_res = 3 / (60 * 60)
@@ -154,7 +154,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
         centroids = Centroids.from_lat_lon(lat, lon)
-        centroids.set_dist_coast(signed=True, precomputed=True)
+        centroids.set_dist_coast(signed=True)
 
         wind_haz = TropCyclone.from_tracks(tc_track, centroids=centroids)
 
@@ -174,8 +174,8 @@ class TestTCSurgeBathtub(unittest.TestCase):
                 np.testing.assert_array_equal(inten[fraction == 0], 0)
 
                 # check individual known pixel values
-                self.assertAlmostEqual(inten[9, 31], max(-0.391 + slr, 0), places=2)
-                self.assertAlmostEqual(inten[14, 34] - slr, 3.637, places=2)
+                self.assertAlmostEqual(inten[9, 31], max(-1.218 + slr, 0), places=2)
+                self.assertAlmostEqual(inten[14, 34] - slr, 2.825, places=2)
 
 
 # Execute Tests
