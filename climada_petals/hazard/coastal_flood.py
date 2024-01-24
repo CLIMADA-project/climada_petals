@@ -55,7 +55,7 @@ class CoastalFlood(Hazard):
             Possible values are nosub and wtsub. Default wtsub.
         percentile : str
             Sea level rise scenario (in percentile).
-            Possible values are 5, 50 and 95.
+            Possible values are 05, 50 and 95.
         countries : str or list of str
             countries ISO3 codes
         boundaries : tuple of floats
@@ -73,6 +73,9 @@ class CoastalFlood(Hazard):
         if (rcp == 'historical') & (subsidence == 'nosub') & (target_year != 'hist'):
             raise ValueError("Historical without subsidence can only have hist as target year")
 
+        if (rcp == 'historical') & (percentile != '95'):
+            raise ValueError("Historical shall not have a assigned percentiles of sea level rise. Leave default values.")
+
         if isinstance(return_periods, int):
             return_periods = [return_periods]
 
@@ -82,46 +85,46 @@ class CoastalFlood(Hazard):
             countries = [countries]
 
         rcp_name = f"rcp{rcp[0]}p{rcp[1]}" if rcp in ['45', '85'] else rcp
-        rps_name = [f"{str(rp).zfill(4)}" for rp in return_periods]
-        perc_name = f"0_perc_{percentile.zfill(2)}" if percentile in ['05', '50'] else '0'
+        ret_per_names = [f"{str(rp).zfill(4)}" for rp in return_periods]
+        perc_name = f"0_perc_{percentile.zfill(2)}" if percentile in ['5', '50'] else '0'
 
-        file_names = [
-                f'inuncoast_{rcp_name}_{subsidence}_{target_year}_rp{rp.zfill(4)}_{perc_name}.tif'
-                for rp in rps_name
-                    ]
+        file_names = [f"inuncoast_{rcp_name}_{subsidence}_{target_year}_"
+                      f"rp{rp.zfill(4)}_{perc_name}.tif"
+                      for rp in ret_per_names]
 
-        hazs = []
-        for i, file_name in enumerate(file_names):
+        file_paths = []
+        for file_name in file_names:
             link_to_file = "".join([AQUEDUCT_SOURCE_LINK, file_name])
-            file_path = dwd_dir / file_name
+            file_paths.append(dwd_dir / file_name)
 
-            if not file_path.exists():
+            if not file_paths[-1].exists():
                 u_fh.download_file(link_to_file, download_dir=dwd_dir)
 
-            if countries:
-                geom = u_coord.get_land_geometry(countries).geoms
+        if countries:
+            geom = u_coord.get_land_geometry(countries).geoms
 
-            elif boundaries:
-                min_lon, min_lat, max_lon, max_lat = boundaries
-                geom = [Polygon([(min_lon, min_lat),
-                                 (max_lon, min_lat),
-                                 (max_lon, max_lat),
-                                 (min_lon, max_lat)])]
-            else:
-                geom = None
+        elif boundaries:
+            min_lon, min_lat, max_lon, max_lat = boundaries
+            geom = [Polygon([(min_lon, min_lat),
+                            (max_lon, min_lat),
+                            (max_lon, max_lat),
+                            (min_lon, max_lat)])]
+        else:
+            geom = None
 
-            event_name = f'1-in-{return_periods[i]}y_{percentile}pct_{rcp_name}_{target_year}_{subsidence}'
+        event_id = np.arange(len(file_names))
+        frequencies = np.diff(1 / np.array(return_periods), prepend=0)
+        event_names = [f"1-in-{return_periods[i]}y_{percentile}pct_"
+                       f"{rcp_name}_{target_year}_{subsidence}"
+                       for i in range(len(file_names))]
 
-            haz = cls().from_raster(files_intensity=file_path,
-                                    geometry=geom,
-                                    attrs={'event_id': np.array([i+1]),
-                                           'event_name': np.array([event_name]),
-                                           'frequency': np.array([1 / int(return_periods[i])])})
-            haz.units = 'm'
-            haz.centroids.set_meta_to_lat_lon()
-            hazs.append(haz)
+        haz = cls().from_raster(files_intensity=file_paths,
+                                geometry=geom,
+                                attrs={'event_id': event_id,
+                                       'event_name': event_names,
+                                       'frequency': frequencies})
 
-        haz = cls().concat(hazs)
-        haz.frequency = np.diff(haz.frequency, prepend=0)
+        haz.centroids.set_meta_to_lat_lon()
+        haz.units = 'm'
 
         return haz

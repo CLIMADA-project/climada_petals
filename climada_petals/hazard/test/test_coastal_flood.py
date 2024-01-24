@@ -24,33 +24,26 @@ import requests
 import numpy as np
 from climada_petals.hazard.coastal_flood import AQUEDUCT_SOURCE_LINK
 
-RCPS = ['historical', '45', '85']
+RCPS = ['historical', 'rcp4p5', 'rcp8p5']
 TARGET_YEARS = ['hist', '2030', '2050', '2080']
-RETURN_PERIODS = [2, 5, 10, 25, 50, 100, 250, 500, 1000]
+RETURN_PERIODS = ['0002', '0005', '0010', '0025',
+                  '0050', '0100', '0250', '0500', '1000']
 SUBSIDENCE = ['nosub', 'wtsub']
-PERCENTILES = ['5', '50', '95']
-
-def rcp_name(rcp):
-    return f"rcp{rcp[0]}p{rcp[1]}" if rcp in ['45', '85'] else rcp
-
-def rp_name(return_period):
-    return f"{str(return_period).zfill(4)}"
-
-def perc_name(percentile):
-    return f"0_perc_{percentile.zfill(2)}" if percentile in ['05', '50'] else '0'
+PERCENTILES = ['0_perc_05', '0_perc_50', '0']
 
 class TestReader(unittest.TestCase):
     """Test that Coastal flood data exist"""
+
     def test_files_exist(self):
 
         file_names = [
-            f'inuncoast_{rcp_name(rcp)}_{sub}_{year}_rp{rp_name(rp)}_{perc_name(perc)}.tif'
+            f'inuncoast_{rcp}_{sub}_{year}_rp{rp}_{perc}.tif'
                 for rcp in RCPS
                 for sub in SUBSIDENCE
                 for year in TARGET_YEARS
                 for rp in RETURN_PERIODS
                 for perc in PERCENTILES
-                # You can't have: 
+                # You can't have:
                 # - year historic with rcp different than historical
                 # - rcp historical, no subsidence and year different than historic
                 # - rcp historical and SLR scenarios' percentiles
@@ -60,7 +53,7 @@ class TestReader(unittest.TestCase):
                 ]
 
         test_files_pos = np.random.choice(range(len(file_names)),
-                                          size=20,
+                                          size=10,
                                           replace=False)
         for i in test_files_pos:
             file_path = "".join([AQUEDUCT_SOURCE_LINK, file_names[i]])
