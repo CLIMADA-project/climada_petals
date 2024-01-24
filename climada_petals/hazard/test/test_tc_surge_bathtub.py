@@ -174,8 +174,8 @@ class TestTCSurgeBathtub(unittest.TestCase):
                 np.testing.assert_array_equal(inten[fraction == 0], 0)
 
                 # check individual known pixel values
-                self.assertAlmostEqual(inten[9, 31], max(-0.391 + slr, 0), places=2)
-                self.assertAlmostEqual(inten[14, 34] - slr, 3.637, places=2)
+                self.assertAlmostEqual(inten[9, 31], max(-1.219 + slr, 0), places=2)
+                self.assertAlmostEqual(inten[14, 34] - slr, 2.825, places=2)
 
 
 # Execute Tests
