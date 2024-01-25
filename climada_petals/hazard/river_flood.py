@@ -24,9 +24,9 @@ __all__ = ['RiverFlood']
 import logging
 import datetime as dt
 import copy
-from collections.abc import Iterable
 from pathlib import Path
 
+from typing import Iterable, Union, Optional
 import numpy as np
 import scipy as sp
 import xarray as xr
@@ -40,12 +40,12 @@ import climada.util.coordinates as u_coord
 from climada.util import files_handler as u_fh
 from climada.hazard.base import Hazard
 from climada.hazard.centroids import Centroids
+from climada import CONFIG
+
+AQUEDUCT_SOURCE_LINK = CONFIG.hazard.flood.resources.aqueduct.str()
+DOWNLOAD_DIRECTORY = CONFIG.hazard.flood.local_data.aqueduct.dir()
 
 NATID_INFO = pd.read_csv(RIVER_FLOOD_REGIONS_CSV)
-
-AQUEDUCT_SOURCE_LINK = 'http://wri-projects.s3.amazonaws.com/AqueductFloodTool/download/v2/'
-
-DOWNLOAD_DIRECTORY = Path.cwd() # TODO: we'll rather need something like CONFIG.hazard.coastal_flood.dir()
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,11 +53,12 @@ HAZ_TYPE = 'RF'
 """Hazard type acronym RiverFlood"""
 
 class RiverFlood(Hazard):
-    """Contains flood events
-    Flood intensities are pulled either by 
-    PIK/ISIMIP or  AQUEDUCT
-
-    TODO: add links
+    """
+    It contains flood events retrieved by: 
+    - PIK/ISIMIP:
+        https://files.isimip.org/cama-flood/results/
+    - Aqueduct project:
+        https://www.wri.org/data/aqueduct-floods-hazard-maps
 
     Attributes
     ----------
@@ -82,91 +83,86 @@ class RiverFlood(Hazard):
         Hazard.__init__(self, *args, haz_type=HAZ_TYPE, **kwargs)
 
     @classmethod
-    def from_aqueduct_tif(cls, rcp=None, year=None, return_periods=None,
-                           gcm=None, centroids=None, countries=None, shape=None,
-                           boundaries=None, dwd_dir=DOWNLOAD_DIRECTORY):
-        """Extracts coastal flood events pulled by
-        the Acqueduct project : https://www.wri.org/data/aqueduct-floods-hazard-maps
+    def from_aqueduct_tif(cls,
+                          scenario: str,
+                          target_year : str,
+                          gcm: str,
+                          return_periods: Union[int, Iterable[int]],
+                          countries: Optional[Union[str, Iterable[str]]]=None,
+                          boundaries: Iterable[float]=None,
+                          dwd_dir: str=DOWNLOAD_DIRECTORY):
+        """
+        It downloads and extracts riverine flood events
+        pulled by the Aqueduct project
 
-        rcps : str
-            RCPs scenarios. Possible values are ...
-        years : int
-            simulations' reference year. Possible values are ...
-        return_periods : list or str
-            simulations' return periods. Possible values are ...
+        scenario : str
+            scenario to use. Possible values are historical, 45 and 85.
+            The latter two clearly refer to RCP4.5 and RCP8.5.
+        target_year : str
+            future target year. Possible values are 1980, 2030, 2050 and 2080.
         gcm : str
-        centroids : Centroids
-            centroids to extract
-        countries : list of countries ISO3
-            selection of countries
-        shape : 
-        boundaries:
+            the Global Circulation Model to use. Possible values are
+                WATCH, NorESM1-M, GFDL-ESM2M, HadGEM2-ES, IPSL-CM5A-LR
+                and MIROC-ESM-CHEM.
+            WATCH is used only under historic, all others are used in the 
+            two RCPs.
+        return_periods : int or list of int
+            events' return periods.
+            Possible values are 2, 5, 10, 25, 50, 100, 250, 500, 1000.
+        countries : str or list of str
+            countries ISO3 codes
+        boundaries : tuple of floats
+            geographical boundaries in the order:
+                minimum longitude, minimum latitude,
+                maximum longitude, maximum latitude
         """
 
-        # assess number of files and from there the event_ids, these should be then passed one
-        # by one as attrs in haz.from_raster, otherwise it wont concat properly
-
-        if isinstance(return_periods, str):
+        if isinstance(return_periods, int):
             return_periods = [return_periods]
 
-        file_names = [
-                f'inunriver_{rcp}_{gcm.zfill(14)}_{year}_rp{rp.zfill(5)}.tif'
-                for rp in return_periods
-                ]
+        return_periods.sort(reverse=True)
 
-        hazs = []
+        if isinstance(countries, str):
+            countries = [countries]
 
-        # TODO: move this into a downloading function
-        for i, file_name in enumerate(file_names):
+        file_names = [f"inunriver_{scenario}_{gcm.zfill(14)}"
+                      f"_{target_year}_rp{rp.zfill(5)}.tif"
+                      for rp in return_periods]
+
+        file_paths = []
+        for file_name in file_names:
             link_to_file = "".join([AQUEDUCT_SOURCE_LINK, file_name])
-            downloaded_file = dwd_dir / file_name
+            file_paths.append(dwd_dir / file_name)
 
-            if not downloaded_file.exists():
-                u_fh.download_file(
-                link_to_file,
-                download_dir = dwd_dir,
-                )
+            if not file_paths[-1].exists():
+                u_fh.download_file(link_to_file, download_dir = dwd_dir)
 
-            if countries:
-                geom = u_coord.get_land_geometry(countries).geoms
+        if countries:
+            geom = u_coord.get_land_geometry(countries).geoms
 
-            # TODO: implement shape
-            elif shape:
-                # shapes = gpd.read_file(shape) # set projection
-                # geom = shapes.geometry[0]
-                pass
-
-            # TODO: implement centroids
-            elif centroids:
-                pass
-
-            elif len(boundaries) > 0:
-                min_lon, min_lat, max_lon, max_lat = boundaries
-                geom = [Polygon([(min_lon, min_lat),
+        elif boundaries:
+            min_lon, min_lat, max_lon, max_lat = boundaries
+            geom = [Polygon([(min_lon, min_lat),
                                 (max_lon, min_lat),
                                 (max_lon, max_lat),
                                 (min_lon, max_lat)])]
 
-            else:
-                geom = None
-                # TODO: LOGGER(loading for the whole world)
+        else:
+            geom = None
 
-            _, rcp, gcm, year, rp = file_name.split('.tif')[0].split('_')
-            rp = rp.lstrip('rp0')
+        event_id = np.arange(len(file_names))
+        frequencies = np.diff(1 / np.array(return_periods), prepend=0)
+        event_names = [f"1-in-{return_periods[i]}y_{scenario}_{target_year}"
+                        for i in range(len(file_names))]
 
-            haz = cls().from_raster(files_intensity=downloaded_file,
-                                    geometry=geom,
-                                    # check type of these two (array, list etc)
-                                    attrs={'event_id': np.array([i+1]),
-                                           'event_name': np.array([f'{rcp}_{gcm}_{year}_{rp}rp']),
-                                            #TODO: check if proper assignment
-                                            'frequency': np.array([1 / int(rp)])})
-            haz.units = 'm'
-            haz.centroids.set_meta_to_lat_lon()
-            hazs.append(haz)
+        haz = cls().from_raster(files_intensity=file_paths,
+                                geometry=geom,
+                                attrs={'event_id': event_id,
+                                       'event_name': event_names,
+                                       'frequency': frequencies})
 
-        haz = cls().concat(hazs)
-        haz.frequency = np.diff(haz.frequency, prepend=0)
+        haz.centroids.set_meta_to_lat_lon()
+        haz.units = 'm'
 
         return haz
 
