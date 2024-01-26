@@ -41,6 +41,7 @@ from climada.hazard.trop_cyclone import (
     KM_TO_M,
     KN_TO_MS,
     MODEL_VANG,
+    T_ICE_K,
 )
 from climada.util import ureg
 from climada.util.api_client import Client
@@ -76,9 +77,6 @@ H_TROP = 4000
 DELTA_T_TROPOPAUSE = 100
 """Difference between surface and tropopause temperature (in K): T_s - T_t"""
 
-T_ICE_K = 273.16
-"""Freezing temperatur of water (in K), for conversion between K and °C"""
-
 L_EVAP_WATER = 2.5e6
 """Latent heat of the evaporation of water (in J/kg)"""
 
@@ -97,7 +95,7 @@ R_DRY_AIR = 1000 * R_GAS / M_DRY_AIR
 RHO_A_OVER_RHO_L = 0.00117
 """Density of water vapor divided by density of liquid water"""
 
-GRADIENT_LEVEL_TO_SURFACE_WINDS = 0.8
+GRADIENT_TO_SURFACE_WINDS = 0.8
 """Gradient-to-surface wind reduction factor according to Table 2 in:
 
 Franklin, J.L., Black, M.L., Valde, K. (2003): GPS Dropwindsonde Wind Profiles in Hurricanes and
@@ -359,7 +357,9 @@ class TCRain(Hazard):
             w_rad : float, optional
                 Background subsidence velocity (in m/s) under radiative cooling. Default: 0.005
             wind_model : str, optional
-                Parametric wind field model to use, see the `TropCyclone` class. Default: "ER11".
+                Parametric wind field model to use, see the `TropCyclone` class. Default: "ER11"
+            wind_model_kwargs : dict, optional
+                If given, forward these kwargs to the selected wind model. Default: None
 
             Default: None
         ignore_distance_to_coast : boolean, optional
@@ -429,22 +429,32 @@ class TCRain(Hazard):
                                    & (t_lat_min <= coastal_centroids[:, 0])
                                    & (coastal_centroids[:, 0] <= t_lat_max))]
 
-        LOGGER.info('Mapping %s tracks to %s coastal centroids.', str(tracks.size),
-                    str(coastal_idx.size))
+        # prepare keyword arguments to pass to `_from_track`
+        kwargs_from_track = dict(
+            centroids=centroids,
+            coastal_idx=coastal_idx,
+            model=model,
+            model_kwargs=model_kwargs,
+            store_rainrates=store_rainrates,
+            metric=metric,
+            intensity_thres=intensity_thres,
+            max_dist_eye_km=max_dist_eye_km,
+            max_memory_gb=max_memory_gb,
+        )
+
+        LOGGER.info('Mapping %d tracks to %d coastal centroids.', num_tracks, coastal_idx.size)
         if pool:
             chunksize = max(min(num_tracks // pool.ncpus, 1000), 1)
+            kwargs_repeated = [
+                itertools.repeat(val, num_tracks)
+                for val in kwargs_from_track.values()
+            ]
             tc_haz_list = pool.map(
-                cls._from_track, tracks.data,
-                itertools.repeat(centroids, num_tracks),
-                itertools.repeat(coastal_idx, num_tracks),
-                itertools.repeat(model, num_tracks),
-                itertools.repeat(model_kwargs, num_tracks),
-                itertools.repeat(store_rainrates, num_tracks),
-                itertools.repeat(metric, num_tracks),
-                itertools.repeat(intensity_thres, num_tracks),
-                itertools.repeat(max_dist_eye_km, num_tracks),
-                itertools.repeat(max_memory_gb, num_tracks),
-                chunksize=chunksize)
+                cls._from_track,
+                tracks.data,
+                *kwargs_repeated,
+                chunksize=chunksize,
+            )
         else:
             last_perc = 0
             tc_haz_list = []
@@ -454,12 +464,8 @@ class TCRain(Hazard):
                     LOGGER.info("Progress: %d%%", perc)
                     last_perc = perc
                 tc_haz_list.append(
-                    cls._from_track(track, centroids, coastal_idx,
-                                    model=model, model_kwargs=model_kwargs,
-                                    store_rainrates=store_rainrates,
-                                    metric=metric, intensity_thres=intensity_thres,
-                                    max_dist_eye_km=max_dist_eye_km,
-                                    max_memory_gb=max_memory_gb))
+                    cls._from_track(track, **kwargs_from_track)
+                )
             if last_perc < 100:
                 LOGGER.info("Progress: 100%")
 
@@ -1141,6 +1147,7 @@ def _compute_vertical_velocity(
     d_centr: dict,
     close_centr: np.ndarray,
     wind_model: str = "ER11",
+    wind_model_kwargs: Optional[dict] = None,
     elevation_tif: Optional[Union[str, Path]] = None,
     c_drag_tif: Optional[Union[str, Path]] = None,
     w_rad: float = 0.005,
@@ -1175,6 +1182,8 @@ def _compute_vertical_velocity(
         For each track position one row indicating which centroids are within reach.
     wind_model : str, optional
         Parametric wind field model to use, see TropCyclone. Default: "ER11".
+    wind_model_kwargs: dict, optional
+        If given, forward these kwargs to the selected wind model. Default: None
     elevation_tif : Path or str, optional
         Path to a GeoTIFF file containing digital elevation model data (in m). If not specified, an
         SRTM-based topography at 0.1 degree resolution provided with CLIMADA is used. Default: None
@@ -1199,7 +1208,8 @@ def _compute_vertical_velocity(
     ndarray of shape (ntime, ncentroids)
     """
     h_winds = _horizontal_winds(
-        si_track, d_centr, close_centr, MODEL_VANG[wind_model], matlab_ref_mode=matlab_ref_mode,
+        si_track, d_centr, close_centr, MODEL_VANG[wind_model],
+        model_kwargs=wind_model_kwargs, matlab_ref_mode=matlab_ref_mode,
     )
 
     # Currently, the `close_centr` mask is ignored in the computation of the components, but it is
@@ -1225,6 +1235,7 @@ def _horizontal_winds(
     d_centr: dict,
     close_centr: np.ndarray,
     model: int,
+    model_kwargs: Optional[dict] = None,
     matlab_ref_mode: bool = False,
 ) -> dict:
     """Compute all horizontal wind speed variables required for `_compute_vertical_velocity`
@@ -1242,6 +1253,8 @@ def _horizontal_winds(
         For each track position one row indicating which centroids are within reach.
     model : int
         Wind profile model selection according to MODEL_VANG.
+    model_kwargs: dict, optional
+        If given, forward these kwargs to the selected wind model. Default: None
     matlab_ref_mode : bool, optional
         Do not apply the changes to the reference MATLAB implementation. Default: False
 
@@ -1263,7 +1276,9 @@ def _horizontal_winds(
         # radial windprofile without influence from coriolis force
         "nocoriolis": _windprofile(
             si_track, d_centr[""], close_centr, model,
-            cyclostrophic=True, matlab_ref_mode=matlab_ref_mode,
+            model_kwargs=model_kwargs,
+            cyclostrophic=True,
+            matlab_ref_mode=matlab_ref_mode,
         ),
     }
     # winds['r±,t±'] : radial windprofile with offset in radius and/or time
@@ -1274,7 +1289,9 @@ def _horizontal_winds(
             if tstep == "":
                 result[:, :] = _windprofile(
                     si_track, d_centr[rstep], close_centr, model,
-                    cyclostrophic=False, matlab_ref_mode=matlab_ref_mode,
+                    model_kwargs=model_kwargs,
+                    cyclostrophic=False,
+                    matlab_ref_mode=matlab_ref_mode,
                 )
             else:
                 # NOTE: For the computation of time derivatives, the eye of the storm is held
@@ -1282,7 +1299,9 @@ def _horizontal_winds(
                 sl = slice(2, None) if tstep == "+" else slice(None, -2)
                 result[1:-1, :] = _windprofile(
                     si_track.isel(time=sl), d_centr[rstep][1:-1], close_centr[1:-1], model,
-                    cyclostrophic=False, matlab_ref_mode=matlab_ref_mode,
+                    model_kwargs=model_kwargs,
+                    cyclostrophic=False,
+                    matlab_ref_mode=matlab_ref_mode,
                 )
             winds[f"r{rstep},t{tstep}"] = result
 
@@ -1297,6 +1316,7 @@ def _windprofile(
     d_centr: dict,
     close_centr: np.ndarray,
     model: int,
+    model_kwargs: Optional[dict] = None,
     cyclostrophic: bool = False,
     matlab_ref_mode: bool = False,
 ) -> np.ndarray:
@@ -1315,6 +1335,8 @@ def _windprofile(
         For each track position one row indicating which centroids are within reach.
     model : int
         Wind profile model selection according to MODEL_VANG.
+    model_kwargs: dict, optional
+        If given, forward these kwargs to the selected wind model. Default: None
     cyclostrophic : bool, optional
         If True, don't apply the influence of the Coriolis force (set the Coriolis terms to 0).
         Default: False
@@ -1331,7 +1353,9 @@ def _windprofile(
         si_track = si_track.copy(deep=True)
         si_track["cp"].values[:] = 5e-5
     return compute_angular_windspeeds(
-        si_track, d_centr, close_centr, model, cyclostrophic=cyclostrophic,
+        si_track, d_centr, close_centr, model,
+        model_kwargs=model_kwargs,
+        cyclostrophic=cyclostrophic,
     )
 
 def _w_shear(
@@ -1630,7 +1654,7 @@ def _qs_from_t_diff_level(
     # c_vmax : rescale factor from (squared) surface to (squared) gradient winds
     #          In the MATLAB implementation, c_vmax=1.6 is used, but this is almost the same as the
     #          value used here (0.8**-2).
-    c_vmax = 1.6 if matlab_ref_mode else GRADIENT_LEVEL_TO_SURFACE_WINDS**-2
+    c_vmax = 1.6 if matlab_ref_mode else GRADIENT_TO_SURFACE_WINDS**-2
 
     # In the MATLAB implementation, the "Bolton1980" coefficients, and an approximative form of the
     # derivative are used in the computation of the mixing ratio.
