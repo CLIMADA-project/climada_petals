@@ -34,13 +34,10 @@ from scipy.stats import gumbel_r
 import xesmf as xe
 from numba import guvectorize
 
-from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries, country_to_iso
-from .cds_glofas_downloader import glofas_request
+from .cds_glofas_downloader import glofas_request, CDS_DOWNLOAD_DIR
 
 LOGGER = logging.getLogger(__name__)
-
-CDS_DOWNLOAD_DIR = Path(SYSTEM_DIR, "cds-download")
 
 
 def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:

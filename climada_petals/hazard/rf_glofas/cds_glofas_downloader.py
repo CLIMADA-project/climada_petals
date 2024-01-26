@@ -25,15 +25,21 @@ import multiprocessing as mp
 from copy import deepcopy
 from typing import Iterable, Mapping, Any, Optional, List, Union
 from itertools import repeat
-from datetime import date
+from datetime import date, datetime
 import logging
+import hashlib
 
 from cdsapi import Client
 from ruamel.yaml import YAML
+from ruamel.yaml.compat import StringIO
 import pandas as pd
 import numpy as np
 
+from climada.util.constants import SYSTEM_DIR
+
 LOGGER = logging.getLogger(__name__)
+
+CDS_DOWNLOAD_DIR = Path(SYSTEM_DIR, "cds-download")
 
 DEFAULT_REQUESTS = {
     "historical": {
@@ -74,13 +80,33 @@ DEFAULT_REQUESTS = {
 """Default request keyword arguments to be updated by the user requests"""
 
 
+def request_to_md5(request: Mapping[Any, Any]) -> str:
+    """Hash a string with the MD5 algorithm"""
+    yaml = YAML()
+    stream = StringIO()
+    yaml.dump(request, stream)
+    return hashlib.md5(stream.getvalue().encode("utf-8")).hexdigest()
+
+
+def cleanup_download_dir(
+    download_dir: Union[Path, str] = CDS_DOWNLOAD_DIR, dry_run: bool = False
+):
+    """Delete the contents of the download directory"""
+    for filename in Path(download_dir).glob("*"):
+        LOGGER.debug("Removing file: %s" % filename)
+        if not dry_run:
+            filename.unlink()
+    if dry_run:
+        LOGGER.debug("Dry run. No files removed")
+
+
 def glofas_request_single(
     product: str,
     request: Mapping[str, Any],
-    outfile: Union[Path, str],
+    outpath: Union[Path, str],
     use_cache: bool,
     client_kw: Optional[Mapping[str, Any]] = None,
-) -> None:
+) -> Path:
     """Perform a single request for data from the Copernicus data store
 
     This will skip the download if a file was found at the target location with the same
@@ -101,17 +127,23 @@ def glofas_request_single(
     client_kw : dict (optional)
         Dictionary with keyword arguments for the ``cdsapi.Client`` used for downloading
     """
-    # Set up YAML parser
-    yaml = YAML()
-    request_cfg = Path(outfile).with_suffix(".yml")
+    # Define output file
+    outpath = Path(outpath)
+    request_hash = request_to_md5(request)
+    outfile = outpath / (
+        datetime.today().strftime("%y%m%d-%H%M%S") + f"-{request_hash}"
+    )
+    extension = ".grib" if request["format"] == "grib" else ".nc"
+    outfile = outfile.with_suffix(extension)
 
-    # Check if file exists and request_cfg matches
-    if use_cache and Path(outfile).is_file() and request_cfg.is_file():
-        if yaml.load(request_cfg) == request:
-            LOGGER.info(
-                "Skipping request for file '%s' because it already exists", outfile
-            )
-            return
+    # Check if request was issued before
+    if use_cache:
+        for filename in outpath.glob(f"*{extension}"):
+            if request_hash == filename.stem.split("-")[-1]:
+                LOGGER.info(
+                    "Skipping request for file '%s' because it already exists", outfile
+                )
+                return filename.resolve()
 
     # Set up client and retrieve data
     LOGGER.info("Downloading file: %s", outfile)
@@ -121,26 +153,30 @@ def glofas_request_single(
     client = Client(**client_kw_default)
     client.retrieve(product, request, outfile)
 
-    # Dump the request next to the file
-    yaml.dump(request, request_cfg)
+    # Dump request
+    yaml = YAML()
+    yaml.dump(request, outfile.with_suffix(".yml"))
+
+    # Return file path
+    return outfile.resolve()
 
 
 def glofas_request_multiple(
     product: str,
     requests: Iterable[Mapping[str, str]],
-    outfiles: Iterable[Path],
+    outdir: Union[Path, str],
     num_proc: int,
     use_cache: bool,
     client_kw: Optional[Mapping[str, Any]] = None,
-) -> None:
+) -> List[Path]:
     """Execute multiple requests to the Copernicus data store in parallel"""
     with mp.Pool(num_proc) as pool:
-        pool.starmap(
+        return pool.starmap(
             glofas_request_single,
             zip(
                 repeat(product),
                 requests,
-                outfiles,
+                repeat(outdir),
                 repeat(use_cache),
                 repeat(client_kw),
             ),
@@ -220,14 +256,16 @@ def glofas_request(
         year_to = int(date_to) if date_to is not None else year_from
 
         # List up all requests
-        years = list(range(year_from, year_to + 1))
-        requests = [{"hyear": str(year)} for year in years]
-        outfiles = [f"{product}-{year:04}" for year in years]
+        requests = [
+            {"hyear": str(year)} for year in list(range(year_from, year_to + 1))
+        ]
 
     elif product == "forecast":
         # Download single date if 'date_to' is 'None'
         date_from: date = date.fromisoformat(date_from)
-        date_to: date = date.fromisoformat(date_to) if date_to is not None else date_from
+        date_to: date = (
+            date.fromisoformat(date_to) if date_to is not None else date_from
+        )
 
         # List up all requests
         dates = pd.date_range(date_from, date_to, freq="D", inclusive="both").date
@@ -235,23 +273,14 @@ def glofas_request(
             {"year": str(d.year), "month": f"{d.month:02d}", "day": f"{d.day:02d}"}
             for d in dates
         ]
-        product_id = default_request["product_type"].split("_")[0]
-        outfiles = [f"{product}-{product_id}-{d.isoformat()}" for d in dates]
 
     else:
-        NotImplementedError()
-
-    # Switch file extension based on selected format
-    file_ext = "grib" if default_request["format"] == "grib" else "nc"
+        NotImplementedError("Unknown product: %s" % product)
 
     requests = [{**default_request, **req} for req in requests]
-    outfiles = [Path(output_dir, f"glofas-{stem}.{file_ext}") for stem in outfiles]
     glofas_product = f"cems-glofas-{product}"
 
     # Execute request
-    glofas_request_multiple(
-        glofas_product, requests, outfiles, num_proc, use_cache, client_kw
+    return glofas_request_multiple(
+        glofas_product, requests, output_dir, num_proc, use_cache, client_kw
     )
-
-    # Return the (absolute) filepaths
-    return [file.resolve() for file in outfiles]

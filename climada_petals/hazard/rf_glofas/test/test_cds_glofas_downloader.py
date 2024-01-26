@@ -3,6 +3,7 @@ import unittest
 import unittest.mock as mock
 from copy import deepcopy
 from pathlib import Path
+from datetime import date
 
 import cdsapi
 from ruamel.yaml import YAML
@@ -10,6 +11,8 @@ from ruamel.yaml import YAML
 from climada_petals.hazard.rf_glofas.cds_glofas_downloader import (
     glofas_request,
     glofas_request_single,
+    request_to_md5,
+    cleanup_download_dir,
     DEFAULT_REQUESTS,
 )
 
@@ -25,6 +28,14 @@ class TestGloFASRequest(unittest.TestCase):
         """Clean up the temporary directory"""
         self.tempdir.cleanup()
 
+    def test_cleanup_download_dir(self):
+        """Check if deleting download directory contents works"""
+        _, filename = tempfile.mkstemp(dir=self.tempdir.name)
+        cleanup_download_dir(self.tempdir.name, dry_run=True)
+        self.assertTrue(Path(filename).is_file())
+        cleanup_download_dir(self.tempdir.name, dry_run=False)
+        self.assertFalse(Path(filename).is_file())
+
     @mock.patch(
         "climada_petals.hazard.rf_glofas.cds_glofas_downloader.Client", autospec=True
     )
@@ -32,30 +43,30 @@ class TestGloFASRequest(unittest.TestCase):
         """Test execution of a single request without actually downloading stuff"""
         product = "product"
         request = deepcopy(DEFAULT_REQUESTS["forecast"])
-        outfile = Path(self.tempdir.name, "request.nc")
+        outdir = Path(self.tempdir.name)
         client_obj_mock = mock.create_autospec(cdsapi.Client)
         client_mock.return_value = client_obj_mock
 
         # Call once
-        glofas_request_single(product, request, outfile, use_cache=True)
+        glofas_request_single(product, request, outdir, use_cache=True)
         client_mock.assert_called_once_with(quiet=False, debug=False)
-        client_obj_mock.retrieve.assert_called_once_with(product, request, outfile)
+        call_args = client_obj_mock.retrieve.call_args.args
+        self.assertEqual(call_args[0], product)
+        self.assertEqual(call_args[1], request)
+        request_hash = request_to_md5(request)
+        self.assertIn(request_hash, call_args[2].stem)
+        self.assertIn(date.today().strftime("%y%m%d"), call_args[2].stem)
 
         # Check if request was correctly dumped
-        outfile_yml = outfile.with_suffix(".yml")
-        self.assertTrue(outfile_yml.exists())
+        outfile_yml = next(outdir.glob(f"*-{request_hash}.yml"))
         yaml = YAML()
         self.assertEqual(yaml.load(outfile_yml), request)
 
-        # Call again to check caching
-        with tempfile.NamedTemporaryFile(dir=self.tempdir.name) as tmp_file:
-            # Dump the request next to the (fake) outfile
-            yaml.dump(request, Path(tmp_file.name).with_suffix(".yml"))
-
-            # Client should not have been called again
+        # Call again to check caching, client should not have been called again
+        with tempfile.NamedTemporaryFile(dir=outdir, suffix=f"-{request_hash}.grib"):
             client_mock.reset_mock()
             client_obj_mock.reset_mock()
-            glofas_request_single(product, request, tmp_file.name, use_cache=True)
+            glofas_request_single(product, request, outdir, use_cache=True)
             client_mock.assert_not_called()
             client_obj_mock.retrieve.assert_not_called()
 
@@ -64,26 +75,27 @@ class TestGloFASRequest(unittest.TestCase):
             glofas_request_single(
                 product,
                 request,
-                tmp_file.name,
+                outdir,
                 use_cache=False,
                 client_kw=dict(verify=True, debug=True),
             )
             client_mock.assert_called_once_with(quiet=False, debug=True, verify=True)
-            client_obj_mock.retrieve.assert_called_once_with(
-                product, request, tmp_file.name
-            )
+            call_args = client_obj_mock.retrieve.call_args.args
+            self.assertEqual(call_args[0], product)
+            self.assertEqual(call_args[1], request)
+            self.assertIn(request_hash, call_args[2].stem)
 
-            # Wrong request should also induce new download
+            # Different request should also induce new download
             client_mock.reset_mock()
             client_obj_mock.reset_mock()
-            wrong_request = deepcopy(request)
-            wrong_request["leadtime_hour"][2] = "xx"
-            yaml.dump(wrong_request, Path(tmp_file.name).with_suffix(".yml"))
-            glofas_request_single(product, request, tmp_file.name, use_cache=True)
+            new_request = deepcopy(request)
+            new_request["leadtime_hour"][2] = "xx"
+            glofas_request_single(product, new_request, outdir, use_cache=True)
             client_mock.assert_called_once_with(quiet=False, debug=False)
-            client_obj_mock.retrieve.assert_called_once_with(
-                product, request, tmp_file.name
-            )
+            call_args = client_obj_mock.retrieve.call_args.args
+            self.assertEqual(call_args[0], product)
+            self.assertEqual(call_args[1], new_request)
+            self.assertIn(request_to_md5(new_request), call_args[2].stem)
 
     @mock.patch(
         "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
@@ -98,26 +110,42 @@ class TestGloFASRequest(unittest.TestCase):
         mock_req.assert_called_once_with(
             "cems-glofas-forecast",
             [request],
-            [Path(self.tempdir.name, "glofas-forecast-ensemble-2022-01-01.grib")],
+            self.tempdir.name,
             1,
             True,
             None,
         )
 
     @mock.patch(
-        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
-        autospec=True,
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.Client", autospec=True
     )
-    def test_forecast_filetype(self, mock_req):
+    def test_forecast_filetype(self, client_mock):
         """Test correct filetype suffix"""
-        glofas_request(
+        client_obj_mock = mock.create_autospec(cdsapi.Client)
+        client_mock.return_value = client_obj_mock
+
+        # Use default grib
+        request = deepcopy(DEFAULT_REQUESTS["forecast"])
+        request["format"] = "grib"
+        glofas_request_single(
             "forecast",
-            "2022-01-01",
-            "2022-01-01",
+            request,
             self.tempdir.name,
-            request_kw=dict(format="grib"),
+            use_cache=False,
         )
-        self.assertEqual(mock_req.call_args.args[2][0].suffix, ".grib")
+        call_args = client_obj_mock.retrieve.call_args.args
+        self.assertEqual(call_args[2].suffix, ".grib")
+
+        # Use nonsense (should be .nc then)
+        request["format"] = "foo"
+        glofas_request_single(
+            "forecast",
+            request,
+            self.tempdir.name,
+            use_cache=False,
+        )
+        call_args = client_obj_mock.retrieve.call_args.args
+        self.assertEqual(call_args[2].suffix, ".nc")
 
     def test_forecast_wrong_date(self):
         """Test correct error for wrong date specification"""
@@ -138,13 +166,7 @@ class TestGloFASRequest(unittest.TestCase):
         self.assertEqual(requests[1]["month"], "01")
         self.assertEqual(requests[0]["day"], "31")
         self.assertEqual(requests[1]["day"], "01")
-        self.assertEqual(
-            mock_req.call_args.args[2],
-            [
-                Path(self.tempdir.name, "glofas-forecast-ensemble-2022-12-31.grib"),
-                Path(self.tempdir.name, "glofas-forecast-ensemble-2023-01-01.grib"),
-            ],
-        )
+        self.assertEqual(mock_req.call_args.args[2], self.tempdir.name)
 
     @mock.patch(
         "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
@@ -158,7 +180,7 @@ class TestGloFASRequest(unittest.TestCase):
         mock_req.assert_called_once_with(
             "cems-glofas-historical",
             [request],
-            [Path(self.tempdir.name, "glofas-historical-2019.grib")],
+            self.tempdir.name,
             1,
             True,
             None,
@@ -177,11 +199,7 @@ class TestGloFASRequest(unittest.TestCase):
         self.assertEqual(requests[2]["hyear"], "2021")
         self.assertEqual(
             mock_req.call_args.args[2],
-            [
-                Path(self.tempdir.name, "glofas-historical-2019.grib"),
-                Path(self.tempdir.name, "glofas-historical-2020.grib"),
-                Path(self.tempdir.name, "glofas-historical-2021.grib"),
-            ],
+            self.tempdir.name
         )
 
     def test_historical_wrong_date(self):
