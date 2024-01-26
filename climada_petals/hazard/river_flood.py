@@ -89,7 +89,7 @@ class RiverFlood(Hazard):
                           scenario: str,
                           target_year : str,
                           gcm: str,
-                          return_periods: Union[int, Iterable[int]]=RETURN_PERIODS,
+                          return_periods: Union[int, Iterable[int]]=None,
                           countries: Optional[Union[str, Iterable[str]]]=None,
                           boundaries: Iterable[float]=None,
                           dwd_dir: str=DOWNLOAD_DIRECTORY):
@@ -120,7 +120,10 @@ class RiverFlood(Hazard):
                 maximum longitude, maximum latitude
         """
 
-        if isinstance(return_periods, int):
+        if return_periods is None:
+            return_periods = RETURN_PERIODS
+
+        elif isinstance(return_periods, int):
             return_periods = [return_periods]
 
         return_periods.sort(reverse=True)
