@@ -37,8 +37,8 @@ from shapely.geometry import Polygon, MultiPolygon
 
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV
 import climada.util.coordinates as u_coord
-from climada.util import files_handler as u_fh
 from climada.hazard.base import Hazard
+from climada.util import files_handler as u_fh
 from climada.hazard.centroids import Centroids
 from climada import CONFIG
 
@@ -48,6 +48,8 @@ DOWNLOAD_DIRECTORY = CONFIG.hazard.flood.local_data.aqueduct.dir()
 NATID_INFO = pd.read_csv(RIVER_FLOOD_REGIONS_CSV)
 
 LOGGER = logging.getLogger(__name__)
+
+RETURN_PERIODS = [2, 5, 10, 25, 50, 100, 250, 500, 1000]
 
 HAZ_TYPE = 'RF'
 """Hazard type acronym RiverFlood"""
@@ -87,7 +89,7 @@ class RiverFlood(Hazard):
                           scenario: str,
                           target_year : str,
                           gcm: str,
-                          return_periods: Union[int, Iterable[int]],
+                          return_periods: Union[int, Iterable[int]]=RETURN_PERIODS,
                           countries: Optional[Union[str, Iterable[str]]]=None,
                           boundaries: Iterable[float]=None,
                           dwd_dir: str=DOWNLOAD_DIRECTORY):
@@ -109,6 +111,7 @@ class RiverFlood(Hazard):
         return_periods : int or list of int
             events' return periods.
             Possible values are 2, 5, 10, 25, 50, 100, 250, 500, 1000.
+            By default, all are considered.
         countries : str or list of str
             countries ISO3 codes
         boundaries : tuple of floats
@@ -125,8 +128,11 @@ class RiverFlood(Hazard):
         if isinstance(countries, str):
             countries = [countries]
 
+        if scenario in ['45', '85']:
+            scenario = f'rcp{scenario[0]}p{scenario[1]}'
+
         file_names = [f"inunriver_{scenario}_{gcm.zfill(14)}"
-                      f"_{target_year}_rp{rp.zfill(5)}.tif"
+                      f"_{target_year}_rp{str(rp).zfill(5)}.tif"
                       for rp in return_periods]
 
         file_paths = []
@@ -168,8 +174,8 @@ class RiverFlood(Hazard):
 
     @classmethod
     def from_isimip_nc(cls, dph_path=None, frc_path=None, origin=False,
-                centroids=None, countries=None, reg=None, shape=None, ISINatIDGrid=False,
-                years=None):
+                        centroids=None, countries=None, reg=None, shape=None,
+                        ISINatIDGrid=False, years=None):
         """Wrapper to fill hazard from nc_flood file
 
         Parameters
@@ -336,9 +342,9 @@ class RiverFlood(Hazard):
         return haz
 
     def set_from_isimip_nc(self, *args, **kwargs):
-        """This function is deprecated, use RiverFlood.from_nc instead."""
-        LOGGER.warning("The use of RiverFlood.set_from_nc is deprecated."
-                       "Use LowFlow.from_nc instead.")
+        """This function is deprecated, use RiverFlood.from_isimip_nc instead."""
+        LOGGER.warning("The use of RiverFlood.from_isimip_nc is deprecated."
+                       "Use RiverFlood.from_isimip_nc instead.")
         self.__dict__ = RiverFlood.from_isimip_nc(*args, **kwargs).__dict__
 
     def exclude_trends(self, fld_trend_path, dis):
