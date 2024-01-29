@@ -62,7 +62,7 @@ class TestFuncs(unittest.TestCase):
         # shuffle list of points
         points = points[[4, 7, 3, 1, 2, 5, 8, 1, 6, 0]].reshape(-1, 1)
         # this is easy to see from the sorted list of points
-        boxes_correct = [[-3.0, -1.3], [1.5, 1.7], [4.6, 7.0]]
+        boxes_correct = [(-3.0, -1.3), (1.5, 1.7), (4.6, 7.0)]
         boxes, size = _boxcover_points_along_axis(points, nsplits)
         self.assertEqual(boxes, boxes_correct)
         self.assertEqual(size, sum(b[1] - b[0] for b in boxes))
@@ -74,15 +74,17 @@ class TestFuncs(unittest.TestCase):
             [0.4, 2.3], [0.5, 3.0],
         ])
         boxes_correct = [
-            [0.0, 0.0, 2.5, 0.2],
-            [0.2, 1.2, 3.0, 1.5],
-            [0.4, 2.3, 0.5, 3.0],
+            (0.0, 0.0, 2.5, 0.2),
+            (0.2, 1.2, 3.0, 1.5),
+            (0.4, 2.3, 0.5, 3.0),
         ]
         boxes, size = _boxcover_points_along_axis(points, nsplits)
         self.assertEqual(boxes, boxes_correct)
         self.assertEqual(size, sum((b[2] - b[0]) * (b[3] - b[1]) for b in boxes))
+
+        # exchange x and y coordinate (order of dimensions should not matter)
         boxes, size = _boxcover_points_along_axis(points[:, ::-1], nsplits)
-        self.assertEqual(boxes, [[b[1], b[0], b[3], b[2]] for b in boxes_correct])
+        self.assertEqual(boxes, [(b[1], b[0], b[3], b[2]) for b in boxes_correct])
 
 
     def test_bounds_to_str(self):
@@ -304,12 +306,13 @@ class TestHazardInit(unittest.TestCase):
         tracks.data = [track, track]
 
         # first run, with automatic centroids
-        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, TOPO_PATH)
+        centroids = tracks.generate_centroids(res_deg=30 / (60 * 60), buffer_deg=5.5)
+        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, TOPO_PATH)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape[0], 2)
         np.testing.assert_array_equal(haz.intensity.toarray(), 0)
 
-        # second run, with specified centroids
+        # second run, with explicit centroids
         coord = np.array([
             # points along coastline:
             [-23.44084378, -149.45562336], [-23.43322580, -149.44678650],
@@ -321,7 +324,7 @@ class TestHazardInit(unittest.TestCase):
         ])
         centroids = Centroids()
         centroids.set_lat_lon(coord[:, 0], coord[:, 1])
-        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, TOPO_PATH, centroids=centroids)
+        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, TOPO_PATH)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape, (2, coord.shape[0]))
         np.testing.assert_array_equal(haz.intensity.toarray(), 0)
