@@ -102,23 +102,25 @@ class TestFuncs(unittest.TestCase):
     def test_dt64_to_pydt(self):
         """Test conversion from datetime64 to python datetime objects"""
         # generate test data
+        dt64 = np.array([
+            '1865-03-07T20:41:02.000000',
+            '2008-02-29T00:05:30.000000',
+            '2013-12-02T00:00:00.000000',
+        ], dtype='datetime64[us]')
         pydt = [
             dt.datetime(1865, 3, 7, 20, 41, 2),
             dt.datetime(2008, 2, 29, 0, 5, 30),
             dt.datetime(2013, 12, 2),
         ]
-        dt64 = pd.Series(pydt).values
 
         # test conversion of numpy array of dates
         pydt_conv = _dt64_to_pydt(dt64)
         self.assertIsInstance(pydt_conv, list)
         self.assertEqual(len(pydt_conv), dt64.size)
-        self.assertIsInstance(pydt_conv[0], dt.datetime)
-        self.assertEqual(pydt_conv[1], pydt[1])
+        self.assertEqual(pydt_conv, pydt)
 
         # test conversion of single object
         pydt_conv = _dt64_to_pydt(dt64[2])
-        self.assertIsInstance(pydt_conv, dt.datetime)
         self.assertEqual(pydt_conv, pydt[2])
 
 

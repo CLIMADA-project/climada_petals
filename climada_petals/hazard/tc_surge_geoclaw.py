@@ -2284,7 +2284,7 @@ def _dt64_to_pydt(
     -------
     dt : datetime or list of datetime objects
     """
-    result = pd.Series(date).dt.to_pydatetime()
+    result = pd.DatetimeIndex(np.atleast_1d(date).ravel()).to_pydatetime()
     if isinstance(date, np.datetime64):
         return result[0]
     return list(result)
