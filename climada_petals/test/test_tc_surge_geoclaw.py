@@ -27,12 +27,14 @@ import xarray as xr
 from climada import CONFIG
 from climada_petals.hazard.tc_surge_geoclaw import (
     area_sea_level_from_monthly_nc,
-    _geoclaw_surge_from_track,
     setup_clawpack,
+)
+from climada_petals.hazard.tc_surge_geoclaw.tc_surge_geoclaw import (
+    _geoclaw_surge_from_track
 )
 
 
-DATA_DIR = CONFIG.hazard.test_data.dir()
+DATA_DIR = CONFIG.hazard.tc_surge_geoclaw.local_data.dir()
 ZOS_PATH = DATA_DIR.joinpath("zos_monthly.nc")
 TOPO_PATH = DATA_DIR.joinpath("surge_topo.tif")
 
