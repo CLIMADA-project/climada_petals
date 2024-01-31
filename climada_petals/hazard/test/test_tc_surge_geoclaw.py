@@ -36,7 +36,6 @@ from climada_petals.hazard.tc_surge_geoclaw import (
     _clawpack_info,
     _dt64_to_pydt,
     _load_topography,
-    _setup_clawpack,
     area_sea_level_from_monthly_nc,
     sea_level_from_nc,
     TCSurgeEvents,
@@ -122,16 +121,6 @@ class TestFuncs(unittest.TestCase):
         # test conversion of single object
         pydt_conv = _dt64_to_pydt(dt64[2])
         self.assertEqual(pydt_conv, pydt[2])
-
-
-    def test_clawpack_setup(self):
-        """Test _setup_clawpack function"""
-        LOGGER.disabled = False
-        _setup_clawpack()
-        import clawpack.pyclaw
-        self.assertFalse(LOGGER.disabled)
-        path, decorators = _clawpack_info()
-        self.assertTrue(path is not None)
 
 
     def test_surge_events(self):

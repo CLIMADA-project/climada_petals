@@ -17,8 +17,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 ---
 
 Inundation from TC storm surges, modeled using the flow solver GeoClaw
-
-This module requires a Fortran compiler (such as gfortran) to run!
 """
 
 import __main__
@@ -28,6 +26,7 @@ import importlib
 import inspect
 import logging
 import re
+import os
 import pathlib
 import pickle
 import site
@@ -49,6 +48,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import numpy as np
 import pandas as pd
+import psutil
 import rasterio
 from scipy import sparse
 import xarray as xr
@@ -178,10 +178,27 @@ class TCSurgeGeoClaw(Hazard):
         max_dist_inland_km : float = 50.0,
         max_dist_offshore_km : float = 10.0,
         max_latitude : float = 61.0,
+        recompile : bool = False,
         resume : Optional[Union[pathlib.Path, str]] = None,
         pool : Any = None,
     ):
         """Generate a TC surge hazard instance from a TCTracks object
+
+        It is required to run this method (or the function `setup_clawpack`) with a working
+        internet connection at least once to trigger the download and installation of the flow
+        solver (GeoClaw).
+
+        Before you can run several instances of this method in parallel, e.g. on an HPC cluster,
+        make sure to run a single instance of this method since all instances of this method will
+        be accessing the same version of the solver, and compilation might be triggered in all
+        instances at the same time. The same applies if you want to recompile
+        using `recompile=True`.
+
+        By default, the flow solver (GeoClaw) is configured to use multiple OpenMP threads with
+        their number equal to the number of physical CPU cores in the machine. You can change this
+        behavior by setting the environment variable OMP_NUM_THREADS to the desired number of
+        threads. Note, however, that changes to OMP_NUM_THREADS will only be effective if you set
+        `recompile=True` at least once.
 
         Parameters
         ----------
@@ -214,6 +231,10 @@ class TCSurgeGeoClaw(Hazard):
             Maximum offshore distance of the centroids in kilometers. Default: 10
         max_latitude : float, optional
             Maximum latitude of potentially affected centroids. Default: 61
+        recompile : bool, optional
+            If True, force the GeoClaw Fortran code to be recompiled. Note that, without
+            recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
+            ignored! Default: False
         resume : Path or str, optional
             If given, use this file to remember the location of the run directory and resume
             operation later from this directory if it already exists. Default: None
@@ -232,7 +253,7 @@ class TCSurgeGeoClaw(Hazard):
         """
         if tracks.size == 0:
             raise ValueError("The given TCTracks object does not contain any tracks.")
-        _setup_clawpack()
+        setup_clawpack()
 
         max_dist_coast_km = (max_dist_offshore_km, max_dist_inland_km)
         coastal_idx = _get_coastal_centroids_idx(
@@ -251,8 +272,9 @@ class TCSurgeGeoClaw(Hazard):
                 gauges=gauges,
                 sea_level=sea_level,
                 max_dist_eye_deg=max_dist_eye_deg,
-                pool=pool,
+                recompile=recompile,
                 resume=None if resume is None else (pathlib.Path(resume), resume_i),
+                pool=pool,
             )
             for resume_i, track in enumerate(tracks.data)
         ])
@@ -271,6 +293,7 @@ class TCSurgeGeoClaw(Hazard):
         gauges : Optional[List] = None,
         sea_level : float = 0.0,
         max_dist_eye_deg : float = 5.5,
+        recompile : bool = False,
         resume : Optional[Tuple[pathlib.Path, int]] = None,
         pool : Any = None,
     ):
@@ -303,6 +326,10 @@ class TCSurgeGeoClaw(Hazard):
         max_dist_eye_deg : float, optional
             Maximum distance from a TC track node in degrees for a centroid to be considered
             as potentially affected. Default: 5.5
+        recompile : bool, optional
+            If True, force the GeoClaw Fortran code to be recompiled. Note that, without
+            recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
+            ignored! Default: False
         resume : tuple (Path, int), optional
             If given, use this file to remember the location of the run directory and resume
             operation later from this directory if it already exists. The integer points to the
@@ -327,6 +354,7 @@ class TCSurgeGeoClaw(Hazard):
             gauges=gauges,
             sea_level=sea_level,
             max_dist_eye_deg=max_dist_eye_deg,
+            recompile=recompile,
             resume=resume,
             pool=pool,
         )
@@ -434,6 +462,7 @@ def _geoclaw_surge_from_track(
     gauges : Optional[List] = None,
     sea_level : float = 0.0,
     max_dist_eye_deg : float = 5.5,
+    recompile : bool = False,
     resume : Optional[Tuple[pathlib.Path, int]] = None,
     pool : Any = None,
 ) -> Tuple[np.ndarray, List[dict]]:
@@ -463,6 +492,10 @@ def _geoclaw_surge_from_track(
     max_dist_eye_deg : float, optional
         Maximum distance from a TC track node in degrees for a centroid to be considered
         as potentially affected. Default: 5.5
+    recompile : bool, optional
+        If True, force the GeoClaw Fortran code to be recompiled. Note that, without recompilation,
+        changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are ignored!
+        Default: False
     resume : tuple (Path, int), optional
         If given, use this file to remember the location of the run directory and resume
         operation later from this directory if it already exists. The integer points to the
@@ -588,8 +621,9 @@ def _geoclaw_surge_from_track(
                 topo_res_as=topo_res_as,
                 gauges=gauges,
                 sea_level=sea_level,
+                recompile=recompile if i_event == 0 else False,
             )
-            for event in events
+            for i_event, event in enumerate(events)
         ]
 
         if pool is not None:
@@ -668,6 +702,7 @@ class GeoclawRunner():
         topo_res_as : float = 30.0,
         gauges : Optional[List] = None,
         sea_level : float = 0.0,
+        recompile : bool = False,
     ):
         """Initialize GeoClaw working directory with ClawPack rundata
 
@@ -699,12 +734,18 @@ class GeoclawRunner():
             first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
             second argument is a pair of np.datetime64 (start, end). For example, see the helper
             function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
+        recompile : bool, optional
+            If True, force the GeoClaw Fortran code to be recompiled. Note that, without
+            recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
+            ignored! Default: False
         """
+        self.recompile = recompile
+
         gauges = [] if gauges is None else gauges
 
-        if topo_res_as < 3 or topo_res_as > 90:
-            raise ValueError("Specify a topo resolution between 3 and 90 arc-seconds!")
-        self.topo_resolution_as = [360, 120, topo_res_as]
+        if topo_res_as < 3:
+            raise ValueError("Specify a topo resolution of at least 3 arc-seconds!")
+        self.topo_resolution_as = [max(360, topo_res_as), max(120, topo_res_as), topo_res_as]
 
         LOGGER.info("Prepare GeoClaw to determine surge on %d centroids", centroids.shape[0])
         self.track = track
@@ -791,10 +832,15 @@ include $(CLAW)/clawutil/src/Makefile.common
         last_perc = -100
         stopped = False
         with subprocess.Popen(
-            ["make", ".output"],
+            ["make"] + (["new"] if self.recompile else []) + [".output"],
             cwd=self.work_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            env={
+                "FFLAGS": "-O2 -fopenmp",
+                "OMP_NUM_THREADS": str(psutil.cpu_count(logical=False)),
+                **os.environ,
+            },
         ) as proc:
             for line in proc.stdout:
                 line = line.decode()
@@ -873,7 +919,8 @@ include $(CLAW)/clawutil/src/Makefile.common
             if g.t is None:
                 continue
             gauge['time'] = self.time_offset + g.t * np.timedelta64(1, 's')
-            gauge['topo_height'] = g.q[1, -1] - g.q[0, -1]
+            mask_amr_max = (g.level == g.level.max())
+            gauge['topo_height'] = (g.q[1, mask_amr_max] - g.q[0, mask_amr_max]).mean()
             gauge['height_above_ground'] = g.q[0, :]
             gauge['height_above_geoid'] = g.q[1, :]
             gauge["amr_level"] = g.level
@@ -2199,7 +2246,7 @@ def _clawpack_info() -> Tuple[Optional[pathlib.Path], Tuple[str]]:
     return path, tuple(decorators)
 
 
-def _setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) -> None:
+def setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) -> None:
     """Install the specified version of clawpack if not already present
 
     Parameters
@@ -2216,7 +2263,10 @@ def _setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) -
     ):
         LOGGER.info("Installing Clawpack version %s", version)
         pkg = f"git+{CLAWPACK_GIT_URL}@{version}#egg=clawpack"
-        cmd = [sys.executable, "-m", "pip", "install", "--src", CLAWPACK_SRC_DIR, "-e", pkg]
+        cmd = [
+            sys.executable, "-m", "pip", "install", "--src", CLAWPACK_SRC_DIR,
+            "--no-build-isolation", "-e", pkg,
+        ]
         try:
             subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
