@@ -23,15 +23,23 @@ import unittest
 
 import numpy as np
 
-from climada import CONFIG
+from climada.util.api_client import Client
 from climada_petals.hazard.tc_surge_geoclaw.sea_level_funs import (
     area_sea_level_from_monthly_nc,
     sea_level_from_nc,
 )
 
 
-DATA_DIR = CONFIG.hazard.tc_surge_geoclaw.local_data.dir()
-ZOS_PATH = DATA_DIR.joinpath("zos_monthly.nc")
+def test_altimetry_nc():
+    """Altimetry (ocean surface) raster data for testing
+
+    Sample of monthly Copernicus satellite altimetry for year 2010.
+    """
+    client = Client()
+    _, [altimetry_nc] = client.download_dataset(
+        client.get_dataset_info(name='test_altimetry_tubuai', status='test_dataset')
+    )
+    return altimetry_nc
 
 
 class TestSeaLevelFuns(unittest.TestCase):
@@ -39,6 +47,7 @@ class TestSeaLevelFuns(unittest.TestCase):
 
     def test_load_sea_level(self):
         """Test functions to get sea level from NetCDF files"""
+        zos_path = test_altimetry_nc()
         periods = [
             # one period in January, one in February, and one close to Jan/Feb boundary
             (np.datetime64("2010-01-10"), np.datetime64("2010-01-14")),
@@ -53,7 +62,7 @@ class TestSeaLevelFuns(unittest.TestCase):
         ]
 
         sea_level = []
-        sea_level_fun = area_sea_level_from_monthly_nc(ZOS_PATH)
+        sea_level_fun = area_sea_level_from_monthly_nc(zos_path)
         for per in periods:
             for bnd in bounds:
                 sea_level.append(sea_level_fun(bnd, per))
@@ -85,7 +94,7 @@ class TestSeaLevelFuns(unittest.TestCase):
         ]
 
         sea_level = []
-        sea_level_fun = sea_level_from_nc(ZOS_PATH, t_pad=np.timedelta64(4, "D"))
+        sea_level_fun = sea_level_from_nc(zos_path, t_pad=np.timedelta64(4, "D"))
         for per in periods:
             for bnd in bounds:
                 sea_level.append(sea_level_fun(bnd, per))

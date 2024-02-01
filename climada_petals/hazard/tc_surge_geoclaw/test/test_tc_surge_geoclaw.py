@@ -24,13 +24,21 @@ import unittest
 import numpy as np
 import xarray as xr
 
-from climada import CONFIG
 from climada.hazard import Centroids, TCTracks
+from climada.util.api_client import Client
 from climada_petals.hazard.tc_surge_geoclaw import TCSurgeGeoClaw
 
 
-DATA_DIR = CONFIG.hazard.tc_surge_geoclaw.local_data.dir()
-TOPO_PATH = DATA_DIR.joinpath("surge_topo.tif")
+def test_bathymetry_tif():
+    """Topo-Bathymetry (combined land surface and ocean floor) raster data for testing
+
+    SRTM15+V2.3 data of Tubuai island enlarged by factor 10.
+    """
+    client = Client()
+    _, [bathymetry_tif] = client.download_dataset(
+        client.get_dataset_info(name='test_bathymetry_tubuaix10', status='test_dataset')
+    )
+    return bathymetry_tif
 
 
 class TestHazardInit(unittest.TestCase):
@@ -60,10 +68,11 @@ class TestHazardInit(unittest.TestCase):
         })
         tracks = TCTracks()
         tracks.data = [track, track]
+        topo_path = test_bathymetry_tif()
 
         # first run, with automatic centroids
         centroids = tracks.generate_centroids(res_deg=30 / (60 * 60), buffer_deg=5.5)
-        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, TOPO_PATH)
+        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, topo_path)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape[0], 2)
         np.testing.assert_array_equal(haz.intensity.toarray(), 0)
@@ -80,7 +89,7 @@ class TestHazardInit(unittest.TestCase):
         ])
         centroids = Centroids()
         centroids.set_lat_lon(coord[:, 0], coord[:, 1])
-        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, TOPO_PATH)
+        haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, topo_path)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape, (2, coord.shape[0]))
         np.testing.assert_array_equal(haz.intensity.toarray(), 0)

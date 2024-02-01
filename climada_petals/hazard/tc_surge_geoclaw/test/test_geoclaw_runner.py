@@ -24,7 +24,7 @@ import unittest
 
 import numpy as np
 
-from climada import CONFIG
+from climada.util.api_client import Client
 from climada_petals.hazard.tc_surge_geoclaw.geoclaw_runner import (
     _bounds_to_str,
     _dt64_to_pydt,
@@ -32,8 +32,16 @@ from climada_petals.hazard.tc_surge_geoclaw.geoclaw_runner import (
 )
 
 
-DATA_DIR = CONFIG.hazard.tc_surge_geoclaw.local_data.dir()
-TOPO_PATH = DATA_DIR.joinpath("surge_topo.tif")
+def test_bathymetry_tif():
+    """Topo-Bathymetry (combined land surface and ocean floor) raster data for testing
+
+    SRTM15+V2.3 data of Tubuai island enlarged by factor 10.
+    """
+    client = Client()
+    _, [bathymetry_tif] = client.download_dataset(
+        client.get_dataset_info(name='test_bathymetry_tubuaix10', status='test_dataset')
+    )
+    return bathymetry_tif
 
 
 class TestFuncs(unittest.TestCase):
@@ -78,17 +86,18 @@ class TestFuncs(unittest.TestCase):
 
     def test_load_topography(self):
         """Test _load_topography function"""
+        topo_path = test_bathymetry_tif()
         resolutions = [15, 30, 41, 90, 300]
         bounds = [
             (-153.62, -28.79, -144.75, -18.44),
             (-153, -20, -150, -19),
             (-152, -28.5, -145, -27.5),
-            (-150.0, -23.3, -149.5, -23.0)
+            (-150.0, -23.3, -149.6, -23.0)
         ]
         zvalues = []
         for res_as in resolutions:
             for bnd in bounds:
-                topo_bounds, topo = _load_topography(TOPO_PATH, bnd, res_as)
+                topo_bounds, topo = _load_topography(topo_path, bnd, res_as)
                 self.assertLessEqual(topo_bounds[0], bnd[0])
                 self.assertLessEqual(topo_bounds[1], bnd[1])
                 self.assertGreaterEqual(topo_bounds[2], bnd[2])
