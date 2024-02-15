@@ -104,7 +104,7 @@ Franklin, J.L., Black, M.L., Valde, K. (2003): GPS Dropwindsonde Wind Profiles i
 Their Operational Implications. Weather and Forecasting 18(1): 32–44.
 https://doi.org/10.1175/1520-0434(2003)018<0032:GDWPIH>2.0.CO;2
 
-Note that we here use a value different from the one in `climada.hazard.trop_cyclone` because the
+Note that we here use a value different from the one in ``climada.hazard.trop_cyclone`` because the
 focus is not only on the eyewall region, but also on the outer vortex, which is a little more
 important for precipitation than for wind effects.
 """
@@ -245,17 +245,17 @@ class TCRain(Hazard):
         """
         Create new TCRain instance that contains rainfields from the specified tracks
 
-        This function sets the `intensity` attribute to contain, for each centroid,
+        This function sets the ``intensity`` attribute to contain, for each centroid,
         the total amount of rain experienced over the whole period of each TC event in mm.
-        The amount of rain is set to 0 if it does not exceed the threshold `intensity_thres`.
+        The amount of rain is set to 0 if it does not exceed the threshold ``intensity_thres``.
 
-        The `category` attribute is set to the value of the `category`-attribute
+        The ``category`` attribute is set to the value of the ``category``-attribute
         of each of the given track data sets.
 
-        The `basin` attribute is set to the genesis basin for each event, which
-        is the first value of the `basin`-variable in each of the given track data sets.
+        The ``basin`` attribute is set to the genesis basin for each event, which
+        is the first value of the ``basin``-variable in each of the given track data sets.
 
-        Optionally, the time-dependent rain rates can be stored using the `store_rainrates`
+        Optionally, the time-dependent rain rates can be stored using the ``store_rainrates``
         function parameter (see below).
 
         Currently, two models are supported to compute the rain rates: R-CLIPER and TCR. The
@@ -308,10 +308,10 @@ class TCRain(Hazard):
             Default: "R-CLIPER".
         model_kwargs: dict, optional
             If given, forward these kwargs to the selected model. The implementation of the
-            R-CLIPER model currently does not allow modifications, so that `model_kwargs` is
-            ignored with `model="R-CLIPER"`. While the TCR model can be configured in several ways,
+            R-CLIPER model currently does not allow modifications, so that ``model_kwargs`` is
+            ignored with ``model="R-CLIPER"``. While the TCR model can be configured in several ways,
             it is usually safe to go with the default settings. Here is the complete list of
-            `model_kwargs` and their meaning with `model="TCR"` (in alphabetical order):
+            ``model_kwargs`` and their meaning with ``model="TCR"`` (in alphabetical order):
 
             c_drag_tif : Path or str, optional
                 Path to a GeoTIFF file containing gridded drag coefficients (bottom friction). If
@@ -359,13 +359,13 @@ class TCRain(Hazard):
             w_rad : float, optional
                 Background subsidence velocity (in m/s) under radiative cooling. Default: 0.005
             wind_model : str, optional
-                Parametric wind field model to use, see the `TropCyclone` class. Default: "ER11".
+                Parametric wind field model to use, see the ``TropCyclone`` class. Default: "ER11".
 
             Default: None
         ignore_distance_to_coast : boolean, optional
             If True, centroids far from coast are not ignored. Default: False.
         store_rainrates : boolean, optional
-            If True, the Hazard object gets a list `rainrates` of sparse matrices. For each track,
+            If True, the Hazard object gets a list ``rainrates`` of sparse matrices. For each track,
             the rain rates (in mm/h) at each centroid and track position are stored in a sparse
             matrix of shape (npositions, ncentroids). Default: False.
         metric : str, optional
@@ -390,7 +390,7 @@ class TCRain(Hazard):
         max_memory_gb : float, optional
             To avoid memory issues, the computation is done for chunks of the track sequentially.
             The chunk size is determined depending on the available memory (in GB). Note that this
-            limit applies to each thread separately if a `pool` is used. Default: 8
+            limit applies to each thread separately if a ``pool`` is used. Default: 8
 
         Returns
         -------
@@ -510,7 +510,7 @@ class TCRain(Hazard):
             If True, store rain rates (in mm/h). Default: False.
         metric : str, optional
             Specify an approximation method to use for earth distances: "equirect" (faster) or
-            "geosphere" (more accurate). See `dist_approx` function in `climada.util.coordinates`.
+            "geosphere" (more accurate). See ``dist_approx`` function in ``climada.util.coordinates``.
             Default: "equirect".
         intensity_thres : float, optional
             Rain amounts (in mm) below this threshold are stored as 0. Default: 0.1
@@ -572,7 +572,7 @@ def _compute_rain_sparse(
     max_dist_eye_km: float = DEF_MAX_DIST_EYE_KM,
     max_memory_gb: float = DEF_MAX_MEMORY_GB,
 ) -> Tuple[sparse.csr_matrix, Optional[sparse.csr_matrix]]:
-    """Version of `compute_rain` that returns sparse matrices and limits memory usage
+    """Version of ``compute_rain`` that returns sparse matrices and limits memory usage
 
     Parameters
     ----------
@@ -592,7 +592,7 @@ def _compute_rain_sparse(
         If True, store rain rates. Default: False.
     metric : str, optional
         Specify an approximation method to use for earth distances: "equirect" (faster) or
-        "geosphere" (more accurate). See `dist_approx` function in `climada.util.coordinates`.
+        "geosphere" (more accurate). See ``dist_approx`` function in ``climada.util.coordinates``.
         Default: "equirect".
     intensity_thres : float, optional
         Wind speeds (in m/s) below this threshold are stored as 0. Default: 17.5
@@ -614,7 +614,7 @@ def _compute_rain_sparse(
     rainrates : csr_matrix or None
         If store_rainrates is True, the rain rates at each centroid and track position
         are stored in a sparse matrix of shape (npositions,  ncentroids ).
-        If store_rainrates is False, `None` is returned.
+        If store_rainrates is False, ``None`` is returned.
     """
     model_kwargs = {} if model_kwargs is None else model_kwargs
 
@@ -645,10 +645,10 @@ def _compute_rain_sparse(
 
     # when done properly, finding and storing the close centroids is not a memory bottle neck and
     # can be done before chunking:
-    centroids_close, mask_close, mask_close_alongtrack = get_close_centroids(
+    centroids_close, mask_centr, mask_centr_alongtrack = get_close_centroids(
         si_track, centroids.coord[idx_centr_filter], max_dist_eye_km, metric=metric,
     )
-    idx_centr_filter = idx_centr_filter[mask_close]
+    idx_centr_filter = idx_centr_filter[mask_centr]
     n_centr_close = centroids_close.shape[0]
     if n_centr_close == 0:
         return intensity_sparse, rainrates_sparse
@@ -663,7 +663,7 @@ def _compute_rain_sparse(
 
         # Split the track into chunks, compute the result for each chunk, and combine:
         return _compute_rain_sparse_chunked(
-            mask_close_alongtrack,
+            mask_centr_alongtrack,
             track,
             centroids,
             idx_centr_filter,
@@ -708,17 +708,17 @@ def _compute_rain_sparse(
     return intensity_sparse, rainrates_sparse
 
 def _compute_rain_sparse_chunked(
-    mask_close_alongtrack: np.ndarray,
+    mask_centr_alongtrack: np.ndarray,
     track: xr.Dataset,
     *args,
     max_memory_gb: float = DEF_MAX_MEMORY_GB,
     **kwargs,
 ) -> Tuple[sparse.csr_matrix, Optional[sparse.csr_matrix]]:
-    """Call `_compute_rain_sparse` for chunks of the track and re-assemble the results
+    """Call ``_compute_rain_sparse`` for chunks of the track and re-assemble the results
 
     Parameters
     ----------
-    mask_close_alongtrack : np.ndarray of shape (npositions, ncentroids)
+    mask_centr_alongtrack : np.ndarray of shape (npositions, ncentroids)
         Each row is a mask that indicates the centroids within reach for one track position.
     track : xr.Dataset
         Single tropical cyclone track.
@@ -726,12 +726,12 @@ def _compute_rain_sparse_chunked(
         Maximum memory requirements (in GB) for the computation of a single chunk of the track.
         Default: 8
     args, kwargs :
-        The remaining arguments are passed on to `_compute_rain_sparse`.
+        The remaining arguments are passed on to ``_compute_rain_sparse``.
 
     Returns
     -------
     intensity, rainrates :
-        See `_compute_rain_sparse` for a description of the return values.
+        See ``_compute_rain_sparse`` for a description of the return values.
     """
     npositions = track.sizes["time"]
     # The memory requirements for each track position are estimated for the case of 25 arrays
@@ -745,7 +745,7 @@ def _compute_rain_sparse_chunked(
         # create overlap between consecutive chunks
         chunk_start = max(0, split_pos[-1] - 2)
         chunk_end = chunk_start + chunk_size
-        nreachable = mask_close_alongtrack[chunk_start:chunk_end].any(axis=0).sum()
+        nreachable = mask_centr_alongtrack[chunk_start:chunk_end].any(axis=0).sum()
         if nreachable > max_nreachable:
             split_pos.append(chunk_end - 1)
             chunk_size = 3
@@ -791,19 +791,19 @@ def compute_rain(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Which data variables are used in the computation of the rain
+        Output of ``tctrack_to_si``. Which data variables are used in the computation of the rain
         rates depends on the selected model.
     centroids : np.ndarray with two dimensions
         Each row is a centroid [lat, lon]. Centroids that are not within reach of the track are
         ignored. Longitudinal coordinates are assumed to be normalized consistently with the
-        longitudinal coordinates in `si_track`.
+        longitudinal coordinates in ``si_track``.
     model : int
         TC rain model selection according to MODEL_RAIN.
     model_kwargs: dict, optional
         If given, forward these kwargs to the selected model. Default: None
     metric : str, optional
         Specify an approximation method to use for earth distances: "equirect" (faster) or
-        "geosphere" (more accurate). See `dist_approx` function in `climada.util.coordinates`.
+        "geosphere" (more accurate). See ``dist_approx`` function in ``climada.util.coordinates``.
         Default: "equirect".
     max_dist_eye_km : float, optional
         No rain calculation is done for centroids with a distance (in km) to the TC center
@@ -856,7 +856,7 @@ def _track_to_si_with_q_and_shear(
     """Convert track data to SI units and add Q (humidity) and vshear variables
 
     If the track data set does not contain the "q950" variable, but "t600", we compute the humidity
-    assuming a moist adiabatic lapse rate (see `_qs_from_t_diff_level`).
+    assuming a moist adiabatic lapse rate (see ``_qs_from_t_diff_level``).
 
     If the track data set does not contain the "vshear" variable, but "v850", we compute the wind
     shear based on the Beta Advection Model (BAM):
@@ -870,7 +870,7 @@ def _track_to_si_with_q_and_shear(
         TC track data.
     metric : str, optional
         Specify an approximation method to use for earth distances: "equirect" (faster) or
-        "geosphere" (more accurate). See `dist_approx` function in `climada.util.coordinates`.
+        "geosphere" (more accurate). See ``dist_approx`` function in ``climada.util.coordinates``.
         Default: "equirect".
     q_950 : float, optional
         If the track data does not include "t600" values, assume this constant value of saturation
@@ -934,7 +934,7 @@ def _centr_distances(
     res_radial_m: float = 2000.0,
     **_kwargs,
 ) -> dict:
-    """Compute distances of centroids to storm locations required for `_compute_vertical_velocity`
+    """Compute distances of centroids to storm locations required for ``_compute_vertical_velocity``
 
     In addition to the distances to the centroids, the distances to staggered centroid locations,
     as well as the unit vectors pointing from the storm center to each centroid are returned.
@@ -942,12 +942,12 @@ def _centr_distances(
     Parameters
     ----------
     si_track : xr.Dataset
-        TC track data in SI units, see `tctrack_to_si`.
+        TC track data in SI units, see ``tctrack_to_si``.
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     metric : str, optional
         Approximation method to use for earth distances: "equirect" (faster) or "geosphere" (more
-        accurate). See `dist_approx` function in `climada.util.coordinates`.
+        accurate). See ``dist_approx`` function in ``climada.util.coordinates``.
         Default: "equirect".
     res_radial_m : float, optional
         Spatial resolution (in m) in radial direction. Default: 2000
@@ -991,7 +991,7 @@ def _rcliper(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Only the "vmax" data variable is used.
+        Output of ``tctrack_to_si``. Only the "vmax" data variable is used.
     d_centr : np.ndarray of shape (npositions, ncentroids)
         Distance (in m) between centroids and track positions.
     mask_centr_close : np.ndarray of shape (npositions, ncentroids)
@@ -1089,12 +1089,12 @@ def _tcr(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Which data variables are used in the computation of the rain
+        Output of ``tctrack_to_si``. Which data variables are used in the computation of the rain
         rates depends on the selected wind model.
     centroids : ndarray of shape (ncentroids, 2)
         Each row is a pair of lat/lon coordinates.
     d_centr : dict
-        Output of `_centr_distances`.
+        Output of ``_centr_distances``.
     mask_centr_close : np.ndarray of shape (npositions, ncentroids)
         For each track position one row indicating which centroids are within reach.
     e_precip : float, optional
@@ -1151,7 +1151,7 @@ def _compute_vertical_velocity(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Which data variables are used depends on the wind model.
+        Output of ``tctrack_to_si``. Which data variables are used depends on the wind model.
     centroids : ndarray of shape (ncentroids, 2)
         Each row is a pair of lat/lon coordinates.
     d_centr : ndarray of shape (npositions, ncentroids)
@@ -1218,7 +1218,7 @@ def _horizontal_winds(
     model: int,
     matlab_ref_mode: bool = False,
 ) -> dict:
-    """Compute all horizontal wind speed variables required for `_compute_vertical_velocity`
+    """Compute all horizontal wind speed variables required for ``_compute_vertical_velocity``
 
     Wind speeds are not only computed on the given centroids and for the given times, but also at
     staggered locations for further use in finite difference computations.
@@ -1226,9 +1226,9 @@ def _horizontal_winds(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Which data variables are used depends on the wind model.
+        Output of ``tctrack_to_si``. Which data variables are used depends on the wind model.
     d_centr : dict
-        Output of `_centr_distances`.
+        Output of ``_centr_distances``.
     mask_centr_close : np.ndarray of shape (npositions, ncentroids)
         For each track position one row indicating which centroids are within reach.
     model : int
@@ -1293,13 +1293,13 @@ def _windprofile(
 ) -> np.ndarray:
     """Compute (absolute) angular wind speeds according to a parametric wind profile
 
-    Wrapper around `compute_angular_windspeeds` (from climada.trop_cyclone) that adjusts the
+    Wrapper around ``compute_angular_windspeeds`` (from climada.trop_cyclone) that adjusts the
     Coriolis parameter if matlab_ref_mode is True.
 
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Which data variables are used depends on the wind model.
+        Output of ``tctrack_to_si``. Which data variables are used depends on the wind model.
     d_centr : ndarray of shape (npositions, ncentroids)
         Distances from storm centers to centroids.
     mask_centr_close : np.ndarray of shape (npositions, ncentroids)
@@ -1342,12 +1342,12 @@ def _w_shear(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. The data variables used by this function are "cp" and "vshear".
+        Output of ``tctrack_to_si``. The data variables used by this function are "cp" and "vshear".
         If the "vshear" variable is not available, the result is 0 everywhere.
     d_centr : dict
-        Output of `_centr_distances`.
+        Output of ``_centr_distances``.
     h_winds : dict
-        Output of `_horizontal_winds`.
+        Output of ``_horizontal_winds``.
     res_radial_m : float, optional
         Spatial resolution (in m) in radial direction. Default: 2000
 
@@ -1398,11 +1398,11 @@ def _w_topo(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. Only the "vtrans" data variable is used by this function.
+        Output of ``tctrack_to_si``. Only the "vtrans" data variable is used by this function.
     d_centr : dict
-        Output of `_centr_distances`.
+        Output of ``_centr_distances``.
     h_winds : dict
-        Output of `_horizontal_winds`.
+        Output of ``_horizontal_winds``.
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     elevation_tif : Path or str, optional
@@ -1459,12 +1459,12 @@ def _w_frict_stretch(
     Parameters
     ----------
     si_track : xr.Dataset
-        Output of `tctrack_to_si`. The data variables used by this function are "cp", "rad",
+        Output of ``tctrack_to_si``. The data variables used by this function are "cp", "rad",
         "tstep" and "vtrans".
     d_centr : dict
-        Output of `_centr_distances`.
+        Output of ``_centr_distances``.
     h_winds : dict
-        Output of `_horizontal_winds`.
+        Output of ``_horizontal_winds``.
     centroids : ndarray
         Each row is a pair of lat/lon coordinates.
     res_radial_m : float, optional
@@ -1570,7 +1570,7 @@ def _qs_from_t_diff_level(
     """Compute the humidity from temperature assuming a moist adiabatic lapse rate
 
     The input temperatures may be given on a different pressure level than the output humidities.
-    When computing Q from T on the same pressure level, see `_r_from_t_same_level` instead since
+    When computing Q from T on the same pressure level, see ``_r_from_t_same_level`` instead since
     Q = r / (1 + r) for the mixing ratio r.
 
     The approach assumes that the lapse rate dT/dz is given by the law for the moist adiabatic
@@ -1589,7 +1589,7 @@ def _qs_from_t_diff_level(
         Rd : specific gas constant of dry air.
 
     Since it's possible to compute Q from T on the same pressure level (see
-    `_r_from_t_same_level`), we can use this relationship to compute Q at one pressure level from
+    ``_r_from_t_same_level``), we can use this relationship to compute Q at one pressure level from
     T given on a different pressure level. However, since we can't solve the equation for T
     analytically, we use the Newton-Raphson method to find the solution.
 
@@ -1749,7 +1749,7 @@ def _r_from_t_same_level(
     r : ndarray
         For each temperature value in temp, a value of saturation specific humidity (in kg/kg).
     drdT : ndarray
-        If `gradient` is False, this is None. Otherwise, the derivative of Q with respect to T is
+        If ``gradient`` is False, this is None. Otherwise, the derivative of Q with respect to T is
         returned.
     """
     try:
