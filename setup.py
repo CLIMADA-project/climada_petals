@@ -37,7 +37,7 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
-        'climada>=4.0',
+        'climada>=4.0,<5',
         'scikit-image',
         "pymrio",
         'osm-flex>=1.1.1',
