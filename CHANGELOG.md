@@ -10,6 +10,22 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+### Added
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+## 4.1.0
+
+Release date: 2024-02-19
+
+### Dependency Changes
+
 Updated:
 
 - `climada` >=4.0 &rarr; ==4.1
@@ -20,20 +36,12 @@ Added:
 - `osm-flex` >=1.1.1
 - `pymrio` >=0.5
 
-### Added
-
 ### Changed
 
 - Restructured `Supplychain` module, which now uses `pymrio` to download and handle multi-regional input output tables [#66](https://github.com/CLIMADA-project/climada_petals/pull/66)
 - Restructured `openstreetmap` module to draw functionalities from external package osm-flex [#103](https://github.com/CLIMADA-project/climada_petals/pull/103)
 - As part of `climada_petals.hazard.tc_rainfield`, implement a new, physics-based TC rain model ("TCR") in addition to the existing implementation of the purely statistical R-CLIPER model ([#85](https://github.com/CLIMADA-project/climada_petals/pull/85))
 - Conda environment now avoids `default` channel packages, as these are incompatible to conda-forge [#110](https://github.com/CLIMADA-project/climada_petals/pull/110)
-
-### Fixed
-
-### Deprecated
-
-### Removed
 
 ## 4.0.2
 
