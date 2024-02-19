@@ -1,8 +1,12 @@
 # Changelog
 
-## 4.0.2
+## Unreleased
 
-Release date: 2023-09-27
+Release date: YYYY-MM-DD
+
+Code freeze date: YYYY-MM-DD
+
+### Description
 
 ### Dependency Changes
 
@@ -15,6 +19,8 @@ Added:
 - `overpy` >=0.7
 - `osm-flex` >=1.1.1
 - `pymrio` >=0.5
+
+### Added
 
 ### Changed
 
