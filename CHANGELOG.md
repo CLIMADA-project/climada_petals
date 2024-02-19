@@ -10,11 +10,15 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
-Added dependencies:
+Updated:
 
-- `pymrio` >=5.2.0
-- `overpy`
+- `climada` >=4.0 &rarr; ==4.1
+
+Added:
+
+- `overpy` >=0.7
 - `osm-flex` >=1.1.1
+- `pymrio` >=0.5
 
 ### Added
 
