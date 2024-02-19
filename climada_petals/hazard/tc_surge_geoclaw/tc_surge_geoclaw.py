@@ -141,6 +141,7 @@ class TCSurgeGeoClaw(Hazard):
         max_dist_inland_km : float = 50.0,
         max_dist_offshore_km : float = 10.0,
         max_latitude : float = 61.0,
+        output_freq_s : float = 0.0,
         recompile : bool = False,
         resume : Optional[Union[pathlib.Path, str]] = None,
         pool : Any = None,
@@ -194,6 +195,9 @@ class TCSurgeGeoClaw(Hazard):
             Maximum offshore distance of the centroids in kilometers. Default: 10
         max_latitude : float, optional
             Maximum latitude of potentially affected centroids. Default: 61
+        output_freq_s : float, optional
+            Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
+            files are written if the value is 0.0. Default: 0.0
         recompile : bool, optional
             If True, force the GeoClaw Fortran code to be recompiled. Note that, without
             recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
@@ -235,6 +239,7 @@ class TCSurgeGeoClaw(Hazard):
                 gauges=gauges,
                 sea_level=sea_level,
                 max_dist_eye_deg=max_dist_eye_deg,
+                output_freq_s=output_freq_s,
                 recompile=recompile,
                 resume=None if resume is None else (pathlib.Path(resume), resume_i),
                 pool=pool,
@@ -255,6 +260,7 @@ class TCSurgeGeoClaw(Hazard):
         gauges : Optional[List] = None,
         sea_level : Union[Callable, float] = 0.0,
         max_dist_eye_deg : float = 5.5,
+        output_freq_s : float = 0.0,
         recompile : bool = False,
         resume : Optional[Tuple[pathlib.Path, int]] = None,
         pool : Any = None,
@@ -288,6 +294,9 @@ class TCSurgeGeoClaw(Hazard):
         max_dist_eye_deg : float, optional
             Maximum distance from a TC track node in degrees for a centroid to be considered
             as potentially affected. Default: 5.5
+        output_freq_s : float, optional
+            Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
+            files are written if the value is 0.0. Default: 0.0
         recompile : bool, optional
             If True, force the GeoClaw Fortran code to be recompiled. Note that, without
             recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
@@ -316,6 +325,7 @@ class TCSurgeGeoClaw(Hazard):
             gauges=gauges,
             sea_level=sea_level,
             max_dist_eye_deg=max_dist_eye_deg,
+            output_freq_s=output_freq_s,
             recompile=recompile,
             resume=resume,
             pool=pool,
@@ -423,6 +433,7 @@ def _geoclaw_surge_from_track(
     gauges : Optional[List] = None,
     sea_level : Union[Callable, float] = 0.0,
     max_dist_eye_deg : float = 5.5,
+    output_freq_s : float = 0.0,
     recompile : bool = False,
     resume : Optional[Tuple[pathlib.Path, int]] = None,
     pool : Any = None,
@@ -453,6 +464,9 @@ def _geoclaw_surge_from_track(
     max_dist_eye_deg : float, optional
         Maximum distance from a TC track node in degrees for a centroid to be considered
         as potentially affected. Default: 5.5
+    output_freq_s : float, optional
+        Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
+        files are written if the value is 0.0. Default: 0.0
     recompile : bool, optional
         If True, force the GeoClaw Fortran code to be recompiled. Note that, without recompilation,
         changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are ignored!
@@ -582,6 +596,7 @@ def _geoclaw_surge_from_track(
                 topo_res_as=topo_res_as,
                 gauges=gauges,
                 sea_level=sea_level,
+                output_freq_s=output_freq_s,
                 recompile=recompile if i_event == 0 else False,
             )
             for i_event, event in enumerate(events)

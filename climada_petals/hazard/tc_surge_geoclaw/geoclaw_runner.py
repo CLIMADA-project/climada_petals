@@ -71,6 +71,7 @@ class GeoClawRunner():
         topo_res_as : float = 30.0,
         gauges : Optional[List] = None,
         sea_level : Union[Callable, float] = 0.0,
+        output_freq_s : float = 0.0,
         recompile : bool = False,
     ):
         """Initialize GeoClaw working directory with ClawPack rundata
@@ -103,6 +104,9 @@ class GeoClawRunner():
             first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
             second argument is a pair of np.datetime64 (start, end). For example, see the helper
             function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
+        output_freq_s : float, optional
+            Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
+            files are written if the value is 0.0. Default: 0.0
         recompile : bool, optional
             If True, force the GeoClaw Fortran code to be recompiled. Note that, without
             recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
@@ -122,6 +126,7 @@ class GeoClawRunner():
         self.centroids = centroids
         self.time_offset = time_offset
         self.time_offset_str = _dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
+        self.output_freq_s = output_freq_s
         self.topo_path = topo_path
         self.gauge_data = [
             {
@@ -362,8 +367,6 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.verbosity = 1
         clawdata.checkpt_style = -3
         clawdata.checkpt_interval = 25
-        clawdata.num_output_times = 0
-        clawdata.output_t0 = False
         clawdata.lower = self.areas['wind_area'][:2]
         clawdata.upper = self.areas['wind_area'][2:]
         clawdata.num_cells = [
@@ -375,6 +378,19 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.num_aux = 3 + 1 + 3
         clawdata.capa_index = 2
         clawdata.t0, clawdata.tfinal = self.time_horizon
+        if self.output_freq_s > 0.0:
+            clawdata.output_style = 1
+            clawdata.num_output_times = int(
+                (clawdata.tfinal - clawdata.t0) * self.output_freq_s
+            )
+            clawdata.output_t0 = True
+            clawdata.output_format = 'binary64'
+            clawdata.output_q_components = 'all'
+            clawdata.output_aux_components = 'all'
+            clawdata.output_aux_onlyonce = False
+        else:
+            clawdata.num_output_times = 0
+            clawdata.output_t0 = False
         clawdata.dt_initial = 0.8 / max(clawdata.num_cells)
         clawdata.cfl_desired = 0.75
         clawdata.num_waves = 3
