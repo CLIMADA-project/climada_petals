@@ -646,7 +646,10 @@ def _compute_rain_sparse(
     # when done properly, finding and storing the close centroids is not a memory bottle neck and
     # can be done before chunking:
     centroids_close, mask_centr, mask_centr_alongtrack = get_close_centroids(
-        si_track, centroids.coord[idx_centr_filter], max_dist_eye_km, metric=metric,
+        si_track=si_track,
+        centroids=centroids.coord[idx_centr_filter],
+        buffer_km=max_dist_eye_km,
+        metric=metric,
     )
     idx_centr_filter = idx_centr_filter[mask_centr]
     n_centr_close = centroids_close.shape[0]
