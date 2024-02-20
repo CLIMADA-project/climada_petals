@@ -3,6 +3,6 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - overpy
+  - overpy>=0.7
   - pymrio>=0.5
   - scikit-image>=0.22
