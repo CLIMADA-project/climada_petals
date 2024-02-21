@@ -63,8 +63,8 @@ jobs:
           python -m pip install "./climada_python[test]" "./climada_petals"
       -
         name: Run Unit Tests
+        working_directory: climada_petals/
         run: |
-          cd climada_petals
           make unit_test
       -
         name: Publish Test Results
