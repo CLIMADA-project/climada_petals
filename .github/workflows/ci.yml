@@ -29,14 +29,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: climada_petals
-          ref: develop  # Branch or release
-
       -
         name: Checkout Core
         uses: actions/checkout@v4
         with:
           repository: CLIMADA-project/climada_python
           path: climada_python
+          ref: develop
       -
         # Store the current date to use it as cache key for the environment
         name: Get current date
