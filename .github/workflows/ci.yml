@@ -51,6 +51,8 @@ jobs:
           create-args: >-
             python=${{ matrix.python-version }}
             make
+          with:
+            init-shell: bash
           # Persist environment for branch, Python version, single day
           cache-environment-key: env-${{ github.ref }}-${{ matrix.python-version }}-${{ steps.date.outputs.date }}
       -
@@ -63,6 +65,7 @@ jobs:
           python -m pip install "./climada_python[test]" "./climada_petals"
       -
         name: Enter Petals directory
+        if: always()
         run: |
           cd climada_petals
       -
