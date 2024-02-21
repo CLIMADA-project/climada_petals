@@ -26,6 +26,7 @@ import xarray as xr
 
 from climada_petals.hazard.tc_surge_geoclaw.tc_surge_events import (
     _boxcover_points_along_axis,
+    _round_bounds_enlarge,
     TCSurgeEvents,
 )
 
@@ -64,6 +65,20 @@ class TestSurgeEvents(unittest.TestCase):
         # exchange x and y coordinate (order of dimensions should not matter)
         boxes, size = _boxcover_points_along_axis(points[:, ::-1], nsplits)
         self.assertEqual(boxes, [(b[1], b[0], b[3], b[2]) for b in boxes_correct])
+
+
+    def test_round_bounds(self):
+        """Test bounds rounding function"""
+        bounds = (14.3, -0.3, 29.0, 4.99)
+        np.testing.assert_allclose(
+            _round_bounds_enlarge(*bounds, precision=5), (10, -5, 30, 5),
+        )
+        np.testing.assert_allclose(
+            _round_bounds_enlarge(*bounds, precision=1), (14, -1, 29, 5),
+        )
+        np.testing.assert_allclose(
+            _round_bounds_enlarge(*bounds, precision=0.2), (14.2, -0.4, 29, 5),
+        )
 
 
     def test_surge_events(self):

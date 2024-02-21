@@ -210,14 +210,6 @@ class TCSurgeEvents():
 
     def _set_areas(self) -> None:
         """For each event, determine areas affected by wind and surge."""
-        # total area (maximum bounds to consider)
-        pad = 1 + self.total_roci_factor * self.track["radius_oci"] / DEG_TO_NM
-        self.total_area = (
-            float((self.track["lon"] - pad).min()),
-            float((self.track["lat"] - pad).min()),
-            float((self.track["lon"] + pad).max()),
-            float((self.track["lat"] + pad).max()),
-        )
         self.wind_area = []
         self.landfall_area = []
         self.surge_areas = []
@@ -235,20 +227,22 @@ class TCSurgeEvents():
 
             # wind area (maximum bounds to consider)
             pad = self.total_roci_factor * track["radius_oci"] / DEG_TO_NM
-            self.wind_area.append((
-                float((track["lon"] - pad).min()),
-                float((track["lat"] - pad).min()),
-                float((track["lon"] + pad).max()),
-                float((track["lat"] + pad).max()),
+            self.wind_area.append(_round_bounds_enlarge(
+                (track["lon"].values - pad).min(),
+                (track["lat"].values - pad).min(),
+                (track["lon"].values + pad).max(),
+                (track["lat"].values + pad).max(),
+                precision=5,
             ))
 
             # landfall area
             pad = lf_radii / DEG_TO_NM
-            self.landfall_area.append((
-                float((track["lon"] - pad)[mask].min()),
-                float((track["lat"] - pad)[mask].min()),
-                float((track["lon"] + pad)[mask].max()),
-                float((track["lat"] + pad)[mask].max()),
+            self.landfall_area.append(_round_bounds_enlarge(
+                (track["lon"].values - pad)[mask].min(),
+                (track["lat"].values - pad)[mask].min(),
+                (track["lon"].values + pad)[mask].max(),
+                (track["lat"].values + pad)[mask].max(),
+                precision=2,
             ))
 
             # surge areas
@@ -267,9 +261,12 @@ class TCSurgeEvents():
                 min_size = 3. / (60. * 60.)
                 if pt_size > (2 * min_size)**2:
                     for bounds in small_bounds:
-                        surge_areas.append((
-                            bounds[0] - min_size, bounds[1] - min_size,
-                            bounds[2] + min_size, bounds[3] + min_size,
+                        surge_areas.append(_round_bounds_enlarge(
+                            bounds[0] - min_size,
+                            bounds[1] - min_size,
+                            bounds[2] + min_size,
+                            bounds[3] + min_size,
+                            precision=1,
                         ))
             surge_areas = [tuple([float(b) for b in bounds]) for bounds in surge_areas]
             self.surge_areas.append(surge_areas)
@@ -277,10 +274,12 @@ class TCSurgeEvents():
             # centroids affected by surge
             centroids_mask = np.zeros(self.centroids.shape[0], dtype=bool)
             for bounds in surge_areas:
-                centroids_mask |= ((bounds[0] <= self.centroids[:, 1])
-                                   & (bounds[1] <= self.centroids[:, 0])
-                                   & (self.centroids[:, 1] <= bounds[2])
-                                   & (self.centroids[:, 0] <= bounds[3]))
+                centroids_mask |= (
+                    (bounds[0] <= self.centroids[:, 1])
+                    & (bounds[1] <= self.centroids[:, 0])
+                    & (self.centroids[:, 1] <= bounds[2])
+                    & (self.centroids[:, 0] <= bounds[3])
+                )
             self.centroid_mask.append(centroids_mask)
 
 
@@ -300,6 +299,33 @@ class TCSurgeEvents():
         """
         # plotting-related code is moved to the `.plot` submodule
         plot_surge_events(self, path, pad_deg)
+
+
+def _round_bounds_enlarge(x_min, y_min, x_max, y_max, precision=1):
+    """Round the given bounds to the specified precision, only enlarging the bounds
+
+    The lower bounds are decreased (floor) and the upper bounds are increased (ceil).
+
+    Parameters
+    ----------
+    x_min, y_min, x_max, y_max : float
+        Two-dimensional coordinate bounds.
+    precision : float, optional
+        The rounding precision. For example, a value of 5 means that values are rounded to the
+        next multiple of 5 so that 13 is rounded to 10 (using floor) or 15 (using ceil).
+        Default: 1
+
+    Returns
+    -------
+    x_min, y_min, x_max, y_max : float
+        Enlarged and rounded coordinate bounds.
+    """
+    return (
+        np.floor(x_min / precision) * precision,
+        np.floor(y_min / precision) * precision,
+        np.ceil(x_max / precision) * precision,
+        np.ceil(y_max / precision) * precision,
+    )
 
 
 def _boxcover_points_along_axis(points : np.ndarray, nsplits : int) -> Tuple[List[Tuple], float]:
