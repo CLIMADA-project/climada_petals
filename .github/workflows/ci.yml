@@ -49,14 +49,15 @@ jobs:
           environment-name: climada_env_${{ matrix.python-version }}
           environment-file: climada_python/requirements/env_climada.yml
           create-args: >-
+            -f climada_python/requirements/env_climada.yml
             python=${{ matrix.python-version }}
             make
           # Persist environment for branch, Python version, single day
           cache-environment-key: env-${{ github.ref }}-${{ matrix.python-version }}-${{ steps.date.outputs.date }}
-      -
-        name: Update Environment for Petals
-        run: |
-          micromamba update -n climada_env_${{ matrix.python-version }} -f climada_petals/requirements/env_climada.yml
+      # -
+      #   name: Update Environment for Petals
+      #   run: |
+      #     micromamba update -n climada_env_${{ matrix.python-version }} -f climada_petals/requirements/env_climada.yml
       -
         name: Install CLIMADA Core and Petals
         run: |
