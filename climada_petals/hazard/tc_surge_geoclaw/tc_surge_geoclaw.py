@@ -177,16 +177,16 @@ class TCSurgeGeoClaw(Hazard):
         max_latitude : float, optional
             Maximum latitude of potentially affected centroids. Default: 61
         geoclaw_kwargs : dict, optional
-            Keyword arguments to pass to the GeoClaw runner. Currently supported:
+            Optional keyword arguments to pass to the GeoClaw runner. Currently supported:
 
-            topo_res_as : float, optional
+            topo_res_as : float
                 The resolution at which to extract topography data in arc-seconds. Needs to be at
                 least 3 since lower values have been found to be unstable numerically. Default: 30
-            gauges : list of pairs (lat, lon), optional
+            gauges : list of pairs (lat, lon)
                 The locations of tide gauges where to measure temporal changes in sea level height.
                 This is used mostly for validation purposes. The result is stored in the
                 `gauge_data` attribute.
-            sea_level : float or function, optional
+            sea_level : float or function
                 The sea level (above geoid) of the ocean at rest, used as a starting level for the
                 surge simulation. Instead of a constant scalar value, a function can be specified
                 that gets a `bounds` and a `period` argument and returns a scalar value. In this
@@ -194,17 +194,22 @@ class TCSurgeGeoClaw(Hazard):
                 and the second argument is a pair of np.datetime64 (start, end). For example, see
                 the helper function `sea_level_from_nc` that reads the value from a NetCDF file.
                 Default: 0
-            output_freq_s : float, optional
+            boundary_conditions : str
+                One of "extrap" (extrapolation, non-reflecting outflow), "periodic", or "wall"
+                (reflecting, solid wall boundary conditions). For more information about the
+                possible settings, see the chapter "Boundary conditions" in the Clawpack
+                documentation. Default: "extrap"
+            output_freq_s : float
                 Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
                 files are written if the value is 0.0. Default: 0.0
-            recompile : bool, optional
+            recompile : bool
                 If True, force the GeoClaw Fortran code to be recompiled. Note that, without
                 recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS
                 are ignored! Default: False
-            resume_file : Path or str, optional
+            resume_file : Path or str
                 If given, use this file to remember the location of the run directory and resume
                 operation later from this directory if it already exists. Default: None
-            resume_i : int, optional
+            resume_i : int
                 In case of a single storm, this points to the line number (starting from 0) in the
                 ``resume`` file to consider for that event. Default: not specified.
 

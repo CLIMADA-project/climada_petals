@@ -71,6 +71,7 @@ class GeoClawRunner():
         topo_res_as : float = 30.0,
         gauges : Optional[List] = None,
         sea_level : Union[Callable, float] = 0.0,
+        boundary_conditions : str = "extrap",
         output_freq_s : float = 0.0,
         recompile : bool = False,
     ):
@@ -104,6 +105,11 @@ class GeoClawRunner():
             first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
             second argument is a pair of np.datetime64 (start, end). For example, see the helper
             function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
+        boundary_conditions : str, optional
+            One of "extrap" (extrapolation, non-reflecting outflow), "periodic", or "wall"
+            (reflecting, solid wall boundary conditions). For more information about the possible
+            settings, see the chapter "Boundary conditions" in the Clawpack documentation.
+            Default: "extrap"
         output_freq_s : float, optional
             Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
             files are written if the value is 0.0. Default: 0.0
@@ -127,6 +133,7 @@ class GeoClawRunner():
         self.time_offset = time_offset
         self.time_offset_str = _dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
         self.output_freq_s = output_freq_s
+        self.boundary_conditions = boundary_conditions
         self.topo_path = topo_path
         self.gauge_data = [
             {
@@ -397,8 +404,8 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.limiter = ['mc', 'mc', 'mc']
         clawdata.use_fwaves = True
         clawdata.source_split = 'godunov'
-        clawdata.bc_lower = ['extrap', 'extrap']
-        clawdata.bc_upper = ['extrap', 'extrap']
+        clawdata.bc_lower = [self.boundary_conditions, self.boundary_conditions]
+        clawdata.bc_upper = [self.boundary_conditions, self.boundary_conditions]
 
 
     def _set_rundata_amr(self) -> None:
