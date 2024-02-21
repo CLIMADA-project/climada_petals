@@ -48,7 +48,7 @@ jobs:
           environment-name: climada_env_${{ matrix.python-version }}
           environment-file: climada_python/requirements/env_climada.yml
           create-args: >-
-            -f climada_python/requirements/env_climada.yml
+            -f climada_petals/requirements/env_climada.yml
             python=${{ matrix.python-version }}
             make
           # Persist environment for branch, Python version, single day
