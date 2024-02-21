@@ -56,7 +56,7 @@ jobs:
       -
         name: Update Environment for Petals
         run: |
-          micromamba update -f climada_petals/requirements/env_climada.yml
+          micromamba update -n climada_env_${{ matrix.python-version }} -f climada_petals/requirements/env_climada.yml
       -
         name: Install CLIMADA Core and Petals
         run: |
