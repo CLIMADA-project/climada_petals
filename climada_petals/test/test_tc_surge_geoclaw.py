@@ -80,9 +80,11 @@ class TestGeoclawRun(unittest.TestCase):
             track,
             centroids,
             TOPO_PATH,
-            topo_res_as=300,
-            gauges=gauges,
-            sea_level=sea_level_fun,
+            geoclaw_kwargs=dict(
+                topo_res_as=300,
+                gauges=gauges,
+                sea_level=sea_level_fun,
+            ),
         )
 
         self.assertEqual(intensity.shape, (centroids.shape[0],))

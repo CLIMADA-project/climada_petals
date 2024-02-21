@@ -132,18 +132,13 @@ class TCSurgeGeoClaw(Hazard):
     def from_tc_tracks(
         cls,
         tracks : TCTracks,
-        centroids : Optional[Centroids],
+        centroids : Centroids,
         topo_path : Union[pathlib.Path, str],
-        topo_res_as : float = 30.0,
-        gauges : Optional[List] = None,
-        sea_level : Union[Callable, float] = 0.0,
         max_dist_eye_deg : float = 5.5,
         max_dist_inland_km : float = 50.0,
         max_dist_offshore_km : float = 10.0,
         max_latitude : float = 61.0,
-        output_freq_s : float = 0.0,
-        recompile : bool = False,
-        resume : Optional[Union[pathlib.Path, str]] = None,
+        geoclaw_kwargs : Optional[dict] = None,
         pool : Any = None,
     ):
         """Generate a TC surge hazard instance from a TCTracks object
@@ -155,14 +150,14 @@ class TCSurgeGeoClaw(Hazard):
         Before you can run several instances of this method in parallel, e.g. on an HPC cluster,
         make sure to run a single instance of this method since all instances of this method will
         be accessing the same version of the solver, and compilation might be triggered in all
-        instances at the same time. The same applies if you want to recompile
-        using `recompile=True`.
+        instances at the same time. The same applies if you want to recompile using the GeoClaw
+        runner parameter ``recompile=True``.
 
         By default, the flow solver (GeoClaw) is configured to use multiple OpenMP threads with
         their number equal to the number of physical CPU cores in the machine. You can change this
         behavior by setting the environment variable OMP_NUM_THREADS to the desired number of
         threads. Note, however, that changes to OMP_NUM_THREADS will only be effective if you set
-        `recompile=True` at least once.
+        the GeoClaw parameter ``recompile=True`` at least once.
 
         Parameters
         ----------
@@ -172,20 +167,6 @@ class TCSurgeGeoClaw(Hazard):
             Centroids where to measure maximum surge heights.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
-        topo_res_as : float, optional
-            The resolution at which to extract topography data in arc-seconds. Needs to be between
-            3 and 90 (appx. between 90 and 3000 meters). Default: 30
-        gauges : list of pairs (lat, lon), optional
-            The locations of tide gauges where to measure temporal changes in sea level height.
-            This is used mostly for validation purposes. The result is stored in the `gauge_data`
-            attribute.
-        sea_level : float or function, optional
-            The sea level (above geoid) of the ocean at rest, used as a starting level for the
-            surge simulation. Instead of a constant scalar value, a function can be specified that
-            gets a `bounds` and a `period` argument and returns a scalar value. In this case, the
-            first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
-            second argument is a pair of np.datetime64 (start, end). For example, see the helper
-            function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
         max_dist_eye_deg : float, optional
             Maximum distance from a TC track node in degrees for a centroid to be considered
             as potentially affected. Default: 5.5
@@ -195,16 +176,39 @@ class TCSurgeGeoClaw(Hazard):
             Maximum offshore distance of the centroids in kilometers. Default: 10
         max_latitude : float, optional
             Maximum latitude of potentially affected centroids. Default: 61
-        output_freq_s : float, optional
-            Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
-            files are written if the value is 0.0. Default: 0.0
-        recompile : bool, optional
-            If True, force the GeoClaw Fortran code to be recompiled. Note that, without
-            recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
-            ignored! Default: False
-        resume : Path or str, optional
-            If given, use this file to remember the location of the run directory and resume
-            operation later from this directory if it already exists. Default: None
+        geoclaw_kwargs : dict, optional
+            Keyword arguments to pass to the GeoClaw runner. Currently supported:
+
+            topo_res_as : float, optional
+                The resolution at which to extract topography data in arc-seconds. Needs to be at
+                least 3 since lower values have been found to be unstable numerically. Default: 30
+            gauges : list of pairs (lat, lon), optional
+                The locations of tide gauges where to measure temporal changes in sea level height.
+                This is used mostly for validation purposes. The result is stored in the
+                `gauge_data` attribute.
+            sea_level : float or function, optional
+                The sea level (above geoid) of the ocean at rest, used as a starting level for the
+                surge simulation. Instead of a constant scalar value, a function can be specified
+                that gets a `bounds` and a `period` argument and returns a scalar value. In this
+                case, the first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max)
+                and the second argument is a pair of np.datetime64 (start, end). For example, see
+                the helper function `sea_level_from_nc` that reads the value from a NetCDF file.
+                Default: 0
+            output_freq_s : float, optional
+                Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
+                files are written if the value is 0.0. Default: 0.0
+            recompile : bool, optional
+                If True, force the GeoClaw Fortran code to be recompiled. Note that, without
+                recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS
+                are ignored! Default: False
+            resume_file : Path or str, optional
+                If given, use this file to remember the location of the run directory and resume
+                operation later from this directory if it already exists. Default: None
+            resume_i : int, optional
+                In case of a single storm, this points to the line number (starting from 0) in the
+                ``resume`` file to consider for that event. Default: not specified.
+
+            Default: None
         pool : an object with `map` functionality, optional
             If given, landfall events for each track are processed in parallel. Note that the
             solver for a single landfall event is using OpenMP multiprocessing capabilities
@@ -218,6 +222,8 @@ class TCSurgeGeoClaw(Hazard):
         -------
         TCSurgeGeoClaw
         """
+        geoclaw_kwargs = {} if geoclaw_kwargs is None else geoclaw_kwargs
+
         if tracks.size == 0:
             raise ValueError("The given TCTracks object does not contain any tracks.")
         setup_clawpack()
@@ -229,19 +235,15 @@ class TCSurgeGeoClaw(Hazard):
 
         LOGGER.info('Computing TC surge of %d tracks on %d centroids.',
                     tracks.size, coastal_idx.size)
+
         haz = cls.concat([
             cls.from_xr_track(
                 track,
                 centroids,
                 coastal_idx,
                 topo_path,
-                topo_res_as=topo_res_as,
-                gauges=gauges,
-                sea_level=sea_level,
                 max_dist_eye_deg=max_dist_eye_deg,
-                output_freq_s=output_freq_s,
-                recompile=recompile,
-                resume=None if resume is None else (pathlib.Path(resume), resume_i),
+                geoclaw_kwargs={"resume_i": resume_i, **geoclaw_kwargs},
                 pool=pool,
             )
             for resume_i, track in enumerate(tracks.data)
@@ -256,13 +258,8 @@ class TCSurgeGeoClaw(Hazard):
         centroids : Centroids,
         coastal_idx : np.ndarray,
         topo_path : Union[pathlib.Path, str],
-        topo_res_as : float = 30.0,
-        gauges : Optional[List] = None,
-        sea_level : Union[Callable, float] = 0.0,
         max_dist_eye_deg : float = 5.5,
-        output_freq_s : float = 0.0,
-        recompile : bool = False,
-        resume : Optional[Tuple[pathlib.Path, int]] = None,
+        geoclaw_kwargs : Optional[dict] = None,
         pool : Any = None,
     ):
         """Generate a TC surge hazard from a single xarray track dataset
@@ -277,34 +274,12 @@ class TCSurgeGeoClaw(Hazard):
             Indices of centroids close to coast.
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
-        topo_res_as : float, optional
-            The resolution at which to extract topography data in arc-seconds. Needs to be between
-            3 and 90 (appx. between 90 and 3000 meters). Default: 30
-        gauges : list of pairs (lat, lon), optional
-            The locations of tide gauges where to measure temporal changes in sea level height.
-            This is used mostly for validation purposes. The result is stored in the `gauge_data`
-            attribute.
-        sea_level : float or function, optional
-            The sea level (above geoid) of the ocean at rest, used as a starting level for the
-            surge simulation. Instead of a constant scalar value, a function can be specified that
-            gets a `bounds` and a `period` argument and returns a scalar value. In this case, the
-            first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
-            second argument is a pair of np.datetime64 (start, end). For example, see the helper
-            function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
         max_dist_eye_deg : float, optional
             Maximum distance from a TC track node in degrees for a centroid to be considered
             as potentially affected. Default: 5.5
-        output_freq_s : float, optional
-            Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
-            files are written if the value is 0.0. Default: 0.0
-        recompile : bool, optional
-            If True, force the GeoClaw Fortran code to be recompiled. Note that, without
-            recompilation, changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are
-            ignored! Default: False
-        resume : tuple (Path, int), optional
-            If given, use this file to remember the location of the run directory and resume
-            operation later from this directory if it already exists. The integer points to the
-            line number (starting from 0) in the file to consider. Default: None
+        geoclaw_kwargs : dict, optional
+            Keyword arguments to pass to the GeoClaw runner. See ``from_tc_tracks`` for a list
+            of supported arguments. Default: None
         pool : an object with `map` functionality, optional
             If given, landfall events are processed in parallel. Experimental feature for use with
             MPI. To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to
@@ -321,13 +296,8 @@ class TCSurgeGeoClaw(Hazard):
             track,
             coastal_centroids,
             topo_path,
-            topo_res_as=topo_res_as,
-            gauges=gauges,
-            sea_level=sea_level,
             max_dist_eye_deg=max_dist_eye_deg,
-            output_freq_s=output_freq_s,
-            recompile=recompile,
-            resume=resume,
+            geoclaw_kwargs=geoclaw_kwargs,
             pool=pool,
         )
         intensity = sparse.csr_matrix(intensity)
@@ -429,13 +399,8 @@ def _geoclaw_surge_from_track(
     track : xr.Dataset,
     centroids : np.ndarray,
     topo_path : Union[pathlib.Path, str],
-    topo_res_as : float = 30.0,
-    gauges : Optional[List] = None,
-    sea_level : Union[Callable, float] = 0.0,
     max_dist_eye_deg : float = 5.5,
-    output_freq_s : float = 0.0,
-    recompile : bool = False,
-    resume : Optional[Tuple[pathlib.Path, int]] = None,
+    geoclaw_kwargs : Optional[dict] = None,
     pool : Any = None,
 ) -> Tuple[np.ndarray, List[dict]]:
     """Compute TC surge height on centroids from a single track dataset
@@ -448,33 +413,12 @@ def _geoclaw_surge_from_track(
         Points for which to record the maximum height of inundation. Each row is a lat-lon point.
     topo_path : Path or str
         Path to raster file containing gridded elevation data.
-    topo_res_as : float, optional
-        The resolution at which to extract topography data in arc-seconds. Needs to be between
-        3 and 90 (appx. between 90 and 3000 meters). Default: 30
-    gauges : list of pairs (lat, lon), optional
-        The locations of tide gauges where to measure temporal changes in sea level height.
-        This is used mostly for validation purposes.
-    sea_level : float or function, optional
-        The sea level (above geoid) of the ocean at rest, used as a starting level for the
-        surge simulation. Instead of a constant scalar value, a function can be specified that
-        gets a `bounds` and a `period` argument and returns a scalar value. In this case, the
-        first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
-        second argument is a pair of np.datetime64 (start, end). For example, see the helper
-        function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
     max_dist_eye_deg : float, optional
         Maximum distance from a TC track node in degrees for a centroid to be considered
         as potentially affected. Default: 5.5
-    output_freq_s : float, optional
-        Frequency of writing GeoClaw output files (for debug use) in 1/seconds. No output
-        files are written if the value is 0.0. Default: 0.0
-    recompile : bool, optional
-        If True, force the GeoClaw Fortran code to be recompiled. Note that, without recompilation,
-        changes to environment variables like FC, FFLAGS or OMP_NUM_THREADS are ignored!
-        Default: False
-    resume : tuple (Path, int), optional
-        If given, use this file to remember the location of the run directory and resume
-        operation later from this directory if it already exists. The integer points to the
-        line number (starting from 0) in the file to consider. Default: None
+    geoclaw_kwargs : dict, optional
+        Keyword arguments to pass to the GeoClaw runner. See ``TCSurgeGeoClaw.from_tc_tracks`` for
+        a list of supported arguments. Default: None
     pool : an object with `map` functionality, optional
         If given, landfall events are processed in parallel. Experimental feature for use with
         MPI. To control the use of OpenMP, set the environment variable `OMP_NUM_THREADS` to
@@ -490,6 +434,9 @@ def _geoclaw_surge_from_track(
         `base_sea_level`, `topo_height`, `time`, `height_above_geoid`, `height_above_ground`,
         and `amr_level` information.
     """
+    geoclaw_kwargs = {} if geoclaw_kwargs is None else geoclaw_kwargs
+
+    gauges = geoclaw_kwargs.get("gauges")
     gauges = [] if gauges is None else gauges
 
     # initialize gauge data
@@ -553,8 +500,9 @@ def _geoclaw_surge_from_track(
     track['radius_oci'][:] = np.fmax(track['radius_max_wind'].values, track['radius_oci'].values)
 
     # create work directory
-    if resume is not None:
-        resume_file, resume_i = resume
+    resume_file = geoclaw_kwargs.pop("resume_file", None)
+    resume_i = geoclaw_kwargs.pop("resume_i", 0)
+    if resume_file is not None:
         if not resume_file.exists():
             resume_file.write_text("")
         resume_dirs = resume_file.read_text().strip()
@@ -593,11 +541,10 @@ def _geoclaw_surge_from_track(
                 event,
                 track_centr[event['centroid_mask']],
                 topo_path,
-                topo_res_as=topo_res_as,
-                gauges=gauges,
-                sea_level=sea_level,
-                output_freq_s=output_freq_s,
-                recompile=recompile if i_event == 0 else False,
+                **(
+                    # if specified, only recompile the first event, not every single one
+                    geoclaw_kwargs if i_event == 0 else {**geoclaw_kwargs, "recompile": False}
+                ),
             )
             for i_event, event in enumerate(events)
         ]

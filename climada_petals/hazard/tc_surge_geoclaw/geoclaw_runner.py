@@ -92,8 +92,8 @@ class GeoClawRunner():
         topo_path : Path or str
             Path to raster file containing gridded elevation data.
         topo_res_as : float, optional
-            The resolution at which to extract topography data in arc-seconds. Needs to be between
-            3 and 90 (appx. between 90 and 3000 meters). Default: 30
+            The resolution at which to extract topography data in arc-seconds. Needs to be at
+            least 3 since lower values have been found to be unstable numerically. Default: 30
         gauges : list of pairs (lat, lon), optional
             The locations of tide gauges where to measure temporal changes in sea level height.
             This is used mostly for validation purposes.
