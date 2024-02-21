@@ -226,7 +226,7 @@ class TCSurgeEvents():
             )
 
             # wind area (maximum bounds to consider)
-            pad = self.total_roci_factor * track["radius_oci"] / DEG_TO_NM
+            pad = self.total_roci_factor * track["radius_oci"].values / DEG_TO_NM
             self.wind_area.append(_round_bounds_enlarge(
                 (track["lon"].values - pad).min(),
                 (track["lat"].values - pad).min(),

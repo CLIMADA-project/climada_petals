@@ -24,7 +24,7 @@ import unittest
 import numpy as np
 import xarray as xr
 
-from climada import CONFIG
+from climada.util.api_client import Client
 from climada_petals.hazard.tc_surge_geoclaw import (
     area_sea_level_from_monthly_nc,
     setup_clawpack,
@@ -34,9 +34,28 @@ from climada_petals.hazard.tc_surge_geoclaw.tc_surge_geoclaw import (
 )
 
 
-DATA_DIR = CONFIG.hazard.tc_surge_geoclaw.local_data.dir()
-ZOS_PATH = DATA_DIR.joinpath("zos_monthly.nc")
-TOPO_PATH = DATA_DIR.joinpath("surge_topo.tif")
+def test_altimetry_nc():
+    """Altimetry (ocean surface) raster data for testing
+
+    Sample of monthly Copernicus satellite altimetry for year 2010.
+    """
+    client = Client()
+    _, [altimetry_nc] = client.download_dataset(
+        client.get_dataset_info(name='test_altimetry_tubuai', status='test_dataset')
+    )
+    return altimetry_nc
+
+
+def test_bathymetry_tif():
+    """Topo-Bathymetry (combined land surface and ocean floor) raster data for testing
+
+    SRTM15+V2.3 data of Tubuai island enlarged by factor 10.
+    """
+    client = Client()
+    _, [bathymetry_tif] = client.download_dataset(
+        client.get_dataset_info(name='test_bathymetry_tubuaix10', status='test_dataset')
+    )
+    return bathymetry_tif
 
 
 class TestGeoclawRun(unittest.TestCase):
@@ -71,15 +90,15 @@ class TestGeoclawRun(unittest.TestCase):
         ])
         gauges = [
             (-23.9059, -149.6248),  # offshore
-            (-23.8662, -149.2140),  # coastal
+            (-23.8062, -149.2160),  # coastal
             (-23.2394, -149.8574),  # inland
         ]
         setup_clawpack()
-        sea_level_fun = area_sea_level_from_monthly_nc(ZOS_PATH)
+        sea_level_fun = area_sea_level_from_monthly_nc(test_altimetry_nc())
         intensity, gauge_data = _geoclaw_surge_from_track(
             track,
             centroids,
-            TOPO_PATH,
+            test_bathymetry_tif(),
             geoclaw_kwargs=dict(
                 topo_res_as=300,
                 gauges=gauges,
@@ -93,14 +112,14 @@ class TestGeoclawRun(unittest.TestCase):
         for gdata in gauge_data:
             self.assertTrue((gdata['time'][0][0] - track.time[0]) / np.timedelta64(1, 'h') >= 0)
             self.assertTrue((track.time[-1] - gdata['time'][0][-1]) / np.timedelta64(1, 'h') >= 0)
-            self.assertAlmostEqual(gdata['base_sea_level'][0], 1.3, places=1)
+            self.assertAlmostEqual(gdata['base_sea_level'][0], 1.7, places=1)
         self.assertLess(gauge_data[0]['topo_height'][0], 0)
         self.assertTrue(0 <= gauge_data[1]['topo_height'][0] <= 10)
         self.assertGreater(gauge_data[2]['topo_height'][0], 10)
 
-        # surge anomaly of at least 0.5 m
+        # surge anomaly of at least 0.4 m
         offshore_h = gauge_data[0]['height_above_geoid'][0]
-        self.assertGreater(offshore_h.max() - offshore_h.min(), 0.5)
+        self.assertGreater(offshore_h.max() - offshore_h.min(), 0.4)
 
         # the inland gauge should not be affected by the storm, but maybe by the AMR level
         inland_h = gauge_data[2]['height_above_geoid'][0]
