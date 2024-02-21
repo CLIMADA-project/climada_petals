@@ -23,8 +23,6 @@ pipeline {
             sh '''#!/bin/bash
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
-            pip install -e ~/jobs/climada_install_env/workspace
-            pip install -e .
             rm -rf tests_xml/
             rm -rf coverage/
             make unit_test'''
