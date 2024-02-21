@@ -1,7 +1,20 @@
-name: GitHub CI
+name: Petals Testing
 
 # Execute this for every push
-on: [push]
+on:
+  workflow_call:
+    inputs:
+      petals_branch:
+        description: Branch of CLIMADA Petals to check out
+        type: string
+        default: develop
+        required: false
+      core_branch:
+        description: Branch of CLIMADA Core to test against
+        type: string
+        default: develop
+        required: false
+
 
 # Use bash explicitly for being able to enter the conda environment
 defaults:
@@ -29,13 +42,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: climada_petals
+          ref: ${{ inputs.petals_branch }}
       -
         name: Checkout Core
         uses: actions/checkout@v4
         with:
           repository: CLIMADA-project/climada_python
           path: climada_python
-          ref: develop
+          ref: ${{ inputs.core_branch }}
       -
         # Store the current date to use it as cache key for the environment
         name: Get current date
@@ -73,12 +87,12 @@ jobs:
         if: always()
         with:
           junit_files: climada_petals/tests_xml/tests.xml
-          check_name: "Unit Test Results Python ${{ matrix.python-version }}"
+          check_name: "Unit Test Results Petals Python ${{ matrix.python-version }}"
           comment_mode: "off"
       -
         name: Upload Coverage Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-unittests-py${{ matrix.python-version }}
+          name: coverage-report-petals-unittests-py${{ matrix.python-version }}
           path: climada_petals/coverage/
