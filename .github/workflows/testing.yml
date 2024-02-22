@@ -41,6 +41,7 @@ jobs:
         name: Checkout Petals
         uses: actions/checkout@v4
         with:
+          repository: CLIMADA-project/climada_petals
           path: climada_petals
           ref: ${{ inputs.petals_branch }}
       -
