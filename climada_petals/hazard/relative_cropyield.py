@@ -370,8 +370,6 @@ class RelativeCropyield(Hazard):
         else:
             event = [str(n) for n in range(event[0], event[1] + 1)]
 
-        self.centroids.set_meta_to_lat_lon()
-
         # definition of plot extents
         len_lat = abs(self.centroids.lat[0] - self.centroids.lat[-1]) * (2.5 / 13.5)
         len_lon = abs(self.centroids.lon[0] - self.centroids.lon[-1]) * (5 / 26)

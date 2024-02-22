@@ -166,14 +166,12 @@ class RiverFlood(Hazard):
                                           files_fraction=[frc_path],
                                           band=bands.tolist(),
                                           geometry=cntry_geom.geoms)
-                    # self.centroids.set_meta_to_lat_lon()
                 else:
                     cntry_geom = u_coord.get_land_geometry(countries)
                     haz = cls.from_raster(files_intensity=[dph_path],
                                           files_fraction=[frc_path],
                                           band=bands.tolist(),
                                           geometry=cntry_geom.geoms)
-                    # self.centroids.set_meta_to_lat_lon()
 
         elif shape:
             shapes = gpd.read_file(shape)
@@ -195,7 +193,6 @@ class RiverFlood(Hazard):
             haz = cls.from_raster(files_intensity=[dph_path],
                                   files_fraction=[frc_path],
                                   band=bands.tolist())
-            # self.centroids.set_meta_to_lat_lon()
 
         else:  # use given centroids
             # if centroids.meta or grid_is_regular(centroids)[0]:
@@ -206,8 +203,6 @@ class RiverFlood(Hazard):
             #      (transform)
             #      reprojection change resampling"""
             # else:
-            if centroids.meta:
-                centroids.set_meta_to_lat_lon()
             metafrc, fraction = u_coord.read_raster(frc_path, band=bands.tolist())
             metaint, intensity = u_coord.read_raster(dph_path, band=bands.tolist())
             x_i = ((centroids.lon - metafrc['transform'][2]) /
