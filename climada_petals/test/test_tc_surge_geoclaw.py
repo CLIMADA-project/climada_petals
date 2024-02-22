@@ -103,6 +103,7 @@ class TestGeoclawRun(unittest.TestCase):
                 topo_res_as=300,
                 gauges=gauges,
                 sea_level=sea_level_fun,
+                outer_pad_deg=0,
             ),
         )
 

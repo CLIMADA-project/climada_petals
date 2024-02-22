@@ -71,6 +71,7 @@ class GeoClawRunner():
         topo_res_as : float = 30.0,
         gauges : Optional[List] = None,
         sea_level : Union[Callable, float] = 0.0,
+        outer_pad_deg : float = 5,
         boundary_conditions : str = "extrap",
         output_freq_s : float = 0.0,
         recompile : bool = False,
@@ -105,6 +106,11 @@ class GeoClawRunner():
             first argument is a tuple of floats (lon_min, lat_min, lon_max, lat_max) and the
             second argument is a pair of np.datetime64 (start, end). For example, see the helper
             function `sea_level_from_nc` that reads the value from a NetCDF file. Default: 0
+        outer_pad_deg : float, optional
+            An additional padding (in degrees) around the model domain where the automatic mesh
+            refinement is disabled to stabilize boundary interactions. If you find that your run of
+            GeoClaw is numerically unstable, takes exceedingly long, or produces unrealistic
+            results, it might help to modify this parameter by a few degrees. Default: 5
         boundary_conditions : str, optional
             One of "extrap" (extrapolation, non-reflecting outflow), "periodic", or "wall"
             (reflecting, solid wall boundary conditions). For more information about the possible
@@ -133,6 +139,7 @@ class GeoClawRunner():
         self.time_offset = time_offset
         self.time_offset_str = _dt64_to_pydt(self.time_offset).strftime("%Y-%m-%d-%H")
         self.output_freq_s = output_freq_s
+        self.outer_pad_deg = outer_pad_deg
         self.boundary_conditions = boundary_conditions
         self.topo_path = topo_path
         self.gauge_data = [
@@ -374,8 +381,8 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.verbosity = 1
         clawdata.checkpt_style = -3
         clawdata.checkpt_interval = 25
-        clawdata.lower = self.areas['wind_area'][:2]
-        clawdata.upper = self.areas['wind_area'][2:]
+        clawdata.lower = [lim - self.outer_pad_deg for lim in self.areas['wind_area'][:2]]
+        clawdata.upper = [lim + self.outer_pad_deg for lim in self.areas['wind_area'][2:]]
         clawdata.num_cells = [
             # coarsest resolution: appx. 0.25 degrees
             int(np.ceil((clawdata.upper[0] - clawdata.lower[0]) * 4)),
@@ -424,6 +431,8 @@ include $(CLAW)/clawutil/src/Makefile.common
         regions = self.rundata.regiondata.regions
         t_1, t_2 = clawdata.t0, clawdata.tfinal
         maxlevel = amrdata.amr_levels_max
+        (x_1, y_1), (x_2, y_2) = clawdata.lower, clawdata.upper
+        regions.append([1, 1, t_1, t_2, x_1, x_2, y_1, y_2])
         x_1, y_1, x_2, y_2 = self.areas['wind_area']
         regions.append([1, 4, t_1, t_2, x_1, x_2, y_1, y_2])
         x_1, y_1, x_2, y_2 = self.areas['landfall_area']
@@ -492,7 +501,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         # load elevation data, resolution depending on area of refinement
         topodata.topofiles = []
         areas = [
-            self.areas['wind_area'],
+            tuple(clawdata.lower) + tuple(clawdata.upper),
             self.areas['landfall_area']
         ] + self.areas['surge_areas']
         resolutions = self.topo_resolution_as[:2]

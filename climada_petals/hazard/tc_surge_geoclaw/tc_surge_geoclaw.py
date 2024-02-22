@@ -194,6 +194,12 @@ class TCSurgeGeoClaw(Hazard):
                 and the second argument is a pair of np.datetime64 (start, end). For example, see
                 the helper function `sea_level_from_nc` that reads the value from a NetCDF file.
                 Default: 0
+            outer_pad_deg : float
+                An additional padding (in degrees) around the model domain where the automatic mesh
+                refinement is disabled to stabilize boundary interactions. If you find that your
+                run of GeoClaw is numerically unstable, takes exceedingly long, or produces
+                unrealistic results, it might help to modify this parameter by a few degrees.
+                Default: 5
             boundary_conditions : str
                 One of "extrap" (extrapolation, non-reflecting outflow), "periodic", or "wall"
                 (reflecting, solid wall boundary conditions). For more information about the
