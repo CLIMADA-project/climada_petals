@@ -168,9 +168,6 @@ class WildFire(Hazard):
         res_data = haz._firms_resolution(df_firms)
         if not centroids:
             centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
-        else:
-            if not centroids.lat.any():
-                centroids.set_meta_to_lat_lon()
         res_centr = haz._centroids_resolution(centroids)
 
         # fire identification
@@ -259,9 +256,6 @@ class WildFire(Hazard):
         res_data = haz._firms_resolution(df_firms)
         if not centroids:
             centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
-        else:
-            if not centroids.coord.size:
-                centroids.set_meta_to_lat_lon()
 
         # define hemisphere
         if hemisphere is None:
@@ -664,7 +658,6 @@ class WildFire(Hazard):
         centroids = Centroids.from_pnt_bounds((df_firms['longitude'].min(), \
             df_firms['latitude'].min(), df_firms['longitude'].max(), \
             df_firms['latitude'].max()), res=res_data/centr_res_factor)
-        centroids.set_meta_to_lat_lon()
         centroids.set_area_approx()
         centroids.set_on_land()
         centroids.empty_geometry_points()

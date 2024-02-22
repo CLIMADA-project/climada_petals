@@ -103,7 +103,6 @@ class HazRegion():
         """
         if latlon is None:
             centroids = Centroids.from_base_grid(res_as=res_as)
-            centroids.set_meta_to_lat_lon()
         else:
             centroids = Centroids.from_lat_lon(*latlon)
         msk = shapely.vectorized.contains(self.shape, centroids.lon, centroids.lat)

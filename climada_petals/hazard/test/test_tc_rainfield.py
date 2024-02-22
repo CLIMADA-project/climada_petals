@@ -45,12 +45,12 @@ from climada.util.constants import DEMO_DIR
 
 def getTestData():
     client = Client()
-    centr_ds = client.get_dataset_info(name='test_tc_rainfield', status='test_dataset')
-    _, [centr_test_mat, track, track_short, haz_mat] = client.download_dataset(centr_ds)
-    return Centroids.from_mat(centr_test_mat), track, track_short, haz_mat
+    centr_ds = client.get_dataset_info(name='tc_rainfield_test', status='test_dataset')
+    _, [centr_test_mat, track, track_short, haz_hdf5] = client.download_dataset(centr_ds)
+    return Centroids.from_hdf5(centr_test_mat), track, track_short, haz_hdf5
 
 
-CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_MAT = getTestData()
+CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_HDF5 = getTestData()
 
 
 def tcrain_examples():

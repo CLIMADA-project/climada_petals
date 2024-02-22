@@ -72,9 +72,6 @@ class TCSurgeBathtub(Hazard):
         """
         centroids = copy.deepcopy(wind_haz.centroids)
 
-        if not centroids.coord.size:
-            centroids.set_meta_to_lat_lon()
-
         # Select wind-affected centroids which are inside MAX_DIST_COAST and |lat| < 61
         if not centroids.dist_coast.size or np.all(centroids.dist_coast >= 0):
             centroids.set_dist_coast(signed=True, precomputed=True)

@@ -399,10 +399,6 @@ class TCRain(Hazard):
         num_tracks = tracks.size
         if centroids is None:
             centroids = Centroids.from_base_grid(res_as=360, land=True)
-
-        if not centroids.coord.size:
-            centroids.set_meta_to_lat_lon()
-
         if ignore_distance_to_coast:
             # Select centroids with lat <= max_latitude
             [idx_centr_filter] = (np.abs(centroids.lat) <= max_latitude).nonzero()
