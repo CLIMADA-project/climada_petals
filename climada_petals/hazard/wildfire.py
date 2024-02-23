@@ -677,9 +677,12 @@ class WildFire(Hazard):
         res_centr : float
             grid resolution of centroids
         """
-        if centroids.meta:
-            res_centr = abs(centroids.meta['transform'][4]), \
-                centroids.meta['transform'][0]
+        # TODO: centroids as gdf
+        # proper implementation. this one is a mere petch to make it run in climada 5.0
+        # centroids.get_meta() does not check for being a raster, as centroids.meta did
+        if centroids.get_meta():
+            res_centr = abs(centroids.get_meta()['transform'][4]), \
+                centroids.get_meta()['transform'][0]
         else:
             res_centr, _ = u_coord.get_resolution(centroids.lat, centroids.lon)
         if abs(abs(res_centr[0]) - abs(res_centr[1])) > 1.0e-6:
