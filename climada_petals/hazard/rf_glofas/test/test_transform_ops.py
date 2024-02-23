@@ -306,8 +306,7 @@ class TestTransformOps(unittest.TestCase):
         y = np.arange(20, 10, -1)
         z = np.linspace(0, 5, 11)
 
-        # NOTE: np.multiply.outer does not flatten input
-        values = np.multiply.outer(np.outer(x, y), z).astype("float")
+        values = (x[:, None, None] * y[None, :, None] * z[None, None, :]).astype("float")
         discharge = xr.DataArray(values, coords=dict(longitude=x, latitude=y, time=z))
         gev = xr.DataArray(
             np.outer(x, y).astype("float"), coords=dict(longitude=x, latitude=y)
@@ -356,7 +355,6 @@ class TestTransformOps(unittest.TestCase):
             return_period_resample(discharge, gev, gev, samples, bootstrap_samples)
 
             # Test number of calls
-            print(samples.values)
             expected_calls = np.count_nonzero(
                 np.isfinite(gev.values) & (samples.values > 0)
             )
