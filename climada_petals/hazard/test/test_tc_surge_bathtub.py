@@ -49,8 +49,7 @@ class tmp_artifical_topo(object):
         self.shape = (lat.size, lon.size)
         self.transform = rasterio.Affine(res_deg, 0, bounds[0], 0, -res_deg, bounds[3])
         centroids = Centroids.from_lat_lon(*[ar.ravel() for ar in np.meshgrid(lon, lat)][::-1])
-        centroids.set_dist_coast(signed=True, precomputed=True)
-        self.dist_coast = centroids.dist_coast
+        self.dist_coast = centroids.get_dist_coast(signed=True, precomputed=True)
         self.slope = slope
 
     def __enter__(self):
@@ -95,14 +94,13 @@ class TestTCSurgeBathtub(unittest.TestCase):
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
         centroids = Centroids.from_lat_lon(lat, lon)
-        centroids.set_dist_coast(signed=True, precomputed=True)
-
+        
         dem_bounds = (bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
         dem_res = 3 / (60 * 60)
         with tmp_artifical_topo(dem_bounds, dem_res) as topo_path:
             fraction = _fraction_on_land(centroids, topo_path)
         fraction = fraction.reshape(shape)
-        dist_coast = centroids.dist_coast.reshape(shape)
+        dist_coast = centroids.get_dist_coast(signed=True, precomputed=True).reshape(shape)
 
         # check valid range and order of magnitude
         self.assertTrue(np.all((fraction >= 0) & (fraction <= 1)))

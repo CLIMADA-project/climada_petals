@@ -73,11 +73,10 @@ class TCSurgeBathtub(Hazard):
         centroids = copy.deepcopy(wind_haz.centroids)
 
         # Select wind-affected centroids which are inside MAX_DIST_COAST and |lat| < 61
-        if not centroids.dist_coast.size or np.all(centroids.dist_coast >= 0):
-            centroids.set_dist_coast(signed=True, precomputed=True)
+        centroids_dist_coast = centroids.get_dist_coast(signed=True, precomputed=True)
         coastal_msk = (wind_haz.intensity > 0).sum(axis=0).A1 > 0
-        coastal_msk &= (centroids.dist_coast < 0)
-        coastal_msk &= (centroids.dist_coast >= -MAX_DIST_COAST * 1000)
+        coastal_msk &= (centroids_dist_coast < 0)
+        coastal_msk &= (centroids_dist_coast >= -MAX_DIST_COAST * 1000)
         coastal_msk &= (np.abs(centroids.lat) <= MAX_LATITUDE)
 
         # Load elevation at coastal centroids
@@ -114,7 +113,7 @@ class TCSurgeBathtub(Hazard):
 
         if inland_decay_rate != 0:
             # Add decay according to distance from coast
-            dist_coast_km = np.abs(centroids.dist_coast[coastal_idx]) / 1000
+            dist_coast_km = np.abs(centroids_dist_coast[coastal_idx]) / 1000
             coastal_centroids_h += inland_decay_rate * dist_coast_km
         coastal_centroids_h -= add_sea_level_rise
 
@@ -165,12 +164,9 @@ def _fraction_on_land(centroids, topo_path):
     """
     bounds = np.array(centroids.total_bounds)
     shape = [0, 0]
-    if centroids.meta:
-        shape = centroids.shape
-        cen_trans = centroids.meta['transform']
-    else:
-        shape[0], shape[1], cen_trans = u_coord.pts_to_raster_meta(
-            bounds, min(u_coord.get_resolution(centroids.lat, centroids.lon)))
+    shape[0], shape[1], cen_trans = u_coord.pts_to_raster_meta(
+        points_bounds=bounds,
+        res=min(u_coord.get_resolution(centroids.lat, centroids.lon)))
 
     read_raster_buffer = 0.5 * max(np.abs(cen_trans[0]), np.abs(cen_trans[4]))
     bounds += read_raster_buffer * np.array([-1., -1., 1., 1.])
@@ -187,10 +183,5 @@ def _fraction_on_land(centroids, topo_path):
                             dst_transform=cen_trans, dst_crs=centroids.crs,
                             resampling=rasterio.warp.Resampling.average,
                             src_nodata=dem_nodata, dst_nodata=0.0)
-
-    if not centroids.meta:
-        x_i = ((centroids.lon - cen_trans[2]) / cen_trans[0]).astype(int)
-        y_i = ((centroids.lat - cen_trans[5]) / cen_trans[4]).astype(int)
-        fractions = fractions[y_i, x_i]
 
     return fractions.reshape(-1)
