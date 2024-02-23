@@ -41,7 +41,7 @@ pipeline {
 
             if [ -f $CORENV/$BRANCH ]; then
               deactivate
-              rm -r tvenv
+              #rm -r tvenv
             fi
             '''
           }
