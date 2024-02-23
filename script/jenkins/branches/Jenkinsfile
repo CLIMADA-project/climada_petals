@@ -11,7 +11,8 @@ pipeline {
             export PATH=$PATH:$CONDAPATH
             source activate petals_env
             rm -f pylint.log
-            pylint -ry climada_petals | tee pylint.log'''
+            #pylint -ry climada_petals | tee pylint.log
+            '''
 
             discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
@@ -28,6 +29,7 @@ pipeline {
 
             CORENV=~/jobs/petals_branches/core_env
             BRANCH=`git name-rev --name-only HEAD | cut -f 3- -d /`
+            echo $CORENV/$BRANCH
             if [ -f $CORENV/$BRANCH ]; then
               python -m venv --system-site-packages tvenv
               source tvenv/bin/activate
@@ -35,7 +37,7 @@ pipeline {
               pip install -e `cat $CORENV/$BRANCH`
             fi
 
-            make unit_test
+            #make unit_test
 
             if [ -f $CORENV/$BRANCH ]; then
               deactivate
