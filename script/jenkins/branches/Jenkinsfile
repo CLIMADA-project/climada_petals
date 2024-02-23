@@ -7,13 +7,7 @@ pipeline {
 
         stage('lint') {
           steps {
-            sh '''#!/bin/bash
-            export PATH=$PATH:$CONDAPATH
-            source activate petals_env
-            rm -f pylint.log
-            pylint -ry climada_petals | tee pylint.log
-            '''
-
+            sh 'bash script/jeknins/branches/run_lint.sh'
             discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
@@ -21,7 +15,7 @@ pipeline {
 
         stage('unit_test') {
           steps {
-            sh script/jenkins/branches/run_unittest.sh
+            sh 'bash script/jenkins/branches/run_unittest.sh'
           }
         }
 

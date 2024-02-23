@@ -1,5 +1,6 @@
 #!/bin/bash
 export PATH=$PATH:$CONDAPATH
+
 source activate petals_env
 rm -rf tests_xml/
 rm -rf coverage/
