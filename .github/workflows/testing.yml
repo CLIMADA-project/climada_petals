@@ -76,8 +76,7 @@ jobs:
       -
         name: Install CLIMADA Core and Petals
         run: |
-          python -m pip freeze
-          python -m pip install --upgrade "./climada_python[test]" "./climada_petals"
+          python -m pip install "./climada_python[test]" "./climada_petals"
       -
         name: Run Unit Tests
         working-directory: climada_petals/
