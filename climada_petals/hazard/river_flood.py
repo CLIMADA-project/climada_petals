@@ -23,7 +23,6 @@ __all__ = ['RiverFlood']
 
 import logging
 import datetime as dt
-import copy
 from collections.abc import Iterable
 from pathlib import Path
 
