@@ -494,12 +494,12 @@ class SupplyChain:
         events_w_imp_bool = np.asarray(impact.imp_mat.sum(1)!=0).flatten()
 
         self.secs_exp = pd.DataFrame(
-            0,
+            0.0,
             index=["total_value"],
             columns=self.mriot.Z.columns
         )
         self.secs_imp = pd.DataFrame(
-            0,
+            0.0,
             index=impact.event_id[events_w_imp_bool],
             columns=self.mriot.Z.columns
         )
