@@ -677,7 +677,7 @@ class WildFire(Hazard):
         res_centr : float
             grid resolution of centroids
         """
-        res_centr, _ = u_coord.get_resolution(centroids.lat, centroids.lon)
+        res_centr = u_coord.get_resolution(centroids.lat, centroids.lon)
         if abs(abs(res_centr[0]) - abs(res_centr[1])) > 1.0e-6:
             raise ValueError('Centroids are not a regular raster')
         return res_centr[0]
