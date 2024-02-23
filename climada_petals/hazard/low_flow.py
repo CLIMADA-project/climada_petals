@@ -539,11 +539,7 @@ class LowFlow(Hazard):
         -------
         float
         """
-        if centroids.meta:
-            res_centr = abs(centroids.meta['transform'][4]), \
-                        centroids.meta['transform'][0]
-        else:
-            res_centr = np.abs(u_coord.get_resolution(centroids.lat, centroids.lon))
+        res_centr = np.abs(u_coord.get_resolution(centroids.lat, centroids.lon))
         if np.abs(res_centr[0] - res_centr[1]) > 1.0e-6:
             LOGGER.warning('Centroids do not represent regular pixels %s.', str(res_centr))
             return (res_centr[0] + res_centr[1]) / 2
