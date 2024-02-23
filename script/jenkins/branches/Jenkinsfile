@@ -7,7 +7,7 @@ pipeline {
 
         stage('lint') {
           steps {
-            sh 'bash script/jeknins/branches/run_lint.sh'
+            sh 'bash script/jenkins/branches/run_lint.sh'
             discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
