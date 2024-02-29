@@ -1,13 +1,13 @@
 name: climada_env
 channels:
   - conda-forge
-  - defaults
+  - nodefaults
 dependencies:
   - cdsapi>=0.6
   - ruamel.yaml>=0.18
   - xesmf>=0.8
   - pymrio>=0.5
   - rioxarray>=0.13
-  - overpy
+  - overpy>=0.7
   - pymrio>=0.5
   - scikit-image>=0.22
