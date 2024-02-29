@@ -93,9 +93,8 @@ def hazard_series_from_dataset(
 
     Parameters
     ----------
-    data : xarray.Dataset or Path or str
-        Data to load a hazard series from. May be an opened Dataset or a path to a file
-        that can be opened by xarray.
+    data : xarray.Dataset
+        Data to load a hazard series from.
     intensity : str
         Name of the dataset variable to read as hazard intensity.
     event_dim : str

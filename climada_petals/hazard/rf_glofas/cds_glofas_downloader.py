@@ -104,7 +104,7 @@ def glofas_request_single(
     product: str,
     request: Mapping[str, Any],
     outpath: Union[Path, str],
-    use_cache: bool,
+    use_cache: bool = True,
     client_kw: Optional[Mapping[str, Any]] = None,
 ) -> Path:
     """Perform a single request for data from the Copernicus data store
@@ -119,7 +119,7 @@ def glofas_request_single(
         The string identifier of the product in the Copernicus data store
     request : dict
         The download request as dictionary
-    outfile : str or Path
+    outpath : str or Path
         The file path to store the download into (including extension)
     use_cache : bool (optional)
         Skip downloading if the target file exists and the accompanying request file
@@ -230,8 +230,13 @@ def glofas_request(
         Output directory for the downloaded data
     num_proc : int
         Number of processes used for parallel requests
+    use_cache : bool (optional)
+        Skip downloading if the target file exists and the accompanying request file
+        contains the same request
     request_kw : dict(str: str)
         Dictionary to update the default request for the given product
+    client_kw : dict (optional)
+        Dictionary with keyword arguments for the ``cdsapi.Client`` used for downloading
 
     Returns
     -------
