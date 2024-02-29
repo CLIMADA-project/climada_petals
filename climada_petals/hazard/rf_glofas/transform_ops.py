@@ -520,32 +520,27 @@ def return_period_resample(
     # NOTE: 'rp_sampling' requires scalar 'loc' and 'scale' parameters, so we
     #       define all but 'longitude' and 'latitude' dimensions as core dimensions
     # core_dims = set(discharge.dims) - {"longitude", "latitude"}
-    ret = xr.apply_ufunc(
-        rp_sampling,
-        discharge,
-        gev_loc,
-        gev_scale,
-        gev_samples,
-        max_return_period,
-        input_core_dims=[list(core_dims), [], [], [], []],
-        output_core_dims=[["sample"] + list(core_dims)],
-        vectorize=True,
-        dask="parallelized",
-        output_dtypes=[np.float32],
-        dask_gufunc_kwargs=dict(
-            output_sizes=dict(sample=bootstrap_samples), allow_rechunk=True
-        ),
-    ).rename("Return Period")
-    ret = ret.assign_coords(sample=np.arange(bootstrap_samples))
-
-    # Transpose makes for a nicer result?
-    dims = list(ret.sizes.keys())
-    dims.remove("sample")
-    dims.append("sample")
-    ret = ret.transpose(*dims)
-
-    # Return result
-    return ret
+    return (
+        xr.apply_ufunc(
+            rp_sampling,
+            discharge,
+            gev_loc,
+            gev_scale,
+            gev_samples,
+            max_return_period,
+            input_core_dims=[list(core_dims), [], [], [], []],
+            output_core_dims=[["sample"] + list(core_dims)],
+            vectorize=True,
+            dask="parallelized",
+            output_dtypes=[np.float32],
+            dask_gufunc_kwargs=dict(
+                output_sizes=dict(sample=bootstrap_samples), allow_rechunk=True
+            ),
+        )
+        .rename("Return Period")
+        .assign_coords(sample=np.arange(bootstrap_samples))
+        .transpose(..., "sample")
+    )
 
 
 def interpolate_space(
