@@ -93,7 +93,7 @@ def cleanup_download_dir(
 ):
     """Delete the contents of the download directory"""
     for filename in Path(download_dir).glob("*"):
-        LOGGER.debug("Removing file: %s" % filename)
+        LOGGER.debug("Removing file: %s", filename)
         if not dry_run:
             filename.unlink()
     if dry_run:

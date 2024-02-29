@@ -48,9 +48,11 @@ JRC_FLOOD_HAZARD_MAPS = [
     "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp500y.zip",
 ]
 
-FLOPROS_DATA = "https://nhess.copernicus.org/articles/16/1049/2016/nhess-16-1049-2016-supplement.zip"
+FLOPROS_DATA = \
+    "https://nhess.copernicus.org/articles/16/1049/2016/nhess-16-1049-2016-supplement.zip"
 
-GUMBEL_FIT_DATA = "https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/641667/gumbel-fit.nc"
+GUMBEL_FIT_DATA = \
+    "https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/641667/gumbel-fit.nc"
 
 
 def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):

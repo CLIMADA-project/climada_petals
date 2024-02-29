@@ -479,7 +479,10 @@ def return_period_resample(
 
     # Define the vectorized function
     # @guvectorize(
-    #     f"(float32{arr_str_in}, float64, float64, int32, float64, float64[:], float32{arr_str_out})",
+    #     (
+    #             f"(float32{arr_str_in}, float64, float64, int32,"
+    #             f"float64,float64[:], float32{arr_str_out})"
+    #     ),
     #     f"{dims_str_in}, (), (), (), (), (samples) -> {dims_str_out}",
     #     # nopython=True,
     # )
