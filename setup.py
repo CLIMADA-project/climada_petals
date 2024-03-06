@@ -38,8 +38,12 @@ setup(
 
     install_requires=[
         'climada>=4.1',
+        'cdsapi',
+        'ruamel.yaml',
         'scikit-image',
+        'xesmf',
         "pymrio",
+        'rioxarray',
         'osm-flex>=1.1.1',
     ],
 
