@@ -1,28 +1,28 @@
 name: climada_env
 channels:
   - conda-forge
-  - defaults
+  - nodefaults
 dependencies:
-  - climada
   - cdsapi>=0.6
-  - ruamel.yaml>=0.18
-  - scikit-image>=0.21
-  - xesmf>=0.8
-  - pymrio>=0.5
-  - ipython
+  - climada
   - ipykernel
+  - ipython
   - mccabe>=0.6
   - nb_conda_kernels
   - pandoc
-  - sphinx>=2.0
   - pip
+  - pymrio>=0.5
+  - ruamel.yaml>=0.18
+  - scikit-image>=0.21
+  - sphinx>=2.0
+  - xesmf>=0.8
   - pip:
     - coverage>=4.5
     - descartes
     - markdown
-    - myst-parser
     - myst-nb
+    - myst-parser
     - pylint
     - readthedocs-sphinx-ext>=2.1
-    - sphinx-markdown-tables
     - sphinx-book-theme
+    - sphinx-markdown-tables
