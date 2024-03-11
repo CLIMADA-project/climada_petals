@@ -3,6 +3,10 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - overpy
+  - cdsapi>=0.6
+  - overpy>=0.7
   - pymrio>=0.5
+  - ruamel.yaml>=0.18
+  - rioxarray>=0.13
   - scikit-image>=0.22
+  - xesmf>=0.8

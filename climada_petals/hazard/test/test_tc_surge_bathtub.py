@@ -34,7 +34,7 @@ from climada_petals.hazard.tc_surge_bathtub import _fraction_on_land, TCSurgeBat
 class tmp_artifical_topo(object):
     """Context manager for a temporary artificial elevation dataset (given as path)."""
 
-    def __init__(self, bounds, res_deg):
+    def __init__(self, bounds, res_deg, slope=0.006):
         """Read distance to coast values from raster file for later use.
 
         Parameters
@@ -51,10 +51,11 @@ class tmp_artifical_topo(object):
         centroids = Centroids.from_lat_lon(*[ar.ravel() for ar in np.meshgrid(lon, lat)][::-1])
         centroids.set_dist_coast(signed=True, precomputed=True)
         self.dist_coast = centroids.dist_coast
+        self.slope = slope
 
     def __enter__(self):
         """Write artifical elevation data to a temporary raster file and provide path as string."""
-        elevation = -self.dist_coast / 168
+        elevation = -self.slope * self.dist_coast
         elevation = np.fmax(-1, elevation).reshape(self.shape)
         dst_meta = {
             'driver': 'GTiff',
@@ -174,9 +175,33 @@ class TestTCSurgeBathtub(unittest.TestCase):
                 np.testing.assert_array_equal(inten[fraction == 0], 0)
 
                 # check individual known pixel values
-                self.assertAlmostEqual(inten[9, 31], max(-1.219 + slr, 0), places=2)
-                self.assertAlmostEqual(inten[14, 34] - slr, 2.825, places=2)
+                self.assertAlmostEqual(inten[9, 31], max(-1.270 + slr, 0), places=2)
+                self.assertAlmostEqual(inten[14, 34] - slr, 2.805, places=2)
 
+    def test_cross_antimeridian(self):
+        # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
+        # We list the second point twice, with different lon-normalization:
+        cen = Centroids.from_lat_lon([-16.95, -16.8, -16.8], [179.9, 180.1, -179.9])
+        cen.set_dist_coast(precomputed=True)
+
+        # Cyclone YASA (2020) passed directly over Fiji
+        tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])
+
+        wind_haz = TropCyclone.from_tracks(tr, centroids=cen)
+
+        dem_bounds = (179.8, -17, 180.2, -16.7)
+        dem_res = 3 / (60 * 60)
+        # Use an almost flat DEM (2 m increase per 10 km distance from the coast)
+        with tmp_artifical_topo(dem_bounds, dem_res, slope=2e-4) as topo_path:
+            inten = TCSurgeBathtub.from_tc_winds(wind_haz, topo_path).intensity.toarray()[0, :]
+
+        # Centroids 1 and 2 are identical, they just use a different normalization for lon. This
+        # should not affect the result at all:
+        self.assertEqual(inten[1], inten[2])
+
+        # All locations should be affected by storm surge of appx. 2.0 m ± 1.0 m. The exact
+        # values are not so important for this test:
+        np.testing.assert_allclose(inten, 2, atol=1)
 
 # Execute Tests
 if __name__ == "__main__":
