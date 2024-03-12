@@ -33,7 +33,7 @@ pipeline {
         qualityGates: [[
           baseline: 'PROJECT',
           metric: 'LINE',
-          threshold: 60.0
+          threshold: 75.0
         ]],
         tools: [[
           parser: 'COBERTURA',
