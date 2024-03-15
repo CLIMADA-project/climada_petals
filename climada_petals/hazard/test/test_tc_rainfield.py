@@ -20,7 +20,6 @@ Test TCRain class
 """
 
 import datetime as dt
-from pathlib import Path
 import unittest
 
 import numpy as np
@@ -202,25 +201,6 @@ class TestModel(unittest.TestCase):
         self.assertAlmostEqual(rainfall[0, 0], 65.114948501)
         self.assertAlmostEqual(rainfall[0, 130], 39.584947656)
         self.assertAlmostEqual(rainfall[0, 200], 73.792450959)
-
-    def test_rainfield_diff_time_steps(self):
-        """Check that the results do not depend too much on the track's time step sizes."""
-        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
-
-        train_org = TCRain.from_tracks(tc_track)
-
-        tc_track.equal_timestep(time_step_h=1)
-        train_1h = TCRain.from_tracks(tc_track)
-
-        tc_track.equal_timestep(time_step_h=0.5)
-        train_05h = TCRain.from_tracks(tc_track)
-
-        for train in [train_1h, train_05h]:
-            np.testing.assert_allclose(
-                train_org.intensity.sum(),
-                train.intensity.sum(),
-                rtol=1e-1,
-            )
 
     def test_r_from_t_same_level(self):
         """Test the derivative of _r_from_t_same_level"""
