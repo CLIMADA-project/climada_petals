@@ -680,7 +680,7 @@ class WildFire(Hazard):
         res_centr = u_coord.get_resolution(centroids.lat, centroids.lon)
         if abs(abs(res_centr[0]) - abs(res_centr[1])) > 1.0e-6:
             raise ValueError('Centroids are not a regular raster')
-        return res_centr[0]
+        return abs(res_centr[0])
 
     def _firms_cons_days(self, df_firms):
         """ Compute clusters of consecutive days (temporal clusters).
