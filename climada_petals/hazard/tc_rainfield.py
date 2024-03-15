@@ -398,7 +398,12 @@ class TCRain(Hazard):
         """
         num_tracks = tracks.size
         if centroids is None:
-            centroids = Centroids.from_base_grid(res_as=360, land=True)
+            # default centroids: Natural Earth data at resolution 360
+            centroids = Centroids.from_hdf5(u_const.NATEARTH_CENTROIDS[360])
+            # only consider regions on land, without Antarctica
+            land_reg_ids = list(range(1, 1000))
+            land_reg_ids.remove(10)  # Antarctica
+            centroids = centroids.select(reg_id=land_reg_ids)
         if ignore_distance_to_coast:
             # Select centroids with lat <= max_latitude
             [idx_centr_filter] = (np.abs(centroids.lat) <= max_latitude).nonzero()
