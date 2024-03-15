@@ -73,7 +73,7 @@ class CoastalFlood(Hazard):
         if (rcp == 'historical') & (subsidence == 'nosub') & (target_year != 'hist'):
             raise ValueError("Historical without subsidence can only have hist as target year")
 
-        if (rcp == 'historical') & (percentile != '95'):
+        if (rcp == 'historical') & (percentile != '0'):
             raise ValueError("Historical shall not have a assigned percentiles of sea level rise. Leave default values.")
 
         if isinstance(return_periods, int):
