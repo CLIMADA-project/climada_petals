@@ -77,7 +77,7 @@ class TCSurgeBathtub(Hazard):
 
         # Select wind-affected centroids which are inside MAX_DIST_COAST and |lat| < 61
         if not centroids.dist_coast.size or np.all(centroids.dist_coast >= 0):
-            centroids.set_dist_coast(signed=True, precomputed=True)
+            centroids.set_dist_coast(signed=True)
         coastal_msk = (wind_haz.intensity > 0).sum(axis=0).A1 > 0
         coastal_msk &= (centroids.dist_coast < 0)
         coastal_msk &= (centroids.dist_coast >= -MAX_DIST_COAST * 1000)
