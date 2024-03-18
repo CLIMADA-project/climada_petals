@@ -66,7 +66,7 @@ class TestReader(unittest.TestCase):
         """Test from_tracks constructor with a single track."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
-        tc_haz = TCRain.from_tracks(tc_track, centroids=CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
 
         self.assertEqual(tc_haz.haz_type, 'TR')
         self.assertEqual(tc_haz.units, 'mm')
@@ -94,7 +94,7 @@ class TestReader(unittest.TestCase):
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
 
-        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB, model="TCR")
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
@@ -105,7 +105,7 @@ class TestReader(unittest.TestCase):
         # This increases the results by more than 70% because the default value for saturation
         # specific humidity corresponds to a temperature of only ~267 K.
         tc_track.data[0]["t600"] = xr.full_like(tc_track.data[0]["central_pressure"], 275.0)
-        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB, model="TCR")
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
@@ -121,7 +121,7 @@ class TestReader(unittest.TestCase):
         # Cyclone YASA (2020) passed directly over Fiji
         tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])
 
-        inten = TCRain.from_tracks(tr, centroids=cen).intensity.toarray()[0, :]
+        inten = TCRain.from_tracks(tr, cen).intensity.toarray()[0, :]
 
         # Centroids 1 and 2 are identical, they just use a different normalization for lon. This
         # should not affect the result at all:
@@ -134,7 +134,7 @@ class TestReader(unittest.TestCase):
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK_SHORT)
-        tc_haz = TCRain.from_tracks(tc_track, centroids=CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
         tc_haz.check()
 
         self.assertEqual(tc_haz.haz_type, 'TR')
@@ -158,7 +158,7 @@ class TestReader(unittest.TestCase):
     def test_two_files_pass(self):
         """Test from_tracks constructor with two ibtracs."""
         tc_track = TCTracks.from_processed_ibtracs_csv([TEST_TRACK_SHORT, TEST_TRACK_SHORT])
-        tc_haz = TCRain.from_tracks(tc_track, centroids=CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
         tc_haz.remove_duplicates()
         tc_haz.check()
 
@@ -201,6 +201,26 @@ class TestModel(unittest.TestCase):
         self.assertAlmostEqual(rainfall[0, 0], 65.114948501)
         self.assertAlmostEqual(rainfall[0, 130], 39.584947656)
         self.assertAlmostEqual(rainfall[0, 200], 73.792450959)
+
+    def test_rainfield_diff_time_steps(self):
+        """Check that the results do not depend too much on the track's time step sizes."""
+        tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
+        centroids = CENTR_TEST_BRB
+
+        train_org = TCRain.from_tracks(tc_track, centroids)
+
+        tc_track.equal_timestep(time_step_h=1)
+        train_1h = TCRain.from_tracks(tc_track, centroids)
+
+        tc_track.equal_timestep(time_step_h=0.5)
+        train_05h = TCRain.from_tracks(tc_track, centroids)
+
+        for train in [train_1h, train_05h]:
+            np.testing.assert_allclose(
+                train_org.intensity.sum(),
+                train.intensity.sum(),
+                rtol=1e-1,
+            )
 
     def test_r_from_t_same_level(self):
         """Test the derivative of _r_from_t_same_level"""
