@@ -104,6 +104,7 @@ class CoastalFlood(Hazard):
                 u_fh.download_file(link_to_file, download_dir=dwd_dir)
 
         if countries:
+            # TODO: this actually does not work with multiple countries
             geom = u_coord.get_land_geometry(countries).geoms
 
         elif boundaries:
