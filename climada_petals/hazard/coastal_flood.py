@@ -8,6 +8,9 @@ import climada.util.coordinates as u_coord
 from climada import CONFIG
 
 AQUEDUCT_SOURCE_LINK = CONFIG.hazard.coastal_flood.resources.aqueduct.str()
+# FIX THIS PATH - YOU SHOULD SAVE UNDER HAZARD, NOW IT CREATES A FOLDER CALLED COASTALFLOOD
+# AT THE SAME LEVEL AS HAZARD. RIVERINE AQUEDUCT IS SAVED THERE TOO, SO FIX THAT TOO
+# (SEE CLIMADA DATA LOCAL FOLDER)
 DOWNLOAD_DIRECTORY = CONFIG.hazard.coastal_flood.local_data.aqueduct.dir()
 
 HAZ_TYPE = 'CF'
