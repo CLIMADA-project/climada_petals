@@ -1,6 +1,6 @@
 name: Petals Testing
 
-# Execute this for every push
+# 'Reusable workflow', can be triggered from other workflows
 on:
   workflow_call:
     inputs:
