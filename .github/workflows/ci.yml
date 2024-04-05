@@ -4,7 +4,7 @@ on: [push]
 
 jobs:
   ci:
-    name: GitHub CI
+    name: Petals
     uses: ./.github/workflows/testing.yml
     with:
       petals_branch: ${{ github.ref }}

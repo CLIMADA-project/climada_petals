@@ -23,7 +23,7 @@ defaults:
 
 jobs:
   build-and-test:
-    name: Build Env, Install, Unit Tests
+    name: Unit Tests
     runs-on: ubuntu-latest
     permissions:
       # For publishing results
@@ -88,7 +88,7 @@ jobs:
         if: always()
         with:
           junit_files: climada_petals/tests_xml/tests.xml
-          check_name: "Unit Test Results Petals Python ${{ matrix.python-version }}"
+          check_name: "Petals / Unit Test Results (${{ matrix.python-version }})"
           comment_mode: "off"
       -
         name: Upload Coverage Reports
