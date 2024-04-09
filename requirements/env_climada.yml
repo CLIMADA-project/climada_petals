@@ -3,6 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
+  - meson-python
   - cdsapi>=0.6
   - overpy>=0.7
   - pymrio>=0.5
