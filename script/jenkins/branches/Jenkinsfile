@@ -26,7 +26,7 @@ pipeline {
 
             # first install xemsf, then activate environment, so .../envs/.../etc/conda/activate.d/esmpy.sh is executed
             # otherwise the environment varibalbe ESMFMKFILE is not initialized
-            mamba install -n petals_env -c conda-forge -y xesmf ruamel.yaml cdsapi
+            mamba install -n petals_env -c conda-forge -y meson-python
             conda activate petals_env
             rm -rf tests_xml/
             rm -rf coverage/
