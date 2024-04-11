@@ -110,9 +110,11 @@ def setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) ->
         except subprocess.CalledProcessError as exc:
             LOGGER.warning("pip install failed with return code %d and stdout:", exc.returncode)
             print(exc.output.decode("utf-8"))
-            raise RuntimeError("pip install failed with return code %d (see output above)."
-                               "Make sure that a Fortran compiler (e.g. gfortran) is available on "
-                               "your machine before using tc_surge_geoclaw!") from exc
+            raise RuntimeError(
+                "pip install failed with return code %d (see output above)."
+                " Make sure that a Fortran compiler (e.g. gfortran) is available on "
+                "your machine before using tc_surge_geoclaw!"
+            ) from exc
         importlib.reload(site)
         importlib.invalidate_caches()
 
