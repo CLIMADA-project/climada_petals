@@ -23,7 +23,7 @@ import datetime as dt
 import logging
 import pathlib
 import pickle
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
 
 import numpy as np
@@ -575,7 +575,8 @@ def _geoclaw_surge_from_track(
         if pool is not None:
             pool.map(GeoClawRunner.run, runners)
         else:
-            [runner.run() for runner in runners]
+            for runner in runners:
+                runner.run()
 
         surge_h = []
         for event, runner in zip(events, runners):

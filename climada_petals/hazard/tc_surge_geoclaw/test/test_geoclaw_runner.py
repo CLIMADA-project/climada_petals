@@ -29,6 +29,7 @@ import numpy as np
 import xarray as xr
 
 from climada.util.api_client import Client
+from climada_petals.hazard.tc_surge_geoclaw.setup_clawpack import setup_clawpack
 from climada_petals.hazard.tc_surge_geoclaw.geoclaw_runner import (
     _bounds_to_str,
     _dt64_to_pydt,
@@ -91,6 +92,10 @@ class TestFuncs(unittest.TestCase):
     @unittest.skipIf(sys.platform.startswith("win"), "does not run on Windows")
     def test_load_topography(self):
         """Test _load_topography function"""
+
+        # depends on the "clawpack" Python package, so make sure to have a working setup first:
+        setup_clawpack()
+
         topo_path = _test_bathymetry_tif()
         resolutions = [15, 30, 41, 90, 300]
         bounds = [

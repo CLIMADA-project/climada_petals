@@ -108,7 +108,7 @@ def setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) ->
         try:
             subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
-            LOGGER.warning(f"pip install failed with return code {exc.returncode} and stdout:")
+            LOGGER.warning("pip install failed with return code %d and stdout:", exc.returncode)
             print(exc.output.decode("utf-8"))
             raise RuntimeError("pip install failed with return code %d (see output above)."
                                "Make sure that a Fortran compiler (e.g. gfortran) is available on "

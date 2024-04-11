@@ -21,7 +21,7 @@ Function factories for reading sea levels from NetCDF files
 
 import logging
 import pathlib
-from typing import Any, Callable, Optional, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 
 import dask
 import numpy as np
@@ -328,9 +328,9 @@ def _select_bounds_dim(
     if idx.size < 2:
         d_min, d_max = ds[dim].values.min(), ds[dim].values.max()
         if d_min > ref_min or d_max < ref_max:
-            LOGGER.warn(
-                f"The dimension '{dim}' ({d_min} -- {d_max}) does not cover the range of the"
-                f" reference dimension ({ref_min} -- {ref_max})."
+            LOGGER.warning(
+                "The dimension '%s' (%f -- %f) does not cover the range of the reference"
+                " dimension (%f -- %f).", dim, d_min, d_max, ref_min, ref_max,
             )
     sl_start, sl_end = (idx[0], idx[-1] + 1) if idx.size > 0 else (0, 0)
     with dask.config.set(**{'array.slicing.split_large_chunks': True}):
