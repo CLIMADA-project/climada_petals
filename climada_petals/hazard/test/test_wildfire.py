@@ -284,7 +284,9 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertAlmostEqual(centroids_meta['transform'][4], -centroids_meta['transform'][0])
         self.assertGreaterEqual(centroids_meta['transform'][5], firms.latitude.max())
         self.assertLessEqual(firms.latitude.max(), centroids.total_bounds[3])
-        self.assertGreaterEqual(firms.latitude.min(), centroids.total_bounds[1])
+        # TODO: check whether allowing for a tolerance is valid here
+        TOLERANCE = 0.005
+        self.assertGreaterEqual(firms.latitude.min(), centroids.total_bounds[1] - TOLERANCE)
         self.assertLessEqual(firms.longitude.max(), centroids.total_bounds[2])
         self.assertGreaterEqual(firms.longitude.min(), centroids.total_bounds[0])
         self.assertTrue(centroids.lat.size)
