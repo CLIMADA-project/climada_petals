@@ -19,7 +19,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Plotting TC surge events and topography data for GeoClaw setups
 """
 
-import __main__
 import pathlib
 from typing import Any, List, Optional, Tuple, Union
 
@@ -36,6 +35,7 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import numpy as np
 import xarray as xr
 
+import __main__
 from climada.hazard import Centroids
 
 
@@ -150,21 +150,22 @@ def plot_surge_events(
 def plot_dems(
     dems : List,
     track : Optional[xr.Dataset] = None,
-    path : Optional[Union[pathlib.Path, str]] = None,
     centroids : Optional[Centroids] = None,
+    path : Optional[Union[pathlib.Path, str]] = None,
 ) -> None:
     """Plot given DEMs as rasters to one worldmap
 
     Parameters
     ----------
     dems : list of pairs
-        pairs (bounds, heights)
-    path : Path or str or None
-        If given, save plot in this location. Default: None
+        Pairs (bounds, heights) where bounds is a tuple (lon_min, lat_min, lon_max, lat_max) and
+        heights is a two-dimensional array of floats.
     track : xr.Dataset
         If given, overlay the tropical cyclone track. Default: None
     centroids : ndarray
-        If given, overlay as scatter points. Default: None
+        If given, overlay the centroids as scatter points. Default: None
+    path : Path or str or None
+        If given, save plot in this location. Default: None
     """
     # adjust properties of the colorbar (ignored by cartopy axes)
     matplotlib.rc('axes', linewidth=0.5)
@@ -175,10 +176,10 @@ def plot_dems(
     matplotlib.rc('ytick.major', size=2.5, width=0.5)
 
     total_bounds = (
-        min([bounds[0] for bounds, _ in dems]),
-        min([bounds[1] for bounds, _ in dems]),
-        max([bounds[2] for bounds, _ in dems]),
-        max([bounds[3] for bounds, _ in dems]),
+        min(bounds[0] for bounds, _ in dems),
+        min(bounds[1] for bounds, _ in dems),
+        max(bounds[2] for bounds, _ in dems),
+        max(bounds[3] for bounds, _ in dems),
     )
     mid_lon = 0.5 * (total_bounds[0] + total_bounds[2])
     aspect_ratio = 1.124 * ((total_bounds[2] - total_bounds[0])
@@ -263,6 +264,7 @@ def _colormap_coastal_dem(
 
 class LinearSegmentedNormalize(mcolors.Normalize):
     """Piecewise linear color normalization."""
+
     def __init__(self, vthresh : List[float]):
         """Initialize normalization
 

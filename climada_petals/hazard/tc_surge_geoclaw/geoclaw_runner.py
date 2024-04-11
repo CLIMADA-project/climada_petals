@@ -160,10 +160,10 @@ class GeoClawRunner():
         self.surge_h = np.zeros(centroids.shape[0])
 
         # compute time horizon
-        self.time_horizon = tuple([
+        self.time_horizon = tuple(
             int((t - self.time_offset)  / np.timedelta64(1, 's'))
             for t in self.track["time"][[0, -1]]
-        ])
+        )
 
         # create work directory
         self.work_dir = base_dir.joinpath(self.time_offset_str)

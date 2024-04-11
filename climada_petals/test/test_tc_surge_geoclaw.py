@@ -34,7 +34,7 @@ from climada_petals.hazard.tc_surge_geoclaw.tc_surge_geoclaw import (
 )
 
 
-def test_altimetry_nc():
+def _test_altimetry_nc():
     """Altimetry (ocean surface) raster data for testing
 
     Sample of monthly Copernicus satellite altimetry for year 2010.
@@ -46,7 +46,7 @@ def test_altimetry_nc():
     return altimetry_nc
 
 
-def test_bathymetry_tif():
+def _test_bathymetry_tif():
     """Topo-Bathymetry (combined land surface and ocean floor) raster data for testing
 
     SRTM15+V2.3 data of Tubuai island enlarged by factor 10.
@@ -94,11 +94,11 @@ class TestGeoclawRun(unittest.TestCase):
             (-23.2394, -149.8574),  # inland
         ]
         setup_clawpack()
-        sea_level_fun = area_sea_level_from_monthly_nc(test_altimetry_nc())
+        sea_level_fun = area_sea_level_from_monthly_nc(_test_altimetry_nc())
         intensity, gauge_data = _geoclaw_surge_from_track(
             track,
             centroids,
-            test_bathymetry_tif(),
+            _test_bathymetry_tif(),
             geoclaw_kwargs=dict(
                 topo_res_as=300,
                 gauges=gauges,

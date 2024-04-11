@@ -20,19 +20,23 @@ Test geoclaw_runner module
 """
 
 import datetime as dt
+import pathlib
+import tempfile
 import unittest
 
 import numpy as np
+import xarray as xr
 
 from climada.util.api_client import Client
 from climada_petals.hazard.tc_surge_geoclaw.geoclaw_runner import (
     _bounds_to_str,
     _dt64_to_pydt,
     _load_topography,
+    GeoClawRunner,
 )
 
 
-def test_bathymetry_tif():
+def _test_bathymetry_tif():
     """Topo-Bathymetry (combined land surface and ocean floor) raster data for testing
 
     SRTM15+V2.3 data of Tubuai island enlarged by factor 10.
@@ -86,7 +90,7 @@ class TestFuncs(unittest.TestCase):
 
     def test_load_topography(self):
         """Test _load_topography function"""
-        topo_path = test_bathymetry_tif()
+        topo_path = _test_bathymetry_tif()
         resolutions = [15, 30, 41, 90, 300]
         bounds = [
             (-153.62, -28.79, -144.75, -18.44),
@@ -129,7 +133,66 @@ class TestFuncs(unittest.TestCase):
                 self.assertLess(zvalues[-4].size, zvalues[-8].size)
 
 
+class TestRunner(unittest.TestCase):
+    """Test the GeoClawRunner class"""
+
+    def test_init(self):
+        """Test object initialization"""
+        # track and centroids are taken from the integration test
+        track = xr.Dataset({
+            'radius_max_wind': ('time', [15., 15, 15, 15, 15, 17, 20, 20]),
+            'radius_oci': ('time', [202., 202, 202, 202, 202, 202, 202, 202]),
+            'max_sustained_wind': ('time', [105., 97, 90, 85, 80, 72, 65, 66]),
+            'central_pressure': ('time', [944., 950, 956, 959, 963, 968, 974, 975]),
+            'time_step': ('time', np.full((8,), 3, dtype=np.float64)),
+        }, coords={
+            'time': np.arange('2010-02-05T09:00', '2010-02-06T09:00',
+                              np.timedelta64(3, 'h'), dtype='datetime64[ns]'),
+            'lat': ('time', [-26.33, -25.54, -24.79, -24.05,
+                             -23.35, -22.7, -22.07, -21.50]),
+            'lon': ('time', [-147.27, -148.0, -148.51, -148.95,
+                             -149.41, -149.85, -150.27, -150.56]),
+        }, attrs={
+            'sid': '2010029S12177_test',
+        })
+        centroids = np.array([
+            [-23.8908, -149.8048], [-23.8628, -149.7431],
+            [-23.7032, -149.3850], [-23.7183, -149.2211],
+            [-23.5781, -149.1434], [-23.5889, -148.8824],
+            [-23.2351, -149.9070], [-23.2049, -149.7927],
+        ])
+        time_offset = track["time"].values[3]
+        areas = {
+            "period": (track["time"].values[0], track["time"].values[-1]),
+            "time_mask": np.ones_like(track["time"].values, dtype=bool),
+            "time_mask_buffered": np.ones_like(track["time"].values, dtype=bool),
+            "wind_area": (-151.0, -25.0, -147.0, -22.0),
+            "landfall_area": (-150.0, -24.0, -148.0, -23.0),
+            "surge_areas": [(-150.0, -24.3, -149.0, -23.0), (-149.0, -24.0, -148.0, -22.6)],
+            "centroid_mask": np.ones_like(centroids[:, 0], dtype=bool),
+        }
+        topo_path = _test_bathymetry_tif()
+        with tempfile.TemporaryDirectory() as base_dir:
+            base_dir = pathlib.Path(base_dir)
+            runner = GeoClawRunner(base_dir, track, time_offset, areas, centroids, topo_path)
+
+            # creates a new directory in the `base_dir`, with name referring to the time offset
+            contents = list(base_dir.iterdir())
+            self.assertEqual(len(contents), 1)
+            [work_dir] = contents
+            self.assertEqual(work_dir, runner.work_dir)
+            self.assertEqual(work_dir.name, "2010-02-05-18")
+
+            # the work dir contains the Makefile and all necessary "rundata" files
+            # check a selection of files (in practice, a lot more files are needed, but we don't
+            # want to enforce an exact set of necessary files here):
+            contents = [f.name for f in work_dir.iterdir()]
+            for i in ["Makefile", "claw.data", "geoclaw.data", "topo.data", "track.storm"]:
+                self.assertIn(i, contents)
+
+
 # Execute Tests
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestFuncs)
+    TESTS.addTests(unittest.TestLoader().loadTestsFromTestCase(TestRunner))
     unittest.TextTestRunner(verbosity=2).run(TESTS)

@@ -30,7 +30,7 @@ from climada_petals.hazard.tc_surge_geoclaw.sea_level_funs import (
 )
 
 
-def test_altimetry_nc():
+def _test_altimetry_nc():
     """Altimetry (ocean surface) raster data for testing
 
     Sample of monthly Copernicus satellite altimetry for year 2010.
@@ -47,7 +47,7 @@ class TestSeaLevelFuns(unittest.TestCase):
 
     def test_load_sea_level(self):
         """Test functions to get sea level from NetCDF files"""
-        zos_path = test_altimetry_nc()
+        zos_path = _test_altimetry_nc()
         periods = [
             # one period in January, one in February, and one close to Jan/Feb boundary
             (np.datetime64("2010-01-10"), np.datetime64("2010-01-14")),

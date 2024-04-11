@@ -29,7 +29,7 @@ from climada.util.api_client import Client
 from climada_petals.hazard.tc_surge_geoclaw import TCSurgeGeoClaw
 
 
-def test_bathymetry_tif():
+def _test_bathymetry_tif():
     """Topo-Bathymetry (combined land surface and ocean floor) raster data for testing
 
     SRTM15+V2.3 data of Tubuai island enlarged by factor 10.
@@ -68,7 +68,7 @@ class TestHazardInit(unittest.TestCase):
         })
         tracks = TCTracks()
         tracks.data = [track, track]
-        topo_path = test_bathymetry_tif()
+        topo_path = _test_bathymetry_tif()
 
         # first run, with automatic centroids
         centroids = tracks.generate_centroids(res_deg=30 / (60 * 60), buffer_deg=5.5)
