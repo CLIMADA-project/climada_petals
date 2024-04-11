@@ -19,6 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test tc_surge_geoclaw module
 """
 
+import sys
 import unittest
 
 import numpy as np

@@ -21,6 +21,7 @@ Test geoclaw_runner module
 
 import datetime as dt
 import pathlib
+import sys
 import tempfile
 import unittest
 
