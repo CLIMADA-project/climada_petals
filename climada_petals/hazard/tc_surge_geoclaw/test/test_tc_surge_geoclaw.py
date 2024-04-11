@@ -44,6 +44,7 @@ def _test_bathymetry_tif():
 class TestHazardInit(unittest.TestCase):
     """Test init and properties of TCSurgeGeoClaw class"""
 
+    @unittest.skipIf(sys.platform.startswith("win"), "does not run on Windows")
     def test_init(self):
         """Test TCSurgeGeoClaw basic object properties"""
         # use dummy track that is too weak to actually produce surge

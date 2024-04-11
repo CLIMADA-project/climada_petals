@@ -89,6 +89,12 @@ def setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) ->
         If ``True``, perform a fresh install even if an existing installation is found.
         Defaults to ``False``.
     """
+    if sys.platform.startswith("win"):
+        raise RuntimeError(
+            "The TCSurgeGeoClaw feature only works on Mac and Linux since Windows is not"
+            "supported by the GeoClaw package."
+        )
+
     path, git_ver = clawpack_info()
     if overwrite or (
         path is None or version not in git_ver and version not in git_ver[0]

@@ -52,6 +52,12 @@ GEOCLAW_WORK_DIR = CONFIG.hazard.tc_surge_geoclaw.geoclaw_work_dir.dir()
 class TCSurgeGeoClaw(Hazard):
     """TC storm surge heights in meters (m), modeled using GeoClaw.
 
+    Note that this feature only works on Linux and Mac since Windows is not supported by GeoClaw.
+    Due to the high computational demand, this functionality should be run on an HPC cluster with
+    decent amounts of memory and processors (at least 32 GB and 8 cores) available. Only for
+    testing purposes, it makes sense to run this functionality on a smaller machine at lower
+    resolution.
+
     Attributes
     ----------
     category : ndarray of ints
@@ -142,6 +148,12 @@ class TCSurgeGeoClaw(Hazard):
         pool : Any = None,
     ):
         """Generate a TC surge hazard instance from a TCTracks object
+
+        Note that this feature only works on Linux and Mac since Windows is not supported by
+        GeoClaw. Due to the high computational demand, this functionality should be run on an HPC
+        cluster with decent amounts of memory and processors (at least 32 GB and 8 cores)
+        available. Only for testing purposes, it makes sense to run this functionality on a smaller
+        machine at lower resolution.
 
         It is required to run this method (or the function `setup_clawpack`) with a working
         internet connection at least once to trigger the download and installation of the flow

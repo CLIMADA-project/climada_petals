@@ -87,7 +87,7 @@ class TestFuncs(unittest.TestCase):
         pydt_conv = _dt64_to_pydt(dt64[2])
         self.assertEqual(pydt_conv, pydt[2])
 
-
+    @unittest.skipIf(sys.platform.startswith("win"), "does not run on Windows")
     def test_load_topography(self):
         """Test _load_topography function"""
         topo_path = _test_bathymetry_tif()
@@ -136,6 +136,7 @@ class TestFuncs(unittest.TestCase):
 class TestRunner(unittest.TestCase):
     """Test the GeoClawRunner class"""
 
+    @unittest.skipIf(sys.platform.startswith("win"), "does not run on Windows")
     def test_init(self):
         """Test object initialization"""
         # track and centroids are taken from the integration test
