@@ -45,7 +45,7 @@ class TestIntegr(unittest.TestCase):
                                                    fn_str_var=FN_STR_DEMO)
         hist_mean = haz.calc_mean(yearrange_mean=(2001, 2005))
         haz_new = rel_yield_to_int(haz, hist_mean)
-        haz_new.centroids.set_region_id()
+        haz_new.centroids.set_region_id(overwrite=True)
 
         exp = CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME_LU, hist_mean=FILENAME_MEAN,
                                                 bbox=bbox, yearrange=(2001, 2005), scenario='flexible', unit='t/y',
