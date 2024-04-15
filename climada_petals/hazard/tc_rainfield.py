@@ -403,7 +403,7 @@ class TCRain(Hazard):
         else:
             # Select centroids which are inside max_dist_inland_km and lat <= max_latitude
             [idx_centr_filter] = (
-                (centroids.get_dist_coast(precomputed=True) <= max_dist_inland_km * 1000)
+                (centroids.get_dist_coast() <= max_dist_inland_km * 1000)
                 & (np.abs(centroids.lat) <= max_latitude)
             ).nonzero()
 
