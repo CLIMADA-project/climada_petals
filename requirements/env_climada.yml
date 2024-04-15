@@ -5,6 +5,7 @@ channels:
 dependencies:
   - meson-python
   - cdsapi>=0.6
+  - gfortran>=13.0
   - overpy>=0.7
   - pymrio>=0.5
   - ruamel.yaml>=0.18
