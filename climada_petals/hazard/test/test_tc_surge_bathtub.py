@@ -182,7 +182,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
         # We list the second point twice, with different lon-normalization:
         cen = Centroids.from_lat_lon([-16.95, -16.8, -16.8], [179.9, 180.1, -179.9])
-        cen.set_dist_coast(precomputed=True)
+        cen.set_dist_coast()
 
         # Cyclone YASA (2020) passed directly over Fiji
         tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])
