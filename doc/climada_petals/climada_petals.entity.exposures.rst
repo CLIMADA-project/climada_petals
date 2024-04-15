@@ -29,6 +29,14 @@ climada\_petals\.entity\.exposures\.gdp\_asset module
     :undoc-members:
     :show-inheritance:
 
+climada\_petals\.entity\.exposures\.osm\_dataloader module
+----------------------------------------------------------
+
+.. automodule:: climada_petals.entity.exposures.osm_dataloader
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 climada\_petals\.entity\.exposures\.spam\_agrar module
 ------------------------------------------------------
 
