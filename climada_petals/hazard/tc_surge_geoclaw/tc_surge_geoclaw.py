@@ -410,10 +410,9 @@ def _get_coastal_centroids_idx(
     if not centroids.coord.size:
         centroids.set_meta_to_lat_lon()
 
-    if not centroids.dist_coast.size or np.all(centroids.dist_coast >= 0):
-        centroids.set_dist_coast(signed=True, precomputed=True)
-    coastal_msk = (centroids.dist_coast <= max_dist_offshore_km * 1000)
-    coastal_msk &= (centroids.dist_coast >= -max_dist_inland_km * 1000)
+    dist_coast = centroids.get_dist_coast(signed=True)
+    coastal_msk = (dist_coast <= max_dist_offshore_km * 1000)
+    coastal_msk &= (dist_coast >= -max_dist_inland_km * 1000)
     coastal_msk &= (np.abs(centroids.lat) <= max_latitude)
     return coastal_msk.nonzero()[0]
 
