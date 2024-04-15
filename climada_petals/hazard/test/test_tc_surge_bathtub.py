@@ -153,7 +153,6 @@ class TestTCSurgeBathtub(unittest.TestCase):
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
         centroids = Centroids.from_lat_lon(lat, lon)
-        centroids.set_dist_coast(signed=True, precomputed=True)
 
         wind_haz = TropCyclone.from_tracks(tc_track, centroids=centroids)
 
@@ -180,7 +179,6 @@ class TestTCSurgeBathtub(unittest.TestCase):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
         # We list the second point twice, with different lon-normalization:
         cen = Centroids.from_lat_lon([-16.95, -16.8, -16.8], [179.9, 180.1, -179.9])
-        cen.set_dist_coast(precomputed=True)
 
         # Cyclone YASA (2020) passed directly over Fiji
         tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])
