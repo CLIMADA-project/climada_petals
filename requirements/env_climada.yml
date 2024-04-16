@@ -4,9 +4,10 @@ channels:
   - nodefaults
 dependencies:
   - cdsapi>=0.6
+  - meson-python>=0.15
   - overpy>=0.7
   - pymrio>=0.5
-  - ruamel.yaml>=0.18
   - rioxarray>=0.13
+  - ruamel.yaml>=0.18
   - scikit-image>=0.22
   - xesmf>=0.8
