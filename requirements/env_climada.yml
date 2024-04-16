@@ -3,7 +3,9 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
+  - meson-python
   - cdsapi>=0.6
+  - gfortran>=13.0
   - meson-python>=0.15
   - overpy>=0.7
   - pymrio>=0.5
