@@ -5,6 +5,7 @@ channels:
 dependencies:
   - cdsapi>=0.6
   - meson-python>=0.15
+  - osm-flex>=1.1
   - overpy>=0.7
   - pymrio>=0.5
   - rioxarray>=0.13
