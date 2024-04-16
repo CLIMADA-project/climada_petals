@@ -312,7 +312,7 @@ def parse_mriot(mriot_type, downloaded_file):
                 names = ['region', 'sector']
                 )
         mriot.unit = pd.DataFrame(
-                    data = np.repeat(["M.EUR"], len(multiindex_unit)),
+                    data = np.repeat(["M.USD"], len(multiindex_unit)),
                     index = multiindex_unit,
                     columns = ["unit"]
                     )
