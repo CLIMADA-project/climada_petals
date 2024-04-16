@@ -4,6 +4,13 @@ channels:
   - nodefaults
 dependencies:
   - cdsapi>=0.6
+  - meson-python>=0.15
+  - overpy>=0.7
+  - pymrio>=0.5
+  - rioxarray>=0.13
+  - ruamel.yaml>=0.18
+  - scikit-image>=0.22
+  - xesmf>=0.8
   - climada
   - ipykernel
   - ipython
@@ -11,11 +18,7 @@ dependencies:
   - nb_conda_kernels
   - pandoc
   - pip
-  - pymrio>=0.5
-  - ruamel.yaml>=0.18
-  - scikit-image>=0.21
   - sphinx>=2.0
-  - xesmf>=0.8
   - pip:
     - coverage>=4.5
     - descartes
