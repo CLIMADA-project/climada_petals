@@ -384,7 +384,7 @@ class SupplyChain:
                 mriot.x : industry or total output
                 mriot.meta : metadata
     secs_exp : pd.DataFrame
-            Exposure dataframe of each country/sector in the MRIOT. Columns are the
+            Exposure dataframe of each region/sector in the MRIOT. Columns are the
             same as the chosen MRIOT.
     secs_imp : pd.DataFrame
             Impact dataframe for the directly affected countries/sectors for each event with
@@ -460,6 +460,17 @@ class SupplyChain:
             If the downloaded files are deleted after saving the parsed data. Default is
             True. WIOD16 and OECD21 data are downloaded as group of years.
 
+        Notes
+        -----
+           EXIOBASE3 different world regions (WA, WF, WL, WM and WE) are aggregated
+           to a single Rest of the World (ROW) region.
+
+           Sometime, the Change In Inventory (CII) column of final demand lead to
+           total final demand being negative, which causes problem with some indirect
+           impact computation. Current solution is to set CII to 0 for (region,sector)
+           where final demand is negative. In such a case, production vector is
+           recomputed accordingly, and a warning is raised.
+
         Returns
         -------
         mriot : pymrio.IOSystem
@@ -507,7 +518,7 @@ class SupplyChain:
         # "Changes in Inventory (CII)" demand category is
         # larger than the sum of all other categories
         if (mriot.Y.sum(axis=1) < 0).any():
-            LOGGER.debug("Found negatives values in total final demand,"
+            LOGGER.warning("Found negatives values in total final demand,"
                         "setting them to 0 and recomputing production vector")
             mriot.Y.loc[mriot.Y.sum(axis=1) < 0] = mriot.Y.loc[mriot.Y.sum(axis=1) < 0].clip(lower=0)
             mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
@@ -526,9 +537,9 @@ class SupplyChain:
                               shock_factor=None
                               ):
         """Calculate exposure, impact and shock at the sectorial level.
-        This function translate spatially-distrubted exposure and impact
-        information into exposure and impact of MRIOT's country/sectors and
-        for each hazard event.
+        This function translate spatially-disturbed exposure and impact
+        information into exposure and impact in the MRIOT's region/sectors
+        typology, for each hazard event.
 
         Parameters
         ----------
@@ -541,11 +552,10 @@ class SupplyChain:
             as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
             or as sector names (as string or list).
         shock_factor : np.array
-            It has lenght equal to the number of sectors. For each sector, it defines to
-            what extent the fraction of indirect losses differs from the one of direct
-            losses (i.e., impact / exposure). Deafult value is None, which means that shock
-            factors for all sectors are equal to 1, i.e., that production and stock losses
-            fractions are the same.
+            Array length should equal the number of sectors. For each sector, it defines
+            by which factor the ratio of direct losses over exposure translate into an economic shock
+            (on production, final demand, capital stock, depending on the indirect impact method used).
+            By default, the value is None, and the factor is 1 for all sectors.
         """
 
         if impacted_secs is None:
@@ -594,7 +604,7 @@ class SupplyChain:
             # Overall sectorial stock exposure and impact are distributed among
             # subsectors proportionally to their their own contribution to overall
             # sectorial production: Sum needed below in case of many ROWs, which are
-            # aggregated into one country as per WIOD table.
+            # aggregated into one region as per WIOD table.
             self.secs_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
                 tot_value_reg_id * secs_prod_ratio
                 ) / self.conversion_factor()
@@ -609,8 +619,8 @@ class SupplyChain:
 
         if not np.all(self.secs_shock <= 1):
             warnings.warn(
-                "Consider changing the provided provided stock-to-production losses "
-                "ratios, as some of them lead to some sectors' production losses to "
+                "Consider changing the provided stock-to-production losses ratios,"
+                "as some of them lead to some sectors' production losses to "
                 "exceed the maximum sectorial production. For these sectors, total "
                 "production loss is assumed."
             )
@@ -668,7 +678,7 @@ class SupplyChain:
             as positions of the impacted sectors in the MRIOT (as range or np.ndarray)
             or as sector names (as string or list). Default is None.
         shock_factor : np.array
-            It has lenght equal to the number of sectors. For each sector, it defines to
+            It has length equal to the number of sectors. For each sector, it defines to
             what extent the fraction of indirect losses differs from the one of direct
             losses (i.e., impact / exposure). Deafult value is None, which means that shock
             factors for all sectors are equal to 1, i.e., that production and stock losses
@@ -680,10 +690,24 @@ class SupplyChain:
             Only meangingful when io_approach='boario'. Default is None.
         boario_type: str
             The chosen boario type. Possible choices are 'recovery', 'rebuild' and
-            'production_shock'. Only meangingful when io_approach='boario'. Default 'recovery'.
+            'production_shock'. Only meaningful when io_approach='boario'. Default 'recovery'.
         boario_aggregate: str
             Whether events are aggregated or not. Possible choices are 'agg' or 'sep'.
-            Only meangingful when io_approach='boario'. Default is 'agg'.
+            Only meaningful when io_approach='boario'. Default is 'agg'.
+
+        Notes
+        -----
+           * The Leontief approach assumes the shock to degrade the final demand,
+           and computes the resulting changed production.
+           * The Ghosh approach assumes the shock to impact value added,
+           and computes the resulting production.
+           * The BoARIO approach assumes the shock to incapacitate productive capital
+           (and possibly generate a reconstruction demand with ``boario_type="rebuild"``)
+           and computes the change of production over time with the ARIO model.
+           See the `BoARIO documentation <https://spjuhel.github.io/BoARIO/>`_ for more details
+           (Note that not all features of BoARIO are included yet).
+
+
         References
         ----------
         [1] W. W. Leontief, Output, employment, consumption, and investment,
@@ -847,8 +871,7 @@ class SupplyChain:
             raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
     def conversion_factor(self):
-        """
-        Conversion factor based on unit specified in the
+        """Conversion factor based on unit specified in the
         Multi-Regional Input-Output Table.
         """
 
