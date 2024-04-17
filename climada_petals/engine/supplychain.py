@@ -45,7 +45,6 @@ WIOD_FILE_LINK = CONFIG.engine.supplychain.resources.wiod16.str()
 MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
 """Directory where Multi-Regional Input-Output Tables (MRIOT) are downloaded."""
 
-calc_G = pymrio.calc_L
 VA_NAME = "value added"
 """Index name for value added"""
 
