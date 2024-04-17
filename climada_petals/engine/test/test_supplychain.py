@@ -28,6 +28,7 @@ from climada.engine.impact_calc import Impact
 from climada_petals.engine.supplychain import (
     SupplyChain,
     MRIOT_DIRECTORY,
+    VA_NAME,
     parse_mriot_from_df,
 )
 from climada.util.constants import DEF_CRS

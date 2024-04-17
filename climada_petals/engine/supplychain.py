@@ -46,6 +46,8 @@ MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
 """Directory where Multi-Regional Input-Output Tables (MRIOT) are downloaded."""
 
 calc_G = pymrio.calc_L
+VA_NAME = "value added"
+"""Index name for value added"""
 
 def calc_v(Z, x):
     """Calculate value added (v) from Z and x
@@ -72,11 +74,11 @@ def calc_v(Z, x):
 
     value_added = np.diff(np.vstack((Z.sum(0), x.T)), axis=0)
     if isinstance(Z, pd.DataFrame):
-        value_added = pd.DataFrame(value_added, columns=Z.index, index=["indout"])
+        value_added = pd.DataFrame(value_added, columns=Z.index, index=[VA_NAME])
     if isinstance(value_added, pd.Series):
         value_added = pd.DataFrame(value_added)
     if isinstance(value_added, pd.DataFrame):
-        value_added.index = ["indout"]
+        value_added.index = [VA_NAME]
     return value_added
 
 
