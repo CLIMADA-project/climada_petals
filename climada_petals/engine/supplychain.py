@@ -49,7 +49,7 @@ calc_G = pymrio.calc_L
 VA_NAME = "value added"
 """Index name for value added"""
 
-def calc_v(Z, x):
+def calc_va(Z, x):
     """Calculate value added (v) from Z and x
 
     value added = industry output (x) - inter-industry inputs (sum_rows(Z))
@@ -105,27 +105,56 @@ def calc_B(Z, x):
     the allocation coefficients matrix B.
     """
 
-    if isinstance(x, (pd.DataFrame, pd.Series)):
-        x = x.to_numpy()
-    if not isinstance(x, np.ndarray) and (x == 0):
+    if (type(x) is pd.DataFrame) or (type(x) is pd.Series):
+        x = x.values
+    if (type(x) is not np.ndarray) and (x == 0):
         recix = 0
     else:
         with warnings.catch_warnings():
             # Ignore devide by zero warning, we set to 0 afterwards
             warnings.filterwarnings("ignore", message="divide by zero")
             recix = 1 / x
-        recix[np.isinf(recix)] = 0
+        recix[recix == np.inf] = 0
+        recix = recix.reshape((1, -1))
+    # use numpy broadcasting - factor ten faster
+    # Mathematical form - slow
+    # return Z.dot(np.diagflat(recix))
+    if type(Z) is pd.DataFrame:
+        return pd.DataFrame(
+            np.transpose(Z.values) * recix, index=Z.index, columns=Z.columns
+        )
+    else:
+        return np.transpose(Z) * recix
 
-    if isinstance(Z, pd.DataFrame):
-        return pd.DataFrame(Z.to_numpy() * recix, index=Z.index, columns=Z.columns)
+def calc_G(B):
+    """Calculate the Ghosh inverse matrix G either from B
+    G = inverse matrix of (I - B) where I is an identity matrix of same shape as B.
+    Note that we define G as the transpose of the Ghosh inverse matrix, so that we can apply the factors of
+    production intensities from the left-hand-side for both Leontief and Ghosh attribution. In this way the
+    multipliers have the same (vector) dimensions and can be added.
+    Parameters
+    ----------
+    B : pandas.DataFrame or numpy.array
+        Symmetric input output table (coefficients)
+    Returns
+    -------
+    pandas.DataFrame or numpy.array
+        Ghosh input output table G
+        The type is determined by the type of B.
+        If DataFrame index/columns as B
+    """
+    I = np.eye(B.shape[0])  # noqa
+    if type(B) is pd.DataFrame:
+        return pd.DataFrame(
+            np.linalg.inv(I - B), index=B.index, columns=B.columns
+        )
+    else:
+        return np.linalg.inv(I - B)  # G = inverse matrix of (I - B)
 
-    return Z * recix
-
-
-def calc_x_from_G(G, v):
+def calc_x_from_G(G, va):
     """Calculate the industry output x from a v vector and G matrix
 
-    x = vG
+    x = Gva
 
     The industry output x is computed from a value-added vector v
 
@@ -134,7 +163,7 @@ def calc_x_from_G(G, v):
     v : pandas.DataFrame or numpy.array
         a row vector of the total final added-value
     G : pandas.DataFrame or numpy.array
-        Symmetric input output Ghosh table
+        **Transpose** of Ghosh inverse matrix
 
     Returns
     -------
@@ -148,7 +177,7 @@ def calc_x_from_G(G, v):
     compute total output (x) from the Ghosh inverse.
     """
 
-    x = v.dot(G)
+    x = G.dot(va.T)
     if isinstance(x, pd.Series):
         x = pd.DataFrame(x)
     if isinstance(x, pd.DataFrame):
@@ -157,8 +186,8 @@ def calc_x_from_G(G, v):
 
 
 def parse_mriot_from_df(
-        mriot_df=None, col_iso3=None, col_sectors=None,
-        rows_data=None, cols_data=None, row_fd_cats=None
+        mriot_df, col_iso3, col_sectors,
+        rows_data, cols_data, row_fd_cats=None
     ):
     """Build multi-index dataframes of the transaction matrix, final demand and total
        production from a Multi-Regional Input-Output Table dataframe.
@@ -173,10 +202,17 @@ def parse_mriot_from_df(
         Column's position of sectors' names
     rows_data : (int, int)
         Tuple of integers with positions of rows
-        containing the MRIOT data
+        containing the MRIOT data for intermediate demand
+        matrix.
+        Final demand matrix is assumed to be the remaining columns
+        of the DataFrame except the last one (which generally holds
+        total output).
     cols_data : (int, int)
         Tuple of integers with positions of columns
         containing the MRIOT data
+    row_fd_cats : int
+        Integer index of the row containing the
+        final demand categories.
     """
 
     start_row, end_row = rows_data
@@ -184,7 +220,12 @@ def parse_mriot_from_df(
 
     sectors = mriot_df.iloc[start_row:end_row, col_sectors].unique()
     regions = mriot_df.iloc[start_row:end_row, col_iso3].unique()
-    fd_cats = mriot_df.iloc[row_fd_cats, end_col:-1].unique()
+    if row_fd_cats is None:
+        n_fd_cat = (mriot_df.shape[1] - (end_col+1)) // len(regions)
+        fd_cats = [f"fd_cat_{i}" for i in range(n_fd_cat)]
+    else:
+        fd_cats = mriot_df.iloc[row_fd_cats, end_col:-1].unique()
+
     multiindex = pd.MultiIndex.from_product(
         [regions, sectors], names=["region", "sector"]
     )
@@ -203,7 +244,7 @@ def parse_mriot_from_df(
                     )
 
     x = mriot_df.iloc[start_row:end_row, -1].values.astype(float)
-    x = pd.DataFrame(data=x, index=multiindex, columns=["total production"])
+    x = pd.DataFrame(data=x, index=multiindex, columns=["indout"])
 
     return Z, Y, x
 
@@ -653,7 +694,6 @@ class SupplyChain:
         Analysis, Resources, 2, 489-503; doi:10.3390/resources2040489, 2013.
         """
 
-        #n_events = self.secs_shock.shape[0]
         self.calc_matrices(io_approach=io_approach)
 
         if self.secs_shock is None:
@@ -674,7 +714,7 @@ class SupplyChain:
             ).T.set_index(self.secs_shock.index)})
 
         elif io_approach == "ghosh":
-            value_added = calc_v(self.mriot.Z, self.mriot.x)
+            value_added = calc_va(self.mriot.Z, self.mriot.x)
             degr_value_added = (
                 self.secs_shock * value_added.values
             )
@@ -714,7 +754,7 @@ class SupplyChain:
 
                 elif boario_type == 'rebuild':
                     boario_params.update({'event': {
-                        'rebuild_tau' : 5,
+                        'rebuild_tau' : 365,
                         'rebuilding_sectors': pd.Series(index=self.mriot.get_sectors())}
                                           })
 
@@ -817,7 +857,7 @@ class SupplyChain:
             unit = self.mriot.unit.values[0][0]
         elif isinstance(self.mriot.unit, str):
             unit = self.mriot.unit
-        if unit in ["M.EUR", "Million USD"]:
+        if unit in ["M.EUR", "Million USD", "M.USD"]:
             conversion_factor = 1e6
         else:
             conversion_factor = 1
