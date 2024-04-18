@@ -19,6 +19,7 @@ Test Supplychain class.
 """
 
 import unittest
+import warnings
 import numpy as np
 import pandas as pd
 import pymrio
@@ -29,6 +30,7 @@ from climada_petals.engine.supplychain import (
     SupplyChain,
     MRIOT_DIRECTORY,
     VA_NAME,
+    mriot_file_name,
     parse_mriot_from_df,
     calc_B,
     calc_va,
@@ -311,13 +313,13 @@ class TestCalcFunctions(unittest.TestCase):
                                                           'column_names': [None]}, orient="tight")
 
     def test_calc_v(self):
-        # Test calc_v with DataFrame
+        # Test calc_va with DataFrame
         va = calc_va(self.mriot.Z, self.mriot.x)
         pd.testing.assert_frame_equal(va, self.expected_va)
 
-        # Test calc_v with NumPy array
+        # Test calc_va with NumPy array
         va = calc_va(self.mriot.Z.values, self.mriot.x.values)
-        np.testing.assert_array_equal(va, self.expected_va.values)
+        np.testing.assert_array_equal(va.values, self.expected_va.values)
 
     def test_calc_B(self):
         # Test calc_B with DataFrame
@@ -362,6 +364,13 @@ class TestSupplyChain(unittest.TestCase):
         _, [self.HAZ_TEST_MAT] = client.download_dataset(atl_prob_ds)
 
     """Testing the SupplyChain class."""
+
+    def test_mriot_file_name(self):
+        self.assertEqual(mriot_file_name("EXIOBASE3", 2015), "IOT_2015_ixi.zip")
+        self.assertEqual(mriot_file_name("WIOD16", 2016), "WIOT2016_Nov16_ROW.xlsb")
+        self.assertEqual(mriot_file_name("OECD21", 2021), "ICIO2021_2021.csv")
+        with self.assertRaises(ValueError):
+            mriot_file_name("Unknown", 2020)
 
     def test_read_wiod(self):
         """Test reading of wiod table."""
@@ -519,10 +528,36 @@ class TestSupplyChain(unittest.TestCase):
         # Test sectorial impact
         frac_imp_per_sec =  np.array([1])
         expected_secs_imp = np.array(imp_cnt).flatten() * frac_imp_per_sec
-
         np.testing.assert_array_equal(
             sup.secs_imp[reg_iso3, aff_sec].values, expected_secs_imp
         )
+
+        # Test sec exposure, impact and shock for one country (e.g. USA)
+        # assuming a range of sector is impacted
+        aff_sec = np.array([0,1])
+        sup.calc_shock_to_sectors(exp, imp, impacted_secs=aff_sec)
+        print(sup.secs_imp)
+
+        # Test sectorial exposure
+        indus_aff = pd.IndexSlice[reg_iso3, mriot.get_sectors()[aff_sec]]
+        frac_exp_per_sec = sup.mriot.x.loc[indus_aff,:].values.T / sup.mriot.x.loc[indus_aff,:].sum().values
+        frac_imp_per_sec = frac_exp_per_sec
+        expected_secs_exp = exp_cnt * frac_exp_per_sec
+
+        np.testing.assert_array_equal(
+            sup.secs_exp.loc[:,indus_aff].values,
+            expected_secs_exp
+        )
+
+        # Test sectorial impact
+        expected_secs_imp = (np.array(imp_cnt) * frac_imp_per_sec)
+
+        np.testing.assert_array_equal(
+            sup.secs_imp.loc[:,indus_aff].values,
+            expected_secs_imp
+        )
+        with self.assertWarns(Warning):
+            sup.calc_shock_to_sectors(exp, imp, impacted_secs=aff_sec, shock_factor=5)
 
     def test_calc_impacts(self):
         """Test running indirect impact calculations."""
