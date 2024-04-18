@@ -63,21 +63,19 @@ def calc_va(Z, x):
     Returns
     -------
     pandas.DataFrame or numpy.array
-        Value added v as row vector
+        Value added va as row vector
 
     Notes
     -----
     This function adapts pymrio.tools.iomath.calc_x to compute
-    value added (v).
+    value added (va).
     """
 
     value_added = np.diff(np.vstack((Z.sum(0), x.T)), axis=0)
     if isinstance(Z, pd.DataFrame):
         value_added = pd.DataFrame(value_added, columns=Z.index, index=[VA_NAME])
-    if isinstance(value_added, pd.Series):
-        value_added = pd.DataFrame(value_added)
-    if isinstance(value_added, pd.DataFrame):
-        value_added.index = [VA_NAME]
+    if isinstance(value_added, np.ndarray):
+        value_added = pd.DataFrame(value_added, index=[VA_NAME])
     return value_added
 
 
@@ -89,7 +87,7 @@ def calc_B(Z, x):
     ----------
     Z : pandas.DataFrame or numpy.array
         Symmetric input output table (flows)
-    x : pandas.DataFrame or numpy.array
+    x : pandas.DataFrame, pandas.Series, or numpy.array
         Industry output column vector
 
     Returns
@@ -103,27 +101,18 @@ def calc_B(Z, x):
     This function adapts pymrio.tools.iomath.calc_A to compute
     the allocation coefficients matrix B.
     """
+    # Convert x to a NumPy array
+    x = np.asarray(x)
 
-    if (type(x) is pd.DataFrame) or (type(x) is pd.Series):
-        x = x.values
-    if (type(x) is not np.ndarray) and (x == 0):
-        recix = 0
-    else:
-        with warnings.catch_warnings():
-            # Ignore devide by zero warning, we set to 0 afterwards
-            warnings.filterwarnings("ignore", message="divide by zero")
-            recix = 1 / x
-        recix[recix == np.inf] = 0
-        recix = recix.reshape((1, -1))
-    # use numpy broadcasting - factor ten faster
-    # Mathematical form - slow
-    # return Z.dot(np.diagflat(recix))
-    if type(Z) is pd.DataFrame:
-        return pd.DataFrame(
-            np.transpose(Z.values) * recix, index=Z.index, columns=Z.columns
-        )
+    # Handle zero values in x
+    recix = np.where(x == 0, 0, 1 / x).reshape((1, -1))
+
+    # Calculate B matrix
+    if isinstance(Z, pd.DataFrame):
+        return pd.DataFrame(np.transpose(Z.values) * recix, index=Z.index, columns=Z.columns)
     else:
         return np.transpose(Z) * recix
+
 
 def calc_G(B):
     """Calculate the Ghosh inverse matrix G either from B
@@ -142,8 +131,8 @@ def calc_G(B):
         The type is determined by the type of B.
         If DataFrame index/columns as B
     """
-    I = np.eye(B.shape[0])  # noqa
-    if type(B) is pd.DataFrame:
+    I = np.eye(B.shape[0])
+    if isinstance(B, pd.DataFrame):
         return pd.DataFrame(
             np.linalg.inv(I - B), index=B.index, columns=B.columns
         )
