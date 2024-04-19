@@ -18,6 +18,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test Supplychain class.
 """
 
+import pathlib
 import unittest
 import warnings
 import numpy as np
@@ -574,6 +575,19 @@ class TestSupplyChain(unittest.TestCase):
         # take one mriot type that supports iso-3
         sup.mriot.meta.change_meta("name", "WIOD16-2011")
 
+        # Test shock is computed if not given
+        reg_id = 840
+        reg_iso3 = "USA"
+        aff_sec = "Services"
+        exp, imp = dummy_exp_imp()
+        imp_cnt = imp.imp_mat.todense()[:,exp.gdf.region_id == reg_id]
+        sup.calc_impacts(io_approach="ghosh", exposure=exp, impact=imp, impacted_secs=aff_sec)
+        frac_imp_per_sec =  np.array([1])
+        expected_secs_imp = np.array(imp_cnt).flatten() * frac_imp_per_sec
+        np.testing.assert_array_equal(
+            sup.secs_imp[reg_iso3, aff_sec].values, expected_secs_imp
+        )
+
         # apply 20 % shock to Service sector in the USA
         shock = pd.DataFrame(
                             np.array([[0.2, 0, 0, 0, 0, 0]]),
@@ -624,6 +638,77 @@ class TestSupplyChain(unittest.TestCase):
             sup.supchain_imp['eeioa'].round(0).values.flatten(),
             expected_prod_loss.round(0)
             )
+
+class TestSupplyChain_boario(unittest.TestCase):
+    """Test running indirect impact calculations with boario."""
+
+    def setUp(self) -> None:
+        self.mriot = build_mock_mriot_miller()
+        self.mriot.unit = "M.USD"
+        self.sup = SupplyChain(self.mriot)
+        self.exp, self.imp = dummy_exp_imp()
+        self.sup.mriot.meta.change_meta("name", "WIOD16-2011")
+        self.sup.calc_shock_to_sectors(exposure=self.exp,impact=self.imp)
+
+    def test_calc_impacts_boario_unknown(self):
+        with self.assertRaises(RuntimeError):
+            self.sup.calc_impacts("boario", boario_type="xx")
+
+        with self.assertRaises(RuntimeError):
+            self.sup.calc_impacts("boario", boario_aggregate="xx")
+
+
+    def test_calc_impacts_boario_no_param(self):
+        """Test running without params."""
+
+        # We check that at least one warning is raised when
+        # called without parameters.
+        with self.assertWarns(Warning):
+            self.sup.calc_impacts("boario")
+
+        # Check capital vector is self.secs_exp
+        np.testing.assert_array_equal(
+            self.sup.sim.model.k_stock,
+            self.sup.secs_exp.sort_index(axis=1).values.flatten()
+        )
+
+        # Check monetary factor
+        self.assertEqual(
+            self.sup.conversion_factor(),
+            1e6
+        )
+        self.assertEqual(
+            self.sup.sim.model.monetary_factor,
+            self.sup.conversion_factor()
+        )
+
+        # Check n_temporal_units_to_sim
+        max_date = int(self.sup.events_date.max()-self.sup.events_date.min()+365)
+        self.assertEqual(
+            self.sup.sim.n_temporal_units_to_sim,
+            max_date
+        )
+
+        # Check size of all_events
+        self.assertEqual(
+            len(self.sup.sim.all_events),
+            self.sup.secs_shock.shape[0]
+        )
+
+        ## Check warnings
+        ## Check correctness
+        expected_results=pd.read_csv(pathlib.Path(__file__).parent.joinpath("data/mock_boario_results_recovery_agg.csv"), index_col=0, header=[0,1])
+        pd.testing.assert_frame_equal(
+            self.sup.supchain_imp['boario_recovery_agg'],
+            expected_results
+        )
+
+
+        # Check with parameters
+        ## Check recovery
+        ## Check rebuilding
+
+        # Check agg vs sep
 
 ## Execute Tests
 if __name__ == "__main__":

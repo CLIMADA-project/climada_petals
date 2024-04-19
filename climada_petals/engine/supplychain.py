@@ -711,6 +711,13 @@ class SupplyChain:
 
         self.calc_matrices(io_approach=io_approach)
 
+        # This block is a temporary `fix`, before a deeper rework of the module.
+        # The underlying problem is that if secs_shock was set outside this method,
+        # impact and exposure are ignored as ``calc_shock_to_sectors`` is not run in the next block.
+        # The objective here is to warn user.
+        if (exposure is not None) or (impact is not None) and self.secs_shock is not None:
+            warnings.warn("``impact`` and ``exposure`` given in argument while ``secs_shock`` is already set. They will be ignored")
+
         if self.secs_shock is None:
             self.calc_shock_to_sectors(exposure, impact, impacted_secs, shock_factor)
 
@@ -751,6 +758,11 @@ class SupplyChain:
             )})
 
         elif io_approach == 'boario':
+
+            # This is `quick and dirty`, a better solution will
+            # be brought by the rework of the module.
+            if self.secs_exp is None or self.secs_imp is None:
+                raise AttributeError("``secs_exp`` and/or ``secs_imp`` attributes were not set properly. This may be caused by ``secs_shock`` not being None, from previous computation, set it to None and rerun the method.")
 
             self.mriot.A = self.coeffs[io_approach]
             self.mriot.L = self.inverse[io_approach]
