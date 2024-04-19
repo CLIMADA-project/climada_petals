@@ -14,7 +14,7 @@ if [ -f $CORENV/$BRANCH ]; then
     pip install -e `cat $CORENV/$BRANCH`
 fi
 
-make unit_test
+make unit_test PYTEST_CMD="python -m pytest"
 
 if [ -f $CORENV/$BRANCH ]; then
     deactivate

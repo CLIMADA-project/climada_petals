@@ -2,6 +2,9 @@
 # test, coverage and lint
 ###
 
+# Default pytest command
+PYTEST_CMD := pytest
+
 PYTEST_JUNIT_ARGS = --junitxml=tests_xml/tests.xml
 
 PYTEST_COV_ARGS = \
@@ -20,11 +23,11 @@ lint : ## Static code analysis with Pylint
 
 .PHONY : unit_test
 unit_test : ## Unit tests execution with coverage and xml reports
-	python -m pytest $(PYTEST_ARGS) --ignore=climada_petals/test climada_petals/
+	$(PYTEST_CMD) $(PYTEST_ARGS) --ignore=climada_petals/test climada_petals/
 
 .PHONY : install_test
 install_test : ## Test installation was successful
-	python -m pytest $(PYTEST_JUNIT_ARGS) --pyargs climada.engine.test.test_cost_benefit \
+	$(PYTEST_CMD) $(PYTEST_JUNIT_ARGS) --pyargs climada.engine.test.test_cost_benefit \
 	climada.engine.test.test_impact
 
 .PHONY : data_test
@@ -37,11 +40,11 @@ notebook_test : ## Test notebooks in doc/tutorial
 
 .PHONY : integ_test
 integ_test : ## Integration tests execution with xml reports
-	python -m pytest $(PYTEST_ARGS) climada_petals/test/
+	$(PYTEST_CMD) $(PYTEST_ARGS) climada_petals/test/
 
 .PHONY : test
 test : ## Unit and integration tests execution with coverage and xml reports
-	python -m pytest $(PYTEST_ARGS) climada_petals/
+	$(PYTEST_CMD) $(PYTEST_ARGS) climada_petals/
 
 .PHONY : ci-clean
 ci-clean :
