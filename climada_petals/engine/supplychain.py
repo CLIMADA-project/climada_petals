@@ -105,7 +105,8 @@ def calc_B(Z, x):
     x = np.asarray(x)
 
     # Handle zero values in x
-    recix = np.where(x == 0, 0, 1 / x).reshape((1, -1))
+    with np.errstate(divide='ignore'):
+        recix = np.where(x == 0, 0, 1 / x).reshape((1, -1))
 
     # Calculate B matrix
     if isinstance(Z, pd.DataFrame):
@@ -506,7 +507,7 @@ class SupplyChain:
         # "Changes in Inventory (CII)" demand category is
         # larger than the sum of all other categories
         if (mriot.Y.sum(axis=1) < 0).any():
-            LOGGER.warning("Found negatives values in total final demand,"
+            warnings.warn("Found negatives values in total final demand, "
                         "setting them to 0 and recomputing production vector")
             mriot.Y.loc[mriot.Y.sum(axis=1) < 0] = mriot.Y.loc[mriot.Y.sum(axis=1) < 0].clip(lower=0)
             mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
@@ -590,7 +591,7 @@ class SupplyChain:
             secs_prod_ratio = (secs_prod / secs_prod.sum()).values.flatten()
 
             # Overall sectorial stock exposure and impact are distributed among
-            # subsectors proportionally to their their own contribution to overall
+            # subsectors proportionally to their own contribution to overall
             # sectorial production: Sum needed below in case of many ROWs, which are
             # aggregated into one region as per WIOD table.
             self.secs_exp.loc[:, (mriot_reg_name, impacted_secs)] += (
@@ -632,8 +633,10 @@ class SupplyChain:
             "ghosh": (calc_B, calc_G),
             "boario": (pymrio.calc_A, pymrio.calc_L),
         }
-
-        coeff_func, inv_func = io_model[io_approach]
+        try:
+            coeff_func, inv_func = io_model[io_approach]
+        except KeyError as keyerr:
+            raise KeyError("The provided approach does not exist") from keyerr
 
         self.coeffs.update({io_approach: coeff_func(self.mriot.Z, self.mriot.x)})
         self.inverse.update({io_approach: inv_func(self.coeffs[io_approach])})
@@ -754,7 +757,7 @@ class SupplyChain:
 
             for boario_param_type in ['model', 'sim']:
                 if boario_param_type not in boario_params:
-                    LOGGER.debug(f"BoARIO f'{boario_param_type}' parameters were"
+                    warnings.warn(f"BoARIO f'{boario_param_type}' parameters were"
                                 "not specified and default values are used. This"
                                 "is not recommended and likely undesired.")
 
@@ -770,8 +773,8 @@ class SupplyChain:
                         'rebuilding_sectors': pd.Series(index=self.mriot.get_sectors())}
                                           })
 
-                LOGGER.debug(f"BoARIO {boario_type} event parameters were not specified."
-                              "This is not recommended.")
+                    warnings.warn(f"BoARIO {boario_type} event parameters were not specified."
+                              "This is not recommended. Default value is `recovery`.")
 
             # call ARIOPsiModel with default params
             model = ARIOPsiModel(self.mriot,
@@ -817,20 +820,21 @@ class SupplyChain:
                             ) for i in range(n_events)
                 ]
 
-            elif boario_type == 'shockprod':
-                events_list = [EventArbitraryProd.from_series(
-                                        impact=self.secs_shock.iloc[i],
-                                        occurrence = (self.events_date[i]-self.events_date.min()+1),
-                                        **boario_params['event']
-                            ) for i in range(n_events)
-                ]
+            # Currently not working in BoARIO.
+            # elif boario_type == 'shockprod':
+            #     events_list = [EventArbitraryProd.from_series(
+            #                             impact=self.secs_shock.iloc[i],
+            #                             occurrence = (self.events_date[i]-self.events_date.min()+1),
+            #                             **boario_params['event']
+            #                 ) for i in range(n_events)
+            #     ]
 
             else:
                 raise RuntimeError(f"Unknown boario type : {boario_type}")
 
             if boario_aggregate == 'agg':
                 self.sim.add_events(events_list)
-                self.sim.loop()
+                self.sim.loop(progress=False)
                 self.supchain_imp.update({
                     f'{io_approach}_{boario_type}_{boario_aggregate}' :
                     self.sim.production_realised.copy()[
@@ -841,7 +845,7 @@ class SupplyChain:
                 results = []
                 for ev in events_list:
                     self.sim.add_event(ev)
-                    self.sim.loop()
+                    self.sim.loop(progress=False)
                     results.append(
                         self.sim.production_realised.copy()[
                             self.secs_imp.columns]
@@ -855,13 +859,12 @@ class SupplyChain:
             else:
                 raise RuntimeError(f"Unknown boario aggregation type: {boario_aggregate}")
 
-        else:
-            raise RuntimeError(f"Unknown io_approach: {io_approach}")
+        # The calc_matrices() call at the top fails before so this is not usefull
+        # else:
+        #    raise RuntimeError(f"Unknown io_approach: {io_approach}")
 
     def conversion_factor(self):
-        """Conversion factor based on unit specified in the
-        Multi-Regional Input-Output Table.
-        """
+        """Conversion factor based on unit specified in the Multi-Regional Input-Output Table."""
 
         unit = None
         if isinstance(self.mriot.unit, pd.DataFrame):

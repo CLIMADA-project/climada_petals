@@ -536,7 +536,6 @@ class TestSupplyChain(unittest.TestCase):
         # assuming a range of sector is impacted
         aff_sec = np.array([0,1])
         sup.calc_shock_to_sectors(exp, imp, impacted_secs=aff_sec)
-        print(sup.secs_imp)
 
         # Test sectorial exposure
         indus_aff = pd.IndexSlice[reg_iso3, mriot.get_sectors()[aff_sec]]
@@ -559,8 +558,15 @@ class TestSupplyChain(unittest.TestCase):
         with self.assertWarns(Warning):
             sup.calc_shock_to_sectors(exp, imp, impacted_secs=aff_sec, shock_factor=5)
 
+    def test_calc_impacts_unknown(self):
+        """Test running indirect impact calculations with unknown approach."""
+        mriot = build_mock_mriot_timmer()
+        sup = SupplyChain(mriot)
+        with self.assertRaises(KeyError):
+            sup.calc_impacts(io_approach="xx")
+
     def test_calc_impacts(self):
-        """Test running indirect impact calculations."""
+        """Test running indirect impact calculations with ghosh, leontief and eeioa."""
 
         mriot = build_mock_mriot_timmer()
         sup = SupplyChain(mriot)
