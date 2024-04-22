@@ -4,7 +4,7 @@ channels:
   - nodefaults
 dependencies:
   - cdsapi>=0.6
-  - meson-python>=0.15
+  - meson-python>=0.15,<0.16  # as of 2024-04-22 something seems to be wrong with 0.16
   - osm-flex>=1.1
   - overpy>=0.7
   - pymrio>=0.5
