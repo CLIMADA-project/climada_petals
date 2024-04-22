@@ -78,7 +78,6 @@ def calc_va(Z, x):
         value_added = pd.DataFrame(value_added, index=[VA_NAME])
     return value_added
 
-
 def calc_B(Z, x):
     """Calculate the B matrix (allocation coefficients matrix)
     from Z matrix and x vector
@@ -769,24 +768,18 @@ class SupplyChain:
 
             for boario_param_type in ['model', 'sim']:
                 if boario_param_type not in boario_params:
-                    warnings.warn(f"BoARIO f'{boario_param_type}' parameters were"
-                                "not specified and default values are used. This"
-                                "is not recommended and likely undesired.")
-
+                    warnings.warn(f"""BoARIO '{boario_param_type}' parameters were not specified and default values are used. This is not recommended and likely undesired."""
+                                  )
                     boario_params.update({f'{boario_param_type}':{}})
 
             if 'event' not in boario_params:
                 if boario_type == 'recovery':
-                    boario_params.update({'event': {'recovery_time' : 30}})
-
-                elif boario_type == 'rebuild':
-                    boario_params.update({'event': {
-                        'rebuild_tau' : 365,
-                        'rebuilding_sectors': pd.Series(index=self.mriot.get_sectors())}
-                                          })
-
+                    boario_params.update({'event': {'recovery_time' : 60}})
                     warnings.warn(f"BoARIO {boario_type} event parameters were not specified."
-                              "This is not recommended. Default value is `recovery`.")
+                              "This is not recommended. Default value for `recovery_time` is 365.")
+                elif boario_type == 'rebuild':
+                    raise ValueError("""Using the ``boario_type=rebuild`` requires you to define the rebuilding sectors in the ``boario_params`` argument:
+                    {"model":{}, "sim":{}, "event":{"rebuilding_sectors={"<sector_name>":reconstruction_share}}}""")
 
             # call ARIOPsiModel with default params
             model = ARIOPsiModel(self.mriot,

@@ -658,7 +658,7 @@ class TestSupplyChain_boario(unittest.TestCase):
             self.sup.calc_impacts("boario", boario_aggregate="xx")
 
 
-    def test_calc_impacts_boario_no_param(self):
+    def test_calc_impacts_boario_recovery_no_param(self):
         """Test running without params."""
 
         # We check that at least one warning is raised when
@@ -695,7 +695,6 @@ class TestSupplyChain_boario(unittest.TestCase):
             self.sup.secs_shock.shape[0]
         )
 
-        ## Check warnings
         ## Check correctness
         expected_results=pd.read_csv(pathlib.Path(__file__).parent.joinpath("data/mock_boario_results_recovery_agg.csv"), index_col=0, header=[0,1])
         pd.testing.assert_frame_equal(
@@ -703,8 +702,71 @@ class TestSupplyChain_boario(unittest.TestCase):
             expected_results
         )
 
+    def test_calc_impacts_boario_rebuilding_missing(self):
+        """Test running without params."""
 
-        # Check with parameters
+        # We check that at least one warning is raised when
+        # called without parameters.
+        with self.assertRaises(ValueError):
+            self.sup.calc_impacts("boario", boario_type="rebuild")
+        with self.assertRaises(TypeError):
+            self.sup.calc_impacts("boario",
+                              boario_type="rebuild",
+                              boario_params={"event":{
+                                  "rebuilding_sectors":{"Manuf. & Const.":1},
+                              }
+                                             })
+
+    def test_calc_impacts_boario_rebuilding_no_param(self):
+        """Test running without params."""
+
+        # We check that at least one warning is raised when
+        # called without parameters.
+        self.sup.calc_impacts("boario",
+                              boario_type="rebuild",
+                              boario_params={"event":{
+                                  "rebuilding_sectors":{"Manuf. & Const.":1},
+                                  "rebuild_tau":365,
+                              }
+                                             })
+
+        # Check capital vector is self.secs_exp
+        np.testing.assert_array_equal(
+            self.sup.sim.model.k_stock,
+            self.sup.secs_exp.sort_index(axis=1).values.flatten()
+        )
+
+        # Check monetary factor
+        self.assertEqual(
+            self.sup.conversion_factor(),
+            1e6
+        )
+        self.assertEqual(
+            self.sup.sim.model.monetary_factor,
+            self.sup.conversion_factor()
+        )
+
+        # Check n_temporal_units_to_sim
+        max_date = int(self.sup.events_date.max()-self.sup.events_date.min()+365)
+        self.assertEqual(
+            self.sup.sim.n_temporal_units_to_sim,
+            max_date
+        )
+
+        # Check size of all_events
+        self.assertEqual(
+            len(self.sup.sim.all_events),
+            self.sup.secs_shock.shape[0]
+        )
+
+        ## Check warnings
+        ## Check correctness
+        expected_results=pd.read_csv(pathlib.Path(__file__).parent.joinpath("data/mock_boario_results_rebuild_agg.csv"), index_col=0, header=[0,1])
+        pd.testing.assert_frame_equal(
+            self.sup.supchain_imp['boario_rebuild_agg'],
+            expected_results
+        )
+
         ## Check recovery
         ## Check rebuilding
 
