@@ -767,10 +767,26 @@ class TestSupplyChain_boario(unittest.TestCase):
             expected_results
         )
 
-        ## Check recovery
-        ## Check rebuilding
+    def test_calc_impacts_boario_rebuilding_sep(self):
+        """Test running without params."""
 
-        # Check agg vs sep
+        # We check that at least one warning is raised when
+        # called without parameters.
+        self.sup.calc_impacts("boario",
+                              boario_type="rebuild",
+                              boario_aggregate="sep",
+                              boario_params={"event":{
+                                  "rebuilding_sectors":{"Manuf. & Const.":1},
+                                  "rebuild_tau":365,
+                              }
+                                             })
+
+        ## Check
+        expected_results=pd.read_csv(pathlib.Path(__file__).parent.joinpath("data/mock_boario_results_rebuild_sep.csv"), index_col=[0,1], header=[0,1])
+        pd.testing.assert_frame_equal(
+            pd.concat(self.sup.supchain_imp['boario_rebuild_sep'],keys=range(2)),
+            expected_results
+        )
 
 ## Execute Tests
 if __name__ == "__main__":
