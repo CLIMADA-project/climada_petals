@@ -677,6 +677,7 @@ class SupplyChain:
             Dictionary containing parameters to instantiate boario's ARIOPsiModel (key 'model'),
             Simulation (key 'sim') and Event (key 'event') classes. Parameters instantiating
             each class need to be stored in a dictionary, e.g., {'model': {}, 'sim': {}, 'event': {}}.
+            You can also specify "show_progress=False" to remove the progress bar during simulations.
             Only meangingful when io_approach='boario'. Default is None.
         boario_type: str
             The chosen boario type. Possible choices are 'recovery', 'rebuild' and
@@ -748,13 +749,14 @@ class SupplyChain:
                 axis=1,
             ).T.set_index(self.secs_shock.index)})
 
-        elif io_approach == "eeioa":
-            self.supchain_imp.update({io_approach : (
-                pd.DataFrame(
-                    self.secs_shock.dot(self.inverse[io_approach])
-                    * self.mriot.x.values.flatten()
-                )
-            )})
+
+        # elif io_approach == "eeioa":
+        #     self.supchain_imp.update({io_approach : (
+        #          pd.DataFrame(
+        #             self.secs_shock.dot(self.inverse[io_approach])
+        #             * self.mriot.x.values.flatten()
+        #         )
+        #     )})
 
         elif io_approach == 'boario':
 
@@ -765,7 +767,7 @@ class SupplyChain:
 
             self.mriot.A = self.coeffs[io_approach]
             self.mriot.L = self.inverse[io_approach]
-
+            show_progress= boario_params.get("show_progress",True)
             for boario_param_type in ['model', 'sim']:
                 if boario_param_type not in boario_params:
                     warnings.warn(f"""BoARIO '{boario_param_type}' parameters were not specified and default values are used. This is not recommended and likely undesired."""
@@ -776,7 +778,7 @@ class SupplyChain:
                 if boario_type == 'recovery':
                     boario_params.update({'event': {'recovery_time' : 60}})
                     warnings.warn(f"BoARIO {boario_type} event parameters were not specified."
-                              "This is not recommended. Default value for `recovery_time` is 365.")
+                              "This is not recommended. Default value for `recovery_time` is 60.")
                 elif boario_type == 'rebuild':
                     raise ValueError("""Using the ``boario_type=rebuild`` requires you to define the rebuilding sectors in the ``boario_params`` argument:
                     {"model":{}, "sim":{}, "event":{"rebuilding_sectors={"<sector_name>":reconstruction_share}}}""")
@@ -839,7 +841,7 @@ class SupplyChain:
 
             if boario_aggregate == 'agg':
                 self.sim.add_events(events_list)
-                self.sim.loop(progress=False)
+                self.sim.loop(progress=show_progress)
                 self.supchain_imp.update({
                     f'{io_approach}_{boario_type}_{boario_aggregate}' :
                     self.sim.production_realised.copy()[
@@ -850,7 +852,7 @@ class SupplyChain:
                 results = []
                 for ev in events_list:
                     self.sim.add_event(ev)
-                    self.sim.loop(progress=False)
+                    self.sim.loop(progress=show_progress)
                     results.append(
                         self.sim.production_realised.copy()[
                             self.secs_imp.columns]
