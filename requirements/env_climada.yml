@@ -1,7 +1,16 @@
 name: climada_env
 channels:
   - conda-forge
-  - defaults
+  - nodefaults
 dependencies:
   - pymrio>=0.5.2
-  - scikit-image>=0.21
+  - boario>=0.5.9
+  - cdsapi>=0.6
+  - meson-python>=0.15,<0.16  # as of 2024-04-22 something seems to be wrong with 0.16
+  - osm-flex>=1.1
+  - overpy>=0.7
+  - pymrio>=0.5
+  - rioxarray>=0.13
+  - ruamel.yaml>=0.18
+  - scikit-image>=0.22
+  - xesmf>=0.8
