@@ -10,7 +10,11 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+- `boario` >=0.5.9
+
 ### Added
+
+- Included `boario` in the supplychain module [#81](https://github.com/CLIMADA-project/climada_petals/pull/81/)
 
 ### Changed
 
