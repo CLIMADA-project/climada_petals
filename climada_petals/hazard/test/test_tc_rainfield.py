@@ -45,8 +45,8 @@ from climada.util.constants import DEMO_DIR
 def getTestData():
     client = Client()
     centr_ds = client.get_dataset_info(name='tc_rainfield_test', status='test_dataset')
-    _, [centr_test_mat, track, track_short, haz_hdf5] = client.download_dataset(centr_ds)
-    return Centroids.from_hdf5(centr_test_mat), track, track_short, haz_hdf5
+    _, [centr_test_hdf5, track, track_short, haz_hdf5] = client.download_dataset(centr_ds)
+    return Centroids.from_hdf5(centr_test_hdf5), track, track_short, haz_hdf5
 
 
 CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_HDF5 = getTestData()
@@ -204,15 +204,14 @@ class TestModel(unittest.TestCase):
     def test_rainfield_diff_time_steps(self):
         """Check that the results do not depend too much on the track's time step sizes."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
-        centroids = CENTR_TEST_BRB
 
-        train_org = TCRain.from_tracks(tc_track, centroids)
+        train_org = TCRain.from_tracks(tc_track)
 
         tc_track.equal_timestep(time_step_h=1)
-        train_1h = TCRain.from_tracks(tc_track, centroids)
+        train_1h = TCRain.from_tracks(tc_track)
 
         tc_track.equal_timestep(time_step_h=0.5)
-        train_05h = TCRain.from_tracks(tc_track, centroids)
+        train_05h = TCRain.from_tracks(tc_track)
 
         for train in [train_1h, train_05h]:
             np.testing.assert_allclose(
