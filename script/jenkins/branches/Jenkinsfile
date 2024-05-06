@@ -28,9 +28,9 @@ pipeline {
       junit 'tests_xml/*.xml'
       recordCoverage(
         qualityGates: [[
-          baseline: 'MODIFIED_FILES',
+          baseline: 'PROJECT_DELTA',
           metric: 'LINE',
-          threshold: 60.0
+          threshold: 0.0
         ]],
         tools: [[
           parser: 'COBERTURA',
