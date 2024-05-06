@@ -39,12 +39,12 @@ setup(
     install_requires=[
         'climada>=4.1',
         'cdsapi',
+        'osm-flex',
+        "pymrio",
+        'rioxarray',
         'ruamel.yaml',
         'scikit-image',
         'xesmf',
-        "pymrio",
-        'rioxarray',
-        'osm-flex>=1.1.1',
     ],
 
     packages=find_namespace_packages(include=['climada_petals*']),

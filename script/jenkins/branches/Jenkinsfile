@@ -7,7 +7,12 @@ pipeline {
 
         stage('lint') {
           steps {
-            sh 'bash script/jenkins/branches/run_lint.sh'
+            sh '''#!/bin/bash
+            export PATH=$PATH:$CONDAPATH
+            source activate petals_env
+            rm -f pylint.log
+            pylint -ry climada_petals | tee pylint.log'''
+
             discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
@@ -15,7 +20,17 @@ pipeline {
 
         stage('unit_test') {
           steps {
-            sh 'bash script/jenkins/branches/run_unittest.sh'
+            sh '''#!/bin/bash
+            export PATH=$PATH:$CONDAPATH
+            source activate
+
+            # first install xemsf, then activate environment, so .../envs/.../etc/conda/activate.d/esmpy.sh is executed
+            # otherwise the environment varibalbe ESMFMKFILE is not initialized
+            mamba install -n petals_env -c conda-forge -y xesmf ruamel.yaml cdsapi
+            conda activate petals_env
+            rm -rf tests_xml/
+            rm -rf coverage/
+            make unit_test'''
           }
         }
 
@@ -28,9 +43,9 @@ pipeline {
       junit 'tests_xml/*.xml'
       recordCoverage(
         qualityGates: [[
-          baseline: 'PROJECT_DELTA',
+          baseline: 'MODIFIED_FILES',
           metric: 'LINE',
-          threshold: 0.0
+          threshold: 60.0
         ]],
         tools: [[
           parser: 'COBERTURA',
