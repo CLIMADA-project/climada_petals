@@ -273,7 +273,9 @@ class TestMethodsFirms(unittest.TestCase):
         """ Test _firms_centroids_creation """
         wf = WildFire()
         firms = wf._clean_firms_df(TEST_FIRMS)
-        centroids = wf._firms_centroids_creation(firms, 0.375/ONE_LAT_KM, 1/2)
+        res_data = 0.375/ONE_LAT_KM
+        centr_res_factor = 1/2
+        centroids = wf._firms_centroids_creation(firms, res_data, centr_res_factor)
         centroids_meta = centroids.get_meta()
         self.assertEqual(centroids_meta['width'], 144)
         self.assertEqual(centroids_meta['height'], 138)
@@ -283,12 +285,12 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertAlmostEqual(centroids_meta['transform'][3], 0.0)
         self.assertAlmostEqual(centroids_meta['transform'][4], -centroids_meta['transform'][0])
         self.assertGreaterEqual(centroids_meta['transform'][5], firms.latitude.max())
-        self.assertLessEqual(firms.latitude.max(), centroids.total_bounds[3])
-        # TODO: check whether allowing for a tolerance is valid here
-        TOLERANCE = 0.005
-        self.assertGreaterEqual(firms.latitude.min(), centroids.total_bounds[1] - TOLERANCE)
-        self.assertLessEqual(firms.longitude.max(), centroids.total_bounds[2])
-        self.assertGreaterEqual(firms.longitude.min(), centroids.total_bounds[0])
+        # Meta pixel coordinates are shifted by half resolution to the pixel center lat/lon
+        pixel_center_shift = (res_data / centr_res_factor) / 2
+        self.assertLessEqual(firms.latitude.max(), centroids.total_bounds[3] + pixel_center_shift)
+        self.assertGreaterEqual(firms.latitude.min(), centroids.total_bounds[1] - pixel_center_shift)
+        self.assertLessEqual(firms.longitude.max(), centroids.total_bounds[2] + pixel_center_shift)
+        self.assertGreaterEqual(firms.longitude.min(), centroids.total_bounds[0] - pixel_center_shift)
         self.assertTrue(centroids.lat.size)
         self.assertTrue(centroids.get_area_pixel().size)
         self.assertTrue(centroids.on_land.size)
