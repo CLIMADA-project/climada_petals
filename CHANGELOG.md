@@ -17,6 +17,7 @@ Code freeze date: YYYY-MM-DD
 ### Fixed
 
 - Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
+- Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
 
 ### Deprecated
 
