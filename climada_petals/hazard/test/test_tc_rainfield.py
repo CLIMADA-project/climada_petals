@@ -45,8 +45,8 @@ from climada.util.constants import DEMO_DIR
 def getTestData():
     client = Client()
     centr_ds = client.get_dataset_info(name='tc_rainfield_test', status='test_dataset')
-    _, [centr_test_mat, track, track_short, haz_hdf5] = client.download_dataset(centr_ds)
-    return Centroids.from_hdf5(centr_test_mat), track, track_short, haz_hdf5
+    _, [centr_test_hdf5, track, track_short, haz_hdf5] = client.download_dataset(centr_ds)
+    return Centroids.from_hdf5(centr_test_hdf5), track, track_short, haz_hdf5
 
 
 CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_HDF5 = getTestData()
@@ -66,7 +66,7 @@ class TestReader(unittest.TestCase):
         """Test from_tracks constructor with a single track."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
-        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, centroids=CENTR_TEST_BRB)
 
         self.assertEqual(tc_haz.haz_type, 'TR')
         self.assertEqual(tc_haz.units, 'mm')
@@ -94,7 +94,7 @@ class TestReader(unittest.TestCase):
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
         tc_track.equal_timestep()
 
-        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB, model="TCR")
+        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
@@ -105,7 +105,7 @@ class TestReader(unittest.TestCase):
         # This increases the results by more than 70% because the default value for saturation
         # specific humidity corresponds to a temperature of only ~267 K.
         tc_track.data[0]["t600"] = xr.full_like(tc_track.data[0]["central_pressure"], 275.0)
-        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB, model="TCR")
+        tc_haz = TCRain.from_tracks(tc_track, model="TCR", centroids=CENTR_TEST_BRB)
         self.assertTrue(isinstance(tc_haz.intensity, sparse.csr_matrix))
         self.assertEqual(tc_haz.intensity.shape, (1, 296))
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
@@ -116,12 +116,11 @@ class TestReader(unittest.TestCase):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
         # We list the second point twice, with different lon-normalization:
         cen = Centroids.from_lat_lon([-16.95, -16.8, -16.8], [179.9, 180.1, -179.9])
-        cen.set_dist_coast(precomputed=True)
 
         # Cyclone YASA (2020) passed directly over Fiji
         tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])
 
-        inten = TCRain.from_tracks(tr, cen).intensity.toarray()[0, :]
+        inten = TCRain.from_tracks(tr, centroids=cen).intensity.toarray()[0, :]
 
         # Centroids 1 and 2 are identical, they just use a different normalization for lon. This
         # should not affect the result at all:
@@ -134,7 +133,7 @@ class TestReader(unittest.TestCase):
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK_SHORT)
-        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, centroids=CENTR_TEST_BRB)
         tc_haz.check()
 
         self.assertEqual(tc_haz.haz_type, 'TR')
@@ -158,7 +157,7 @@ class TestReader(unittest.TestCase):
     def test_two_files_pass(self):
         """Test from_tracks constructor with two ibtracs."""
         tc_track = TCTracks.from_processed_ibtracs_csv([TEST_TRACK_SHORT, TEST_TRACK_SHORT])
-        tc_haz = TCRain.from_tracks(tc_track, CENTR_TEST_BRB)
+        tc_haz = TCRain.from_tracks(tc_track, centroids=CENTR_TEST_BRB)
         tc_haz.remove_duplicates()
         tc_haz.check()
 
@@ -205,15 +204,14 @@ class TestModel(unittest.TestCase):
     def test_rainfield_diff_time_steps(self):
         """Check that the results do not depend too much on the track's time step sizes."""
         tc_track = TCTracks.from_processed_ibtracs_csv(TEST_TRACK)
-        centroids = CENTR_TEST_BRB
 
-        train_org = TCRain.from_tracks(tc_track, centroids)
+        train_org = TCRain.from_tracks(tc_track)
 
         tc_track.equal_timestep(time_step_h=1)
-        train_1h = TCRain.from_tracks(tc_track, centroids)
+        train_1h = TCRain.from_tracks(tc_track)
 
         tc_track.equal_timestep(time_step_h=0.5)
-        train_05h = TCRain.from_tracks(tc_track, centroids)
+        train_05h = TCRain.from_tracks(tc_track)
 
         for train in [train_1h, train_05h]:
             np.testing.assert_allclose(
