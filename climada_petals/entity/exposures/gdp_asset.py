@@ -92,8 +92,8 @@ class GDP2Asset(Exposures):
         res = 0.0416666
 
         rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-            (self.gdf.longitude.min(), self.gdf.latitude.min(),
-             self.gdf.longitude.max(), self.gdf.latitude.max()), res)
+            (self.longitude.min(), self.latitude.min(),
+             self.longitude.max(), self.latitude.max()), res)
         self.meta = {'width': cols, 'height': rows, 'crs': self.crs,
                      'transform': ras_trans}
 
