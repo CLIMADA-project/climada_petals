@@ -148,6 +148,11 @@ class CropProduction(Exposures):
 
     _metadata = Exposures._metadata + ['crop']
 
+    def __init__(self, *args, meta=None, crop=None, **kwargs):
+        super().__init__(*args, meta=meta, **kwargs)
+        meta = meta or {}
+        self.crop = Exposures._consolidate(meta, 'crop', crop)
+
     def set_from_isimip_netcdf(self, *args, **kwargs):
         """This function is deprecated, use LitPop.from_isimip_netcdf instead."""
         LOGGER.warning("The use of LitPop.set_from_isimip_netcdf is deprecated."
