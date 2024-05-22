@@ -24,6 +24,7 @@ import zipfile
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from shapely.geometry import Point
 
 from climada import CONFIG
 from climada.entity.exposures.base import Exposures, INDICATOR_IMPF
@@ -153,12 +154,11 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
             i_1 = 7  # get sum over all crops (columns 7 to 48)
             i_2 = 49
         self.gdf['value'] = data.iloc[:, i_1:i_2].sum(axis=1).values
-        self.gdf['latitude'] = lat.values
-        self.gdf['longitude'] = lon.values
+        self.gdf['geometry'] = [Point(x,y) for x,y in zip(lon.values, lat.values)]
         LOGGER.info('Lat. range: {:+.3f} to {:+.3f}.'.format(
-            np.min(self.gdf.latitude), np.max(self.gdf.latitude)))
+            np.min(self.gdf.geometry.y), np.max(self.gdf.geometry.y)))
         LOGGER.info('Lon. range: {:+.3f} to {:+.3f}.'.format(
-            np.min(self.gdf.longitude), np.max(self.gdf.longitude)))
+            np.min(self.gdf.geometry.x), np.max(self.gdf.geometry.x)))
 
         # set region_id (numeric ISO3):
         country_id = data.loc[:, 'iso3']

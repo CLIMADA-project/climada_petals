@@ -53,7 +53,7 @@ class TestIntegr(unittest.TestCase):
         self.assertEqual(hazard_set.haz_type, 'DR')
         self.assertEqual(hazard_set.size, 114)
         self.assertEqual(hazard_set.centroids.size, 130)
-        self.assertEqual(exposure_agrar.gdf.latitude.values.size, 766 / 2)
+        self.assertEqual(exposure_agrar.latitude.size, 766 / 2)
         self.assertAlmostEqual(exposure_agrar.gdf.value[3], 1720024.4)
         self.assertAlmostEqual(damages_drought, 61995472.555223145)
 
