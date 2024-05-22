@@ -9,7 +9,7 @@ pipeline {
   stages {
     stage('setup-environment') {
       steps {
-        sh "bash script/jenkins/branches/run_unittest.sh ${env.GIT_BRANCH}"
+        sh "bash script/jenkins/branches/setup_venv.sh ${env.GIT_BRANCH}"
       }
     }
     stage('ci') {
