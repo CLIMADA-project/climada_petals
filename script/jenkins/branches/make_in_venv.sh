@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e
+
 export PATH=$PATH:$CONDAPATH
 
 source activate petals_env
