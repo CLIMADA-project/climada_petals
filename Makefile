@@ -19,7 +19,7 @@ help:  ## Use one of the following instructions:
 
 .PHONY : lint
 lint : ## Static code analysis with Pylint
-	python -m pylint -ry climada_petals > pylint.log || true
+	pylint -ry climada_petals > pylint.log
 
 .PHONY : unit_test
 unit_test : ## Unit tests execution with coverage and xml reports

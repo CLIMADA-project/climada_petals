@@ -5,18 +5,17 @@ source activate petals_env
 rm -rf tests_xml/
 rm -rf coverage/
 
+BRANCH=$1
+shift
 CORENV=~/jobs/petals_branches/core_env
-BRANCH=`git name-rev --name-only HEAD | cut -f 3- -d /`
 if [ -f $CORENV/$BRANCH ]; then
-    python -m venv --system-site-packages tvenv
     source tvenv/bin/activate
-
-    pip install -e `cat $CORENV/$BRANCH`
 fi
 
-make unit_test PYTEST_CMD="python -m pytest"
+make $@
 
 if [ -f $CORENV/$BRANCH ]; then
     deactivate
-    #rm -r tvenv
 fi
+
+conda deactivate
