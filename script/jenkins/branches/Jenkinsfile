@@ -17,7 +17,7 @@ pipeline {
 
         stage('lint') {
           steps {
-            sh "bash script/jenkins/branches/make_in_venv.sh ${env.GIT_BRANCH} lint"
+            sh "bash script/jenkins/branches/make_in_venv.sh ${env.GIT_BRANCH} lint PYLINT_COMMAND=\"python -m pylint\""
             discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
