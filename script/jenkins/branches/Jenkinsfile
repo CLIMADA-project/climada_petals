@@ -1,18 +1,23 @@
 pipeline {
   agent any
 
+  environment {
+    FULL_PATH_BRANCH = "${sh(script:'git name-rev --name-only HEAD', returnStdout: true)}"
+    GIT_BRANCH = FULL_PATH_BRANCH.substring(FULL_PATH_BRANCH.lastIndexOf('/') + 1, FULL_PATH_BRANCH.length())
+  }
+
   stages {
+    stage('setup-environment') {
+      steps {
+        sh "bash script/jenkins/branches/run_unittest.sh ${env.GIT_BRANCH}"
+      }
+    }
     stage('ci') {
       parallel {
 
         stage('lint') {
           steps {
-            sh '''#!/bin/bash
-            export PATH=$PATH:$CONDAPATH
-            source activate petals_env
-            rm -f pylint.log
-            pylint -ry climada_petals | tee pylint.log'''
-
+            sh "bash script/jenkins/branches/make_in_venv.sh ${env.GIT_BRANCH} lint"
             discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
@@ -20,17 +25,7 @@ pipeline {
 
         stage('unit_test') {
           steps {
-            sh '''#!/bin/bash
-            export PATH=$PATH:$CONDAPATH
-            source activate
-
-            # first install xemsf, then activate environment, so .../envs/.../etc/conda/activate.d/esmpy.sh is executed
-            # otherwise the environment varibalbe ESMFMKFILE is not initialized
-            mamba install -n petals_env -c conda-forge -y xesmf ruamel.yaml cdsapi
-            conda activate petals_env
-            rm -rf tests_xml/
-            rm -rf coverage/
-            make unit_test'''
+            sh "bash script/jenkins/branches/make_in_venv.sh ${env.GIT_BRANCH} unit_test PYTEST_COMMAND=\"python -m pytest\""
           }
         }
 
