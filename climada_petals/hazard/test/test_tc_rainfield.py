@@ -20,7 +20,6 @@ Test TCRain class
 """
 
 import datetime as dt
-from pathlib import Path
 import unittest
 
 import numpy as np
@@ -45,12 +44,12 @@ from climada.util.constants import DEMO_DIR
 
 def getTestData():
     client = Client()
-    centr_ds = client.get_dataset_info(name='test_tc_rainfield', status='test_dataset')
-    _, [centr_test_mat, track, track_short, haz_mat] = client.download_dataset(centr_ds)
-    return Centroids.from_mat(centr_test_mat), track, track_short, haz_mat
+    centr_ds = client.get_dataset_info(name='tc_rainfield_test', status='test_dataset')
+    _, [centr_test_hdf5, track, track_short, haz_hdf5] = client.download_dataset(centr_ds)
+    return Centroids.from_hdf5(centr_test_hdf5), track, track_short, haz_hdf5
 
 
-CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_MAT = getTestData()
+CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_HDF5 = getTestData()
 
 
 def tcrain_examples():
@@ -117,7 +116,6 @@ class TestReader(unittest.TestCase):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
         # We list the second point twice, with different lon-normalization:
         cen = Centroids.from_lat_lon([-16.95, -16.8, -16.8], [179.9, 180.1, -179.9])
-        cen.set_dist_coast(precomputed=True)
 
         # Cyclone YASA (2020) passed directly over Fiji
         tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])

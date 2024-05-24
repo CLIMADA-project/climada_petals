@@ -49,8 +49,7 @@ class tmp_artifical_topo(object):
         self.shape = (lat.size, lon.size)
         self.transform = rasterio.Affine(res_deg, 0, bounds[0], 0, -res_deg, bounds[3])
         centroids = Centroids.from_lat_lon(*[ar.ravel() for ar in np.meshgrid(lon, lat)][::-1])
-        centroids.set_dist_coast(signed=True, precomputed=True)
-        self.dist_coast = centroids.dist_coast
+        self.dist_coast = centroids.get_dist_coast(signed=True)
         self.slope = slope
 
     def __enter__(self):
@@ -95,14 +94,13 @@ class TestTCSurgeBathtub(unittest.TestCase):
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
         centroids = Centroids.from_lat_lon(lat, lon)
-        centroids.set_dist_coast(signed=True, precomputed=True)
-
+        
         dem_bounds = (bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
         dem_res = 3 / (60 * 60)
         with tmp_artifical_topo(dem_bounds, dem_res) as topo_path:
             fraction = _fraction_on_land(centroids, topo_path)
         fraction = fraction.reshape(shape)
-        dist_coast = centroids.dist_coast.reshape(shape)
+        dist_coast = centroids.get_dist_coast(signed=True).reshape(shape)
 
         # check valid range and order of magnitude
         self.assertTrue(np.all((fraction >= 0) & (fraction <= 1)))
@@ -155,7 +153,6 @@ class TestTCSurgeBathtub(unittest.TestCase):
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
         centroids = Centroids.from_lat_lon(lat, lon)
-        centroids.set_dist_coast(signed=True, precomputed=True)
 
         wind_haz = TropCyclone.from_tracks(tc_track, centroids=centroids)
 
@@ -182,7 +179,6 @@ class TestTCSurgeBathtub(unittest.TestCase):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
         # We list the second point twice, with different lon-normalization:
         cen = Centroids.from_lat_lon([-16.95, -16.8, -16.8], [179.9, 180.1, -179.9])
-        cen.set_dist_coast(precomputed=True)
 
         # Cyclone YASA (2020) passed directly over Fiji
         tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])
