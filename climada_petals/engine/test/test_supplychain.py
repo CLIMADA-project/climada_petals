@@ -567,7 +567,7 @@ class TestSupplyChain(unittest.TestCase):
             sup.calc_impacts(io_approach="xx")
 
     def test_calc_impacts(self):
-        """Test running indirect impact calculations with ghosh, leontief and eeioa."""
+        """Test running indirect impact calculations with ghosh, leontief"""
 
         mriot = build_mock_mriot_timmer()
         sup = SupplyChain(mriot)
@@ -627,17 +627,6 @@ class TestSupplyChain(unittest.TestCase):
             expected_prod_loss.round(0)
             )
 
-        # total intensity vector: elements are the sector-specific
-        # indirect risks per unit sector output
-        tot_int_vec = shock.dot(sup.inverse['leontief'])
-        expected_prod_loss = sup.mriot.x.values.flatten() * tot_int_vec.values[0]
-
-        sup.calc_impacts(io_approach="eeioa")
-
-        np.testing.assert_array_equal(
-            sup.supchain_imp['eeioa'].round(0).values.flatten(),
-            expected_prod_loss.round(0)
-            )
 
 class TestSupplyChain_boario(unittest.TestCase):
     """Test running indirect impact calculations with boario."""
