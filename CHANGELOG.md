@@ -29,6 +29,8 @@ Code freeze date: YYYY-MM-DD
 
 ### Removed
 
+- `eeioa` approach from the supply chain module. See [associated discussion](https://github.com/CLIMADA-project/climada_petals/pull/81#discussion_r1596546221).
+
 ## 4.1.0
 
 Release date: 2024-02-19
@@ -130,4 +132,3 @@ Release aligned with climada (core) 3.3.
 ### Fixed
 
 - fix issue [#69](https://github.com/CLIMADA-project/climada_petals/issues/70) Warn.zeropadding for islands [](https://github.com/CLIMADA-project/climada_petals/pull/70)
-
