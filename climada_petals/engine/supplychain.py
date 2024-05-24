@@ -56,7 +56,7 @@ def calc_va(Z, x):
     Parameters
     ----------
     Z : pandas.DataFrame or numpy.array
-        Symmetric input output table (flows)
+        Symmetric multi-regional input output table (flows)
     x : pandas.DataFrame or numpy.array
         industry output
 
@@ -85,7 +85,7 @@ def calc_B(Z, x):
     Parameters
     ----------
     Z : pandas.DataFrame or numpy.array
-        Symmetric input output table (flows)
+        Symmetric multi-regional input output table (flows)
     x : pandas.DataFrame, pandas.Series, or numpy.array
         Industry output column vector
 
@@ -382,12 +382,12 @@ class SupplyChain:
             for each event with impacts. Columns are the same as the chosen MRIOT and rows are the
             hazard events ids.
     inverse : dict
-            Dictionary with keys being the chosen approach (ghosh, leontief or eeioa)
-            and values the Leontief (L, if approach is leontief or eeioa) or Ghosh (G, if
+            Dictionary with keys being the chosen approach (ghosh, leontief)
+            and values the Leontief (L, if approach is leontief) or Ghosh (G, if
             approach is ghosh) inverse matrix.
     coeffs : dict
-            Dictionary with keys the chosen approach (ghosh, leontief or eeioa)
-            and values the Technical (A, if approach is leontief or eeioa) or allocation
+            Dictionary with keys the chosen approach (ghosh, leontief)
+            and values the Technical (A, if approach is leontief) or allocation
             (B, if approach is ghosh) coefficients matrix.
     sim: boario.simulation.Simulation
             Boario's simulation object. Only relevant when io_approach in "boario_aggregated" or
@@ -397,8 +397,8 @@ class SupplyChain:
             1 has ordinal 1 (ordinal format of datetime library) of events leading to impact.
             Deafult is None.
     supchain_imp : dict
-            Dictionary with keys the chosen approach (ghosh, leontief, eeioa or boario
-            and its variations) and values dataframes of production losses (ghosh, leontief, eeioa)
+            Dictionary with keys the chosen approach (ghosh, leontief or boario
+            and its variations) and values dataframes of production losses (ghosh, leontief)
             or production dynamics (boario and its variations) to countries/sectors for each event.
             For each dataframe, columns are the same as the chosen MRIOT and rows are the
             hazard events' ids.
@@ -525,7 +525,7 @@ class SupplyChain:
                               shock_factor=None
                               ):
         """Calculate exposure, impact and shock at the sectorial level.
-        This function translate spatially-disturbed exposure and impact
+        This function translate spatially-distributed exposure and impact
         information into exposure and impact in the MRIOT's region/sectors
         typology, for each hazard event.
 
@@ -616,19 +616,18 @@ class SupplyChain:
 
     def calc_matrices(self, io_approach):
         """Build technical coefficient and Leontief inverse matrixes
-        (if leontief or eeioa approach) or allocation coefficients and
+        (if leontief approach) or allocation coefficients and
         Ghosh matrixes (if ghosh approach).
 
         Parameters
         ----------
         io_approach : str
             The adopted input-output modeling approach.
-            Possible choices are 'leontief', 'ghosh' and 'eeioa'.
+            Possible choices are 'leontief' or 'ghosh'.
         """
 
         io_model = {
             "leontief": (pymrio.calc_A, pymrio.calc_L),
-            "eeioa": (pymrio.calc_A, pymrio.calc_L),
             "ghosh": (calc_B, calc_G),
             "boario": (pymrio.calc_A, pymrio.calc_L),
         }
@@ -657,7 +656,7 @@ class SupplyChain:
         ----------
         io_approach : str
             The adopted input-output modeling approach.
-            Possible choices are 'leontief', 'ghosh', 'eeioa' or 'boario'
+            Possible choices are 'leontief', 'ghosh' or 'boario'
             'boario_recovery', 'boario_rebuild' and 'boario_shockprod'.
         exposure : climada.entity.Exposure
             CLIMADA Exposure object of direct impact calculation. Default is None.
@@ -715,7 +714,7 @@ class SupplyChain:
         # The underlying problem is that if secs_shock was set outside this method,
         # impact and exposure are ignored as ``calc_shock_to_sectors`` is not run in the next block.
         # The objective here is to warn user.
-        if (exposure is not None) or (impact is not None) and self.secs_shock is not None:
+        if ((exposure is not None) or (impact is not None)) and self.secs_shock is not None:
             warnings.warn("``impact`` and ``exposure`` given in argument while ``secs_shock`` is already set. They will be ignored")
 
         if self.secs_shock is None:
@@ -748,15 +747,6 @@ class SupplyChain:
                 ],
                 axis=1,
             ).T.set_index(self.secs_shock.index)})
-
-
-        # elif io_approach == "eeioa":
-        #     self.supchain_imp.update({io_approach : (
-        #          pd.DataFrame(
-        #             self.secs_shock.dot(self.inverse[io_approach])
-        #             * self.mriot.x.values.flatten()
-        #         )
-        #     )})
 
         elif io_approach == 'boario':
 
