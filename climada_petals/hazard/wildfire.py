@@ -899,12 +899,11 @@ class WildFire(Hazard):
         self._set_frequency()
 
         # Following values are defined for each fire and centroid
-        self.intensity = sparse.lil_matrix(np.zeros((num_ev, num_centr)))
+        intensity = sparse.lil_matrix(np.zeros((num_ev, num_centr)))
         for idx, ev_bright in enumerate(bright_list):
-            self.intensity[idx] = ev_bright
-        self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+            intensity[idx] = ev_bright
+        self.intensity = intensity.tocsr()
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     @staticmethod
     def _brightness_one_fire(df_firms, tree_centr, ev_id, res_centr, num_centr):
