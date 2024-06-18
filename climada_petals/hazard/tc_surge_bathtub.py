@@ -25,10 +25,15 @@ import copy
 import logging
 
 import numpy as np
+from scipy import sparse
+from scipy.spatial import KDTree
+from tqdm import tqdm
 import rasterio.warp
 
 from climada.hazard.base import Hazard
+from climada.hazard import Centroids
 import climada.util.coordinates as u_coord
+from scipy.interpolate import griddata
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +58,7 @@ class TCSurgeBathtub(Hazard):
 
 
     @staticmethod
-    def from_tc_winds(wind_haz, topo_path, inland_decay_rate=0.2, add_sea_level_rise=0.0):
+    def from_tc_winds(wind_haz, topo_path, inland_decay_rate=0.2, add_sea_level_rise=0.0, sea_level_rise_gdf=None, higher_res=None):
         """Compute tropical cyclone surge from input winds.
 
         Parameters
@@ -71,26 +76,33 @@ class TCSurgeBathtub(Hazard):
             Sea level rise effect in meters to be added to surge height.
         """
         centroids = copy.deepcopy(wind_haz.centroids)
+        intensity = copy.deepcopy(wind_haz.intensity)
 
         if not centroids.coord.size:
             centroids.set_meta_to_lat_lon()
 
-        # Select wind-affected centroids which are inside MAX_DIST_COAST and |lat| < 61
-        if not centroids.dist_coast.size or np.all(centroids.dist_coast >= 0):
-            centroids.set_dist_coast(signed=True, precomputed=True)
-        coastal_msk = (wind_haz.intensity > 0).sum(axis=0).A1 > 0
-        coastal_msk &= (centroids.dist_coast < 0)
-        coastal_msk &= (centroids.dist_coast >= -MAX_DIST_COAST * 1000)
-        coastal_msk &= (np.abs(centroids.lat) <= MAX_LATITUDE)
+        coastal_msk = _calc_coastal_mask(centroids, intensity)
+
+        if higher_res is not None:
+            centroids, intensity = centroids.select(sel_cen=coastal_msk), intensity[:,coastal_msk]
+            centroids, intensity = _downscale_sparse_matrix(intensity, centroids, higher_res)
+            coastal_msk = _calc_coastal_mask(centroids, intensity)
 
         # Load elevation at coastal centroids
         coastal_centroids_h = u_coord.read_raster_sample(
             topo_path, centroids.lat[coastal_msk], centroids.lon[coastal_msk])
 
+        if sea_level_rise_gdf is not None:
+            gdf_coords = np.array(list(zip(sea_level_rise_gdf.geometry.y, sea_level_rise_gdf.geometry.x)))
+            sea_level_rise_values = sea_level_rise_gdf['sea_level_change'].values / 1000
+            kdtree = KDTree(gdf_coords)
+            _, idx = kdtree.query(centroids.coord[coastal_msk])
+            add_sea_level_rise = sea_level_rise_values[idx]
+
         # Update selected coastal centroids to exclude high-lying locations
         # We only update the previously selected centroids (for which elevation info was obtained)
         elevation_msk = (coastal_centroids_h >= 0)
-        elevation_msk &= (coastal_centroids_h <= MAX_ELEVATION + add_sea_level_rise)
+        elevation_msk &= (coastal_centroids_h - add_sea_level_rise <= MAX_ELEVATION)
         coastal_msk[coastal_msk] = elevation_msk
 
         # Elevation data and coastal/non-coastal indices are used later in the code
@@ -103,7 +115,7 @@ class TCSurgeBathtub(Hazard):
         cent_to_coastal_idx[coastal_msk] = np.arange(coastal_idx.size)
 
         # Initialize intensity array at coastal centroids
-        inten_surge = wind_haz.intensity.copy()
+        inten_surge = intensity.copy()
         inten_surge.data[~coastal_msk[inten_surge.indices]] = 0
         inten_surge.eliminate_zeros()
 
@@ -119,7 +131,10 @@ class TCSurgeBathtub(Hazard):
             # Add decay according to distance from coast
             dist_coast_km = np.abs(centroids.dist_coast[coastal_idx]) / 1000
             coastal_centroids_h += inland_decay_rate * dist_coast_km
-        coastal_centroids_h -= add_sea_level_rise
+        if isinstance(add_sea_level_rise, np.ndarray):
+            coastal_centroids_h -= add_sea_level_rise[elevation_msk]
+        else:
+            coastal_centroids_h -= add_sea_level_rise
 
         # Efficient way to subtract from selected columns of sparse csr matrix
         inten_surge.data -= coastal_centroids_h[cent_to_coastal_idx[inten_surge.indices]]
@@ -130,8 +145,9 @@ class TCSurgeBathtub(Hazard):
 
         # Get fraction of (large) centroid cells on land according to the given (high-res) DEM
         # only store the result in locations with non-zero surge height
-        fract_surge = inten_surge.copy()
-        fract_surge.data[:] = _fraction_on_land(centroids, topo_path)[fract_surge.indices]
+        # fract_surge = inten_surge.copy()
+        # this will probably not work
+        # fract_surge.data[:] = _fraction_on_land(centroids, topo_path)[fract_surge.indices]
 
         # Set other attributes
         haz = TCSurgeBathtub()
@@ -143,8 +159,285 @@ class TCSurgeBathtub(Hazard):
         haz.orig = wind_haz.orig
         haz.frequency = wind_haz.frequency
         haz.intensity = inten_surge
-        haz.fraction = fract_surge
+        # this has to be done too
+        haz.fraction = None
         return haz
+
+def _calc_coastal_mask(centroids, intensity):
+    """Calculate a coastal mask to identify centroids affected by wind within a specified distance from the coast.
+
+    This function determines which centroids are affected by wind intensity and are located within a maximum distance
+    from the coast and within a specified latitude range. The centroids are filtered based on the following conditions:
+    - They are within the maximum distance from the coast (defined by `MAX_DIST_COAST`).
+    - They have an absolute latitude less than or equal to `MAX_LATITUDE`.
+    - They have positive wind intensity values.
+
+    Parameters
+    ----------
+    centroids : Centroids
+        Centroids to select from.
+
+    intensity : numpy.ndarray
+        A 2D numpy array where each row corresponds to a time point and each column corresponds to a centroid.
+        The array contains wind intensity values. A positive intensity value indicates wind-affected centroids.
+
+    Returns
+    -------
+    numpy.ndarray
+        A 1D boolean numpy array (mask) where `True` indicates centroids that are:
+        - Affected by wind (positive intensity).
+        - Within `MAX_DIST_COAST` kilometers from the coast.
+        - Within the latitude range of ±`MAX_LATITUDE` degrees.
+
+    Notes
+    -----
+    The function first checks if the `dist_coast` attribute of `centroids` is set and valid. If not, it calls
+    `set_dist_coast` with `signed=True` and `precomputed=True` to compute the distances.
+    """
+    if not centroids.dist_coast.size or np.all(centroids.dist_coast >= 0):
+        centroids.set_dist_coast(signed=True, precomputed=True)
+
+    coastal_msk = (intensity > 0).sum(axis=0).A1 > 0
+    coastal_msk &= (centroids.dist_coast < 0)
+    coastal_msk &= (centroids.dist_coast >= -MAX_DIST_COAST * 1000)
+    coastal_msk &= (np.abs(centroids.lat) <= MAX_LATITUDE)
+    return coastal_msk
+
+
+def _calc_extent(coords):
+    """Calculate the minimum and maximum values of latitudes and longitudes from given coordinates.
+
+    Parameters
+    ----------
+    coords : numpy.ndarray
+        2D array where each row contains latitude and longitude coordinates in degrees.
+
+    Returns
+    -------
+    min_lat : float
+        Minimum latitude value in degrees.
+    max_lat : float
+        Maximum latitude value in degrees.
+    min_lon : float
+        Minimum longitude value in degrees.
+    max_lon : float
+        Maximum longitude value in degrees.
+
+    Notes
+    -----
+    This function assumes that `coords` is a 2D numpy array with latitude in the first column (index 0)
+    and longitude in the second column (index 1).
+
+    Examples
+    --------
+    >>> coords = np.array([[0, 0], [90, 180], [-90, -180]])
+    >>> _calc_extent(coords)
+    (-90.0, 90.0, -180.0, 180.0)
+
+    """
+    latitudes = coords[:, 0]
+    longitudes = coords[:, 1]
+
+    # Calculate the bounds
+    min_lat = np.min(latitudes)
+    max_lat = np.max(latitudes)
+    min_lon = np.min(longitudes)
+    max_lon = np.max(longitudes)
+    return min_lat, max_lat, min_lon, max_lon
+
+
+
+def _create_hr_coordinates(coords, resolution):
+    """
+    Generate a high-resolution grid of coordinates based on the given bounds and resolution.
+
+    This function calculates the bounding box for the provided coordinates and then
+    creates a high-resolution grid within these bounds using the specified resolution.
+
+    Parameters
+    ----------
+    coords : numpy.ndarray
+        A 2D numpy array of shape (N, 2) containing latitude and longitude coordinates.
+    resolution : float
+        The resolution for the high-resolution grid. This specifies the step size for
+        generating the grid points.
+
+    Returns
+    -------
+    numpy.ndarray
+        A 2D numpy array of shape (M, 2) containing the generated high-resolution latitude and longitude coordinates.
+
+    Notes
+    -----
+
+    This function uses numpy.meshgrid to first generate the dense grid of coordinates which can quickly become
+    huge and long to create for large total extent of `coords` and "too" precise resolution.
+    """
+    min_lat, max_lat, min_lon, max_lon = _calc_extent(coords)
+
+    lat = np.arange(min_lat, max_lat + resolution, resolution)
+    lon = np.arange(min_lon, max_lon + resolution, resolution)
+
+    # Create a meshgrid of latitude and longitude values
+    lon_grid, lat_grid = np.meshgrid(lon, lat)
+    return np.column_stack([lat_grid.ravel(), lon_grid.ravel()])
+
+def _match_coords(hr_coords, lr_coords, hr_res, tree=None):
+    """
+    Match high-resolution coordinates to low-resolution coordinates based on proximity.
+
+    Parameters
+    ----------
+    hr_coords : numpy.ndarray
+        High-resolution coordinates stored in a 2D array where each row represents a point with latitude and longitude.
+
+    lr_coords : numpy.ndarray
+        Low-resolution coordinates stored in a 2D array where each row represents a point with latitude and longitude.
+
+    hr_res : float
+        Resolution of the high-resolution coordinates, used to determine proximity threshold for matching.
+
+    tree : scipy.spatial.KDTree, optional
+        KDTree built on `hr_coords` for efficient nearest neighbor search. If not provided, it will be constructed
+        using `hr_coords`.
+
+    Returns
+    -------
+    numpy.ndarray
+        Selected high-resolution coordinates that match closely with the low-resolution coordinates, ensuring no duplicates.
+
+    Notes
+    -----
+    Matches low-resolution coordinates to high-resolution coordinates are within a distance threshold
+    calculated as 4 times the `hr_res`.
+    """
+    if tree is None:
+        tree = KDTree(hr_coords)
+
+    threshold = 4 * hr_res
+    distances, indices = tree.query(lr_coords, k=100, distance_upper_bound=threshold)
+    within_threshold = distances <= threshold
+    selected_coords = hr_coords[indices[within_threshold]]
+    _,unique_indices = np.unique(selected_coords, axis=0, return_index=True)
+    unique_indices.sort()
+    return selected_coords[unique_indices]
+
+def _downscale_coordinates(lowres_coords, higher_res, bins_res=5.0):
+    """
+    Downscale low-resolution coordinates to higher resolution within defined grid cells.
+
+    Parameters
+    ----------
+    lowres_coords : numpy.ndarray
+        Low-resolution coordinates stored in a 2D array where each row represents a point with latitude and longitude.
+
+    higher_res : float
+        Resolution to which the coordinates will be downscaled, in degrees.
+
+    bins_res : float, optional
+        Resolution of the binning grid cells in degrees. Default is 5.0 degrees.
+
+    Returns
+    -------
+    numpy.ndarray
+        High-resolution coordinates downscaled from the low-resolution input, ensuring no duplicates.
+
+    Notes
+    -----
+    This function divides the extent of `lowres_coords` into grid cells defined by `bins_res`. For each grid cell,
+    it identifies low-resolution coordinates that fall within or near the cell boundaries using a KDTree. It then
+    creates high-resolution coordinates by refining the points within each cell and matches these to the original
+    low-resolution coordinates to ensure uniqueness.
+    """
+
+    # could take a tuple instead of a single value in the future
+    lat_resolution = bins_res  # degrees
+    lon_resolution = bins_res  # degrees
+    lat_min, lat_max, lon_min, lon_max = _calc_extent(lowres_coords)
+    lat_bins = np.arange(lat_min, lat_max, lat_resolution)
+    lon_bins = np.arange(lon_min, lon_max, lon_resolution)
+
+    bins_with_data = []
+    highres_coords = []
+    tree = KDTree(lowres_coords)
+    for lat in lat_bins:
+        for lon in lon_bins:
+            # Define the current grid cell (subpart)
+            cell_min = [lat, lon]
+            cell_max = [lat + lat_resolution, lon + lon_resolution]
+
+            # Check if any data points fall within the current grid cell
+            # Using the KDTree to find points within the cell
+            indices = tree.query_ball_point(cell_min, lat_resolution * np.sqrt(2), p=2.0)
+            cell_coords = lowres_coords[indices]
+
+            # Filter points within the exact cell boundaries
+            within_cell = [point for point in cell_coords
+                           if cell_min[0] <= point[0] < cell_max[0]
+                           and cell_min[1] <= point[1] < cell_max[1]]
+
+            if within_cell:
+                bins_with_data.append((cell_min, cell_max))
+                highres_coords.append(_create_hr_coordinates(cell_coords, higher_res))
+
+    highres_coords = np.vstack(highres_coords)
+    highres_coords = _match_coords(highres_coords, lowres_coords, higher_res)
+    return highres_coords
+
+
+def _downscale_sparse_matrix(matrix, centroids, higher_res, method="linear"):
+    """Downscale a sparse matrix of intensities to a higher resolution grid.
+
+    Parameters
+    ----------
+    matrix : scipy.sparse.csr_matrix
+        Sparse matrix where each row represents intensity values associated with low-resolution coordinates.
+
+    centroids : Centroids
+        Centroids of low-resolution coordinates associated with the sparse matrix.
+
+    higher_res : float
+        Resolution to which the coordinates will be downscaled, in degrees.
+
+    method : str, optional
+        Method to use for interpolation of intensities. Default is "linear".
+        Other options include "nearest" and "cubic". See `scipy.interpolate.griddata` for details.
+
+    Returns
+    -------
+    Centroids
+        Centroids object containing high-resolution coordinates derived from the downscaled grid.
+
+    scipy.sparse.csr_matrix
+        Sparse matrix of downscaled values corresponding to the high-resolution grid.
+
+    Notes
+    -----
+    This function first downscales the low-resolution coordinates (`centroids.coord`) to a higher resolution grid
+    using `_downscale_coordinates`. It then interpolates values from the sparse matrix `matrix` to this
+    high-resolution grid using the specified `method`. The resulting values are stored in a sparse matrix format.
+    """
+
+    print("Starting the downscaling of the intensity")
+    intensities = []
+    lowres_coords = centroids.coord
+    print("Downscaling coordinates")
+    hr_coordinates_full = _downscale_coordinates(lowres_coords, higher_res)
+    for i in tqdm(range(matrix.shape[0])):
+        if matrix[i].size > 3:
+            values = matrix[i].data
+            new_matrix = griddata(lowres_coords[matrix[i].indices],
+                                         values,
+                                         hr_coordinates_full,
+                                         method=method,
+                                         fill_value=0)
+            intensities.append(sparse.csr_matrix(new_matrix,shape=(1,hr_coordinates_full[:,0].size)))
+        else:
+            intensities.append(sparse.csr_matrix([],shape=(1,hr_coordinates_full[:,0].size)))
+
+    new_centroids = Centroids.from_lat_lon(hr_coordinates_full[:,0],hr_coordinates_full[:,1])
+    new_intensity = sparse.vstack(intensities)
+    return new_centroids,new_intensity
 
 
 def _fraction_on_land(centroids, topo_path):
