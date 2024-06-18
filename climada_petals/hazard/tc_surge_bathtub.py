@@ -418,10 +418,8 @@ def _downscale_sparse_matrix(matrix, centroids, higher_res, method="linear"):
     high-resolution grid using the specified `method`. The resulting values are stored in a sparse matrix format.
     """
 
-    print("Starting the downscaling of the intensity")
     intensities = []
     lowres_coords = centroids.coord
-    print("Downscaling coordinates")
     hr_coordinates_full = _downscale_coordinates(lowres_coords, higher_res)
     for i in tqdm(range(matrix.shape[0])):
         if matrix[i].size > 3:
