@@ -318,12 +318,11 @@ class WildFire(Hazard):
         haz._set_frequency()
 
         # Following values are defined for each fire and centroid
-        haz.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
+        intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
         for idx, wf in enumerate(hist_fire_seasons):
-            haz.intensity[idx] = wf.intensity.max(axis=0)
-        haz.intensity = haz.intensity.tocsr()
-        haz.fraction = haz.intensity.copy()
-        haz.fraction.data.fill(1.0)
+            intensity[idx] = wf.intensity.max(axis=0)
+        haz.intensity = intensity.tocsr()
+        haz.fraction = sparse.csr_matrix(haz.intensity.shape)
 
         return haz
 
@@ -403,8 +402,7 @@ class WildFire(Hazard):
         new_intensity = new_intensity.tocsr()
         self.intensity = sparse.vstack([self.intensity, new_intensity],
                                        format='csr')
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     def combine_fires(self, event_id_merge=None, remove_rest=False,
                       probabilistic=False):
@@ -564,8 +562,7 @@ class WildFire(Hazard):
 
         # Following values are defined for each fire and centroid
         self.intensity = intensity_new.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
 
     #@staticmethod
