@@ -4,6 +4,7 @@ channels:
   - nodefaults
 dependencies:
   - cdsapi>=0.6
+  - esmpy<8.4.0,>=8.6  # v8.4.0 is incompatible to latest importlib-metadata
   - meson-python>=0.15,<0.16  # as of 2024-04-22 something seems to be wrong with 0.16
   - osm-flex>=1.1
   - overpy>=0.7
@@ -11,4 +12,4 @@ dependencies:
   - rioxarray>=0.13
   - ruamel.yaml>=0.18
   - scikit-image>=0.22
-  - xesmf>=0.8
+  - xesmf>=0.8  # Requires 'esmpy'
