@@ -21,6 +21,11 @@ climada init
 from shutil import copyfile
 from pathlib import Path
 
+# The line below is a workaround for an esmpy bug occurring in python >= 3.10
+# which affects the climada_petals.hazard.rf_glofas module.
+# For an unclear reason the import of esmpy has to be done at the very beginning of execution.
+import esmpy
+
 import climada
 import climada_petals.util.config
 from .util.constants import *
