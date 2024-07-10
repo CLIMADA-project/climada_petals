@@ -16,4 +16,3 @@ climada\_petals\.util\.constants module
     :members:
     :undoc-members:
     :show-inheritance:
-

@@ -58,6 +58,13 @@ Jump right in:
 
 
 .. toctree::
+   :caption: Documentation
+   :maxdepth: 1
+
+   glofas_rf
+   
+
+.. toctree::
    :caption: API Reference
    :hidden:
 

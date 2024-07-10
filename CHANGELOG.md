@@ -14,11 +14,57 @@ Code freeze date: YYYY-MM-DD
 
 ### Changed
 
+- Adaptations to refactoring of the `climada.hazard.Centroids` class, to be compatible with `climada>=5.0` [#122](https://github.com/CLIMADA-project/climada_petals/pull/122)
+- Always assign `csr_matrix` to `Hazard.intensity` [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
+
 ### Fixed
+
+- Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
+- Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
+- Store all-zero fraction matrices in `LowFlow` and `WildFire` hazards [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
 
 ### Deprecated
 
 ### Removed
+
+## 4.1.0
+
+Release date: 2024-02-19
+
+### Dependency Changes
+
+Updated:
+
+- `climada` >=4.0 &rarr; ==4.1
+
+Added:
+
+- `overpy` >=0.7
+- `osm-flex` >=1.1.1
+- `pymrio` >=0.5
+
+### Changed
+
+- Restructured `Supplychain` module, which now uses `pymrio` to download and handle multi-regional input output tables [#66](https://github.com/CLIMADA-project/climada_petals/pull/66)
+- Restructured `openstreetmap` module to draw functionalities from external package osm-flex [#103](https://github.com/CLIMADA-project/climada_petals/pull/103)
+- As part of `climada_petals.hazard.tc_rainfield`, implement a new, physics-based TC rain model ("TCR") in addition to the existing implementation of the purely statistical R-CLIPER model ([#85](https://github.com/CLIMADA-project/climada_petals/pull/85))
+- Conda environment now avoids `default` channel packages, as these are incompatible to conda-forge [#110](https://github.com/CLIMADA-project/climada_petals/pull/110)
+
+## 4.0.2
+
+Release date: 2023-09-27
+
+### Dependency Changes
+
+- `pandas` >=1.5,<2.0 &rarr; >=1.5 (compatibility with pandas 2.x)
+
+### Changed
+
+- improved integration tests for notebooks and external data apis
+
+### Fixed
+
+- implicit casting from `DataArray` to `int` in reading mehtods made explicit [#95](https://github.com/CLIMADA-project/climada_petals/pull/95/files)
 
 ## 4.0.1
 

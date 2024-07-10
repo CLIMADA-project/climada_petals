@@ -16,7 +16,10 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-init exposures
+Export functions of the GloFAS River Flood Module
 """
 
-
+from .setup import setup_all
+from .river_flood_computation import RiverFloodInundation
+from .rf_glofas import hazard_series_from_dataset
+from .transform_ops import save_file
