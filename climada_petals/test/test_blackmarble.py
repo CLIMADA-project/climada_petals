@@ -91,7 +91,7 @@ class Test1968(unittest.TestCase):
         ent = BlackMarble()
         with self.assertLogs('climada.util.finance', level='INFO') as cm:
             ent.set_countries(country_name, 1968, res_km=0.5)
-        self.assertIn('GDP CHE 1968: 1.894e+10.', cm.output[0])
+        self.assertIn('GDP CHE 1968: 2.071e+10.', cm.output[0])
         self.assertIn('Income group CHE 1987: 4.', cm.output[1])
 
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:

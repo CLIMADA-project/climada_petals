@@ -15,11 +15,13 @@ Code freeze date: YYYY-MM-DD
 ### Changed
 
 - Adaptations to refactoring of the `climada.hazard.Centroids` class, to be compatible with `climada>=5.0` [#122](https://github.com/CLIMADA-project/climada_petals/pull/122)
+- Always assign `csr_matrix` to `Hazard.intensity` [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
 
 ### Fixed
 
 - Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
 - Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
+- Store all-zero fraction matrices in `LowFlow` and `WildFire` hazards [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
 
 ### Deprecated
 
