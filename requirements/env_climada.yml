@@ -4,7 +4,7 @@ channels:
   - nodefaults
 dependencies:
   - cdsapi>=0.6
-  - esmpy!=8.4.*  # 8.4 is incompatible with latest importlib-metadata of python >= 3.10
+  - importlib-metadata>=7.2,<8.0  # 8.0 is not compatible with emspy 8.4 (possibly imported by xesmf)
   - meson-python>=0.15,<0.16  # as of 2024-04-22 something seems to be wrong with 0.16
   - osm-flex>=1.1
   - overpy>=0.7
