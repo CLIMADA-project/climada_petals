@@ -37,9 +37,9 @@ class TestDefault(unittest.TestCase):
         self.assertIn('Lat. range: -55.375 to +71.125.', cm.output[0])
         self.assertIn('Lon. range: -179.125 to +179.958.', cm.output[1])
         self.assertIn("Total V_agg TA global: 1301919384722.2 USD.", cm.output[2])
-        self.assertEqual(ent.gdf.region_id.min(), 4)
-        self.assertEqual(ent.gdf.region_id[10000], 246)
-        self.assertEqual(ent.gdf.region_id.max(), 894)
+        self.assertEqual(ent.region_id.min(), 4)
+        self.assertEqual(ent.region_id[10000], 246)
+        self.assertEqual(ent.region_id.max(), 894)
         self.assertEqual(ent_select.value.sum(), 1878858118.0)
         self.assertEqual(ent_select.region_id.min(), 208)
         self.assertEqual(ent_select.region_id.max(), 208)
@@ -57,8 +57,8 @@ class TestDefault(unittest.TestCase):
         self.assertIn('Lat. range: +1.875 to +5.958.', cm.output[0])
         self.assertIn('Lon. range: -58.042 to -54.042.', cm.output[1])
         self.assertIn("Total V_agg TA Suriname: 78879225.2 USD.", cm.output[2])
-        self.assertEqual(ent.gdf.region_id.min(), 740)
-        self.assertEqual(ent.gdf.region_id.max(), 740)
+        self.assertEqual(ent.region_id.min(), 740)
+        self.assertEqual(ent.region_id.max(), 740)
         self.assertEqual(ent.spam_file, "spam2005V3r2_global_V_agg_TA.csv")
         self.assertEqual(ent.description, 
             "SPAM agrar exposure for variable V_agg and technology TA\n"
@@ -74,8 +74,8 @@ class TestDefault(unittest.TestCase):
         self.assertIn('Lat. range: +47.208 to +47.625.', cm.output[0])
         self.assertIn('Lon. range: +8.375 to +8.875.', cm.output[1])
         self.assertIn("Total V_agg TA CHE Zurich: 56644555.1 USD.", cm.output[2])
-        self.assertEqual(ent.gdf.region_id.min(), 756)
-        self.assertEqual(ent.gdf.region_id.max(), 756)
+        self.assertEqual(ent.region_id.min(), 756)
+        self.assertEqual(ent.region_id.max(), 756)
         self.assertEqual(ent.spam_file, "spam2005V3r2_global_V_agg_TA.csv")
         self.assertEqual(ent.description, 
             "SPAM agrar exposure for variable V_agg and technology TA\n"
@@ -95,8 +95,8 @@ class TestOtherVar(unittest.TestCase):
         self.assertIn('Lat. range: +45.875 to +47.792.', cm.output[0])
         self.assertIn('Lon. range: +6.042 to +10.375.', cm.output[1])
         self.assertIn("Total H TI CHE: 28427.1 Ha.", cm.output[2])
-        self.assertEqual(ent.gdf.region_id.min(), 756)
-        self.assertEqual(ent.gdf.region_id.max(), 756)
+        self.assertEqual(ent.region_id.min(), 756)
+        self.assertEqual(ent.region_id.max(), 756)
         self.assertEqual(ent.spam_file, "spam2005V3r2_global_H_TI.csv")
         self.assertEqual(ent.description, 
             "SPAM agrar exposure for variable H and technology TI\n"

@@ -53,54 +53,26 @@ class TestGDP2AssetFunctions(unittest.TestCase):
         with self.assertRaises(KeyError):
             ga.GDP2Asset._set_one_country('LIE', 2001, path=DEMO_GDP2ASSET)
 
-        exp_test = ga.GDP2Asset._set_one_country('LIE', 2000, path=DEMO_GDP2ASSET).gdf
+        exp_test = ga.GDP2Asset._set_one_country('LIE', 2000, path=DEMO_GDP2ASSET)
 
-        self.assertAlmostEqual(exp_test.iloc[0, 2], 9.5206968)
-        self.assertAlmostEqual(exp_test.iloc[1, 2], 9.5623634)
-        self.assertAlmostEqual(exp_test.iloc[2, 2], 9.60403)
-        self.assertAlmostEqual(exp_test.iloc[3, 2], 9.5206968)
-        self.assertAlmostEqual(exp_test.iloc[4, 2], 9.5623634)
-        self.assertAlmostEqual(exp_test.iloc[5, 2], 9.60403)
-        self.assertAlmostEqual(exp_test.iloc[6, 2], 9.5206968)
-        self.assertAlmostEqual(exp_test.iloc[7, 2], 9.5623634)
-        self.assertAlmostEqual(exp_test.iloc[8, 2], 9.60403)
-        self.assertAlmostEqual(exp_test.iloc[9, 2], 9.5206968)
-        self.assertAlmostEqual(exp_test.iloc[10, 2], 9.5623634)
-        self.assertAlmostEqual(exp_test.iloc[11, 2], 9.5206968)
-        self.assertAlmostEqual(exp_test.iloc[12, 2], 9.5623634)
+        np.testing.assert_allclose(exp_test.latitude, np.array(
+            [47.0622474, 47.0622474, 47.0622474, 47.103914, 47.103914, 47.103914, 47.1455806,
+             47.1455806, 47.1455806, 47.1872472, 47.1872472, 47.2289138, 47.2289138]
+        ))
+        np.testing.assert_allclose(exp_test.longitude, np.array(
+            [9.5206968, 9.5623634, 9.60403, 9.5206968, 9.5623634, 9.60403, 9.5206968,
+             9.5623634, 9.60403, 9.5206968, 9.5623634, 9.5206968, 9.5623634]
+        ))
+        
+        np.testing.assert_allclose(exp_test.value, np.array(
+            [174032107.65846416, 20386409.991937194, 2465206.6989314994,
+             0.0, 12003959.733058406, 97119771.42771776,
+             0.0, 4137081.3646739507, 27411196.308422357,
+             0.0, 4125847.312198318, 88557558.43543366, 191881403.05181965]
+        ))
 
-        self.assertAlmostEqual(exp_test.iloc[0, 1], 47.0622474)
-        self.assertAlmostEqual(exp_test.iloc[1, 1], 47.0622474)
-        self.assertAlmostEqual(exp_test.iloc[2, 1], 47.0622474)
-        self.assertAlmostEqual(exp_test.iloc[3, 1], 47.103914)
-        self.assertAlmostEqual(exp_test.iloc[4, 1], 47.103914)
-        self.assertAlmostEqual(exp_test.iloc[5, 1], 47.103914)
-        self.assertAlmostEqual(exp_test.iloc[6, 1], 47.1455806)
-        self.assertAlmostEqual(exp_test.iloc[7, 1], 47.1455806)
-        self.assertAlmostEqual(exp_test.iloc[8, 1], 47.1455806)
-        self.assertAlmostEqual(exp_test.iloc[9, 1], 47.1872472)
-        self.assertAlmostEqual(exp_test.iloc[10, 1], 47.1872472)
-        self.assertAlmostEqual(exp_test.iloc[11, 1], 47.2289138)
-        self.assertAlmostEqual(exp_test.iloc[12, 1], 47.2289138)
-
-        self.assertAlmostEqual(exp_test.iloc[0, 0], 174032107.65846416)
-        self.assertAlmostEqual(exp_test.iloc[1, 0], 20386409.991937194)
-        self.assertAlmostEqual(exp_test.iloc[2, 0], 2465206.6989314994)
-        self.assertAlmostEqual(exp_test.iloc[3, 0], 0.0)
-        self.assertAlmostEqual(exp_test.iloc[4, 0], 12003959.733058406)
-        self.assertAlmostEqual(exp_test.iloc[5, 0], 97119771.42771776)
-        self.assertAlmostEqual(exp_test.iloc[6, 0], 0.0)
-        self.assertAlmostEqual(exp_test.iloc[7, 0], 4137081.3646739507)
-        self.assertAlmostEqual(exp_test.iloc[8, 0], 27411196.308422357)
-        self.assertAlmostEqual(exp_test.iloc[9, 0], 0.0)
-        self.assertAlmostEqual(exp_test.iloc[10, 0], 4125847.312198318)
-        self.assertAlmostEqual(exp_test.iloc[11, 0], 88557558.43543366)
-        self.assertAlmostEqual(exp_test.iloc[12, 0], 191881403.05181965)
-
-        self.assertAlmostEqual(exp_test.iloc[0, 3], 3.0)
-        self.assertAlmostEqual(exp_test.iloc[12, 3], 3.0)
-        self.assertAlmostEqual(exp_test.iloc[0, 4], 11.0)
-        self.assertAlmostEqual(exp_test.iloc[12, 4], 11.0)
+        self.assertTrue((exp_test.gdf.impf_RF == 3).all())
+        self.assertTrue((exp_test.gdf.region_id ==11).all())
 
     def test_fast_impf_mapping(self):
 
@@ -118,8 +90,8 @@ class TestGDP2AssetFunctions(unittest.TestCase):
 
         exp_test = ga.GDP2Asset._set_one_country('LIE', 2000, DEMO_GDP2ASSET)
         coordinates = np.zeros((exp_test.gdf.shape[0], 2))
-        coordinates[:, 0] = np.array(exp_test.gdf['latitude'])
-        coordinates[:, 1] = np.array(exp_test.gdf['longitude'])
+        coordinates[:, 0] = exp_test.latitude
+        coordinates[:, 1] = exp_test.longitude
 
         with self.assertRaises(KeyError):
             ga._read_GDP(coordinates, ref_year=2600, path=DEMO_GDP2ASSET)

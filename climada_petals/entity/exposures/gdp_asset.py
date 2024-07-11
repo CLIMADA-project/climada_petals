@@ -92,8 +92,8 @@ class GDP2Asset(Exposures):
         res = 0.0416666
 
         rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-            (self.gdf.longitude.min(), self.gdf.latitude.min(),
-             self.gdf.longitude.max(), self.gdf.latitude.max()), res)
+            (self.longitude.min(), self.latitude.min(),
+             self.longitude.max(), self.latitude.max()), res)
         self.meta = {'width': cols, 'height': rows, 'crs': self.crs,
                      'transform': ras_trans}
 
@@ -130,13 +130,16 @@ class GDP2Asset(Exposures):
         reg_id_info = np.full((len(assets),), reg_id)
         impf_rf_info = np.full((len(assets),), impf_rf)
 
-        exp_gdpasset = GDP2Asset()
-        exp_gdpasset.gdf['value'] = assets
-        exp_gdpasset.gdf['latitude'] = coord[:, 0]
-        exp_gdpasset.gdf['longitude'] = coord[:, 1]
-        exp_gdpasset.gdf[INDICATOR_IMPF + DEF_HAZ_TYPE] = impf_rf_info
-        exp_gdpasset.gdf['region_id'] = reg_id_info
-        return exp_gdpasset
+        return GDP2Asset(
+            ref_year = ref_year,
+            value = assets,
+            lat = coord[:, 0],
+            lon = coord[:, 1],
+            data = {
+                INDICATOR_IMPF + DEF_HAZ_TYPE: impf_rf_info,
+                'region_id': reg_id_info,
+            }
+        )
 
 
 def _read_GDP(shp_exposures, ref_year, path=None):
