@@ -47,15 +47,16 @@ class Test2013(unittest.TestCase):
         self.assertIn("Generating resolution of approx 1 km.", cm.output[2])
         self.assertTrue(np.isclose(ent.value.sum(), 1.355e+12 * (4 + 1), 0.001))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
-        self.assertEqual(ent.meta['width'], 2699)
-        self.assertEqual(ent.meta['height'], 1938)
-        self.assertTrue(u_coord.equal_crs(ent.meta['crs'], 'epsg:4326'))
-        self.assertAlmostEqual(ent.meta['transform'][0], 0.008333333333333333)
-        self.assertAlmostEqual(ent.meta['transform'][1], 0)
-        self.assertAlmostEqual(ent.meta['transform'][2], -18.1625000000000)
-        self.assertAlmostEqual(ent.meta['transform'][3], 0)
-        self.assertAlmostEqual(ent.meta['transform'][4], -0.008333333333333333)
-        self.assertAlmostEqual(ent.meta['transform'][5], 43.79583333333333)
+        ent_meta = ent._meta
+        self.assertEqual(ent_meta['width'], 2699)
+        self.assertEqual(ent_meta['height'], 1938)
+        self.assertTrue(u_coord.equal_crs(ent_meta['crs'], 'epsg:4326'))
+        self.assertAlmostEqual(ent_meta['transform'][0], 0.008333333333333333)
+        self.assertAlmostEqual(ent_meta['transform'][1], 0)
+        self.assertAlmostEqual(ent_meta['transform'][2], -18.1625000000000)
+        self.assertAlmostEqual(ent_meta['transform'][3], 0)
+        self.assertAlmostEqual(ent_meta['transform'][4], -0.008333333333333333)
+        self.assertAlmostEqual(ent_meta['transform'][5], 43.79583333333333)
 
     def test_sint_maarten_pass(self):
         country_name = ['Sint Maarten']

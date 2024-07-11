@@ -129,13 +129,6 @@ class BlackMarble(Exposures):
             nightlight_file = Path(fn_nl).name,
         )
 
-        rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-            (self.longitude.min(), self.latitude.min(),
-             self.longitude.max(), self.latitude.max()),
-            (coord_nl[0, 1], -coord_nl[0, 1])
-        )
-        self.meta = {'width': cols, 'height': rows, 'crs': self.crs, 'transform': ras_trans}
-
     @staticmethod
     def _set_one_country(cntry_info, nightlight, coord_nl, res_fact,
                          res_km, admin1_geom, **kwargs):

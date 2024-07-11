@@ -42,7 +42,7 @@ class TestCropProduction(unittest.TestCase):
 
         self.assertEqual(exp.crop, 'whe')
         self.assertEqual(exp.gdf.shape[0], 55)
-        self.assertEqual(exp.pmeta['width'] * exp.pmeta['height'], 55)
+        self.assertEqual(exp._meta['width'] * exp._meta['height'], 55)
         self.assertIn(756, exp.region_id)
         self.assertIn(380, exp.region_id)
         self.assertAlmostEqual(exp.gdf['value'].max(), 253225.66611428373)

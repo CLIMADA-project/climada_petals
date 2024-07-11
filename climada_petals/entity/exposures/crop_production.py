@@ -492,8 +492,8 @@ class CropProduction(Exposures):
             value_unit = 't/y'
         )
 
-        exp.data[INDICATOR_IMPF + DEF_HAZ_TYPE] = 1
-        exp.data[INDICATOR_IMPF] = 1
+        exp.gdf[INDICATOR_IMPF + DEF_HAZ_TYPE] = 1
+        exp.gdf[INDICATOR_IMPF] = 1
 
         return exp
 
