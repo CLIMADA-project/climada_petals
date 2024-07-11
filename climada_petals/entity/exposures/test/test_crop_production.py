@@ -42,9 +42,9 @@ class TestCropProduction(unittest.TestCase):
 
         self.assertEqual(exp.crop, 'whe')
         self.assertEqual(exp.gdf.shape[0], 55)
-        self.assertEqual(exp.meta['width'] * exp.meta['height'], 55)
-        self.assertIn(756, exp.gdf.region_id.values)
-        self.assertIn(380, exp.gdf.region_id.values)
+        self.assertEqual(exp.pmeta['width'] * exp.pmeta['height'], 55)
+        self.assertIn(756, exp.region_id)
+        self.assertIn(380, exp.region_id)
         self.assertAlmostEqual(exp.gdf['value'].max(), 253225.66611428373)
 
     def test_isimip_load_central_EU(self):
@@ -54,14 +54,14 @@ class TestCropProduction(unittest.TestCase):
                                       bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
 
-        self.assertEqual(exp.gdf.longitude.min(), -4.75)
-        self.assertEqual(exp.gdf.longitude.max(), 15.75)
-        self.assertEqual(exp.gdf.latitude.min(), 42.25)
-        self.assertEqual(exp.gdf.latitude.max(), 54.75)
-        self.assertEqual(exp.gdf.value.shape, (1092,))
+        self.assertEqual(exp.longitude.min(), -4.75)
+        self.assertEqual(exp.longitude.max(), 15.75)
+        self.assertEqual(exp.latitude.min(), 42.25)
+        self.assertEqual(exp.latitude.max(), 54.75)
+        self.assertEqual(exp.value.shape, (1092,))
         self.assertEqual(exp.value_unit, 't/y')
         self.assertEqual(exp.crop, 'mai')
-        self.assertAlmostEqual(exp.gdf.value.max(), 284244.81023404596, places=5)
+        self.assertAlmostEqual(exp.value.max(), 284244.81023404596, places=5)
 
     def test_set_value_to_usd(self):
         """Test calculating crop_production Exposure in [USD/y] (deprecated set method)"""
@@ -69,17 +69,17 @@ class TestCropProduction(unittest.TestCase):
                                       bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
         exp.set_value_to_usd(INPUT_DIR, yearrange=(2000, 2018))
-        self.assertEqual(exp.gdf.longitude.min(), -4.75)
-        self.assertEqual(exp.gdf.longitude.max(), 15.75)
-        self.assertEqual(exp.gdf.latitude.min(), 42.25)
-        self.assertEqual(exp.gdf.latitude.max(), 54.75)
-        self.assertEqual(exp.gdf.value.shape, (1092,))
+        self.assertEqual(exp.longitude.min(), -4.75)
+        self.assertEqual(exp.longitude.max(), 15.75)
+        self.assertEqual(exp.latitude.min(), 42.25)
+        self.assertEqual(exp.latitude.max(), 54.75)
+        self.assertEqual(exp.value.shape, (1092,))
         self.assertEqual(exp.value_unit, 'USD/y')
         self.assertEqual(exp.crop, 'mai')
-        self.assertAlmostEqual(exp.gdf.tonnes_per_year[28], 1998.3634803238633)
-        self.assertAlmostEqual(exp.gdf.value.max(), 51603897.28533253, places=5)
-        self.assertAlmostEqual(exp.gdf.value.mean(), 899384.5340130781, places=5)
-        self.assertEqual(exp.gdf.value.min(), 0.0)
+        self.assertAlmostEqual(exp.data["tonnes_per_year"][28], 1998.3634803238633)
+        self.assertAlmostEqual(exp.value.max(), 51603897.28533253, places=5)
+        self.assertAlmostEqual(exp.value.mean(), 899384.5340130781, places=5)
+        self.assertEqual(exp.value.min(), 0.0)
 
     def test_value_to_usd(self):
         """Test calculating crop_production Exposure in [USD/y] (new function)"""
@@ -87,17 +87,17 @@ class TestCropProduction(unittest.TestCase):
                                       bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
         exp = cp.value_to_usd(exp, INPUT_DIR, yearrange=(2000, 2018))
-        self.assertEqual(exp.gdf.longitude.min(), -4.75)
-        self.assertEqual(exp.gdf.longitude.max(), 15.75)
-        self.assertEqual(exp.gdf.latitude.min(), 42.25)
-        self.assertEqual(exp.gdf.latitude.max(), 54.75)
-        self.assertEqual(exp.gdf.value.shape, (1092,))
+        self.assertEqual(exp.longitude.min(), -4.75)
+        self.assertEqual(exp.longitude.max(), 15.75)
+        self.assertEqual(exp.latitude.min(), 42.25)
+        self.assertEqual(exp.latitude.max(), 54.75)
+        self.assertEqual(exp.value.shape, (1092,))
         self.assertEqual(exp.value_unit, 'USD/y')
         self.assertEqual(exp.crop, 'mai')
-        self.assertAlmostEqual(exp.gdf.tonnes_per_year[28], 1998.3634803238633)
-        self.assertAlmostEqual(exp.gdf.value.max(), 51603897.28533253, places=5)
-        self.assertAlmostEqual(exp.gdf.value.mean(), 899384.5340130781, places=5)
-        self.assertEqual(exp.gdf.value.min(), 0.0)
+        self.assertAlmostEqual(exp.data["tonnes_per_year"][28], 1998.3634803238633)
+        self.assertAlmostEqual(exp.value.max(), 51603897.28533253, places=5)
+        self.assertAlmostEqual(exp.value.mean(), 899384.5340130781, places=5)
+        self.assertEqual(exp.value.min(), 0.0)
 
     def test_set_value_to_kcal(self):
         """Test calculating crop_production Exposure in [kcal/y] (deprecated  setmethod)"""
@@ -106,28 +106,28 @@ class TestCropProduction(unittest.TestCase):
         exp = cp.CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                       bbox=[-5, 45, 10, 50], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
-        max_tonnes = exp.gdf.value.max()
+        max_tonnes = exp.value.max()
         exp.set_value_to_kcal()
 
-        self.assertEqual(exp.gdf.latitude.min(), 45.25)
-        self.assertEqual(exp.gdf.latitude.max(), 49.75)
-        self.assertEqual(exp.gdf.value.shape, (300,))
-        self.assertAlmostEqual(exp.gdf.value.max(), 3.56e6 * max_tonnes, places=3)
-        self.assertAlmostEqual(exp.gdf.value.max(), 852926234509.3002, places=3)
-        self.assertAlmostEqual(exp.gdf.value.mean(), 19419372198.727455, places=4)
-        self.assertEqual(exp.gdf.value.min(), 0.0)
+        self.assertEqual(exp.latitude.min(), 45.25)
+        self.assertEqual(exp.latitude.max(), 49.75)
+        self.assertEqual(exp.value.shape, (300,))
+        self.assertAlmostEqual(exp.value.max(), 3.56e6 * max_tonnes, places=3)
+        self.assertAlmostEqual(exp.value.max(), 852926234509.3002, places=3)
+        self.assertAlmostEqual(exp.value.mean(), 19419372198.727455, places=4)
+        self.assertEqual(exp.value.min(), 0.0)
 
         # (2) biomass = False
         exp = cp.CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                    bbox=[-5, 45, 10, 50], yearrange=np.array([2001, 2005]),
                                    scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
-        max_tonnes = exp.gdf.value.max()
+        max_tonnes = exp.value.max()
         exp.set_value_to_kcal(biomass=False)
-        self.assertEqual(exp.gdf.latitude.min(), 45.25)
-        self.assertEqual(exp.gdf.value.shape, (300,))
-        self.assertAlmostEqual(exp.gdf.value.max(), 3.56e6 * max_tonnes /(1-.12),
+        self.assertEqual(exp.latitude.min(), 45.25)
+        self.assertEqual(exp.value.shape, (300,))
+        self.assertAlmostEqual(exp.value.max(), 3.56e6 * max_tonnes /(1-.12),
                                places=3)
-        self.assertAlmostEqual(exp.gdf.value.mean(), 22067468407.644833, places=4)
+        self.assertAlmostEqual(exp.value.mean(), 22067468407.644833, places=4)
 
     def test_value_to_kcal(self):
         """Test calculating crop_production Exposure in [kcal/y] (new function)"""
@@ -136,27 +136,27 @@ class TestCropProduction(unittest.TestCase):
         exp = cp.CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                       bbox=[-5, 45, 10, 50], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
-        max_tonnes = exp.gdf.value.max()
+        max_tonnes = exp.value.max()
         exp = cp.value_to_kcal(exp)
 
-        self.assertEqual(exp.gdf.latitude.min(), 45.25)
-        self.assertEqual(exp.gdf.latitude.max(), 49.75)
-        self.assertEqual(exp.gdf.value.shape, (300,))
-        self.assertAlmostEqual(exp.gdf.value.max(), 3.56e6 * max_tonnes, places=3)
-        self.assertAlmostEqual(exp.gdf.value.max(), 852926234509.3002, places=3)
-        self.assertEqual(exp.gdf.value.min(), 0.0)
+        self.assertEqual(exp.latitude.min(), 45.25)
+        self.assertEqual(exp.latitude.max(), 49.75)
+        self.assertEqual(exp.value.shape, (300,))
+        self.assertAlmostEqual(exp.value.max(), 3.56e6 * max_tonnes, places=3)
+        self.assertAlmostEqual(exp.value.max(), 852926234509.3002, places=3)
+        self.assertEqual(exp.value.min(), 0.0)
 
         # (2) biomass = False
         exp = cp.CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                    bbox=[-5, 45, 10, 50], yearrange=np.array([2001, 2005]),
                                    scenario='flexible', unit='t/y', crop = 'mai', irr='firr')
-        max_tonnes = exp.gdf.value.max()
+        max_tonnes = exp.value.max()
         exp = cp.value_to_kcal(exp, biomass=False)
-        self.assertEqual(exp.gdf.latitude.min(), 45.25)
-        self.assertEqual(exp.gdf.value.shape, (300,))
-        self.assertAlmostEqual(exp.gdf.value.max(), 3.56e6 * max_tonnes /(1-.12),
+        self.assertEqual(exp.latitude.min(), 45.25)
+        self.assertEqual(exp.value.shape, (300,))
+        self.assertAlmostEqual(exp.value.max(), 3.56e6 * max_tonnes /(1-.12),
                                places=3)
-        self.assertAlmostEqual(exp.gdf.value.mean(), 22067468407.644833, places=4)
+        self.assertAlmostEqual(exp.value.mean(), 22067468407.644833, places=4)
 
 
     def set_value_to_usd(self):
@@ -164,14 +164,14 @@ class TestCropProduction(unittest.TestCase):
         exp = cp.CropProduction.from_isimip_netcdf(input_dir=INPUT_DIR, filename=FILENAME, hist_mean=FILENAME_MEAN,
                                       bbox=[-5, 42, 16, 55], yearrange=np.array([2001, 2005]),
                                       scenario='flexible', crop = 'mai', irr='firr', unit='USD/y')
-        self.assertEqual(exp.gdf.longitude.min(), -4.75)
-        self.assertEqual(exp.gdf.longitude.max(), 15.75)
-        self.assertEqual(exp.gdf.latitude.min(), 42.25)
-        self.assertEqual(exp.gdf.latitude.max(), 54.75)
-        self.assertEqual(exp.gdf.value.shape, (1092,))
+        self.assertEqual(exp.longitude.min(), -4.75)
+        self.assertEqual(exp.longitude.max(), 15.75)
+        self.assertEqual(exp.latitude.min(), 42.25)
+        self.assertEqual(exp.latitude.max(), 54.75)
+        self.assertEqual(exp.value.shape, (1092,))
         self.assertEqual(exp.value_unit, 'USD/y')
         self.assertEqual(exp.crop, 'mai')
-        self.assertAlmostEqual(exp.gdf.value.max(), 51603897.28533253, places=6)
+        self.assertAlmostEqual(exp.value.max(), 51603897.28533253, places=6)
 
     def test_normalize_with_fao_cp(self):
         """ Test normalizing of two given exposures countrywise (usually firr + norr)
@@ -186,10 +186,10 @@ class TestCropProduction(unittest.TestCase):
         self.assertAlmostEqual(ratio[11], .86250775)
         self.assertAlmostEqual(fao_crop_production[2], 673416.4)
         self.assertAlmostEqual(fao_crop_production[11], 160328.7)
-        self.assertAlmostEqual(np.nanmax(exp_firr_norm.gdf.value.values), 220735.69212710857)
-        self.assertAlmostEqual(np.nanmax(exp_firr_norm.gdf.value.values), np.nanmax(exp_noirr_norm.gdf.value.values))
-        self.assertAlmostEqual(np.nanmax(exp.gdf.value.values), 284244.81023404596)
-        self.assertAlmostEqual(np.nansum(exp_noirr_norm.gdf.value.values) + np.nansum(exp_firr_norm.gdf.value.values), np.nansum(fao_crop_production), places=1)
+        self.assertAlmostEqual(np.nanmax(exp_firr_norm.value), 220735.69212710857)
+        self.assertAlmostEqual(np.nanmax(exp_firr_norm.value), np.nanmax(exp_noirr_norm.value))
+        self.assertAlmostEqual(np.nanmax(exp.value), 284244.81023404596)
+        self.assertAlmostEqual(np.nansum(exp_noirr_norm.value) + np.nansum(exp_firr_norm.value), np.nansum(fao_crop_production), places=1)
 
         self.assertListEqual(list(country_list), [0, 40, 56, 70, 191, 203, 208, 250,
                                                   276, 380, 442, 528, 616, 705, 724, 756, 826])

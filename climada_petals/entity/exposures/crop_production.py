@@ -274,13 +274,27 @@ class CropProduction(Exposures):
 
         # The latitude and longitude are set; the region_id is determined
         lon, lat = np.meshgrid(data.lon.values, data.lat.values)
-        exp = cls()
-        exp.gdf['latitude'] = lat.flatten()
-        exp.gdf['longitude'] = lon.flatten()
-        exp.gdf['region_id'] = u_coord.get_country_code(exp.gdf.latitude,
-                                                        exp.gdf.longitude,
-                                                        gridded=True)
-
+        latitude = lat.flatten()
+        longitude = lon.flatten()
+        region_id = u_coord.get_country_code(
+            lat=latitude,
+            lon=longitude,
+            gridded=True
+        )
+        exp = cls(
+            lat = latitude,
+            lon = longitude,
+            data = dict(
+                region_id=region_id,
+            ),
+            description = "Crop production exposure from ISIMIP"
+                         f" {CROP_NAME[crop]['print']} {irr}"
+                         f" {yearrange[0]} {yearrange[-1]}",
+            value_unit = 't/y', # input unit, will be reset below if required by user
+            crop = crop,
+            ref_year = yearrange,
+        )
+        
         # The indeces of the yearrange to be extracted are determined
         time_idx = (int(yearrange[0] - yearchunk['startyear']),
                     int(yearrange[1] - yearchunk['startyear']))
@@ -315,10 +329,10 @@ class CropProduction(Exposures):
                 # if irr=='combined', both 'firr' and 'noirr' are required.
                 raise ValueError(f'Invalid hist_mean provided: {hist_mean}')
             hist_mean_dict = hist_mean
-            lat_mean = exp.gdf.latitude.values
+            lat_mean = exp.latitude
         elif isinstance(hist_mean, np.ndarray) or isinstance(hist_mean, list):
             hist_mean_dict[irr_types[0]] = np.array(hist_mean)
-            lat_mean = exp.gdf.latitude.values
+            lat_mean = exp.latitude
         elif Path(hist_mean).is_dir(): # else if hist_mean is given as path to directory
         # The adequate file from the directory (depending on crop and irrigation) is extracted
         # and the variables hist_mean, lat_mean and lon_mean are set accordingly
@@ -348,12 +362,12 @@ class CropProduction(Exposures):
             raise ValueError(f"Invalid hist_mean provided: {hist_mean}")
 
         # The bbox is cut out of the hist_mean data file if needed
-        if len(lat_mean) != len(exp.gdf.latitude.values):
-            idx_mean = np.zeros(len(exp.gdf.latitude.values), dtype=int)
-            for i in range(len(exp.gdf.latitude.values)):
+        if len(lat_mean) != len(exp.latitude):
+            idx_mean = np.zeros(len(exp.latitude), dtype=int)
+            for i in range(len(exp.latitude)):
                 idx_mean[i] = np.where(
-                    (lat_mean == exp.gdf.latitude.values[i])
-                    & (lon_mean == exp.gdf.longitude.values[i])
+                    (lat_mean == exp.latitude[i])
+                    & (lon_mean == exp.longitude[i])
                 )[0][0]
         else:
             idx_mean = np.arange(0, len(lat_mean))
@@ -367,27 +381,6 @@ class CropProduction(Exposures):
             value_tmp = np.squeeze(area_crop[irr_val]*hist_mean_dict[irr_val][idx_mean])
             value_tmp = np.nan_to_num(value_tmp) # replace NaN by 0.0
             exp.gdf['value'] += value_tmp
-        exp.description=("Crop production exposure from ISIMIP"
-                        f" {CROP_NAME[crop]['print']} {irr}"
-                        f" {yearrange[0]} {yearrange[-1]}")
-        exp.value_unit = 't/y' # input unit, will be reset below if required by user
-        exp.crop = crop
-        exp.ref_year = yearrange
-        try:
-            rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-                (exp.gdf.longitude.min(), exp.gdf.latitude.min(),
-                 exp.gdf.longitude.max(), exp.gdf.latitude.max()),
-                u_coord.get_resolution(exp.gdf.longitude, exp.gdf.latitude))
-            exp.meta = {
-                'width': cols,
-                'height': rows,
-                'crs': exp.crs,
-                'transform': ras_trans,
-            }
-        except ValueError:
-            LOGGER.warning('Could not write attribute meta, because exposure'
-                           ' has only 1 data point')
-            exp.meta = {}
 
         if 'USD' in unit:
             # set_value_to_usd() is called to compute the exposure in USD/y (country specific)
@@ -476,36 +469,32 @@ class CropProduction(Exposures):
         # The latitude and longitude are set; region_id is determined
         lon, lat = np.meshgrid(data_area.lon.values, data_area.lat.values)
 
-        exp = cls()
         # initiate coordinates and values in GeoDatFrame:
-        exp.gdf['latitude'] = lat.flatten()
-        exp.gdf['longitude'] = lon.flatten()
-        exp.gdf['region_id'] = u_coord.get_country_code(exp.gdf.latitude,
-                                                        exp.gdf.longitude, gridded=True)
-        exp.gdf[INDICATOR_IMPF + DEF_HAZ_TYPE] = 1
-        exp.gdf[INDICATOR_IMPF] = 1
+        latitude = lat.flatten()
+        longitude = lon.flatten()
+        region_id = u_coord.get_country_code(
+            lat=latitude,
+            lon=longitude,
+            gridded=True)
         # calc annual crop production, [t/y] = [ha] * [t/ha/y]:
-        exp.gdf['value'] = np.multiply(data_area.values, data_yield.values).flatten()
+        value = np.multiply(data_area.values, data_yield.values).flatten()
 
-        exp.crop = crop_type
-        exp.description=(f"Annual crop production from {var_area} and {var_yield} for"
-                         f" {exp.crop} from files {filename_area} and {filename_yield}")
-        exp.value_unit = 't/y'
-        try:
-            rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-                (exp.gdf.longitude.min(), exp.gdf.latitude.min(),
-                 exp.gdf.longitude.max(), exp.gdf.latitude.max()),
-                u_coord.get_resolution(exp.gdf.longitude, exp.gdf.latitude))
-            exp.meta = {
-                'width': cols,
-                'height': rows,
-                'crs': exp.crs,
-                'transform': ras_trans,
-            }
-        except ValueError:
-            LOGGER.warning('Could not write attribute meta, because exposure'
-                           ' has only 1 data point')
-            exp.meta = {}
+        exp = cls(
+            lat=latitude,
+            lon=longitude,
+            data=dict(
+                region_id=region_id,
+                value=value,
+            ),
+            crop=crop_type,
+            description=f"Annual crop production from {var_area} and {var_yield} for"
+                        f" {crop_type} from files {filename_area} and {filename_yield}",
+            value_unit = 't/y'
+        )
+
+        exp.data[INDICATOR_IMPF + DEF_HAZ_TYPE] = 1
+        exp.data[INDICATOR_IMPF] = 1
+
         return exp
 
     def set_from_spam_ray_mirca(self, *args, **kwargs):

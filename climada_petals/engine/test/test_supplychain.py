@@ -103,11 +103,16 @@ def dummy_exp_imp():
     " Generate dummy exposure and impacts "
     lat = np.array([1, 3])
     lon = np.array([1.5, 3.5])
-    exp = Exposures(crs=DEF_CRS)
-    exp.gdf['longitude'] = lon
-    exp.gdf['latitude'] = lat
-    exp.gdf['value'] = np.array([150., 80.])
-    exp.gdf["region_id"] = [840, 608] # USA, PHL (ROW)
+
+    exp = Exposures(
+        crs=DEF_CRS,
+        lon = lon,
+        lat = lat,
+        data = dict(
+            value = np.array([150., 80.]),
+            region_id = [840, 608], # USA, PHL (ROW)
+        )
+    )
 
     imp = Impact(
         event_id=np.arange(2) + 10,
