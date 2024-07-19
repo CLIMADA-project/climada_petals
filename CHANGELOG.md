@@ -10,6 +10,16 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+Added:
+
+- `cdsapi` >=0.7
+- `importlib-metadata` <8.0
+- `meson-python` >=0.15,<0.16
+- `rioxarray` >=0.13
+- `ruamel.yaml` >=0.18
+- `seaborn` >=0.13
+- `xesmf` >=0.8
+
 ### Added
 
 ### Changed
