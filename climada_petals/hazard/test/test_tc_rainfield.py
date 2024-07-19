@@ -20,7 +20,6 @@ Test TCRain class
 """
 
 import datetime as dt
-from pathlib import Path
 import unittest
 
 import numpy as np
@@ -45,12 +44,12 @@ from climada.util.constants import DEMO_DIR
 
 def getTestData():
     client = Client()
-    centr_ds = client.get_dataset_info(name='test_tc_rainfield', status='test_dataset')
-    _, [centr_test_mat, track, track_short, haz_mat] = client.download_dataset(centr_ds)
-    return Centroids.from_mat(centr_test_mat), track, track_short, haz_mat
+    centr_ds = client.get_dataset_info(name='tc_rainfield_test', status='test_dataset')
+    _, [centr_test_hdf5, track, track_short, haz_hdf5] = client.download_dataset(centr_ds)
+    return Centroids.from_hdf5(centr_test_hdf5), track, track_short, haz_hdf5
 
 
-CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_MAT = getTestData()
+CENTR_TEST_BRB, TEST_TRACK, TEST_TRACK_SHORT, HAZ_TEST_HDF5 = getTestData()
 
 
 def tcrain_examples():
@@ -112,6 +111,24 @@ class TestReader(unittest.TestCase):
         self.assertEqual(tc_haz.intensity.nonzero()[0].size, 296)
         self.assertAlmostEqual(tc_haz.intensity[0, 100], 123.55255892009247)
         self.assertAlmostEqual(tc_haz.intensity[0, 260], 15.148539942329757)
+
+    def test_cross_antimeridian(self):
+        # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
+        # We list the second point twice, with different lon-normalization:
+        cen = Centroids.from_lat_lon([-16.95, -16.8, -16.8], [179.9, 180.1, -179.9])
+
+        # Cyclone YASA (2020) passed directly over Fiji
+        tr = TCTracks.from_ibtracs_netcdf(storm_id=["2020346S13168"])
+
+        inten = TCRain.from_tracks(tr, centroids=cen).intensity.toarray()[0, :]
+
+        # Centroids 1 and 2 are identical, they just use a different normalization for lon. This
+        # should not affect the result at all:
+        self.assertEqual(inten[1], inten[2])
+
+        # All locations should be clearly affected by rain of appx. 135 mm. The exact
+        # values are not so important for this test:
+        np.testing.assert_allclose(inten, 135, atol=10)
 
     def test_from_file_pass(self):
         """Test from_tracks constructor with one input."""

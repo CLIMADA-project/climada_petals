@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+Release date: YYYY-MM-DD
+
+Code freeze date: YYYY-MM-DD
+
+### Description
+
+### Dependency Changes
+
+Added:
+
+- `cdsapi` >=0.7
+- `importlib-metadata` <8.0
+- `meson-python` >=0.15,<0.16
+- `rioxarray` >=0.13
+- `ruamel.yaml` >=0.18
+- `seaborn` >=0.13
+- `xesmf` >=0.8
+
+### Added
+
+### Changed
+
+- Adaptations to refactoring of the `climada.hazard.Centroids` class, to be compatible with `climada>=5.0` [#122](https://github.com/CLIMADA-project/climada_petals/pull/122)
+- Always assign `csr_matrix` to `Hazard.intensity` [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
+
+### Fixed
+
+- Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
+- Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
+- Store all-zero fraction matrices in `LowFlow` and `WildFire` hazards [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
+
+### Deprecated
+
+### Removed
+
 ## 4.1.0
 
 Release date: 2024-02-19
@@ -96,7 +133,7 @@ Release aligned with climada (core) 3.3.
 
 ### Changed
 
-- Rework docs and switch to Book theme [#63](ttps://github.com/CLIMADA-project/climada_petals/pull/63)
+- Rework docs and switch to Book theme [#63](https://github.com/CLIMADA-project/climada_petals/pull/63)
 
 ### Fixed
 
