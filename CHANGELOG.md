@@ -123,7 +123,7 @@ Release aligned with climada (core) 3.3.
 
 ### Changed
 
-- Rework docs and switch to Book theme [#63](ttps://github.com/CLIMADA-project/climada_petals/pull/63)
+- Rework docs and switch to Book theme [#63](https://github.com/CLIMADA-project/climada_petals/pull/63)
 
 ### Fixed
 
