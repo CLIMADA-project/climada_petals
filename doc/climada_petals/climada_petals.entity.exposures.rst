@@ -1,10 +1,6 @@
 climada\_petals\.entity\.exposures package
 ==========================================
 
-.. toctree::
-
-    climada_petals.entity.exposures.openstreetmap
-
 climada\_petals\.entity\.exposures\.black\_marble module
 --------------------------------------------------------
 
