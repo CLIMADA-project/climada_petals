@@ -29,6 +29,7 @@ import xarray as xr
 
 from climada.hazard import Centroids, TCTracks, TropCyclone
 from climada_petals.hazard.tc_surge_bathtub import _fraction_on_land, TCSurgeBathtub
+from climada.util.constants import SYSTEM_DIR
 
 
 class tmp_artifical_topo(object):
@@ -175,6 +176,8 @@ class TestTCSurgeBathtub(unittest.TestCase):
                 self.assertAlmostEqual(inten[9, 31], max(-1.270 + slr, 0), places=2)
                 self.assertAlmostEqual(inten[14, 34] - slr, 2.805, places=2)
 
+    @unittest.skipUnless(SYSTEM_DIR.joinpath("IBTrACS.ALL.v04r00.nc").is_file(),
+                         "IBTrACS file is missing, no download in unitttests")
     def test_cross_antimeridian(self):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.
         # We list the second point twice, with different lon-normalization:
