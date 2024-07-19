@@ -10,6 +10,22 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+### Added
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+## 5.0.0
+
+Release date: 2024-07-19
+
+### Dependency Changes
+
 Added:
 
 - `cdsapi` >=0.7
@@ -19,8 +35,6 @@ Added:
 - `ruamel.yaml` >=0.18
 - `seaborn` >=0.13
 - `xesmf` >=0.8
-
-### Added
 
 ### Changed
 
@@ -32,10 +46,6 @@ Added:
 - Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
 - Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
 - Store all-zero fraction matrices in `LowFlow` and `WildFire` hazards [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
-
-### Deprecated
-
-### Removed
 
 ## 4.1.0
 
