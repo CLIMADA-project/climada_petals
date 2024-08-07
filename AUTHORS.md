@@ -25,3 +25,4 @@
 * Jan Wüthrich
 * Zélie Standhanske
 * Lukas Riedel
+* Samuel Juhel
