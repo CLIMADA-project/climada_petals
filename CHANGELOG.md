@@ -10,25 +10,65 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
-Added dependencies:
-
-- `pymrio` >=5.2.0
-- `overpy`
-- `osm-flex` >=1.1.1
-
 ### Added
 
 ### Changed
-
-- Restructured `Supplychain` module, which now uses `pymrio` to download and handle multi-regional input output tables [#66](https://github.com/CLIMADA-project/climada_petals/pull/66)
-- Restructured `openstreetmap` module to draw functionalities from external package osm-flex [#103](https://github.com/CLIMADA-project/climada_petals/pull/103)
-- As part of `climada_petals.hazard.tc_rainfield`, implement a new, physics-based TC rain model ("TCR") in addition to the existing implementation of the purely statistical R-CLIPER model ([#85](https://github.com/CLIMADA-project/climada_petals/pull/85))
 
 ### Fixed
 
 ### Deprecated
 
 ### Removed
+
+## 5.0.0
+
+Release date: 2024-07-19
+
+### Dependency Changes
+
+Added:
+
+- `cdsapi` >=0.7
+- `importlib-metadata` <8.0
+- `meson-python` >=0.15,<0.16
+- `rioxarray` >=0.13
+- `ruamel.yaml` >=0.18
+- `seaborn` >=0.13
+- `xesmf` >=0.8
+
+### Changed
+
+- Adaptations to refactoring of the `climada.hazard.Centroids` class, to be compatible with `climada>=5.0` [#122](https://github.com/CLIMADA-project/climada_petals/pull/122)
+- Always assign `csr_matrix` to `Hazard.intensity` [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
+
+### Fixed
+
+- Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
+- Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
+- Store all-zero fraction matrices in `LowFlow` and `WildFire` hazards [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
+
+## 4.1.0
+
+Release date: 2024-02-19
+
+### Dependency Changes
+
+Updated:
+
+- `climada` >=4.0 &rarr; ==4.1
+
+Added:
+
+- `overpy` >=0.7
+- `osm-flex` >=1.1.1
+- `pymrio` >=0.5
+
+### Changed
+
+- Restructured `Supplychain` module, which now uses `pymrio` to download and handle multi-regional input output tables [#66](https://github.com/CLIMADA-project/climada_petals/pull/66)
+- Restructured `openstreetmap` module to draw functionalities from external package osm-flex [#103](https://github.com/CLIMADA-project/climada_petals/pull/103)
+- As part of `climada_petals.hazard.tc_rainfield`, implement a new, physics-based TC rain model ("TCR") in addition to the existing implementation of the purely statistical R-CLIPER model ([#85](https://github.com/CLIMADA-project/climada_petals/pull/85))
+- Conda environment now avoids `default` channel packages, as these are incompatible to conda-forge [#110](https://github.com/CLIMADA-project/climada_petals/pull/110)
 
 ## 4.0.2
 
@@ -103,7 +143,7 @@ Release aligned with climada (core) 3.3.
 
 ### Changed
 
-- Rework docs and switch to Book theme [#63](ttps://github.com/CLIMADA-project/climada_petals/pull/63)
+- Rework docs and switch to Book theme [#63](https://github.com/CLIMADA-project/climada_petals/pull/63)
 
 ### Fixed
 

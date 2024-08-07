@@ -12,3 +12,4 @@ Hazard Tutorials
    TC Rain <climada_hazard_TCRain>
    TC Surge (Bathtub Model) <climada_hazard_TCSurgeBathtub>
    Wildfire <climada_hazard_Wildfire>
+   climada_hazard_glofas_rf
