@@ -23,7 +23,7 @@ defaults:
 
 jobs:
   build-and-test:
-    name: Unit Tests
+    name: Unit Test Pipeline
     runs-on: ubuntu-latest
     permissions:
       # For publishing results
