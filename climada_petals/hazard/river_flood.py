@@ -23,9 +23,10 @@ __all__ = ['RiverFlood']
 
 import logging
 import datetime as dt
-from collections.abc import Iterable
+import copy
 from pathlib import Path
 
+from typing import Iterable, Union, Optional
 import numpy as np
 import scipy as sp
 import xarray as xr
@@ -37,21 +38,29 @@ from shapely.geometry import Polygon, MultiPolygon
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV
 import climada.util.coordinates as u_coord
 from climada.hazard.base import Hazard
+from climada.util import files_handler as u_fh
 from climada.hazard.centroids import Centroids
+from climada import CONFIG
+
+AQUEDUCT_SOURCE_LINK = CONFIG.hazard.flood.resources.aqueduct.str()
+DOWNLOAD_DIRECTORY = CONFIG.hazard.flood.local_data.aqueduct.dir()
 
 NATID_INFO = pd.read_csv(RIVER_FLOOD_REGIONS_CSV)
 
-
 LOGGER = logging.getLogger(__name__)
+
+RETURN_PERIODS = [2, 5, 10, 25, 50, 100, 250, 500, 1000]
 
 HAZ_TYPE = 'RF'
 """Hazard type acronym RiverFlood"""
 
-
 class RiverFlood(Hazard):
-    """Contains flood events
-    Flood intensities are calculated by means of the
-    CaMa-Flood global hydrodynamic model
+    """
+    It contains flood events retrieved by: 
+    - PIK/ISIMIP:
+        https://files.isimip.org/cama-flood/results/
+    - Aqueduct project:
+        https://www.wri.org/data/aqueduct-floods-hazard-maps
 
     Attributes
     ----------
@@ -76,9 +85,100 @@ class RiverFlood(Hazard):
         Hazard.__init__(self, *args, haz_type=HAZ_TYPE, **kwargs)
 
     @classmethod
-    def from_nc(cls, dph_path=None, frc_path=None, origin=False,
-                centroids=None, countries=None, reg=None, shape=None, ISINatIDGrid=False,
-                years=None):
+    def from_aqueduct_tif(cls,
+                          scenario: str,
+                          target_year : str,
+                          gcm: str,
+                          return_periods: Union[int, Iterable[int]]=None,
+                          countries: Optional[Union[str, Iterable[str]]]=None,
+                          boundaries: Iterable[float]=None,
+                          dwd_dir: str=DOWNLOAD_DIRECTORY):
+        """
+        It downloads and extracts riverine flood events
+        pulled by the Aqueduct project
+
+        scenario : str
+            scenario to use. Possible values are historical, 45 and 85.
+            The latter two clearly refer to RCP4.5 and RCP8.5.
+        target_year : str
+            future target year. Possible values are 1980, 2030, 2050 and 2080.
+        gcm : str
+            the Global Circulation Model to use. Possible values are
+                WATCH, NorESM1-M, GFDL-ESM2M, HadGEM2-ES, IPSL-CM5A-LR
+                and MIROC-ESM-CHEM.
+            WATCH is used only under historic, all others are used in the 
+            two RCPs.
+        return_periods : int or list of int
+            events' return periods.
+            Possible values are 2, 5, 10, 25, 50, 100, 250, 500, 1000.
+            By default, all are considered.
+        countries : str or list of str
+            countries ISO3 codes
+        boundaries : tuple of floats
+            geographical boundaries in the order:
+                minimum longitude, minimum latitude,
+                maximum longitude, maximum latitude
+        """
+
+        if return_periods is None:
+            return_periods = RETURN_PERIODS
+
+        elif isinstance(return_periods, int):
+            return_periods = [return_periods]
+
+        return_periods.sort(reverse=True)
+
+        if isinstance(countries, str):
+            countries = [countries]
+
+        if scenario in ['45', '85']:
+            scenario = f'rcp{scenario[0]}p{scenario[1]}'
+
+        file_names = [f"inunriver_{scenario}_{gcm.zfill(14)}"
+                      f"_{target_year}_rp{str(rp).zfill(5)}.tif"
+                      for rp in return_periods]
+
+        file_paths = []
+        for file_name in file_names:
+            link_to_file = "".join([AQUEDUCT_SOURCE_LINK, file_name])
+            file_paths.append(dwd_dir / file_name)
+
+            if not file_paths[-1].exists():
+                u_fh.download_file(link_to_file, download_dir = dwd_dir)
+
+        if countries:
+            geom = u_coord.get_land_geometry(countries).geoms
+
+        elif boundaries:
+            min_lon, min_lat, max_lon, max_lat = boundaries
+            geom = [Polygon([(min_lon, min_lat),
+                                (max_lon, min_lat),
+                                (max_lon, max_lat),
+                                (min_lon, max_lat)])]
+
+        else:
+            geom = None
+
+        event_id = np.arange(len(file_names))
+        frequencies = np.diff(1 / np.array(return_periods), prepend=0)
+        event_names = [f"1-in-{return_periods[i]}y_{scenario}_{target_year}"
+                        for i in range(len(file_names))]
+
+        haz = cls().from_raster(files_intensity=file_paths,
+                                geometry=geom,
+                                attrs={'event_id': event_id,
+                                       'event_name': event_names,
+                                       'frequency': frequencies})
+
+        haz.centroids.set_meta_to_lat_lon()
+        haz.units = 'm'
+
+        return haz
+
+    @classmethod
+    def from_isimip_nc(cls, dph_path=None, frc_path=None, origin=False,
+                        centroids=None, countries=None, reg=None, shape=None,
+                        ISINatIDGrid=False, years=None):
         """Wrapper to fill hazard from nc_flood file
 
         Parameters
@@ -136,22 +236,22 @@ class RiverFlood(Hazard):
             if ISINatIDGrid:
 
                 dest_centroids = RiverFlood._select_exact_area(countries, reg)[0]
-                centroids_meta = dest_centroids.get_meta()
+                meta_centroids = copy.copy(dest_centroids)
+                meta_centroids.set_lat_lon_to_meta()
 
                 haz = cls.from_raster(files_intensity=[dph_path],
                                       files_fraction=[frc_path], band=bands.tolist(),
-                                      transform=centroids_meta['transform'],
-                                      width=centroids_meta['width'],
-                                      height=centroids_meta['height'],
+                                      transform=meta_centroids.meta['transform'],
+                                      width=meta_centroids.meta['width'],
+                                      height=meta_centroids.meta['height'],
                                       resampling=Resampling.nearest)
-                haz_centroids_meta = haz.centroids.get_meta()
-                x_i = ((dest_centroids.lon - haz_centroids_meta['transform'][2]) /
-                       haz_centroids_meta['transform'][0]).astype(int)
-                y_i = ((dest_centroids.lat - haz_centroids_meta['transform'][5]) /
-                       haz_centroids_meta['transform'][4]).astype(int)
+                x_i = ((dest_centroids.lon - haz.centroids.meta['transform'][2]) /
+                       haz.centroids.meta['transform'][0]).astype(int)
+                y_i = ((dest_centroids.lat - haz.centroids.meta['transform'][5]) /
+                       haz.centroids.meta['transform'][4]).astype(int)
 
-                fraction = haz.fraction[:, y_i * haz_centroids_meta['width'] + x_i]
-                intensity = haz.intensity[:, y_i * haz_centroids_meta['width'] + x_i]
+                fraction = haz.fraction[:, y_i * haz.centroids.meta['width'] + x_i]
+                intensity = haz.intensity[:, y_i * haz.centroids.meta['width'] + x_i]
 
                 haz.centroids = dest_centroids
                 haz.intensity = sp.sparse.csr_matrix(intensity)
@@ -165,12 +265,14 @@ class RiverFlood(Hazard):
                                           files_fraction=[frc_path],
                                           band=bands.tolist(),
                                           geometry=cntry_geom.geoms)
+                    # self.centroids.set_meta_to_lat_lon()
                 else:
                     cntry_geom = u_coord.get_land_geometry(countries)
                     haz = cls.from_raster(files_intensity=[dph_path],
                                           files_fraction=[frc_path],
                                           band=bands.tolist(),
                                           geometry=cntry_geom.geoms)
+                    # self.centroids.set_meta_to_lat_lon()
 
         elif shape:
             shapes = gpd.read_file(shape)
@@ -192,6 +294,7 @@ class RiverFlood(Hazard):
             haz = cls.from_raster(files_intensity=[dph_path],
                                   files_fraction=[frc_path],
                                   band=bands.tolist())
+            # self.centroids.set_meta_to_lat_lon()
 
         else:  # use given centroids
             # if centroids.meta or grid_is_regular(centroids)[0]:
@@ -202,6 +305,8 @@ class RiverFlood(Hazard):
             #      (transform)
             #      reprojection change resampling"""
             # else:
+            if centroids.meta:
+                centroids.set_meta_to_lat_lon()
             metafrc, fraction = u_coord.read_raster(frc_path, band=bands.tolist())
             metaint, intensity = u_coord.read_raster(dph_path, band=bands.tolist())
             x_i = ((centroids.lon - metafrc['transform'][2]) /
@@ -239,11 +344,11 @@ class RiverFlood(Hazard):
 
         return haz
 
-    def set_from_nc(self, *args, **kwargs):
-        """This function is deprecated, use RiverFlood.from_nc instead."""
-        LOGGER.warning("The use of RiverFlood.set_from_nc is deprecated."
-                       "Use LowFlow.from_nc instead.")
-        self.__dict__ = RiverFlood.from_nc(*args, **kwargs).__dict__
+    def set_from_isimip_nc(self, *args, **kwargs):
+        """This function is deprecated, use RiverFlood.from_isimip_nc instead."""
+        LOGGER.warning("The use of RiverFlood.from_isimip_nc is deprecated."
+                       "Use RiverFlood.from_isimip_nc instead.")
+        self.__dict__ = RiverFlood.from_isimip_nc(*args, **kwargs).__dict__
 
     def exclude_trends(self, fld_trend_path, dis):
         """
@@ -315,7 +420,7 @@ class RiverFlood(Hazard):
         MemoryError
         """
         self.centroids.set_area_pixel()
-        area_centr = self.centroids.get_area_pixel()
+        area_centr = self.centroids.area_pixel
         event_years = np.array([dt.date.fromordinal(self.date[i]).year
                                 for i in range(len(self.date))])
         years = np.unique(event_years)

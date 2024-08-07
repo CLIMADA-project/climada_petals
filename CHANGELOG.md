@@ -1,12 +1,8 @@
 # Changelog
 
-## Unreleased
+## 4.1.0
 
-Release date: YYYY-MM-DD
-
-Code freeze date: YYYY-MM-DD
-
-### Description
+Release date: 2024-02-19
 
 ### Dependency Changes
 
