@@ -108,6 +108,9 @@ class ImpfRiverFlood(ImpactFunc):
         elif sector == 'agriculture':
             impf_values, impf_id = from_jrc_impf_agriculture(region)
 
+        else:
+            raise ValueError(f"Unrecognized sector: {sector}")
+
         impf = cls()
         impf.name = f"Flood {region} JRC {sector.capitalize()} noPAA"
         impf.continent = f"{region}"
