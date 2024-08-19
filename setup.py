@@ -13,7 +13,7 @@ with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
 setup(
     name='climada_petals',
 
-    version='4.1.1-dev',
+    version='5.0.1-dev',
 
     description='CLIMADA Extensions in Python',
 
@@ -38,7 +38,8 @@ setup(
 
     install_requires=[
         'climada>=4.1',
-        'boario==0.5.9',
+        'climada>=5.0',
+        'boario==0.5.10',
         'cdsapi',
         'osm-flex',
         "pymrio",
