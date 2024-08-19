@@ -31,7 +31,7 @@ import numpy as np
 import pymrio
 
 from boario.extended_models import ARIOPsiModel
-from boario.event import EventKapitalRecover, EventKapitalRebuild, EventArbitraryProd
+from boario.event import EventKapitalRecover, EventKapitalRebuild
 from boario.simulation import Simulation
 
 from climada import CONFIG
@@ -819,11 +819,14 @@ class SupplyChain:
 
             # Currently not working in BoARIO.
             # elif boario_type == 'shockprod':
-            #     events_list = [EventArbitraryProd.from_series(
-            #                             impact=self.secs_shock.iloc[i],
-            #                             occurrence = (self.events_date[i]-self.events_date.min()+1),
-            #                             **boario_params['event']
-            #                 ) for i in range(n_events)
+            #     from boario.event import EventArbitraryProd
+            #     events_list = [
+            #        EventArbitraryProd.from_series(
+            #            impact=self.secs_shock.iloc[i],
+            #            occurrence = (self.events_date[i]-self.events_date.min()+1),
+            #            **boario_params['event']
+            #         )
+            #         for i in range(n_events)
             #     ]
 
             else:
