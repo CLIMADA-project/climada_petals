@@ -10,6 +10,8 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+Added:
+
 - `boario` >=0.5.9
 
 ### Added
