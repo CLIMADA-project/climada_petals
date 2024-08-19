@@ -128,7 +128,7 @@ class TCSurgeBathtub(Hazard):
 
         if inland_decay_rate != 0:
             # Add decay according to distance from coast
-            dist_coast_km = np.abs(centroids_dist_coast[coastal_idx]) / 1000
+            dist_coast_km = np.abs(centroids.get_dist_coast()[coastal_idx]) / 1000
             coastal_centroids_h += inland_decay_rate * dist_coast_km
         if isinstance(add_sea_level_rise, np.ndarray):
             coastal_centroids_h -= add_sea_level_rise[elevation_msk]
@@ -188,17 +188,10 @@ def _calc_coastal_mask(centroids, intensity):
         - Within `MAX_DIST_COAST` kilometers from the coast.
         - Within the latitude range of ±`MAX_LATITUDE` degrees.
 
-    Notes
-    -----
-    The function first checks if the `dist_coast` attribute of `centroids` is set and valid. If not, it calls
-    `set_dist_coast` with `signed=True` and `precomputed=True` to compute the distances.
     """
-    if not centroids.dist_coast.size or np.all(centroids.dist_coast >= 0):
-        centroids.set_dist_coast(signed=True, precomputed=True)
-
     coastal_msk = (intensity > 0).sum(axis=0).A1 > 0
-    coastal_msk &= (centroids.dist_coast < 0)
-    coastal_msk &= (centroids.dist_coast >= -MAX_DIST_COAST * 1000)
+    coastal_msk &= (centroids.get_dist_coast(signed=True) < 0)
+    coastal_msk &= (centroids.get_dist_coast(signed=True) >= -MAX_DIST_COAST * 1000)
     coastal_msk &= (np.abs(centroids.lat) <= MAX_LATITUDE)
     return coastal_msk
 
