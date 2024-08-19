@@ -37,7 +37,7 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
-        'boario==0.5.9',
+        'boario',
         'climada>=5.0',
         'cdsapi',
         'osm-flex',
