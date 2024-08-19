@@ -87,7 +87,6 @@ class TCSurgeBathtub(Hazard):
             centroids, intensity = centroids.select(sel_cen=coastal_msk), intensity[:,coastal_msk]
             centroids, intensity = _downscale_sparse_matrix(intensity, centroids, higher_res)
             coastal_msk = _calc_coastal_mask(centroids, intensity)
-
         # Load elevation at coastal centroids
         coastal_centroids_h = u_coord.read_raster_sample(
             topo_path, centroids.lat[coastal_msk], centroids.lon[coastal_msk])
@@ -129,7 +128,7 @@ class TCSurgeBathtub(Hazard):
 
         if inland_decay_rate != 0:
             # Add decay according to distance from coast
-            dist_coast_km = np.abs(centroids.dist_coast[coastal_idx]) / 1000
+            dist_coast_km = np.abs(centroids_dist_coast[coastal_idx]) / 1000
             coastal_centroids_h += inland_decay_rate * dist_coast_km
         if isinstance(add_sea_level_rise, np.ndarray):
             coastal_centroids_h -= add_sea_level_rise[elevation_msk]
@@ -459,12 +458,9 @@ def _fraction_on_land(centroids, topo_path):
     """
     bounds = np.array(centroids.total_bounds)
     shape = [0, 0]
-    if centroids.meta:
-        shape = centroids.shape
-        cen_trans = centroids.meta['transform']
-    else:
-        shape[0], shape[1], cen_trans = u_coord.pts_to_raster_meta(
-            bounds, min(u_coord.get_resolution(centroids.lat, centroids.lon)))
+    shape[0], shape[1], cen_trans = u_coord.pts_to_raster_meta(
+        points_bounds=bounds,
+        res=min(u_coord.get_resolution(centroids.lat, centroids.lon)))
 
     read_raster_buffer = 0.5 * max(np.abs(cen_trans[0]), np.abs(cen_trans[4]))
     bounds += read_raster_buffer * np.array([-1., -1., 1., 1.])
@@ -481,10 +477,5 @@ def _fraction_on_land(centroids, topo_path):
                             dst_transform=cen_trans, dst_crs=centroids.crs,
                             resampling=rasterio.warp.Resampling.average,
                             src_nodata=dem_nodata, dst_nodata=0.0)
-
-    if not centroids.meta:
-        x_i = ((centroids.lon - cen_trans[2]) / cen_trans[0]).astype(int)
-        y_i = ((centroids.lat - cen_trans[5]) / cen_trans[4]).astype(int)
-        fractions = fractions[y_i, x_i]
 
     return fractions.reshape(-1)

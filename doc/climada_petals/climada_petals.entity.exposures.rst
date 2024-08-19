@@ -1,10 +1,6 @@
 climada\_petals\.entity\.exposures package
 ==========================================
 
-.. toctree::
-
-    climada_petals.entity.exposures.openstreetmap
-
 climada\_petals\.entity\.exposures\.black\_marble module
 --------------------------------------------------------
 
@@ -25,6 +21,14 @@ climada\_petals\.entity\.exposures\.gdp\_asset module
 -----------------------------------------------------
 
 .. automodule:: climada_petals.entity.exposures.gdp_asset
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+climada\_petals\.entity\.exposures\.osm\_dataloader module
+----------------------------------------------------------
+
+.. automodule:: climada_petals.entity.exposures.osm_dataloader
     :members:
     :undoc-members:
     :show-inheritance:
