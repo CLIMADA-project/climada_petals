@@ -10,7 +10,13 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+Added:
+
+- `boario` >=0.5.9
+
 ### Added
+
+- Included `boario` in the supplychain module [#81](https://github.com/CLIMADA-project/climada_petals/pull/81/)
 
 ### Changed
 
@@ -46,6 +52,8 @@ Added:
 - Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
 - Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
 - Store all-zero fraction matrices in `LowFlow` and `WildFire` hazards [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
+
+- `eeioa` approach from the supply chain module. See [associated discussion](https://github.com/CLIMADA-project/climada_petals/pull/81#discussion_r1596546221).
 
 ## 4.1.0
 
@@ -148,4 +156,3 @@ Release aligned with climada (core) 3.3.
 ### Fixed
 
 - fix issue [#69](https://github.com/CLIMADA-project/climada_petals/issues/70) Warn.zeropadding for islands [](https://github.com/CLIMADA-project/climada_petals/pull/70)
-
