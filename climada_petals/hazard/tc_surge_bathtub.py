@@ -413,22 +413,47 @@ def _downscale_sparse_matrix(matrix, centroids, higher_res, method="linear"):
     intensities = []
     lowres_coords = centroids.coord
     hr_coordinates_full = _downscale_coordinates(lowres_coords, higher_res)
-    for i in tqdm(range(matrix.shape[0])):
+    for i in range(matrix.shape[0]):
+        # Need at least 3 points to interpolates
         if matrix[i].size > 3:
-            values = matrix[i].data
-            new_matrix = griddata(lowres_coords[matrix[i].indices],
-                                         values,
-                                         hr_coordinates_full,
-                                         method=method,
-                                         fill_value=0)
-            intensities.append(sparse.csr_matrix(new_matrix,shape=(1,hr_coordinates_full[:,0].size)))
+            # In some rare case, all points are aligned, current solution is to ignore TC (far from coast anyway)
+            if _is_a_line(lowres_coords[matrix[i].indices]):
+                warnings.warn(
+                    f"Coordinates are aligned, interpolation is not possible, will ignore this event (TC {i+1}, with {matrix[i].size} non-zero intensity after filter)."
+                )
+                intensities.append(
+                    sparse.csr_matrix([], shape=(1, hr_coordinates_full[:, 0].size))
+                )
+            else:
+                values = matrix[i].data
+                new_matrix = griddata(
+                    lowres_coords[matrix[i].indices],
+                    values,
+                    hr_coordinates_full,
+                    method=method,
+                    fill_value=0,
+                )
+                intensities.append(
+                    sparse.csr_matrix(new_matrix, shape=(1, hr_coordinates_full[:, 0].size))
+                )
         else:
-            intensities.append(sparse.csr_matrix([],shape=(1,hr_coordinates_full[:,0].size)))
+            intensities.append(
+                sparse.csr_matrix([], shape=(1, hr_coordinates_full[:, 0].size))
+            )
 
-    new_centroids = Centroids.from_lat_lon(hr_coordinates_full[:,0],hr_coordinates_full[:,1])
+    new_centroids = Centroids.from_lat_lon(
+        hr_coordinates_full[:, 0], hr_coordinates_full[:, 1]
+    )
     new_intensity = sparse.vstack(intensities)
-    return new_centroids,new_intensity
+    return new_centroids, new_intensity
 
+
+def _is_a_line(coords):
+    """Determine whether coordinates are aligned. Used to check interpolation is possible."""
+    return (
+        np.all(coords[:, 0] == coords[0, 0]) or
+        np.all(coords[:, 1] == coords[0, 1])
+    )
 
 def _fraction_on_land(centroids, topo_path):
     """Determine fraction of each centroid cell that is on land.
