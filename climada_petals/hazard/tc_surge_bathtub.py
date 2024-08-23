@@ -23,6 +23,7 @@ __all__ = ['TCSurgeBathtub']
 
 import copy
 import logging
+import warnings
 
 import numpy as np
 from scipy import sparse
