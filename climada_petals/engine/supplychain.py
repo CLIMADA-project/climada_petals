@@ -22,10 +22,12 @@ Define the SupplyChain class.
 __all__ = ["SupplyChain"]
 
 import logging
+from typing import Literal
 import warnings
 import pandas as pd
 import numpy as np
 
+import copy
 import pymrio
 
 from boario.extended_models import ARIOPsiModel
@@ -33,6 +35,8 @@ from boario.event import EventKapitalRecover, EventKapitalRebuild
 from boario.simulation import Simulation
 
 from climada import CONFIG
+from climada.engine import Impact
+from climada.entity import Exposures
 import climada.util.coordinates as u_coord
 
 from climada_petals.engine.supplychain.utils import (
@@ -54,9 +58,47 @@ VA_NAME = "value added"
 """Index name for value added"""
 
 class DirectShock:
-    pass
+    """DirectShock class.
 
-class IndirectShock:
+    The DirectShock class provides methods for 'translating' an Impact object into
+    an economic shock, corresponding to an MRIOT table, from which indirect economic
+    costs can be computed.
+
+    Attributes
+    ----------
+    mriot : pymrio.IOSystem
+            An object containing all MRIOT related info (see also pymrio package):
+                mriot.Z : transaction matrix, or interindustry flows matrix
+                mriot.Y : final demand
+                mriot.x : industry or total output
+                mriot.meta : metadata
+
+    exposed_assets: pd.DataFrame
+            Exposure for each region/sector in the MRIOT.
+
+    impacted_assets: pd.DataFrame
+            Impact for each region/sector in the MRIOT, for each events.
+            Row indexes correspond to event_ids of the original initial object.
+
+
+    """
+    def __init__(self, mriot, exposed_assets, impacted_assets) -> None:
+        self.mriot = copy.deepcopy(mriot)
+        self.exposed_assets = exposed_assets
+        self.impacted_assets = impacted_assets
+
+    @classmethod
+    def from_IOSystem(cls,
+                      mriot: pymrio.IOSystem,
+                      exposure: Exposures,
+                      impact: Impact,
+
+                      ):
+
+
+        return cls(mriot, exposed_assets, impacted_assets)
+
+class IndirectCost:
     pass
 
 class SupplyChain:
@@ -633,3 +675,48 @@ class SupplyChain:
             mriot_reg_name = "ROW"
 
         return mriot_reg_name
+
+
+def map_exposure_with_mask(exposures: Exposures,
+                           mask: np.ndarray,
+                           index_name: str,
+                           index_values: list|str,
+                  ) -> pd.Series:
+    values = exposures.loc[mask, "values"]
+    return pd.Series(values, index=index_values, name=index_name)
+
+
+def map_exposure_to_mriot_sectors(exposures: Exposures,
+                           mriot: pymrio.IOSystem,
+                           sector_mapping: dict|None,
+                          r_ids_not_mapped: str|Literal["ignore"] = "ROW",
+                          ) -> pd.Series:
+    if "category_id" not in exposures.gdf.columns:
+        raise ValueError(f"'category_id' column not found in given exposure. Mapping not possible.")
+
+
+    def map_exposure_to_mriot_regions(exposures: Exposures,
+                           mriot: pymrio.IOSystem,
+                           region_mapping: dict|None,
+                          reg_ids_not_mapped: str|Literal["ignore"] = "ROW",
+                          ) -> pd.Series:
+    """
+    Creates a mapping from an x,y Exposures object to a Region, Sector one.
+    """
+    if "region_id" not in exposures.gdf.columns:
+        raise ValueError(f"'region_id' column not found in given exposure. Mapping not possible.")
+
+    if ids_not_present:=set(region_mapping.keys()) - set(exposures.gdf["region_id"]):
+        raise ValueError(f"Some ids in the mapping are not present in the Exposure:\n{ids_not_present}")
+
+    if regions_not_present:=set(region_mapping.values()) - set(mriot.get_regions()):
+        raise ValueError(f"Some regions in the mapping are not present in the MRIOT:\n{regions_not_present}")
+
+    res = exposures.gdf.copy()
+    res["region"] = res["region_id"].map(region_mapping)
+
+    if reg_ids_not_mapped != "ignore":
+        res["region"] = res["region"].fillna(reg_ids_not_mapped)
+
+    res = res.groupby("region")["value"].sum()
+    return res
