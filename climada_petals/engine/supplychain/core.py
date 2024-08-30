@@ -22,7 +22,7 @@ Define the SupplyChain class.
 __all__ = ["SupplyChain"]
 
 import logging
-from typing import Literal
+from typing import Iterable, Literal
 import warnings
 import pandas as pd
 import numpy as np
@@ -40,6 +40,8 @@ from climada.entity import Exposures
 import climada.util.coordinates as u_coord
 
 from climada_petals.engine.supplychain.utils import (
+    distribute_reg_impact_to_sectors,
+    get_mriot_type,
     mriot_file_name,
     calc_B,
     calc_va,
@@ -47,6 +49,9 @@ from climada_petals.engine.supplychain.utils import (
     calc_x_from_G,
     parse_mriot,
     download_mriot,
+    translate_exp_to_regions,
+    translate_exp_to_sectors,
+    translate_reg_impact_to_mriot_regions
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -83,23 +88,79 @@ class DirectShock:
 
     """
     def __init__(self, mriot, exposed_assets, impacted_assets) -> None:
-        self.mriot = copy.deepcopy(mriot)
+        self.mriot_sectors = mriot.get_sectors()
+        self.mriot_regions = mriot.get_regions()
+        self.mriot_name = mriot.name
         self.exposed_assets = exposed_assets
         self.impacted_assets = impacted_assets
+        self.shock = 1 - (impacted_assets / exposed_assets)
 
     @classmethod
-    def from_IOSystem(cls,
+    def from_exp_imp(cls,
                       mriot: pymrio.IOSystem,
                       exposure: Exposures,
                       impact: Impact,
-
+                      affected_sectors: Iterable[str] | dict[str,float] | Literal["all"],
+                     impact_distribution: dict[str,float]|pd.Series|None,
+                     exp_value_col: str = "value",
                       ):
 
+        mriot_type = get_mriot_type(mriot)
+        exp = translate_exp_to_regions(exposure, mriot_type=mriot_type)
+        exposed_assets = translate_exp_to_sectors(exp, affected_sectors=affected_sectors,mriot=mriot,value_col=exp_value_col)
+        return cls.from_assets_imp(mriot, exposed_assets, impact, affected_sectors, impact_distribution)
+
+    @classmethod
+    def from_assets_imp(cls,
+                      mriot: pymrio.IOSystem,
+                      exposed_assets: pd.Series,
+                      impact: Impact,
+                      affected_sectors: Iterable[str] | dict[str,float] | Literal["all"],
+                     impact_distribution: dict[str,float]|pd.Series|None,
+                      ):
+
+        mriot_type = get_mriot_type(mriot)
+        impacted_assets = impact.impact_at_reg()
+        impacted_assets = translate_reg_impact_to_mriot_regions(impacted_assets, mriot_type)
+
+        if impact_distribution is None:
+            # Default uses production distribution across sectors, region.
+            impact_distribution = mriot.x.loc[pd.IndexSlice[impacted_assets.columns, affected_sectors], "indout"].groupby(level=0).transform(lambda x: x / x.sum())
+
+        if isinstance(impact_distribution, dict):
+            impact_distribution = pd.Series(impact_distribution)
+
+        if not isinstance(impact_distribution, pd.Series):
+            raise ValueError(f"impact_distribution could not be converted to a Series")
+
+        impacted_assets = distribute_reg_impact_to_sectors(impacted_assets, impact_distribution)
 
         return cls(mriot, exposed_assets, impacted_assets)
 
+
 class IndirectCost:
-    pass
+    def __init__(self, direct_shock: DirectShock, mriot:pymrio.IOSystem) -> None:
+
+        self.direct_shock=direct_shock
+        self.mriot = mriot
+
+
+    def calc(self,
+             method:str):
+        if method == "leontief":
+            demand = self.mriot.Y.sum(1)
+            shock = self.direct_shock.shock.reindex(columns=demand.index, fill_value=1.0)
+            degraded_demand = shock * demand
+
+            res = []
+            for event_id in shock.index:
+                changed_production = pymrio.calc_x_from_L(self.mriot.L, degraded_demand.loc[event_id])["indout"]
+                # If production was already at 0, sometimes new production becomes negative.
+                # This should not be significant.
+                changed_production.loc[changed_production < 0] = 0.0
+                res.append(changed_production)
+
+            return pd.DataFrame(res, index=shock.index)
 
 class SupplyChain:
     """SupplyChain class.
@@ -675,48 +736,3 @@ class SupplyChain:
             mriot_reg_name = "ROW"
 
         return mriot_reg_name
-
-
-def map_exposure_with_mask(exposures: Exposures,
-                           mask: np.ndarray,
-                           index_name: str,
-                           index_values: list|str,
-                  ) -> pd.Series:
-    values = exposures.loc[mask, "values"]
-    return pd.Series(values, index=index_values, name=index_name)
-
-
-def map_exposure_to_mriot_sectors(exposures: Exposures,
-                           mriot: pymrio.IOSystem,
-                           sector_mapping: dict|None,
-                          r_ids_not_mapped: str|Literal["ignore"] = "ROW",
-                          ) -> pd.Series:
-    if "category_id" not in exposures.gdf.columns:
-        raise ValueError(f"'category_id' column not found in given exposure. Mapping not possible.")
-
-
-    def map_exposure_to_mriot_regions(exposures: Exposures,
-                           mriot: pymrio.IOSystem,
-                           region_mapping: dict|None,
-                          reg_ids_not_mapped: str|Literal["ignore"] = "ROW",
-                          ) -> pd.Series:
-    """
-    Creates a mapping from an x,y Exposures object to a Region, Sector one.
-    """
-    if "region_id" not in exposures.gdf.columns:
-        raise ValueError(f"'region_id' column not found in given exposure. Mapping not possible.")
-
-    if ids_not_present:=set(region_mapping.keys()) - set(exposures.gdf["region_id"]):
-        raise ValueError(f"Some ids in the mapping are not present in the Exposure:\n{ids_not_present}")
-
-    if regions_not_present:=set(region_mapping.values()) - set(mriot.get_regions()):
-        raise ValueError(f"Some regions in the mapping are not present in the MRIOT:\n{regions_not_present}")
-
-    res = exposures.gdf.copy()
-    res["region"] = res["region_id"].map(region_mapping)
-
-    if reg_ids_not_mapped != "ignore":
-        res["region"] = res["region"].fillna(reg_ids_not_mapped)
-
-    res = res.groupby("region")["value"].sum()
-    return res
