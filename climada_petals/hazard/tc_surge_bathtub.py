@@ -83,11 +83,24 @@ class TCSurgeBathtub(Hazard):
             centroids.set_meta_to_lat_lon()
 
         coastal_msk = _calc_coastal_mask(centroids, intensity)
+        centroids, intensity = centroids.select(sel_cen=coastal_msk), intensity[:,coastal_msk]
+        if intensity.size == 0:
+            haz = TCSurgeBathtub()
+            haz.centroids = centroids
+            haz.units = 'm'
+            haz.event_id = wind_haz.event_id
+            haz.event_name = wind_haz.event_name
+            haz.date = wind_haz.date
+            haz.orig = wind_haz.orig
+            haz.frequency = wind_haz.frequency
+            haz.intensity = intensity
+            haz.fraction = None
+            return haz
 
         if higher_res is not None:
-            centroids, intensity = centroids.select(sel_cen=coastal_msk), intensity[:,coastal_msk]
             centroids, intensity = _downscale_sparse_matrix(intensity, centroids, higher_res)
             coastal_msk = _calc_coastal_mask(centroids, intensity)
+
         # Load elevation at coastal centroids
         coastal_centroids_h = u_coord.read_raster_sample(
             topo_path, centroids.lat[coastal_msk], centroids.lon[coastal_msk])
