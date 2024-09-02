@@ -27,7 +27,7 @@ import warnings
 
 import numpy as np
 from scipy import sparse
-from scipy.spatial import KDTree
+from scipy.spatial import KDTree, QhullError
 from tqdm import tqdm
 import rasterio.warp
 
@@ -426,17 +426,22 @@ def _downscale_sparse_matrix(matrix, centroids, higher_res, method="linear"):
                     sparse.csr_matrix([], shape=(1, hr_coordinates_full[:, 0].size))
                 )
             else:
-                values = matrix[i].data
-                new_matrix = griddata(
-                    lowres_coords[matrix[i].indices],
-                    values,
-                    hr_coordinates_full,
-                    method=method,
-                    fill_value=0,
-                )
-                intensities.append(
-                    sparse.csr_matrix(new_matrix, shape=(1, hr_coordinates_full[:, 0].size))
-                )
+                try:
+                    values = matrix[i].data
+                    new_matrix = griddata(
+                        lowres_coords[matrix[i].indices],
+                        values,
+                        hr_coordinates_full,
+                        method=method,
+                        fill_value=0,
+                    )
+                    intensities.append(
+                        sparse.csr_matrix(new_matrix, shape=(1, hr_coordinates_full[:, 0].size))
+                    )
+                except QhullError as qhullerr:
+                    warnings.warn(
+                        f"Scipy could not compute the Qhull for this event. Ignoring.\nThe event had {matrix[i].size} non zero intensity centroids.\nHere is the error:\n======={qhullerr}\n======="
+                    )
         else:
             intensities.append(
                 sparse.csr_matrix([], shape=(1, hr_coordinates_full[:, 0].size))
