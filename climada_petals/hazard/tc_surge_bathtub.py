@@ -440,7 +440,7 @@ def _downscale_sparse_matrix(matrix, centroids, higher_res, method="linear"):
                     )
                 except QhullError as qhullerr:
                     warnings.warn(
-                        f"Scipy could not compute the Qhull for this event. Ignoring.\nThe event had {matrix[i].size} non zero intensity centroids.\nHere is the error:\n======={qhullerr}\n======="
+                        f"Scipy could not compute the Qhull for this event. Ignoring.\nThe event (TC {i+1}) had {matrix[i].size} non zero intensity centroids.\nHere is the error:\n======={qhullerr}\n======="
                     )
         else:
             intensities.append(
