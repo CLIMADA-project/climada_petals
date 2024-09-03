@@ -58,12 +58,11 @@ class ForecastHandler:
     """
 
     URL = 'https://cds.climate.copernicus.eu/api/v2'
-    KEY = str(CONFIG.cds_api_key)
     FORMAT_GRIB = 'grib'
     FORMAT_NC = 'nc'
 
     
-    def __init__(self, data_dir='.'):
+    def __init__(self, data_dir='.', KEY = None):
         """
         Initializes the ForecastHandler instance.
 
@@ -77,6 +76,9 @@ class ForecastHandler:
         logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s', level=logging.INFO)
         self.logger = logging.getLogger()
         self.data_dir = data_dir
+        if not KEY:
+            KEY = str(CONFIG.cds_api_key)
+        self.KEY = KEY
         
 
     @staticmethod
