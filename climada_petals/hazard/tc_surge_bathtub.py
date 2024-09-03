@@ -84,7 +84,8 @@ class TCSurgeBathtub(Hazard):
 
         coastal_msk = _calc_coastal_mask(centroids, intensity)
         centroids, intensity = centroids.select(sel_cen=coastal_msk), intensity[:,coastal_msk]
-        if intensity.size == 0:
+
+        if intensity.size == 0 or centroids.size<3:
             haz = TCSurgeBathtub()
             haz.centroids = centroids
             haz.units = 'm'
