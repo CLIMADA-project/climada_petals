@@ -18,4 +18,4 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 init Copernicus forecast handler
 """
-from handler import ForecastHandler
+from .handler import ForecastHandler
