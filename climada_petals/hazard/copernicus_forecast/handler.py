@@ -57,12 +57,11 @@ class ForecastHandler:
     and hazards based on seasonal forecast data from Copernicus Climate Data Store (CDS).
     """
 
-    URL = 'https://cds.climate.copernicus.eu/api/v2'
     FORMAT_GRIB = 'grib'
     FORMAT_NC = 'nc'
 
     
-    def __init__(self, data_dir='.', KEY = None):
+    def __init__(self, data_dir='.', URL = None, KEY = None):
         """
         Initializes the ForecastHandler instance.
 
@@ -76,9 +75,8 @@ class ForecastHandler:
         logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s', level=logging.INFO)
         self.logger = logging.getLogger()
         self.data_dir = data_dir
-        if not KEY:
-            KEY = str(CONFIG.cds_api_key)
         self.KEY = KEY
+        self.URL = URL
         
 
     @staticmethod
