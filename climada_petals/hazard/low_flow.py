@@ -394,12 +394,11 @@ class LowFlow(Hazard):
         self.orig = np.ones(uniq_ev.size)
         self.set_frequency()
 
-        self.intensity = self._intensity_loop(uniq_ev, centroids.coord, res_centr, num_centr)
+        intensity = self._intensity_loop(uniq_ev, centroids.coord, res_centr, num_centr)
 
         # Following values are defined for each event and centroid
-        self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.intensity = intensity.tocsr()
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     def identify_clusters(self, clus_thresh_xy=None, clus_thresh_t=None, min_samples=None):
         """call clustering functions to identify the clusters inside the dataframe
@@ -539,11 +538,7 @@ class LowFlow(Hazard):
         -------
         float
         """
-        if centroids.meta:
-            res_centr = abs(centroids.meta['transform'][4]), \
-                        centroids.meta['transform'][0]
-        else:
-            res_centr = np.abs(u_coord.get_resolution(centroids.lat, centroids.lon))
+        res_centr = np.abs(u_coord.get_resolution(centroids.lat, centroids.lon))
         if np.abs(res_centr[0] - res_centr[1]) > 1.0e-6:
             LOGGER.warning('Centroids do not represent regular pixels %s.', str(res_centr))
             return (res_centr[0] + res_centr[1]) / 2
@@ -645,7 +640,6 @@ def _init_centroids(dis_xarray, centr_res_factor=1):
         (dis_xarray.lon.values.min(), dis_xarray.lat.values.min(),
          dis_xarray.lon.values.max(), dis_xarray.lat.values.max()),
         res=res_data / centr_res_factor)
-    centroids.set_meta_to_lat_lon()
     centroids.set_area_approx()
     centroids.set_on_land()
     centroids.empty_geometry_points()

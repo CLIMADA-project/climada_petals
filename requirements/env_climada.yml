@@ -3,12 +3,14 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - cdsapi>=0.6
-  - meson-python>=0.15
+  - boario>=0.5
+  - cdsapi>=0.7
+  - importlib-metadata<8.0  # 8.0 is incompatible with esmpy 8.4 (which is the only version available for windows 2024-07)
+  - meson-python>=0.15,<0.16  # as of 2024-04 something seems to be wrong with 0.16
   - osm-flex>=1.1
   - overpy>=0.7
   - pymrio>=0.5
-  - rioxarray>=0.13
+  - rioxarray>=0.15
   - ruamel.yaml>=0.18
-  - scikit-image>=0.22
+  - scikit-image>=0.20
   - xesmf>=0.8

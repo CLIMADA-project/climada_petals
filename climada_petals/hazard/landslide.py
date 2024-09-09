@@ -299,8 +299,9 @@ class Landslide(Hazard):
 
         haz = cls()
         # raster with occurrence probs
-        haz.centroids.meta, prob_matrix = \
+        meta, prob_matrix = \
             u_coord.read_raster(path_sourcefile, geometry=[shapely.geometry.box(*bbox, ccw=True)])
+        haz.centroids = Centroids.from_meta(meta)
         prob_matrix = prob_matrix.squeeze()/corr_fact
 
         # sample events from probabilities
@@ -313,11 +314,6 @@ class Landslide(Hazard):
         haz.date = np.array([])
         haz.event_name = np.array(range(n_years))
         haz.event_id = np.array(range(n_years))
-
-        if not haz.centroids.meta['crs'].is_epsg_code:
-            haz.centroids.meta['crs'] = haz.centroids.meta['crs'
-                               ].from_user_input(DEF_CRS)
-        haz.centroids.set_geometry_points()
 
         haz.check()
 

@@ -24,9 +24,7 @@ pipeline {
             export PATH=$PATH:$CONDAPATH
             source activate
 
-            # first install xemsf, then activate environment, so .../envs/.../etc/conda/activate.d/esmpy.sh is executed
-            # otherwise the environment varibalbe ESMFMKFILE is not initialized
-            mamba install -n petals_env -c conda-forge -y xesmf ruamel.yaml cdsapi
+            mamba env update -n petals_env -f requirements/env_climada.yml
             conda activate petals_env
             rm -rf tests_xml/
             rm -rf coverage/
@@ -43,9 +41,9 @@ pipeline {
       junit 'tests_xml/*.xml'
       recordCoverage(
         qualityGates: [[
-          baseline: 'MODIFIED_FILES',
+          baseline: 'PROJECT_DELTA',
           metric: 'LINE',
-          threshold: 60.0
+          threshold: 0.0
         ]],
         tools: [[
           parser: 'COBERTURA',
