@@ -566,12 +566,12 @@ class SupplyChain:
         self.events_date = impact.date[events_w_imp_bool]
 
         self.secs_exp = pd.DataFrame(
-            0,
+            0.0,
             index=["total_value"],
             columns=self.mriot.Z.columns
         )
         self.secs_imp = pd.DataFrame(
-            0,
+            0.0,
             index=impact.event_id[events_w_imp_bool],
             columns=self.mriot.Z.columns
         )
