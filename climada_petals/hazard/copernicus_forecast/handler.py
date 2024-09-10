@@ -35,7 +35,7 @@ This module is typically imported and used within larger scripts or applications
 and risk assessment. See individual function docstrings for specific usage instructions.
 
 Note:
-Ensure you have necessary permissions and comply with CDS data usage policies when using this module.
+Ensure you have the necessary permissions and comply with CDS data usage policies when using this module.
 """
 
 
@@ -95,7 +95,7 @@ class ForecastHandler:
               - 'filename_lead': Prefix for filenames related to this index.
               - 'index_long_name': Full descriptive name of the index.
 
-        If the index is not recognized, returns None.
+        If the index is not recognized, it returns None.
         """
         var_specs = {
             "2m_temperature": {
@@ -183,7 +183,7 @@ class ForecastHandler:
         Parameters:
         area_selection (str): Specifies the area for data selection. Can be one of:
                               - 'global' for worldwide coverage
-                              - A comma-separated string of coordinates (north,east,south,west)
+                              - A comma-separated string of coordinates (north, east, south, west)
                               - One or more country names separated by commas
         margin (float): Additional margin to be added to the bounds in degrees. 
                         Defaults to 0.2 degrees. Ignored for 'global' selection.
@@ -309,7 +309,7 @@ class ForecastHandler:
         data_out (str): Base directory path for storing downloaded data.
         year_list (list of int): Years for which to download data (e.g., [2022, 2023]).
         month_list (list of int): Months for which to download data (1-12, where 1 is January).
-        area_selection (str): Area specification, can be 'global', coordinates, or country names.
+        area_selection (str): Area specification can be 'global', coordinates, or country names.
         overwrite (bool): If True, overwrites existing files; if False, skips existing files.
         tf_index (str): Climate index identifier (e.g., 'HIA', 'Tmean').
         format (str): File format for download, either 'grib' or 'nc' (NetCDF).
