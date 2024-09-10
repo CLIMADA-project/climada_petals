@@ -197,7 +197,11 @@ class ForecastHandler:
         For country names, the function uses external utilities to convert names to 
         ISO codes and fetch geometries. The bounds are then calculated to encompass
         all specified countries with the added margin.
-        """        
+        """       
+        # Validation for valid input format
+        if not isinstance(area_selection, str):
+            raise ValueError("area_selection should be a valid string")
+ 
         if area_selection.lower() == 'global':
             return [90, -180, -90, 180]  # north, east, south, west
         else:
@@ -236,7 +240,7 @@ class ForecastHandler:
 
         Parameters:
         filename (str): Full path and name for the downloaded file.
-        vars (list of str): List of variable names to download (e.g., ['2m_temperature', '2m_dewpoint_temperature']).
+        vars (list of str): List of variable names to download (e.g., ['2m_temperature', '2m_dewpoint_temperature']). These are set by the selection of the index to calculate.
         year (int): The forecast initialization year (e.g., 2023).
         month (int): The forecast initialization month (1-12, where 1 is January).
         l_hours (list of int): List of lead times in hours to download (e.g., [0, 6, 12, 18, 24]).
@@ -269,10 +273,10 @@ class ForecastHandler:
                         'originating_centre': originating_centre,
                         'area': area,
                         'system': system,
-                        'variable': vars,
+                        'variable': vars, 
                         'month': f"{month:02d}",
                         'year': year,
-                        'day': '01',
+                        'day': '01', 
                         'leadtime_hour': l_hours,
                     },
                     f'{download_file}')
