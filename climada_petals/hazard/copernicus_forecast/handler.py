@@ -49,6 +49,9 @@ import pandas as pd
 from climada.util.coordinates import country_to_iso, get_country_geometries
 from climada import CONFIG
 from climada.hazard import Hazard
+import numpy as np
+
+
 
 
 class ForecastHandler:
@@ -87,7 +90,8 @@ class ForecastHandler:
         Parameters:
         index (str): The climate index identifier. Supported values include:
                      'HIA' (Heat Index Adjusted), 'HIS' (Heat Index Simplified),
-                     'Tmean' (Mean Temperature), 'HW' (Heat Wave), 'TR' (Tropical Nights).
+                     'Tmean' (Mean Temperature), 'Tmin' (Minimum Temperature),
+                     'Tmax' (Maximum Temperature), 'HW' (Heat Wave), 'TR' (Tropical Nights).
 
         Returns:
         dict: A dictionary containing the parameters for the specified index, including:
@@ -95,7 +99,7 @@ class ForecastHandler:
               - 'filename_lead': Prefix for filenames related to this index.
               - 'index_long_name': Full descriptive name of the index.
 
-        If the index is not recognized, it returns None.
+        If the index is not recognized, returns None.
         """
         var_specs = {
             "2m_temperature": {
@@ -128,6 +132,17 @@ class ForecastHandler:
                 "filename_lead": "2m_temps",
                 "index_long_name": "Mean_Temperature"
             },
+            "Tmin": {
+                "variables": [var_specs["2m_temperature"]["full_name"]],
+                "filename_lead": "2m_temps",
+                "index_long_name": "Minimum_Temperature"
+            },
+            "Tmax": {
+                "variables": [var_specs["2m_temperature"]["full_name"]],
+                "filename_lead": "2m_temps",
+                "index_long_name": "Maximum_Temperature"
+            },
+            
             "HW": {
                 "variables": [var_specs["2m_temperature"]["full_name"]],
                 "filename_lead": "2m_temps",
@@ -183,7 +198,7 @@ class ForecastHandler:
         Parameters:
         area_selection (str): Specifies the area for data selection. Can be one of:
                               - 'global' for worldwide coverage
-                              - A comma-separated string of coordinates (north, east, south, west)
+                              - A comma-separated string of coordinates (north,east,south,west)
                               - One or more country names separated by commas
         margin (float): Additional margin to be added to the bounds in degrees. 
                         Defaults to 0.2 degrees. Ignored for 'global' selection.
@@ -197,11 +212,7 @@ class ForecastHandler:
         For country names, the function uses external utilities to convert names to 
         ISO codes and fetch geometries. The bounds are then calculated to encompass
         all specified countries with the added margin.
-        """       
-        # Validation for valid input format
-        if not isinstance(area_selection, str):
-            raise ValueError("area_selection should be a valid string")
- 
+        """        
         if area_selection.lower() == 'global':
             return [90, -180, -90, 180]  # north, east, south, west
         else:
@@ -240,7 +251,7 @@ class ForecastHandler:
 
         Parameters:
         filename (str): Full path and name for the downloaded file.
-        vars (list of str): List of variable names to download (e.g., ['2m_temperature', '2m_dewpoint_temperature']). These are set by the selection of the index to calculate.
+        vars (list of str): List of variable names to download (e.g., ['2m_temperature', '2m_dewpoint_temperature']).
         year (int): The forecast initialization year (e.g., 2023).
         month (int): The forecast initialization month (1-12, where 1 is January).
         l_hours (list of int): List of lead times in hours to download (e.g., [0, 6, 12, 18, 24]).
@@ -273,10 +284,10 @@ class ForecastHandler:
                         'originating_centre': originating_centre,
                         'area': area,
                         'system': system,
-                        'variable': vars, 
+                        'variable': vars,
                         'month': f"{month:02d}",
                         'year': year,
-                        'day': '01', 
+                        'day': '01',
                         'leadtime_hour': l_hours,
                     },
                     f'{download_file}')
@@ -313,7 +324,7 @@ class ForecastHandler:
         data_out (str): Base directory path for storing downloaded data.
         year_list (list of int): Years for which to download data (e.g., [2022, 2023]).
         month_list (list of int): Months for which to download data (1-12, where 1 is January).
-        area_selection (str): Area specification can be 'global', coordinates, or country names.
+        area_selection (str): Area specification, can be 'global', coordinates, or country names.
         overwrite (bool): If True, overwrites existing files; if False, skips existing files.
         tf_index (str): Climate index identifier (e.g., 'HIA', 'Tmean').
         format (str): File format for download, either 'grib' or 'nc' (NetCDF).
@@ -344,11 +355,7 @@ class ForecastHandler:
 
                 file_extension = 'grib' if format == self.FORMAT_GRIB else 'nc'
                 download_file = f"{out_dir}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
-                #self.download_multvar_multlead(
-                    #download_file, index_params['variables'], year, month, leadtimes, area,
-                    #overwrite, format, originating_centre, system
-               # )
-                 # NEW: Ensure both temperature and humidity are downloaded for HIS or HIA
+
                 if tf_index in ['HIS', 'HIA']:
                     variables = index_params['variables']  # Both t2m and d2m
                 else:
@@ -438,6 +445,7 @@ class ForecastHandler:
         self.download_data(data_out, year_list, month_list, area_selection, overwrite, tf_index, format, originating_centre, system, max_lead_month)
         self.process_data(data_out, year_list, month_list, area_selection, overwrite, tf_index, format)
 
+   
     @staticmethod
     def calculate_relative_humidity_percent(t2k, tdk):
         """
@@ -454,7 +462,8 @@ class ForecastHandler:
         - This method uses the August-Roche-Magnus approximation for saturation vapor pressure.
         - The calculation is valid for temperatures between -45°C and 60°C.
         - Input temperatures are converted from Kelvin to Celsius within the function.
-        - The output is capped at 100% to avoid unrealistic values due to numerical imprecision.
+        - The output is capped between 0% and 100% to avoid unrealistic values due to numerical imprecision.
+        - If dewpoint temperature exceeds air temperature, relative humidity is capped at 100%.
 
         Formula used:
         es = 6.11 * 10^((7.5 * T) / (237.3 + T))  # Saturation vapor pressure
@@ -465,12 +474,24 @@ class ForecastHandler:
         T: Temperature in Celsius
         Td: Dewpoint temperature in Celsius
         """
+
+        # Convert temperatures from Kelvin to Celsius
         t2c = t2k - 273.15
         tdc = tdk - 273.15
+
+        # Compute the saturation vapor pressure and actual vapor pressure
         es = 6.11 * 10.0 ** (7.5 * t2c / (237.3 + t2c))
         e = 6.11 * 10.0 ** (7.5 * tdc / (237.3 + tdc))
+
+        # Calculate relative humidity
         rh = (e / es) * 100
+
+        # Clip RH values between 0% and 100% to avoid unrealistic results
+        rh = np.clip(rh, 0, 100)
+
+        # Return the relative humidity percentage
         return rh
+
 
     @staticmethod
     def calculate_heat_index_simplified(t2k, tdk):
@@ -499,13 +520,26 @@ class ForecastHandler:
         T: Temperature in Celsius
         RH: Relative Humidity in percent
         """
+
+        # Convert temperatures from Kelvin to Celsius
         t2c = t2k - 273.15
+
+        # Calculate the relative humidity
         rh = ForecastHandler.calculate_relative_humidity_percent(t2k, tdk)
+
+        # Check if any temperatures are below or equal to 20°C, where the heat index formula is invalid
+        if np.any(t2c <= 20):
+            logging.warning("Heat Index Simplified is only valid for temperatures above 20°C.")
+            return t2c  # Return the temperature as the heat index for non-valid cases
+
+        # Simplified heat index formula
         hi = (
             -8.784695 + 1.61139411 * t2c + 2.338549 * rh + 0.14611605 * t2c * rh +
             -1.2308094e-2 * t2c ** 2 + -1.6424828e-2 * rh ** 2 +
-            2.211732e-3 * t2c ** 2 * rh + 7.2546e-4 * t2c * rh ** 2 + -3.582e-6 * t2c ** 2 * rh ** 2
+            2.211732e-3 * t2c ** 2 * rh + 7.2546e-4 * t2c * rh ** 2 +
+            -3.582e-6 * t2c ** 2 * rh ** 2
         )
+
         return hi
 
     @staticmethod
@@ -573,44 +607,38 @@ class ForecastHandler:
         return da_index
 
 
+
+
     def calculate_heat_indices(self, data_out, year_list, month_list, area, overwrite, tf_index):
         """
-        Calculates, processes, and saves heat indices or temperature-related metrics for specified years and months.
-
+        Calculates, processes, and saves heat indices or temperature-related metrics (Tmean, Tmax, Tmin, HIS, HIA)
+        for specified years and months.
+    
         Parameters:
         data_out (str): Base directory path for output data.
         year_list (list of int): Years for which to calculate indices.
-        month_list (list of int): Months for which to calculate indices (1-12).
+        month_list (list of int): Months to calculate indices (1-12).
         area (list of float): Geographic area bounds [north, west, south, east] in degrees.
         overwrite (bool): If True, overwrites existing files; if False, skips processing for existing files.
-        tf_index (str): The climate index being processed ('HIS', 'HIA', or 'Tmean').
-
+        tf_index (str): The climate index being processed ('HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin').
+    
         Returns:
         None
-
+    
         Notes:
         - Creates a directory structure organized by year and index type for output files.
-        - Processes daily data into monthly counts of days exceeding thresholds.
-        - Calculates ensemble statistics including mean, median, max, min, std, and percentiles.
+        - Processes daily data into monthly values.
+        - Calculates ensemble statistics, including mean, median, max, min, std, and percentiles.
         - Saves two types of NetCDF files:
-          1. Monthly counts for all ensemble members: {tf_index}_{year}{month}.nc
+          1. Monthly values for all ensemble members: {tf_index}_{year}{month}.nc
           2. Ensemble statistics: {tf_index}_{year}{month}_statistics.nc
         - Skips processing if output files already exist and overwrite is False.
         - Logs warnings for missing input files and information about saved outputs.
-
-        The method performs the following steps:
-        1. Sets up output directories and file paths.
-        2. Loads daily data for each month.
-        3. Calculates the specified index (heat index or mean temperature).
-        4. Processes data to align with forecast months.
-        5. Calculates monthly counts of days exceeding thresholds.
-        6. Saves monthly counts for all ensemble members.
-        7. Calculates and saves ensemble statistics.
         """
         index_params = self.get_index_params(tf_index)
         index_out = f"{data_out}/{tf_index}"
         area_str = f'{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}'
-
+    
         for year in year_list:
             if not os.path.exists(f'{index_out}/{year}'):
                 os.makedirs(f'{index_out}/{year}')
@@ -622,59 +650,79 @@ class ForecastHandler:
                 if os.path.isfile(index_file) and not overwrite:
                     logging.info(f'Corresponding index file {index_file} already exists!')
                     continue  # Skip if the file already exists and overwrite is False
-
+    
                 daily_out = f'{data_out}/netcdf/daily/{year}/{month_str}'
             
                 try:
                     with xr.open_dataset(f'{daily_out}/{index_params["filename_lead"]}_{area_str}_{year}{month_str}.nc') as daily_ds:
-                        if tf_index != 'Tmean':
-                            da_t2k = daily_ds['t2m']
-                            da_tdk = daily_ds['d2m']
-                            da_index = self.calculate_heat_index(da_t2k, da_tdk, tf_index)
-                        else:
-                            da_index = daily_ds['t2m'] - 273.15
+                        # Handling various indices
+                        if tf_index == 'Tmean':
+                            # Calculate mean temperature
+                            da_index = daily_ds['t2m'] - 273.15  # Convert from Kelvin to Celsius
                             da_index.attrs["units"] = "degC"
+                        elif tf_index == 'Tmax':
+                            # Calculate max daily temperature
+                            da_index = daily_ds['t2m'].resample(step='1D').max() - 273.15
+                            da_index.attrs["units"] = "degC"
+                        elif tf_index == 'Tmin':
+                            # Calculate min daily temperature
+                            da_index = daily_ds['t2m'].resample(step='1D').min() - 273.15
+                            da_index.attrs["units"] = "degC"
+                        elif tf_index == 'HIS':
+                            # Calculate simplified heat index
+                            da_index = self.calculate_heat_index(daily_ds['t2m'], daily_ds['d2m'], "HIS")
+                        elif tf_index == 'HIA':
+                            # Calculate adjusted heat index
+                            da_index = self.calculate_heat_index(daily_ds['t2m'], daily_ds['d2m'], "HIA")
+                        else:
+                            raise ValueError(f"Unsupported index: {tf_index}")
+    
+                        # Save the index to a NetCDF file
+                        ds_combined = xr.Dataset({tf_index: da_index})
+                        ds_combined.to_netcdf(f'{daily_out}/{tf_index}_{year}{month_str}.nc')
+                        logging.info(f"{tf_index} saved to {daily_out}/{tf_index}_{year}{month_str}.nc")
+    
                 except FileNotFoundError:
                     logging.warning(f'Data file {daily_out}/{index_params["filename_lead"]}_{area_str}_{year}{month_str}.nc does not exist!')
                     continue
-            
-            # Process data to align with forecast months like in tropical nights
+                
+                # Process data to align with forecast months like in tropical nights
                 valid_times = pd.to_datetime(daily_ds.valid_time.values)
                 forecast_months = valid_times.to_period('M')
                 forecast_months_str = forecast_months.astype(str)
                 step_to_month = dict(zip(daily_ds.step.values, forecast_months_str))
                 forecast_month_da = xr.DataArray(list(step_to_month.values()), coords=[daily_ds.step], dims=['step'])
                 da_index.coords['forecast_month'] = forecast_month_da
-
-            # Calculate monthly counts
-                monthly_counts = (da_index > 0).groupby('forecast_month').sum(dim='step')
-                monthly_counts = monthly_counts.rename(tf_index)
-
-            
-            # Rename forecast_month to step, matching the tropical nights approach
-                monthly_counts = monthly_counts.rename({'forecast_month': 'step'})
-
-            # Save the monthly counts for all members in one file
-                ds_member_counts = xr.Dataset(
-                    {f'{tf_index}': monthly_counts}
-                )
-
-            # Ensure 'number' dimension starts from 1 instead of 0
-                ds_member_counts = ds_member_counts.assign_coords(number=ds_member_counts.number)
-
-            # Save the dataset
-                ds_member_counts.to_netcdf(index_file)
-                logging.info(f'Monthly counts saved to {index_file}')
-            
-             # Now calculate ensemble statistics across members
-                da_index_ens_mean = monthly_counts.mean('number')
-                da_index_ens_median = monthly_counts.median('number')
-                da_index_ens_max = monthly_counts.max('number')
-                da_index_ens_min = monthly_counts.min('number')
-                da_index_ens_std = monthly_counts.std('number')
-                percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
-                ensemble_percentiles = monthly_counts.quantile(percentile_levels, dim="number")
     
+                # Calculate monthly means
+                monthly_means = da_index.groupby('forecast_month').mean(dim='step')
+                monthly_means = monthly_means.rename(tf_index)
+
+                # Rename forecast_month to step
+                monthly_means = monthly_means.rename({"forecast_month": "step"})
+
+    
+                # Save the monthly means for all members in one file
+                ds_member_means = xr.Dataset(
+                    {f'{tf_index}': monthly_means}
+                )
+    
+                # Ensure 'number' dimension starts from 1 instead of 0
+                ds_member_means = ds_member_means.assign_coords(number=ds_member_means.number)
+    
+                # Save the dataset
+                ds_member_means.to_netcdf(index_file)
+                logging.info(f'Monthly means saved to {index_file}')
+                
+                 # Now calculate ensemble statistics across members
+                da_index_ens_mean = monthly_means.mean('number')
+                da_index_ens_median = monthly_means.median('number')
+                da_index_ens_max = monthly_means.max('number')
+                da_index_ens_min = monthly_means.min('number')
+                da_index_ens_std = monthly_means.std('number')
+                percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
+                ensemble_percentiles = monthly_means.quantile(percentile_levels, dim="number")
+        
                 ds_stats = xr.Dataset({
                     'ensemble_mean': da_index_ens_mean,
                     'ensemble_median': da_index_ens_median,
@@ -685,12 +733,14 @@ class ForecastHandler:
                 for i, level in enumerate(percentile_levels):
                     label = f"ensemble_p{int(level * 100)}"
                     ds_stats[label] = ensemble_percentiles.sel(quantile=level)
-
+    
                 stats_file = f"{index_out}/{year}/{tf_index}_{year}{month_str}_statistics.nc"
                 ds_stats.to_netcdf(stats_file)
                 logging.info(f'Ensemble statistics saved to {stats_file}')
 
 
+
+    
     def calculate_and_save_tropical_nights_per_lag(self, base_path, year_list, month_list, tf_index, area):
         """
         Calculates, processes, and saves the tropical nights index for specified years and months.
@@ -780,12 +830,15 @@ class ForecastHandler:
                 except Exception as e:
                     print(f'An error occurred: {e}')
 
+
+
+
     def calculate_index(self, data_out, year_list, month_list, area_selection, overwrite, tf_index):
         """
         Calculates the specified climate index for given years and months.
-
+    
         This method serves as a dispatcher to appropriate calculation methods based on the index type.
-
+    
         Parameters:
         data_out (str): Base directory path for output data.
         year_list (list of int): Years for which to calculate the index.
@@ -796,26 +849,36 @@ class ForecastHandler:
                         'HIS' (Heat Index Simplified),
                         'HIA' (Heat Index Adjusted),
                         'Tmean' (Mean Temperature),
+                        'Tmax' (Maximum Temperature),
+                        'Tmin' (Minimum Temperature),
                         'TR' (Tropical Nights).
-
+    
         Returns:
         None
-
+    
         Raises:
         ValueError: If an unsupported tf_index is provided.
-
+    
         Notes:
-        - For 'HIS', 'HIA', and 'Tmean', it calls the calculate_heat_indices method.
+        - For 'HIS', 'HIA', 'Tmean', 'Tmax', and 'Tmin', it calls the calculate_heat_indices method.
         - For 'TR', it calls the calculate_and_save_tropical_nights_per_lag method.
         - The area selection is converted to geographic bounds before being passed to the calculation methods.
         """
         area = self.get_bounds_for_area_selection(area_selection)
-        if tf_index in ["HIS", "HIA", "Tmean"]:
+        
+        # Handle heat indices and temperature-related indices
+        if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
             self.calculate_heat_indices(data_out, year_list, month_list, area, overwrite, tf_index)
+        
+        # Handle Tropical Nights
         elif tf_index == "TR":
             self.calculate_and_save_tropical_nights_per_lag(data_out, year_list, month_list, tf_index, area)
+        
         else:
-            logging.error(f'Index {tf_index} is not implemented, use either "HIS", "HIA", "Tmean", or "TR".')
+            logging.error(f'Index {tf_index} is not implemented. Supported indices are "HIS", "HIA", "Tmean", "Tmax", "Tmin", and "TR".')
+
+
+    
 
     def process_and_save_hazards(self, year_list, month_list, data_out, tf_index):
         """
@@ -856,7 +919,11 @@ class ForecastHandler:
         base_output_dir = os.path.join(data_out, f"{tf_index}/hazard")
         hazard_type = tf_index
         intensity_variable = f"{tf_index}"
-        intensity_unit = "days"
+        intensity_unit = "days"    # Corrected intensity unit assignment based on the selected tf_index
+        if tf_index == "TR":
+            intensity_unit = "days"  # Tropical Nights are measured in days
+        else:
+            intensity_unit = "°C"  # All other indices are measured in degrees Celsius
         
         for year in year_list:
             for month in month_list:
@@ -904,21 +971,4 @@ class ForecastHandler:
         hazard (Hazard): A Hazard object created from climate indices.
         """
         hazard.plot_intensity(1, smooth=False)
-
-#Example
-# if __name__ == "__main__":
-#     DATA_OUT = "/Users/daraya/Documents/My_contribution/CDS_seasonal_forecast/data"
-#     os.makedirs(DATA_OUT, exist_ok=True)
-#     year_list = [2022, 2022]
-#     month_list = [6, 7]
-#     area_selection = "Switzerland,Germany"
-#     overwrite = False
-#     tf_index = "HIA"
-#     format = "grib"
-#     originating_centre = "dwd"
-#     system = "21"
-#     max_lead_month = 4
-
-#     handler = ForecastHandler()
-#     handler.download_and_process_data(DATA_OUT, year_list, month_list, area_selection, overwrite, tf_index, format, originating_centre, system, max_lead_month)
-#     handler.calculate_heat_indices(DATA_OUT, year_list, month_list, area_selection, overwrite, tf_index)
+        
