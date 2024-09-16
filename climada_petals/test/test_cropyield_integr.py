@@ -60,7 +60,7 @@ class TestIntegr(unittest.TestCase):
 
         impact = Impact()
         reg_sel = exp.copy()
-        reg_sel.gdf = reg_sel.gdf[reg_sel.gdf.region_id == 276]
+        reg_sel.data = reg_sel.gdf[reg_sel.gdf.region_id == 276]
         impact.calc(reg_sel, impf_cp, haz_new.select(['2002']), save_mat=True)
 
         exp_manual = reg_sel.gdf.value
@@ -71,10 +71,10 @@ class TestIntegr(unittest.TestCase):
         self.assertEqual(haz_new.size, 5)
         self.assertEqual(haz_new.centroids.size, 1092)
         self.assertAlmostEqual(haz_new.intensity.mean(), -2.0489097e-08, places=0)
-        self.assertAlmostEqual(exp.gdf.value.max(), 52278210.72839116, places=0)
-        self.assertEqual(exp.gdf.latitude.values.size, 1092)
-        self.assertAlmostEqual(exp.gdf.value[3], 0.0)
-        self.assertAlmostEqual(exp.gdf.value[1077], 398947.79657832277, places=0)
+        self.assertAlmostEqual(exp.value.max(), 52278210.72839116, places=0)
+        self.assertEqual(exp.latitude.size, 1092)
+        self.assertAlmostEqual(exp.value[3], 0.0)
+        self.assertAlmostEqual(exp.value[1077], 398947.79657832277, places=0)
         self.assertAlmostEqual(impact.imp_mat.data[3], -178745.59091285995, places=0)
         self.assertEqual(len(dif), 0)
 
