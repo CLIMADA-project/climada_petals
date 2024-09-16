@@ -218,7 +218,6 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
             self.description += "\nrainfed portion of crop (= TA - TI)"
         else:
             self.gdf[INDICATOR_IMPF + haz_type] = 1
-        self.set_geometry_points()
 
     def _read_spam_file(self, **parameters):
         """Reads data from SPAM CSV file and cuts out the data for the
