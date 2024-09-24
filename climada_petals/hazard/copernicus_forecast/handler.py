@@ -1,57 +1,37 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-
 """
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
 Module to handle seasonal forecast data from the Copernicus Climate Data Store (CDS) in the U-CLIMADAPT project.
-
-This module provides functionality for downloading, processing, calculating climate indices, and creating hazard objects
-based on seasonal forecast data. It is designed to work with the CLIMADA (CLIMate ADAptation) platform for climate risk
-assessment and adaptation strategies.
-
-Features:
-- Download seasonal forecast data from CDS
-- Process raw data into climate indices
-- Calculate various heat-related indices (e.g., Heat Index, Tropical Nights)
-- Create CLIMADA Hazard objects for further risk analysis
-- Visualize hazard data
-
-Prerequisites:
-1. CDS API client installation:
-   pip install cdsapi
-
-2. CDS account and API key:
-   Register at https://cds.climate.copernicus.eu/#!/home
-
-3. CDS API configuration:
-   Create a .cdsapirc file in your home directory with your API key and URL.
-   For instructions, visit: https://cds.climate.copernicus.eu/api-how-to
-
-4. CLIMADA installation:
-   Follow instructions at https://climada-python.readthedocs.io/en/stable/guide/install.html
-
-Usage:
-This module is typically imported and used within larger scripts or applications for climate data processing
-and risk assessment. See individual function docstrings for specific usage instructions.
-
-Note:
-Ensure you have the necessary permissions and comply with CDS data usage policies when using this module.
 """
 
-
-# Module_forescast_handler.py
 import os
 import logging
 import calendar
-import cdsapi
+import re
+
+import numpy as np
 import xarray as xr
 import pandas as pd
+import cdsapi
+
 from climada.util.coordinates import country_to_iso, get_country_geometries
 from climada import CONFIG
 from climada.hazard import Hazard
-import numpy as np
-
-
 
 
 class ForecastHandler:
@@ -63,14 +43,33 @@ class ForecastHandler:
     FORMAT_GRIB = 'grib'
     FORMAT_NC = 'nc'
 
+    VAR_SPECS = {
+        "2m_temperature": {
+            "unit": "K",
+            "standard_name": "air_temperature",
+            "short_name": "t2m",
+            "full_name": "2m_temperature"
+        },
+        "2m_dewpoint_temperature": {
+            "unit": "K",
+            "standard_name": "dew_point_temperature",
+            "short_name": "d2m",
+            "full_name": "2m_dewpoint_temperature"
+        },
+    }
+
     
-    def __init__(self, data_dir='.', URL = None, KEY = None):
+    def __init__(self, data_dir='.', url = None, key = None):
         """
         Initializes the ForecastHandler instance.
 
         Parameters:
         data_dir (str): Path to the directory where downloaded and processed data will be stored.
-                        Defaults to the current directory ('.').
+            Defaults to the current directory ('.').
+        url (str): url to the CDS API. Defaults to None, in which case the url from /.cdsapirc
+            is used.
+        key (str): CDS API key to the CDS API. Defaults to None, in which case the key from
+            /.cdsapirc is used.
 
         Note:
         This method sets up logging and initializes the data directory for the instance.
@@ -78,8 +77,8 @@ class ForecastHandler:
         logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s', level=logging.INFO)
         self.logger = logging.getLogger()
         self.data_dir = data_dir
-        self.KEY = KEY
-        self.URL = URL
+        self.key = key
+        self.url = url
         
 
     @staticmethod
@@ -123,7 +122,10 @@ class ForecastHandler:
                 "index_long_name": "Heat_Index_Adjusted"
             },
             "HIS": {
-                "variables": [var_specs["2m_temperature"]["full_name"], var_specs["2m_dewpoint_temperature"]["full_name"]],
+                "variables": [
+                    var_specs["2m_temperature"]["full_name"],
+                    var_specs["2m_dewpoint_temperature"]["full_name"]
+                ],
                 "filename_lead": "2m_temps",
                 "index_long_name": "Heat_Index_Simplified"
             },
@@ -159,7 +161,7 @@ class ForecastHandler:
     @staticmethod
     def calc_min_max_lead(year, month, leadtime_months=1):
         """
-        Calculates the minimum and maximum lead time in hours for a given starting date.
+        Calculates the minimum and maximum lead time in hours for a given starting (initidate.
 
         Parameters:
         year (int): The starting year (e.g., 2023).
@@ -175,7 +177,6 @@ class ForecastHandler:
         Note:
         This function accounts for varying month lengths and year transitions.
         """
-        min_lead = 0
         total_timesteps = 0
         for m in range(month, month + leadtime_months):
             adjusted_year, adjusted_month = year, m
@@ -188,7 +189,7 @@ class ForecastHandler:
             total_timesteps += timesteps
 
         max_lead = total_timesteps + 6
-        return min_lead, max_lead
+        return 0, max_lead
 
     @staticmethod
     def get_bounds_for_area_selection(area_selection, margin=0.2):
@@ -214,7 +215,7 @@ class ForecastHandler:
         all specified countries with the added margin.
         """        
         if area_selection.lower() == 'global':
-            return [90, -180, -90, 180]  # north, east, south, west
+            return [90, -180, -90, 180]  # north, west, south, east
         else:
             try:
                 user_bounds = list(map(float, area_selection.split(',')))
@@ -229,7 +230,7 @@ class ForecastHandler:
                 pass
 
             countries = area_selection.split(",")
-            combined_bounds = [180, 90, -180, -90]
+            combined_bounds = [-90, 180, 90, -180]
             for country in countries:
                 iso = country_to_iso(country.strip())
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
@@ -239,11 +240,11 @@ class ForecastHandler:
                 lat_margin = margin * (max_lat - min_lat)
                 lon_margin = margin * (max_lon - min_lon)
 
-                combined_bounds[0] = min(combined_bounds[0], min_lon - lon_margin)
-                combined_bounds[1] = min(combined_bounds[1], min_lat - lat_margin)
-                combined_bounds[2] = max(combined_bounds[2], max_lon + lon_margin)
-                combined_bounds[3] = max(combined_bounds[3], max_lat + lat_margin)
-            return [combined_bounds[3], combined_bounds[0], combined_bounds[1], combined_bounds[2]]
+                combined_bounds[0] = max(combined_bounds[0], max_lat + lat_margin)
+                combined_bounds[1] = min(combined_bounds[1], min_lon - lon_margin)
+                combined_bounds[2] = min(combined_bounds[2], min_lat - lat_margin)
+                combined_bounds[3] = max(combined_bounds[3], max_lon + lon_margin)
+            return combined_bounds
 
     def download_multvar_multlead(self, filename, vars, year, month, l_hours, area, overwrite, format, originating_centre, system):
         """
@@ -272,11 +273,20 @@ class ForecastHandler:
         """
         area_str = f'{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}'
         download_file = f'{filename}'
-        if os.path.isfile(f'{download_file}') and not overwrite:
+        data_already_exists = os.path.isfile(f'{download_file}')
+        if data_already_exists and format == 'grib':
+            # print('checking variables start')
+            existing_variables = list(xr.open_dataset(download_file, engine='cfgrib', decode_cf=False, chunks={}).data_vars)
+            vars_short = [self.VAR_SPECS[var]['short_name'] for var in vars]
+            data_already_exists = set(vars_short).issubset(existing_variables)
+            # print('checking variables end')
+            if not data_already_exists:
+                print('data file exists but variables missing')
+        if data_already_exists and not overwrite:
             self.logger.info(f'Corresponding {format} file {download_file} already exists.')
         else:
             try:
-                c = cdsapi.Client(url=self.URL, key=self.KEY)
+                c = cdsapi.Client(url=self.url, key=self.key)
                 c.retrieve(
                     'seasonal-original-single-levels',
                     {
@@ -399,8 +409,15 @@ class ForecastHandler:
                 os.makedirs(daily_out, exist_ok=True)
                 file_extension = 'grib' if format == self.FORMAT_GRIB else 'nc'
                 download_file = f"{data_out}/{format}/{year}/{month:02d}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
-
-                if not os.path.exists(daily_file) or overwrite:
+                data_already_exists = os.path.exists(daily_file)
+                if data_already_exists and format == 'grib':
+                    vars = self.get_index_params(tf_index)['variables']
+                    vars_short = [self.VAR_SPECS[var]['short_name'] for var in vars]
+                    existing_variables = list(xr.open_dataset(daily_file, decode_cf=False, chunks={}).data_vars)
+                    data_already_exists = set(vars_short).issubset(existing_variables)
+                    if not data_already_exists:
+                        print('daily file exists but variables missing')
+                if not data_already_exists or overwrite:
                     try:
                         if format == self.FORMAT_GRIB:
                             with xr.open_dataset(download_file, engine="cfgrib") as ds:
