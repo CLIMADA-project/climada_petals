@@ -17,8 +17,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 ---
 
 Module to handle seasonal forecast data from the Copernicus Climate Data Store (CDS) in the U-CLIMADAPT project.
-<<<<<<< HEAD
-=======
 
 This module provides functionality for downloading, processing, calculating climate indices, and creating hazard objects
 based on seasonal forecast data. It is designed to work with the CLIMADA (CLIMate ADAptation) platform for climate risk
@@ -51,7 +49,6 @@ and risk assessment. See individual function docstrings for specific usage instr
 
 Note:
 Ensure you have the necessary permissions and comply with CDS data usage policies when using this module.
->>>>>>> a902d0323cb348221ba9f79dd4d5fe6f09b128ad
 """
 
 import os
@@ -62,20 +59,16 @@ import re
 import numpy as np
 import xarray as xr
 import pandas as pd
-<<<<<<< HEAD
 import cdsapi
 
 from climada.util.coordinates import country_to_iso, get_country_geometries
-from climada import CONFIG
-from climada.hazard import Hazard
-=======
+
 #from climada.util.coordinates import country_to_iso, get_country_geometries
 #from climada import CONFIG
 from climada.hazard import Hazard
 #import numpy as np
 import climada_petals.hazard.copernicus_forecast.indicator as indicator
 
->>>>>>> a902d0323cb348221ba9f79dd4d5fe6f09b128ad
 
 
 class ForecastHandler:
@@ -132,17 +125,8 @@ class ForecastHandler:
                 "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"]
             },
             "HIS": {
-<<<<<<< HEAD
-                "variables": [
-                    var_specs["2m_temperature"]["full_name"],
-                    var_specs["2m_dewpoint_temperature"]["full_name"]
-                ],
-                "filename_lead": "2m_temps",
-                "index_long_name": "Heat_Index_Simplified"
-=======
                 "explanation": "Heat Index Simplified: This indicator is a simpler version of the Heat Index, focusing on a quick estimate of perceived heat based on temperature and humidity.",
                 "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"]
->>>>>>> a902d0323cb348221ba9f79dd4d5fe6f09b128ad
             },
             "Tmean": {
                 "explanation": "Mean Temperature: This indicator calculates the average temperature over the specified period.",
@@ -220,65 +204,7 @@ class ForecastHandler:
         self, filename, vars, year, month, l_hours, area, overwrite, format, originating_centre, system
     ):
         """
-<<<<<<< HEAD
-        Determines the geographic bounds based on an area selection string.
-
-        Parameters:
-        area_selection (str): Specifies the area for data selection. Can be one of:
-                              - 'global' for worldwide coverage
-                              - A comma-separated string of coordinates (north,east,south,west)
-                              - One or more country names separated by commas
-        margin (float): Additional margin to be added to the bounds in degrees. 
-                        Defaults to 0.2 degrees. Ignored for 'global' selection.
-
-        Returns:
-        list: A list of four floats representing the bounds [north, east, south, west].
-              For 'global', returns [90, -180, -90, 180].
-              For specific areas, returns the calculated bounds with added margins.
-
-        Note:
-        For country names, the function uses external utilities to convert names to 
-        ISO codes and fetch geometries. The bounds are then calculated to encompass
-        all specified countries with the added margin.
-        """        
-        if area_selection.lower() == 'global':
-            return [90, -180, -90, 180]  # north, west, south, east
-        else:
-            try:
-                user_bounds = list(map(float, area_selection.split(',')))
-                if len(user_bounds) == 4:
-                    north, east, south, west = user_bounds
-                    north += margin
-                    east -= margin
-                    south -= margin
-                    west += margin
-                    return [north, east, south, west]
-            except ValueError:
-                pass
-
-            countries = area_selection.split(",")
-            combined_bounds = [-90, 180, 90, -180]
-            for country in countries:
-                iso = country_to_iso(country.strip())
-                geo = get_country_geometries(iso).to_crs(epsg=4326)
-                bounds = geo.total_bounds
-                min_lon, min_lat, max_lon, max_lat = bounds
-
-                lat_margin = margin * (max_lat - min_lat)
-                lon_margin = margin * (max_lon - min_lon)
-
-                combined_bounds[0] = max(combined_bounds[0], max_lat + lat_margin)
-                combined_bounds[1] = min(combined_bounds[1], min_lon - lon_margin)
-                combined_bounds[2] = min(combined_bounds[2], min_lat - lat_margin)
-                combined_bounds[3] = max(combined_bounds[3], max_lon + lon_margin)
-            return combined_bounds
-
-    def download_multvar_multlead(self, filename, vars, year, month, l_hours, area, overwrite, format, originating_centre, system):
-        """
-        Downloads multiple climate variables over multiple lead times from the Copernicus Climate Data Store (CDS).
-=======
         Downloads multiple climate variables over multiple lead times from the CDS.
->>>>>>> a902d0323cb348221ba9f79dd4d5fe6f09b128ad
 
         Parameters:
         filename (str): Full path and name for the downloaded file.
