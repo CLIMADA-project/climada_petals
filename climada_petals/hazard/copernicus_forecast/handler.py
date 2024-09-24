@@ -112,7 +112,7 @@ class ForecastHandler:
                 "explanation": "Tropical Nights: This indicator counts the number of nights where the minimum temperature remains above a certain threshold, typically 20°C.",
                 "input_data": ["2m temperature (t2m)"]
             },
-            "HotDays": {
+            "TX30": {
                 "explanation": "Hot Days: This indicator counts the number of days where the maximum temperature exceeds 30°C.",
                 "input_data": ["2m temperature (t2m)"]
             }
@@ -356,7 +356,7 @@ class ForecastHandler:
         hazard_type = tf_index
         intensity_variable = f"{tf_index}"
 
-        if tf_index in ["TR", "HotDays", "HW"]:
+        if tf_index in ["TR", "TX30", "HW"]:
             intensity_unit = "days"
         else:
             intensity_unit = "°C"

@@ -1,11 +1,11 @@
 # indicator.py
 
-import xarray as xr
-import numpy as np
+import xarray as xr # Called in the .ipynb
+#import numpy as np
 import pandas as pd
 import logging
 import os
-from climada.util.coordinates import country_to_iso, get_country_geometries
+from climada.util.coordinates import country_to_iso, get_country_geometries # Called in the .ipynb
 import calendar
 
 
@@ -76,7 +76,7 @@ def get_index_params(index):
             "filename_lead": "2m_temps",
             "index_long_name": "Tropical_Nights",
         },
-        "HotDays": {
+        "TX30": {
             "variables": [var_specs["2m_temperature"]["full_name"]],
             "filename_lead": "2m_temps",
             "index_long_name": "Hot Days (Tmax > 30°C)",
@@ -430,15 +430,15 @@ def calculate_and_save_tropical_nights_per_lag(base_path, year_list, month_list,
                 print(f"An error occurred: {e}")
 
 
-def calculate_and_save_hot_days_per_lag(base_path, year_list, month_list, tf_index, area_selection):
+def calculate_and_save_tx30_per_lag(base_path, year_list, month_list, tf_index, area_selection):
     """
-    Calculates and saves the Hot Days index (Tmax > 30°C).
+    Calculates and saves the TX30 index (Tmax > 30°C).
 
     Parameters:
     base_path (str): Base directory path for input and output data.
     year_list (list of int): Years for which to calculate the index.
     month_list (list of int): Months for which to calculate the index (1-12).
-    tf_index (str): The climate index being processed ('HotDays').
+    tf_index (str): The climate index being processed ('TX30').
     area_selection (str): Area specification.
     """
     index_params = get_index_params(tf_index)
@@ -454,45 +454,37 @@ def calculate_and_save_hot_days_per_lag(base_path, year_list, month_list, tf_ind
             output_file_path = os.path.join(output_dir, f"{tf_index}_{year}{month_str}.nc")
             
             try:
-                # Load the dataset
                 ds = xr.open_dataset(grib_file_path, engine="cfgrib")
-                t2m_celsius = ds["t2m"] - 273.15  # Convert temperature from Kelvin to Celsius
-                
-                # Resample to get daily max temperatures
+                t2m_celsius = ds["t2m"] - 273.15
                 daily_max_temp = t2m_celsius.resample(step="1D").max()
-                
-                # Align forecast steps with calendar months using "valid_time"
                 valid_times = pd.to_datetime(ds.valid_time.values)
                 forecast_months = valid_times.to_period("M")
                 forecast_months_str = forecast_months.astype(str)
                 step_to_month = dict(zip(ds.step.values, forecast_months_str))
                 forecast_month_da = xr.DataArray(list(step_to_month.values()), coords=[ds.step], dims=["step"])
-                
-                # Assign the "forecast_month" to the daily_max_temp DataArray
                 daily_max_temp.coords["forecast_month"] = forecast_month_da
 
-                # Calculate Hot Days: Days where Tmax > 30°C
-                hot_days = daily_max_temp > 30  # Boolean array where True means a Hot Day
+                # Calculate TX30: Days where Tmax > 30°C
+                tx30_days = daily_max_temp > 30  # Boolean array where True means a TX30 day
                 
-                # Count the number of Hot Days per forecast month
-                hot_days_count = hot_days.groupby("forecast_month").sum(dim="step")
-                hot_days_count = hot_days_count.rename(tf_index)
-                
-                # Save the result to NetCDF
-                hot_days_count = hot_days_count.rename({"forecast_month": "step"})
-                hot_days_count.to_netcdf(output_file_path)
-                print(f"Hot Days saved to {output_file_path}")
+                # Count the number of TX30 days per forecast month
+                tx30_days_count = tx30_days.groupby("forecast_month").sum(dim="step")
+                tx30_days_count = tx30_days_count.rename(tf_index)
+
+                tx30_days_count = tx30_days_count.rename({"forecast_month": "step"})
+                tx30_days_count.to_netcdf(output_file_path)
+                print(f"TX30 saved to {output_file_path}")
 
                 # Calculate ensemble statistics (mean, median, etc.)
-                ensemble_mean = hot_days_count.mean(dim="number")
-                ensemble_median = hot_days_count.median(dim="number")
-                ensemble_max = hot_days_count.max(dim="number")
-                ensemble_min = hot_days_count.min(dim="number")
-                ensemble_std = hot_days_count.std(dim="number")
+                ensemble_mean = tx30_days_count.mean(dim="number")
+                ensemble_median = tx30_days_count.median(dim="number")
+                ensemble_max = tx30_days_count.max(dim="number")
+                ensemble_min = tx30_days_count.min(dim="number")
+                ensemble_std = tx30_days_count.std(dim="number")
                 
                 # Percentiles
                 percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
-                ensemble_percentiles = hot_days_count.quantile(percentile_levels, dim="number")
+                ensemble_percentiles = tx30_days_count.quantile(percentile_levels, dim="number")
                 
                 # Store statistics in a dataset
                 ds_stats = xr.Dataset({
@@ -512,7 +504,7 @@ def calculate_and_save_hot_days_per_lag(base_path, year_list, month_list, tf_ind
                 os.makedirs(stats_output_dir, exist_ok=True)
                 stats_file = os.path.join(stats_output_dir, f"{tf_index}_{year}{month_str}_statistics.nc")
                 ds_stats.to_netcdf(stats_file)
-                print(f"Hot Days statistics saved to {stats_file}")
+                print(f"TX30 statistics saved to {stats_file}")
             
             except FileNotFoundError as e:
                 print(f"File not found: {e.filename}")
@@ -542,9 +534,9 @@ def calculate_index(data_out, year_list, month_list, area_selection, overwrite, 
         # Handle Tropical Nights (TR)
         calculate_and_save_tropical_nights_per_lag(data_out, year_list, month_list, tf_index, area_selection)
 
-    elif tf_index == "HotDays":
+    elif tf_index == "TX30":
         # Handle Hot Days (Tmax > 30°C)
-        calculate_and_save_hot_days_per_lag(data_out, year_list, month_list, tf_index, area_selection)
+        calculate_and_save_tx30_per_lag(data_out, year_list, month_list, tf_index, area_selection)
 
     elif tf_index == "HW":
         # Handle Heat Wave Days (3 consecutive days Tmax > threshold)
