@@ -79,22 +79,6 @@ class ForecastHandler:
 
     FORMAT_GRIB = 'grib'
     FORMAT_NC = 'nc'
-
-    VAR_SPECS = {
-        "2m_temperature": {
-            "unit": "K",
-            "standard_name": "air_temperature",
-            "short_name": "t2m",
-            "full_name": "2m_temperature"
-        },
-        "2m_dewpoint_temperature": {
-            "unit": "K",
-            "standard_name": "dew_point_temperature",
-            "short_name": "d2m",
-            "full_name": "2m_dewpoint_temperature"
-        },
-    }
-
     
     def __init__(self, data_dir='.', url = None, key = None):
         """
@@ -116,10 +100,63 @@ class ForecastHandler:
         self.data_dir = data_dir
         self.key = key
         self.url = url
-        
+    
+    @staticmethod
+    def _get_bounds_for_area_selection(area_selection, margin=0.2):
+        """
+        Determines the geographic bounds based on an area selection string.
 
+        Parameters:
+        area_selection (str): Specifies the area for data selection.
+        margin (float): Additional margin to be added to the bounds in degrees.
+
+        Returns:
+        list: A list of four floats representing the bounds [north, east, south, west].
+        """
+        if area_selection.lower() == "global":
+            return [90, -180, -90, 180]  # north, east, south, west
+        else:
+            try:
+                user_bounds = list(map(float, area_selection.split(",")))
+                if len(user_bounds) == 4:
+                    north, east, south, west = user_bounds
+                    north += margin
+                    east -= margin
+                    south -= margin
+                    west += margin
+                    return [north, east, south, west]
+            except ValueError:
+                pass
+
+            countries = area_selection.split(",")
+            combined_bounds = [180, 90, -180, -90]
+            for country in countries:
+                iso = country_to_iso(country.strip())
+                geo = get_country_geometries(iso).to_crs(epsg=4326)
+                bounds = geo.total_bounds
+                min_lon, min_lat, max_lon, max_lat = bounds
+
+                lat_margin = margin * (max_lat - min_lat)
+                lon_margin = margin * (max_lon - min_lon)
+
+                combined_bounds[0] = min(combined_bounds[0], min_lon - lon_margin)
+                combined_bounds[1] = min(combined_bounds[1], min_lat - lat_margin)
+                combined_bounds[2] = max(combined_bounds[2], max_lon + lon_margin)
+                combined_bounds[3] = max(combined_bounds[3], max_lat + lat_margin)
+            return [combined_bounds[3], combined_bounds[0], combined_bounds[1], combined_bounds[2]]
+
+    def explain_index(self, tf_index):
+        """
+        Provides an explanation and input data for the selected index.
+
+        Parameters:
+        tf_index (str): The climate index identifier.
+
+        Returns:
+        str: A description of the selected index, its input data, or an error message if the index is invalid.
+        """
         # Dictionary with explanations and input data for each index
-        self.index_explanations = {
+        index_explanations = {
             "HIA": {
                 "explanation": "Heat Index Adjusted: This indicator measures apparent temperature, considering both air temperature and humidity, providing a more accurate perception of how hot it feels.",
                 "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"]
@@ -154,27 +191,18 @@ class ForecastHandler:
             }
         }
 
-    def explain_index(self, tf_index):
-        """
-        Provides an explanation and input data for the selected index.
-
-        Parameters:
-        tf_index (str): The climate index identifier.
-
-        Returns:
-        str: A description of the selected index, its input data, or an error message if the index is invalid.
-        """
-        if tf_index in self.index_explanations:
+        if tf_index in index_explanations:
             explanation = f"Selected Index: {tf_index}\n"
-            explanation += f"Explanation: {self.index_explanations[tf_index]['explanation']}\n"
-            explanation += f"Input Data: {', '.join(self.index_explanations[tf_index]['input_data'])}"
+            explanation += f"Explanation: {index_explanations[tf_index]['explanation']}\n"
+            explanation += f"Input Data: {', '.join(index_explanations[tf_index]['input_data'])}"
         else:
             explanation = f"Error: {tf_index} is not a valid index. Please choose from {list(self.index_explanations.keys())}"
 
-        return explanation
+        print(explanation)
+        return None
     
 
-    def calc_min_max_lead(self, year, month, leadtime_months=1):
+    def _calc_min_max_lead(self, year, month, leadtime_months=1):
         """
         Calculates the minimum and maximum lead time in hours for a given starting (initidate.
 
@@ -200,7 +228,7 @@ class ForecastHandler:
         max_lead = total_timesteps + 6
         return 0, max_lead
 
-    def download_multvar_multlead(
+    def _download_multvar_multlead(
         self, filename, vars, year, month, l_hours, area, overwrite, format, originating_centre, system
     ):
         """
@@ -223,15 +251,14 @@ class ForecastHandler:
         """
         area_str = f'{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}'
         download_file = f'{filename}'
+        
+        # check if data already exists including all relevant data variables
         data_already_exists = os.path.isfile(f'{download_file}')
         if data_already_exists and format == 'grib':
-            # print('checking variables start')
             existing_variables = list(xr.open_dataset(download_file, engine='cfgrib', decode_cf=False, chunks={}).data_vars)
-            vars_short = [self.VAR_SPECS[var]['short_name'] for var in vars]
+            vars_short = [indicator.VAR_SPECS[var]['short_name'] for var in vars]
             data_already_exists = set(vars_short).issubset(existing_variables)
-            # print('checking variables end')
-            if not data_already_exists:
-                print('data file exists but variables missing')
+        
         if data_already_exists and not overwrite:
             self.logger.info(f'Corresponding {format} file {download_file} already exists.')
         else:
@@ -256,8 +283,8 @@ class ForecastHandler:
             except Exception as e:
                 self.logger.error(f'{format.capitalize()} file {download_file} could not be downloaded. Error: {e}')
 
-    def download_data(
-        self, data_out, year_list, month_list, area_selection, overwrite, tf_index, format, originating_centre, system, max_lead_month
+    def _download_data(
+        self, data_out, year_list, month_list, bounds, overwrite, tf_index, format, originating_centre, system, max_lead_month
     ):
         """
         Downloads climate forecast data for specified years, months, and a climate index.
@@ -278,15 +305,14 @@ class ForecastHandler:
         None
         """
         index_params = indicator.get_index_params(tf_index)
-        area = indicator.get_bounds_for_area_selection(area_selection)
-        area_str = f'{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}'
+        area_str = f'{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}'
 
         for year in year_list:
             for month in month_list:
                 out_dir = f"{data_out}/{format}/{year}/{month:02d}"
                 os.makedirs(out_dir, exist_ok=True)
 
-                min_lead, max_lead = self.calc_min_max_lead(year, month, max_lead_month)
+                min_lead, max_lead = self._calc_min_max_lead(year, month, max_lead_month)
                 leadtimes = list(range(min_lead, max_lead, 6))
                 self.logger.info(f"{len(leadtimes)} leadtimes to download.")
                 self.logger.debug(f"which are: {leadtimes}")
@@ -299,12 +325,12 @@ class ForecastHandler:
                 else:
                     variables = [index_params['variables'][0]]
                 
-                self.download_multvar_multlead(
-                    download_file, variables, year, month, leadtimes, area,
+                self._download_multvar_multlead(
+                    download_file, variables, year, month, leadtimes, bounds,
                     overwrite, format, originating_centre, system
                 )
 
-    def process_data(self, data_out, year_list, month_list, area_selection, overwrite, tf_index, format):
+    def _process_data(self, data_out, year_list, month_list, bounds, overwrite, tf_index, format):
         """
         Processes the downloaded climate forecast data into daily average values.
 
@@ -321,8 +347,7 @@ class ForecastHandler:
         None
         """
         index_params = indicator.get_index_params(tf_index)
-        area = indicator.get_bounds_for_area_selection(area_selection)
-        area_str = f'{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}'
+        area_str = f'{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}'
 
         for year in year_list:
             for month in month_list:
@@ -331,14 +356,15 @@ class ForecastHandler:
                 os.makedirs(daily_out, exist_ok=True)
                 file_extension = 'grib' if format == self.FORMAT_GRIB else 'nc'
                 download_file = f"{data_out}/{format}/{year}/{month:02d}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
+                
+                # check if data already exists including all relevant data variables
                 data_already_exists = os.path.exists(daily_file)
                 if data_already_exists and format == 'grib':
-                    vars = self.get_index_params(tf_index)['variables']
-                    vars_short = [self.VAR_SPECS[var]['short_name'] for var in vars]
+                    vars = indicator.get_index_params(tf_index)['variables']
+                    vars_short = [indicator.VAR_SPECS[var]['short_name'] for var in vars]
                     existing_variables = list(xr.open_dataset(daily_file, decode_cf=False, chunks={}).data_vars)
                     data_already_exists = set(vars_short).issubset(existing_variables)
-                    if not data_already_exists:
-                        print('daily file exists but variables missing')
+                
                 if not data_already_exists or overwrite:
                     try:
                         if format == self.FORMAT_GRIB:
@@ -375,8 +401,10 @@ class ForecastHandler:
         Returns:
         None
         """
-        self.download_data(data_out, year_list, month_list, area_selection, overwrite, tf_index, format, originating_centre, system, max_lead_month)
-        self.process_data(data_out, year_list, month_list, area_selection, overwrite, tf_index, format)
+
+        bounds = self._get_bounds_for_area_selection(area_selection)
+        self._download_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format, originating_centre, system, max_lead_month)
+        self._process_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format)
 
     def calculate_index(self, data_out, year_list, month_list, area_selection, overwrite, tf_index):
         """
@@ -389,13 +417,30 @@ class ForecastHandler:
         area_selection (str): Area specification.
         overwrite (bool): If True, overwrites existing files.
         tf_index (str): The climate index to be calculated.
-
-        Returns:
-        None
         """
-        indicator.calculate_index(data_out, year_list, month_list, area_selection, overwrite, tf_index)
+        bounds = self._get_bounds_for_area_selection(area_selection)
 
-    def process_and_save_hazards(self, year_list, month_list, data_out, tf_index):
+        if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+            # Calculate heat indices like HIS, HIA, Tmean, Tmax, Tmin
+            indicator.calculate_heat_indices(data_out, year_list, month_list, bounds, overwrite, tf_index)
+
+        elif tf_index == "TR":
+            # Handle Tropical Nights (TR)
+            indicator.calculate_and_save_tropical_nights_per_lag(data_out, year_list, month_list, tf_index, bounds)
+
+        elif tf_index == "TX30":
+            # Handle Hot Days (Tmax > 30°C)
+            indicator.calculate_and_save_tx30_per_lag(data_out, year_list, month_list, tf_index, bounds)
+        
+        # TBD: add functionality
+        # elif tf_index == "HW":
+            # Handle Heat Wave Days (3 consecutive days Tmax > threshold)
+            # calculate_and_save_heat_wave_days_per_lag(data_out, year_list, month_list, tf_index, area_selection)
+
+        else:
+            logging.error(f"Index {tf_index} is not implemented. Supported indices are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'.")
+
+    def save_index_to_hazard(self, year_list, month_list, data_out, tf_index):
         """
         Processes the calculated climate indices into hazard objects and saves them.
 
@@ -452,17 +497,7 @@ class ForecastHandler:
                 except Exception as e:
                     print(f"An error occurred: {e}")
 
+        # print final hazard
         last_hazard_file = file_path
         hazard_obj = Hazard.from_hdf5(last_hazard_file)
-
-        self.plot_hazard(hazard_obj)
-
-    @staticmethod
-    def plot_hazard(hazard):
-        """
-        Plot the intensity of the hazard object.
-
-        Parameters:
-        hazard (Hazard): A Hazard object created from climate indices.
-        """
-        hazard.plot_intensity(1, smooth=False)
+        hazard_obj.plot_intensity(1, smooth=False)

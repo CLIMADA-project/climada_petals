@@ -1,25 +1,13 @@
 # indicator.py
 
 import xarray as xr # Called in the .ipynb
-#import numpy as np
+import numpy as np
 import pandas as pd
 import logging
 import os
 from climada.util.coordinates import country_to_iso, get_country_geometries # Called in the .ipynb
-import calendar
 
-
-def get_index_params(index):
-    """
-    Retrieves parameters associated with a specific climate index.
-
-    Parameters:
-    index (str): The climate index identifier.
-
-    Returns:
-    dict: A dictionary containing the parameters for the specified index.
-    """
-    var_specs = {
+VAR_SPECS = {
         "2m_temperature": {
             "unit": "K",
             "standard_name": "air_temperature",
@@ -34,100 +22,66 @@ def get_index_params(index):
         },
     }
 
+def get_index_params(index):
+    """
+    Retrieves parameters associated with a specific climate index.
+
+    Parameters:
+    index (str): The climate index identifier.
+
+    Returns:
+    dict: A dictionary containing the parameters for the specified index.
+    """
+
     index_params = {
         "HIA": {
             "variables": [
-                var_specs["2m_temperature"]["full_name"],
-                var_specs["2m_dewpoint_temperature"]["full_name"],
+                VAR_SPECS["2m_temperature"]["full_name"],
+                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
             ],
             "filename_lead": "2m_temps",
             "index_long_name": "Heat_Index_Adjusted",
         },
         "HIS": {
             "variables": [
-                var_specs["2m_temperature"]["full_name"],
-                var_specs["2m_dewpoint_temperature"]["full_name"],
+                VAR_SPECS["2m_temperature"]["full_name"],
+                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
             ],
             "filename_lead": "2m_temps",
             "index_long_name": "Heat_Index_Simplified",
         },
         "Tmean": {
-            "variables": [var_specs["2m_temperature"]["full_name"]],
+            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
             "filename_lead": "2m_temps",
             "index_long_name": "Mean_Temperature",
         },
         "Tmin": {
-            "variables": [var_specs["2m_temperature"]["full_name"]],
+            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
             "filename_lead": "2m_temps",
             "index_long_name": "Minimum_Temperature",
         },
         "Tmax": {
-            "variables": [var_specs["2m_temperature"]["full_name"]],
+            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
             "filename_lead": "2m_temps",
             "index_long_name": "Maximum_Temperature",
         },
         "HW": {
-            "variables": [var_specs["2m_temperature"]["full_name"]],
+            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
             "filename_lead": "2m_temps",
             "index_long_name": "Heat_Wave",
         },
         "TR": {
-            "variables": [var_specs["2m_temperature"]["full_name"]],
+            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
             "filename_lead": "2m_temps",
             "index_long_name": "Tropical_Nights",
         },
         "TX30": {
-            "variables": [var_specs["2m_temperature"]["full_name"]],
+            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
             "filename_lead": "2m_temps",
             "index_long_name": "Hot Days (Tmax > 30°C)",
         },
     }
     return index_params.get(index)
-
-
-def get_bounds_for_area_selection(area_selection, margin=0.2):
-    """
-    Determines the geographic bounds based on an area selection string.
-
-    Parameters:
-    area_selection (str): Specifies the area for data selection.
-    margin (float): Additional margin to be added to the bounds in degrees.
-
-    Returns:
-    list: A list of four floats representing the bounds [north, east, south, west].
-    """
-    if area_selection.lower() == "global":
-        return [90, -180, -90, 180]  # north, east, south, west
-    else:
-        try:
-            user_bounds = list(map(float, area_selection.split(",")))
-            if len(user_bounds) == 4:
-                north, east, south, west = user_bounds
-                north += margin
-                east -= margin
-                south -= margin
-                west += margin
-                return [north, east, south, west]
-        except ValueError:
-            pass
-
-        countries = area_selection.split(",")
-        combined_bounds = [180, 90, -180, -90]
-        for country in countries:
-            iso = country_to_iso(country.strip())
-            geo = get_country_geometries(iso).to_crs(epsg=4326)
-            bounds = geo.total_bounds
-            min_lon, min_lat, max_lon, max_lat = bounds
-
-            lat_margin = margin * (max_lat - min_lat)
-            lon_margin = margin * (max_lon - min_lon)
-
-            combined_bounds[0] = min(combined_bounds[0], min_lon - lon_margin)
-            combined_bounds[1] = min(combined_bounds[1], min_lat - lat_margin)
-            combined_bounds[2] = max(combined_bounds[2], max_lon + lon_margin)
-            combined_bounds[3] = max(combined_bounds[3], max_lat + lat_margin)
-        return [combined_bounds[3], combined_bounds[0], combined_bounds[1], combined_bounds[2]]
-
 
 def calculate_relative_humidity_percent(t2k, tdk):
     """
@@ -226,7 +180,7 @@ def calculate_heat_index(da_t2k, da_tdk, index):
     return da_index
 
 
-def calculate_heat_indices(data_out, year_list, month_list, area_selection, overwrite, tf_index):
+def calculate_heat_indices(data_out, year_list, month_list, bounds, overwrite, tf_index):
     """
     Calculates and saves heat indices or temperature metrics.
 
@@ -239,9 +193,8 @@ def calculate_heat_indices(data_out, year_list, month_list, area_selection, over
     tf_index (str): The climate index being processed.
     """
     index_params = get_index_params(tf_index)
-    area = get_bounds_for_area_selection(area_selection)
     index_out = f"{data_out}/{tf_index}"
-    area_str = f"{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}"
+    area_str = f"{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
 
     for year in year_list:
         if not os.path.exists(f"{index_out}/{year}"):
@@ -357,7 +310,7 @@ def calculate_heat_indices(data_out, year_list, month_list, area_selection, over
             logging.info(f"Ensemble statistics saved to {stats_file}")
 
 
-def calculate_and_save_tropical_nights_per_lag(base_path, year_list, month_list, tf_index, area_selection):
+def calculate_and_save_tropical_nights_per_lag(base_path, year_list, month_list, tf_index, bounds):
     """
     Calculates and saves the tropical nights index.
 
@@ -369,8 +322,7 @@ def calculate_and_save_tropical_nights_per_lag(base_path, year_list, month_list,
     area_selection (str): Area specification.
     """
     index_params = get_index_params(tf_index)
-    area = get_bounds_for_area_selection(area_selection)
-    area_str = f'{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}'
+    area_str = f'{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}'
     
     for year in year_list:
         for month in month_list:
@@ -430,7 +382,7 @@ def calculate_and_save_tropical_nights_per_lag(base_path, year_list, month_list,
                 print(f"An error occurred: {e}")
 
 
-def calculate_and_save_tx30_per_lag(base_path, year_list, month_list, tf_index, area_selection):
+def calculate_and_save_tx30_per_lag(base_path, year_list, month_list, tf_index, bounds):
     """
     Calculates and saves the TX30 index (Tmax > 30°C).
 
@@ -442,8 +394,7 @@ def calculate_and_save_tx30_per_lag(base_path, year_list, month_list, tf_index, 
     area_selection (str): Area specification.
     """
     index_params = get_index_params(tf_index)
-    area = get_bounds_for_area_selection(area_selection)
-    area_str = f'{int(area[1])}_{int(area[0])}_{int(area[2])}_{int(area[3])}'
+    area_str = f'{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}'
     
     for year in year_list:
         for month in month_list:
@@ -510,37 +461,3 @@ def calculate_and_save_tx30_per_lag(base_path, year_list, month_list, tf_index, 
                 print(f"File not found: {e.filename}")
             except Exception as e:
                 print(f"An error occurred: {e}")
-
-
-def calculate_index(data_out, year_list, month_list, area_selection, overwrite, tf_index):
-    """
-    Calculates the specified climate index for given years and months.
-
-    Parameters:
-    data_out (str): Base directory path for output data.
-    year_list (list of int): Years for which to calculate the index.
-    month_list (list of int): Months for which to calculate the index (1-12).
-    area_selection (str): Area specification.
-    overwrite (bool): If True, overwrites existing files.
-    tf_index (str): The climate index to be calculated.
-    """
-    area = get_bounds_for_area_selection(area_selection)
-
-    if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-        # Calculate heat indices like HIS, HIA, Tmean, Tmax, Tmin
-        calculate_heat_indices(data_out, year_list, month_list, area_selection, overwrite, tf_index)
-
-    elif tf_index == "TR":
-        # Handle Tropical Nights (TR)
-        calculate_and_save_tropical_nights_per_lag(data_out, year_list, month_list, tf_index, area_selection)
-
-    elif tf_index == "TX30":
-        # Handle Hot Days (Tmax > 30°C)
-        calculate_and_save_tx30_per_lag(data_out, year_list, month_list, tf_index, area_selection)
-
-    elif tf_index == "HW":
-        # Handle Heat Wave Days (3 consecutive days Tmax > threshold)
-        calculate_and_save_heat_wave_days_per_lag(data_out, year_list, month_list, tf_index, area_selection)
-
-    else:
-        logging.error(f"Index {tf_index} is not implemented. Supported indices are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'.")
