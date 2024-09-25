@@ -233,7 +233,8 @@ class ForecastHandler:
         return 0, max_lead
 
     def _download_multvar_multlead(
-        self, filename, vars, year, month, l_hours, area, overwrite, format, originating_centre, system
+        self, filename, vars, year, month, l_hours, area,
+        overwrite, format, originating_centre, system
     ):
         """
         Downloads multiple climate variables over multiple lead times from the CDS.
@@ -259,7 +260,9 @@ class ForecastHandler:
         # check if data already exists including all relevant data variables
         data_already_exists = os.path.isfile(f'{download_file}')
         if data_already_exists and format == 'grib':
-            existing_variables = list(xr.open_dataset(download_file, engine='cfgrib', decode_cf=False, chunks={}).data_vars)
+            existing_variables = list(xr.open_dataset(
+                download_file, engine='cfgrib', decode_cf=False, chunks={}
+            ).data_vars)
             vars_short = [indicator.VAR_SPECS[var]['short_name'] for var in vars]
             data_already_exists = set(vars_short).issubset(existing_variables)
         
@@ -288,7 +291,8 @@ class ForecastHandler:
                 self.logger.error(f'{format.capitalize()} file {download_file} could not be downloaded. Error: {e}')
 
     def _download_data(
-        self, data_out, year_list, month_list, bounds, overwrite, tf_index, format, originating_centre, system, max_lead_month
+        self, data_out, year_list, month_list, bounds, overwrite, tf_index,
+        format, originating_centre, system, max_lead_month
     ):
         """
         Downloads climate forecast data for specified years, months, and a climate index.
@@ -385,7 +389,8 @@ class ForecastHandler:
                     self.logger.info(f"Daily file {daily_file} already exists.")
 
     def download_and_process_data(
-        self, data_out, year_list, month_list, area_selection, overwrite, tf_index, format, originating_centre, system, max_lead_month
+        self, data_out, year_list, month_list, area_selection, overwrite,
+        tf_index, format, originating_centre, system, max_lead_month
     ):
         """
         Downloads and processes climate forecast data for specified parameters.
@@ -410,7 +415,9 @@ class ForecastHandler:
         self._download_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format, originating_centre, system, max_lead_month)
         self._process_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format)
 
-    def calculate_index(self, data_out, year_list, month_list, area_selection, overwrite, tf_index):
+    def calculate_index(
+        self, data_out, year_list, month_list, area_selection, overwrite, tf_index
+    ):
         """
         Calculates the specified climate index for given years and months.
 
@@ -436,15 +443,15 @@ class ForecastHandler:
 
                 if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
                     # Calculate heat indices like HIS, HIA, Tmean, Tmax, Tmin
-                    index, ds_monthly, ds_stats = indicator.calculate_heat_indices(input_file_name, tf_index)
+                    ds_daily, ds_monthly, ds_stats = indicator.calculate_heat_indices(input_file_name, tf_index)
 
                 elif tf_index == "TR":
                     # Handle Tropical Nights (TR)
-                    index, ds_monthly, ds_stats = indicator.calculate_and_save_tropical_nights_per_lag(grib_file_path, tf_index)
+                    ds_daily, ds_monthly, ds_stats = indicator.calculate_and_save_tropical_nights_per_lag(grib_file_path, tf_index)
 
                 elif tf_index == "TX30":
                     # Handle Hot Days (Tmax > 30°C)
-                    index, ds_monthly, ds_stats = indicator.calculate_and_save_tx30_per_lag(grib_file_path, tf_index)
+                    ds_daily, ds_monthly, ds_stats = indicator.calculate_and_save_tx30_per_lag(grib_file_path, tf_index)
                 
                 # TODO: add functionality
                 # elif tf_index == "HW":
@@ -456,15 +463,15 @@ class ForecastHandler:
 
                 # paths to output files
                 output_dir = f"{data_out}/{tf_index}/{year}/{month:02d}"
-                output_index_name = f'{output_dir}/{tf_index}_{area_str}_{year}{month:02d}.nc'
-                output_statistics_name = f'{output_dir}/stats/stats_{tf_index}_{area_str}_{year}{month:02d}.nc'
-                output_monthly_name = f'{output_dir}/monthly_{tf_index}_{area_str}_{year}{month:02d}.nc'
-                os.makedirs(os.path.dirname(output_statistics_name), exist_ok=True)
+                output_daily_path = f'{output_dir}/daily_{tf_index}_{area_str}_{year}{month:02d}.nc'
+                output_stats_path = f'{output_dir}/stats/stats_{tf_index}_{area_str}_{year}{month:02d}.nc'
+                output_monthly_path = f'{output_dir}/{tf_index}_{area_str}_{year}{month:02d}.nc'
+                os.makedirs(os.path.dirname(output_stats_path), exist_ok=True)
                 
                 if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                    index.to_netcdf(output_index_name)
-                ds_monthly.to_netcdf(output_monthly_name)
-                ds_stats.to_netcdf(output_statistics_name)
+                    ds_daily.to_netcdf(output_daily_path)
+                ds_monthly.to_netcdf(output_monthly_path)
+                ds_stats.to_netcdf(output_stats_path)
 
     def save_index_to_hazard(self, year_list, month_list, area_selection, data_out, tf_index):
         """
@@ -491,7 +498,7 @@ class ForecastHandler:
             for month in month_list:
                 month_str = f"{month:02d}"
                 current_input_dir = f'{base_input_dir}/{year}/{month:02d}'
-                nc_file_pattern = f"monthly_{hazard_type}_{area_str}_{year}{month_str}.nc"
+                nc_file_pattern = f"{hazard_type}_{area_str}_{year}{month_str}.nc"
                 nc_file_path = os.path.join(current_input_dir, nc_file_pattern)
                 current_output_dir = os.path.join(base_output_dir, f"{year}{month_str}")
                 os.makedirs(current_output_dir, exist_ok=True)

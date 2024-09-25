@@ -257,26 +257,7 @@ def calculate_heat_indices(input_file_name, tf_index):
     ds_monthly = ds_monthly.assign_coords(number=ds_monthly.number)
 
     # Now calculate ensemble statistics across members
-    da_index_ens_mean = monthly_means.mean("number")
-    da_index_ens_median = monthly_means.median("number")
-    da_index_ens_max = monthly_means.max("number")
-    da_index_ens_min = monthly_means.min("number")
-    da_index_ens_std = monthly_means.std("number")
-    percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
-    ensemble_percentiles = monthly_means.quantile(percentile_levels, dim="number")
-
-    ds_stats = xr.Dataset(
-        {
-            "ensemble_mean": da_index_ens_mean,
-            "ensemble_median": da_index_ens_median,
-            "ensemble_max": da_index_ens_max,
-            "ensemble_min": da_index_ens_min,
-            "ensemble_std": da_index_ens_std,
-        }
-    )
-    for i, level in enumerate(percentile_levels):
-        label = f"ensemble_p{int(level * 100)}"
-        ds_stats[label] = ensemble_percentiles.sel(quantile=level)
+    ds_stats = calculate_statistics_from_index(monthly_means)
 
     return ds_combined, ds_monthly, ds_stats
 
@@ -309,25 +290,7 @@ def calculate_and_save_tropical_nights_per_lag(grib_file_path, tf_index):
         tropical_nights_count = tropical_nights_count.rename({"forecast_month": "step"})
 
         # calculate statistics
-        ensemble_mean = tropical_nights_count.mean(dim="number")
-        ensemble_median = tropical_nights_count.median(dim="number")
-        ensemble_max = tropical_nights_count.max(dim="number")
-        ensemble_min = tropical_nights_count.min(dim="number")
-        ensemble_std = tropical_nights_count.std(dim="number")
-        percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
-        ensemble_percentiles = tropical_nights_count.quantile(percentile_levels, dim="number")
-        
-        ds_stats = xr.Dataset({
-            "ensemble_mean": ensemble_mean,
-            "ensemble_median": ensemble_median,
-            "ensemble_max": ensemble_max,
-            "ensemble_min": ensemble_min,
-            "ensemble_std": ensemble_std,
-        })
-        
-        for i, level in enumerate(percentile_levels):
-            label = f"ensemble_p{int(level * 100)}"
-            ds_stats[label] = ensemble_percentiles.sel(quantile=level)
+        ds_stats = calculate_statistics_from_index(tropical_nights_count)
         
         return None, tropical_nights_count, ds_stats
     
@@ -368,29 +331,7 @@ def calculate_and_save_tx30_per_lag(grib_file_path, tf_index):
 
         tx30_days_count = tx30_days_count.rename({"forecast_month": "step"})
 
-        # Calculate ensemble statistics (mean, median, etc.)
-        ensemble_mean = tx30_days_count.mean(dim="number")
-        ensemble_median = tx30_days_count.median(dim="number")
-        ensemble_max = tx30_days_count.max(dim="number")
-        ensemble_min = tx30_days_count.min(dim="number")
-        ensemble_std = tx30_days_count.std(dim="number")
-        
-        # Percentiles
-        percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
-        ensemble_percentiles = tx30_days_count.quantile(percentile_levels, dim="number")
-        
-        # Store statistics in a dataset
-        ds_stats = xr.Dataset({
-            "ensemble_mean": ensemble_mean,
-            "ensemble_median": ensemble_median,
-            "ensemble_max": ensemble_max,
-            "ensemble_min": ensemble_min,
-            "ensemble_std": ensemble_std,
-        })
-        
-        for i, level in enumerate(percentile_levels):
-            label = f"ensemble_p{int(level * 100)}"
-            ds_stats[label] = ensemble_percentiles.sel(quantile=level)
+        ds_stats = calculate_statistics_from_index(tx30_days_count)
         
         return None, tx30_days_count, ds_stats
     
@@ -399,25 +340,29 @@ def calculate_and_save_tx30_per_lag(grib_file_path, tf_index):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-# def calculate_statistics_from_index(dataarray):
-#     ensemble_mean = dataarray.mean(dim="number")
-#     ensemble_median = dataarray.median(dim="number")
-#     ensemble_max = dataarray.max(dim="number")
-#     ensemble_min = dataarray.min(dim="number")
-#     ensemble_std = dataarray.std(dim="number")
-#     percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
-#     ensemble_percentiles = dataarray.quantile(percentile_levels, dim="number")
-    
-#     ds_stats = xr.Dataset({
-#         "ensemble_mean": ensemble_mean,
-#         "ensemble_median": ensemble_median,
-#         "ensemble_max": ensemble_max,
-#         "ensemble_min": ensemble_min,
-#         "ensemble_std": ensemble_std,
-#     })
-    
-#     for i, level in enumerate(percentile_levels):
-#         label = f"ensemble_p{int(level * 100)}"
-#         ds_stats[label] = ensemble_percentiles.sel(quantile=level)
+def calculate_statistics_from_index(dataarray):
 
-#     return ds_stats
+    # Calculate ensemble statistics (mean, median, etc.)
+    ensemble_mean = dataarray.mean(dim="number")
+    ensemble_median = dataarray.median(dim="number")
+    ensemble_max = dataarray.max(dim="number")
+    ensemble_min = dataarray.min(dim="number")
+    ensemble_std = dataarray.std(dim="number")
+
+    # Percentiles
+    percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
+    ensemble_percentiles = dataarray.quantile(percentile_levels, dim="number")
+    
+    ds_stats = xr.Dataset({
+        "ensemble_mean": ensemble_mean,
+        "ensemble_median": ensemble_median,
+        "ensemble_max": ensemble_max,
+        "ensemble_min": ensemble_min,
+        "ensemble_std": ensemble_std,
+    })
+    
+    for level in percentile_levels:
+        label = f"ensemble_p{int(level * 100)}"
+        ds_stats[label] = ensemble_percentiles.sel(quantile=level)
+
+    return ds_stats
