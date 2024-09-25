@@ -54,22 +54,18 @@ Ensure you have the necessary permissions and comply with CDS data usage policie
 import os
 import logging
 import calendar
-import re
 
-import numpy as np
 import xarray as xr
 import pandas as pd
+import numpy as np
 import cdsapi
 
-from climada.util.coordinates import country_to_iso, get_country_geometries
-
-#from climada.util.coordinates import country_to_iso, get_country_geometries
-#from climada import CONFIG
 from climada.hazard import Hazard
-#import numpy as np
+from climada.util.coordinates import get_country_geometries
 import climada_petals.hazard.copernicus_forecast.indicator as indicator
 
 
+LOGGER = logging.getLogger(__name__)
 
 class ForecastHandler:
     """
@@ -77,8 +73,8 @@ class ForecastHandler:
     and hazards based on seasonal forecast data from Copernicus Climate Data Store (CDS).
     """
 
-    FORMAT_GRIB = 'grib'
-    FORMAT_NC = 'nc'
+    _FORMAT_GRIB = 'grib'
+    _FORMAT_NC = 'nc'
     
     def __init__(self, data_dir='.', url = None, key = None):
         """
@@ -113,37 +109,45 @@ class ForecastHandler:
         Returns:
         list: A list of four floats representing the bounds [north, east, south, west].
         """
-        if area_selection.lower() == "global":
-            return [90, -180, -90, 180]  # north, east, south, west
+        if isinstance(area_selection, str):
+            if area_selection.lower() == "global":
+                return [90, -180, -90, 180]  # north, west, south, east
         else:
-            try:
-                user_bounds = list(map(float, area_selection.split(",")))
-                if len(user_bounds) == 4:
-                    north, east, south, west = user_bounds
-                    north += margin
-                    east -= margin
-                    south -= margin
-                    west += margin
-                    return [north, east, south, west]
-            except ValueError:
+            # try if area was given in bounds
+            try: 
+                north, west, south, east = area_selection
+                lat_margin = margin * (north - south)
+                lon_margin = margin * (east - west)
+                north += lat_margin
+                east += lon_margin
+                south -= lat_margin
+                west -= lon_margin
+                return [north, west, south, east]
+            except:
                 pass
 
-            countries = area_selection.split(",")
-            combined_bounds = [180, 90, -180, -90]
-            for country in countries:
-                iso = country_to_iso(country.strip())
+            # check if countries are given 
+            combined_bounds = [-90, 180, 90, -180]
+            for iso in area_selection:
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
                 bounds = geo.total_bounds
+                if np.any(np.isnan(bounds)):
+                    logging.warning(f"ISO code '{iso}' not recognized. This region will not be included." )
+
                 min_lon, min_lat, max_lon, max_lat = bounds
 
                 lat_margin = margin * (max_lat - min_lat)
                 lon_margin = margin * (max_lon - min_lon)
 
-                combined_bounds[0] = min(combined_bounds[0], min_lon - lon_margin)
-                combined_bounds[1] = min(combined_bounds[1], min_lat - lat_margin)
-                combined_bounds[2] = max(combined_bounds[2], max_lon + lon_margin)
-                combined_bounds[3] = max(combined_bounds[3], max_lat + lat_margin)
-            return [combined_bounds[3], combined_bounds[0], combined_bounds[1], combined_bounds[2]]
+                combined_bounds[0] = max(combined_bounds[0], max_lat + lat_margin)
+                combined_bounds[1] = min(combined_bounds[1], min_lon - lon_margin)
+                combined_bounds[2] = min(combined_bounds[2], min_lat - lat_margin)
+                combined_bounds[3] = max(combined_bounds[3], max_lon + lon_margin)
+            
+            if combined_bounds == [-90, 180, 90, -180]:
+                return None
+            else:
+                return combined_bounds
 
     def explain_index(self, tf_index):
         """
@@ -317,7 +321,7 @@ class ForecastHandler:
                 self.logger.info(f"{len(leadtimes)} leadtimes to download.")
                 self.logger.debug(f"which are: {leadtimes}")
 
-                file_extension = 'grib' if format == self.FORMAT_GRIB else 'nc'
+                file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
                 download_file = f"{out_dir}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
 
                 if tf_index in ['HIS', 'HIA']:
@@ -354,7 +358,7 @@ class ForecastHandler:
                 daily_out = f"{data_out}/netcdf/daily/{year}/{month:02d}"
                 daily_file = f"{daily_out}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.nc"
                 os.makedirs(daily_out, exist_ok=True)
-                file_extension = 'grib' if format == self.FORMAT_GRIB else 'nc'
+                file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
                 download_file = f"{data_out}/{format}/{year}/{month:02d}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
                 
                 # check if data already exists including all relevant data variables
@@ -367,7 +371,7 @@ class ForecastHandler:
                 
                 if not data_already_exists or overwrite:
                     try:
-                        if format == self.FORMAT_GRIB:
+                        if format == self._FORMAT_GRIB:
                             with xr.open_dataset(download_file, engine="cfgrib") as ds:
                                 ds_daily = ds.coarsen(step=4, boundary='trim').mean()
                         else:
@@ -419,34 +423,60 @@ class ForecastHandler:
         tf_index (str): The climate index to be calculated.
         """
         bounds = self._get_bounds_for_area_selection(area_selection)
+        area_str = f"{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
+        index_params = indicator.get_index_params(tf_index)
 
-        if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-            # Calculate heat indices like HIS, HIA, Tmean, Tmax, Tmin
-            indicator.calculate_heat_indices(data_out, year_list, month_list, bounds, overwrite, tf_index)
+        for year in year_list:
+            for month in month_list:
+                # path to input file of daily variables
+                input_file_name = f"{data_out}/netcdf/daily/{year}/{month:02d}" \
+                    f'/{index_params["filename_lead"]}_{area_str}_{year}{month:02d}.nc'
+                grib_file_path = f"{data_out}/grib/{year}/{month:02d}" \
+                    f"/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.grib"
 
-        elif tf_index == "TR":
-            # Handle Tropical Nights (TR)
-            indicator.calculate_and_save_tropical_nights_per_lag(data_out, year_list, month_list, tf_index, bounds)
+                if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+                    # Calculate heat indices like HIS, HIA, Tmean, Tmax, Tmin
+                    index, ds_monthly, ds_stats = indicator.calculate_heat_indices(input_file_name, tf_index)
 
-        elif tf_index == "TX30":
-            # Handle Hot Days (Tmax > 30°C)
-            indicator.calculate_and_save_tx30_per_lag(data_out, year_list, month_list, tf_index, bounds)
-        
-        # TBD: add functionality
-        # elif tf_index == "HW":
-            # Handle Heat Wave Days (3 consecutive days Tmax > threshold)
-            # calculate_and_save_heat_wave_days_per_lag(data_out, year_list, month_list, tf_index, area_selection)
+                elif tf_index == "TR":
+                    # Handle Tropical Nights (TR)
+                    index, ds_monthly, ds_stats = indicator.calculate_and_save_tropical_nights_per_lag(grib_file_path, tf_index)
 
-        else:
-            logging.error(f"Index {tf_index} is not implemented. Supported indices are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'.")
+                elif tf_index == "TX30":
+                    # Handle Hot Days (Tmax > 30°C)
+                    index, ds_monthly, ds_stats = indicator.calculate_and_save_tx30_per_lag(grib_file_path, tf_index)
+                
+                # TODO: add functionality
+                # elif tf_index == "HW":
+                    # Handle Heat Wave Days (3 consecutive days Tmax > threshold)
+                    # calculate_and_save_heat_wave_days_per_lag(data_out, year_list, month_list, tf_index, area_selection)
 
-    def save_index_to_hazard(self, year_list, month_list, data_out, tf_index):
+                else:
+                    logging.error(f"Index {tf_index} is not implemented. Supported indices are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'.")
+
+                # paths to output files
+                output_dir = f"{data_out}/{tf_index}/{year}/{month:02d}"
+                output_index_name = f'{output_dir}/{tf_index}_{area_str}_{year}{month:02d}.nc'
+                output_statistics_name = f'{output_dir}/stats/stats_{tf_index}_{area_str}_{year}{month:02d}.nc'
+                output_monthly_name = f'{output_dir}/monthly_{tf_index}_{area_str}_{year}{month:02d}.nc'
+                os.makedirs(os.path.dirname(output_statistics_name), exist_ok=True)
+                
+                if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+                    index.to_netcdf(output_index_name)
+                ds_monthly.to_netcdf(output_monthly_name)
+                ds_stats.to_netcdf(output_statistics_name)
+
+    def save_index_to_hazard(self, year_list, month_list, area_selection, data_out, tf_index):
         """
         Processes the calculated climate indices into hazard objects and saves them.
 
         This method converts the NetCDF files of climate indices into CLIMADA Hazard objects,
         which can be used for further risk analysis.
         """
+
+        bounds = self._get_bounds_for_area_selection(area_selection)
+        area_str = f"{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
+
         base_input_dir = os.path.join(data_out, tf_index)
         base_output_dir = os.path.join(data_out, f"{tf_index}/hazard")
         hazard_type = tf_index
@@ -460,8 +490,8 @@ class ForecastHandler:
         for year in year_list:
             for month in month_list:
                 month_str = f"{month:02d}"
-                current_input_dir = os.path.join(base_input_dir, str(year))
-                nc_file_pattern = f"{hazard_type}_{year}{month_str}.nc"
+                current_input_dir = f'{base_input_dir}/{year}/{month:02d}'
+                nc_file_pattern = f"monthly_{hazard_type}_{area_str}_{year}{month_str}.nc"
                 nc_file_path = os.path.join(current_input_dir, nc_file_pattern)
                 current_output_dir = os.path.join(base_output_dir, f"{year}{month_str}")
                 os.makedirs(current_output_dir, exist_ok=True)
@@ -486,7 +516,7 @@ class ForecastHandler:
 
                         hazard.check()
 
-                        filename = f"hazard_{hazard_type}_member_{member}_{year}{month_str}.hdf5"
+                        filename = f"hazard_{hazard_type}_member_{member}_{area_str}_{year}{month_str}.hdf5"
                         file_path = os.path.join(current_output_dir, filename)
                         hazard.write_hdf5(file_path)
 
