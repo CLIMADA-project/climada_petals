@@ -360,7 +360,7 @@ class ForecastHandler:
                 
                 # check if data already exists including all relevant data variables
                 data_already_exists = self._is_data_present(
-                    download_file, file_extension,
+                    daily_file, 'nc',
                     indicator.get_index_params(tf_index)['variables']
                 )
                 
@@ -403,7 +403,9 @@ class ForecastHandler:
         """
 
         bounds = self._get_bounds_for_area_selection(area_selection)
-        self._download_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format, originating_centre, system, max_lead_month)
+        self._download_data(
+            data_out, year_list, month_list, bounds, overwrite, tf_index,
+            format, originating_centre, system, max_lead_month)
         self._process_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format)
 
     def calculate_index(
@@ -445,22 +447,16 @@ class ForecastHandler:
                         f'Index file {tf_index}_{area_str}_{year}{month:02d}.nc already exists.'
                     )
 
+                # calculate indeces
                 else:
                     if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                        # Calculate heat indices like HIS, HIA, Tmean, Tmax, Tmin
                         ds_daily, ds_monthly, ds_stats = indicator.calculate_heat_indices(input_file_name, tf_index)
-
                     elif tf_index == "TR":
-                        # Handle Tropical Nights (TR)
                         ds_daily, ds_monthly, ds_stats = indicator.calculate_and_save_tropical_nights_per_lag(grib_file_name, tf_index)
-
                     elif tf_index == "TX30":
-                        # Handle Hot Days (Tmax > 30°C)
                         ds_daily, ds_monthly, ds_stats = indicator.calculate_and_save_tx30_per_lag(grib_file_name, tf_index)
-                    
                     # TODO: add functionality
                     # elif tf_index == "HW":
-                        # Handle Heat Wave Days (3 consecutive days Tmax > threshold)
                         # calculate_and_save_heat_wave_days_per_lag(data_out, year_list, month_list, tf_index, area_selection)
 
                     else:
@@ -483,9 +479,6 @@ class ForecastHandler:
 
         bounds = self._get_bounds_for_area_selection(area_selection)
         area_str = f"{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
-
-        base_input_dir = os.path.join(data_out, tf_index)
-        base_output_dir = os.path.join(data_out, f"{tf_index}/hazard")
         hazard_type = tf_index
         intensity_variable = f"{tf_index}"
 
@@ -496,28 +489,26 @@ class ForecastHandler:
 
         for year in year_list:
             for month in month_list:
+                # define directories
+                input_file_name = f'{data_out}/{tf_index}/{year}/{month:02d}/' \
+                f'{hazard_type}_{area_str}_{year}{month:02d}.nc'
+                output_dir = f'{data_out}/{tf_index}/hazard/{year}/{month:02d}'
+                os.makedirs(output_dir, exist_ok=True)
 
-                month_str = f"{month:02d}"
-                current_input_dir = f'{base_input_dir}/{year}/{month:02d}'
-                nc_file_pattern = f"{hazard_type}_{area_str}_{year}{month_str}.nc"
-                nc_file_path = os.path.join(current_input_dir, nc_file_pattern)
-                current_output_dir = os.path.join(base_output_dir, f"{year}{month_str}")
-                os.makedirs(current_output_dir, exist_ok=True)
                 try:
-                    ds = xr.open_dataset(nc_file_path)
-
+                    ds = xr.open_dataset(input_file_name)
                     ds["step"] = xr.DataArray([f"{date}-01" for date in ds["step"].values], dims=["step"])
                     ds["step"] = pd.to_datetime(ds["step"].values)
-
                     ensemble_members = ds["number"].values
 
                     for member in ensemble_members:
                         # check if data already exists
-                        filename = f"hazard_{hazard_type}_member_{member}_{area_str}_{year}{month_str}.hdf5"
-                        file_path = os.path.join(current_output_dir, filename)
+                        filename = f"hazard_{hazard_type}_member_{member}_{area_str}_{year}{month:02d}.hdf5"
+                        file_path = f'{output_dir}/{filename}'
                         if os.path.exists(file_path) and not overwrite:
                             self.logger.info(f'Index file ' \
                                 f'{tf_index}_{area_str}_{year}{month:02d}.nc already exists.')
+                        # write hazard
                         else:
                             ds_subset = ds.sel(number=member)
                             hazard = Hazard.from_xarray_raster(
@@ -531,7 +522,7 @@ class ForecastHandler:
                             hazard.check()
                             hazard.write_hdf5(file_path)
 
-                    print(f"Completed processing for {year}-{month_str}. Data saved in {current_output_dir}")
+                    print(f"Completed processing for {year}-{month:02d}. Data saved in {output_dir}.")
 
                 except FileNotFoundError as e:
                     print(f"File not found: {e.filename}")
@@ -542,7 +533,8 @@ class ForecastHandler:
         last_hazard_file = file_path
         hazard_obj = Hazard.from_hdf5(last_hazard_file)
         hazard_obj.plot_intensity(1, smooth=False)
-    
+
+
     @staticmethod
     def _is_data_present(file, format, vars):
         data_already_exists = os.path.isfile(file)
