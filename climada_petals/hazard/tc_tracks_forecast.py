@@ -210,9 +210,9 @@ class TCForecast(TCTracks):
             remotefiles = fnmatch.filter(remotefiles_temp, '*ECEP*')
 
             if len(remotefiles) == 0:
-                msg = 'No tracks found at ftp://{}/{}'
-                msg.format(ECMWF_FTP.host.dir(), remote_dir)
-                raise FileNotFoundError(msg)
+                raise FileNotFoundError(
+                    f'No tracks found at ftp://{ECMWF_FTP.host.str()}/{remote_dir}'
+                )
 
             localfiles = []
 
