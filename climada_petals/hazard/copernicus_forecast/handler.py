@@ -16,19 +16,10 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Module to handle seasonal forecast data from the Copernicus Climate Data Store (CDS) in the U-CLIMADAPT project.
+Module to handle seasonal forecast data from the Copernicus Climate Data Store (CDS)
+in the U-CLIMADAPT project.
 
-This module provides functionality for downloading, processing, calculating climate indices, and creating hazard objects
-based on seasonal forecast data. It is designed to work with the CLIMADA (CLIMate ADAptation) platform for climate risk
-assessment and adaptation strategies.
-
-Features:
-- Download seasonal forecast data from CDS
-- Process raw data into climate indices
-- Calculate various heat-related indices (e.g., Heat Index, Tropical Nights)
-- Create CLIMADA Hazard objects for further risk analysis
-- Visualize hazard data
-
+TODO: update prerequisites
 Prerequisites:
 1. CDS API client installation:
    pip install cdsapi
@@ -38,17 +29,8 @@ Prerequisites:
 
 3. CDS API configuration:
    Create a .cdsapirc file in your home directory with your API key and URL.
-   For instructions, visit: https://cds-beta.climate.copernicus.eu/how-to-api#install-the-cds-api-client
-
-4. CLIMADA installation:
-   Follow instructions at https://climada-python.readthedocs.io/en/stable/guide/install.html
-
-Usage:
-This module is typically imported and used within larger scripts or applications for climate data processing
-and risk assessment. See individual function docstrings for specific usage instructions.
-
-Note:
-Ensure you have the necessary permissions and comply with CDS data usage policies when using this module.
+   For instructions, visit:
+   https://cds-beta.climate.copernicus.eu/how-to-api#install-the-cds-api-client
 """
 
 import os
@@ -132,7 +114,8 @@ class ForecastHandler:
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
                 bounds = geo.total_bounds
                 if np.any(np.isnan(bounds)):
-                    logging.warning(f"ISO code '{iso}' not recognized. This region will not be included." )
+                    logging.warning(f"ISO code '{iso}' not recognized. " \
+                        "This region will not be included." )
 
                 min_lon, min_lat, max_lon, max_lat = bounds
 
@@ -151,60 +134,14 @@ class ForecastHandler:
 
     def explain_index(self, tf_index):
         """
-        Provides an explanation and input data for the selected index.
+        Prints an explanation and input data for the selected index.
 
         Parameters:
         tf_index (str): The climate index identifier.
 
-        Returns:
-        str: A description of the selected index, its input data, or an error message if the index is invalid.
+        Returns: None
         """
-        # Dictionary with explanations and input data for each index
-        index_explanations = {
-            "HIA": {
-                "explanation": "Heat Index Adjusted: This indicator measures apparent temperature, considering both air temperature and humidity, providing a more accurate perception of how hot it feels.",
-                "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"]
-            },
-            "HIS": {
-                "explanation": "Heat Index Simplified: This indicator is a simpler version of the Heat Index, focusing on a quick estimate of perceived heat based on temperature and humidity.",
-                "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"]
-            },
-            "Tmean": {
-                "explanation": "Mean Temperature: This indicator calculates the average temperature over the specified period.",
-                "input_data": ["2m temperature (t2m)"]
-            },
-            "Tmin": {
-                "explanation": "Minimum Temperature: This indicator tracks the lowest temperature recorded over a specified period.",
-                "input_data": ["2m temperature (t2m)"]
-            },
-            "Tmax": {
-                "explanation": "Maximum Temperature: This indicator tracks the highest temperature recorded over a specified period.",
-                "input_data": ["2m temperature (t2m)"]
-            },
-            "HW": {
-                "explanation": "Heat Wave: This indicator identifies heat waves, defined as at least 3 consecutive days with temperatures exceeding a certain threshold.",
-                "input_data": ["2m temperature (t2m)"]
-            },
-            "TR": {
-                "explanation": "Tropical Nights: This indicator counts the number of nights where the minimum temperature remains above a certain threshold, typically 20°C.",
-                "input_data": ["2m temperature (t2m)"]
-            },
-            "TX30": {
-                "explanation": "Hot Days: This indicator counts the number of days where the maximum temperature exceeds 30°C.",
-                "input_data": ["2m temperature (t2m)"]
-            }
-        }
-
-        if tf_index in index_explanations:
-            explanation = f"Selected Index: {tf_index}\n"
-            explanation += f"Explanation: {index_explanations[tf_index]['explanation']}\n"
-            explanation += f"Input Data: {', '.join(index_explanations[tf_index]['input_data'])}"
-        else:
-            explanation = f"Error: {tf_index} is not a valid index. Please choose from {list(self.index_explanations.keys())}"
-
-        print(explanation)
-        return None
-    
+        indicator.index_explanations(tf_index)
 
     def _calc_min_max_lead(self, year, month, leadtime_months=1):
         """
@@ -257,7 +194,6 @@ class ForecastHandler:
         # check if data already exists including all relevant data variables
         download_file = f'{filename}'
         data_already_exists = self._is_data_present(f'{download_file}', 'grib', vars)
-
         if data_already_exists and not overwrite:
             self.logger.info(f'Corresponding {format} file {download_file} already exists.')
 
@@ -279,9 +215,11 @@ class ForecastHandler:
                     },
                     f'{download_file}'
                 )
-                self.logger.info(f'{format.capitalize()} file successfully downloaded to {download_file}.')
+                self.logger.info(f'{format.capitalize()} file successfully downloaded '\
+                                 f'to {download_file}.')
             except Exception as e:
-                self.logger.error(f'{format.capitalize()} file {download_file} could not be downloaded. Error: {e}')
+                self.logger.error(f'{format.capitalize()} file {download_file} could '\
+                                  f'not be downloaded. Error: {e}')
 
     def _download_data(
         self, data_out, year_list, month_list, bounds, overwrite, tf_index,
@@ -306,26 +244,25 @@ class ForecastHandler:
         None
         """
         index_params = indicator.get_index_params(tf_index)
+        variables = index_params['variables']
         area_str = f'{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}'
 
         for year in year_list:
             for month in month_list:
+                # prepare output paths
                 out_dir = f"{data_out}/{format}/{year}/{month:02d}"
                 os.makedirs(out_dir, exist_ok=True)
+                file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
+                download_file = f"{out_dir}/{index_params['filename_lead']}_{area_str}_"\
+                    f"{year}{month:02d}.{file_extension}"
 
+                # compute lead times
                 min_lead, max_lead = self._calc_min_max_lead(year, month, max_lead_month)
                 leadtimes = list(range(min_lead, max_lead, 6))
                 self.logger.info(f"{len(leadtimes)} leadtimes to download.")
                 self.logger.debug(f"which are: {leadtimes}")
-
-                file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
-                download_file = f"{out_dir}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
-
-                if tf_index in ['HIS', 'HIA']:
-                    variables = index_params['variables']
-                else:
-                    variables = [index_params['variables'][0]]
                 
+                # download data
                 self._download_multvar_multlead(
                     download_file, variables, year, month, leadtimes, bounds,
                     overwrite, format, originating_centre, system
@@ -352,28 +289,32 @@ class ForecastHandler:
 
         for year in year_list:
             for month in month_list:
-                daily_out = f"{data_out}/netcdf/daily/{year}/{month:02d}"
-                daily_file = f"{daily_out}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.nc"
-                os.makedirs(daily_out, exist_ok=True)
+                # prepare input and output paths
+                output_dir = f"{data_out}/netcdf/daily/{year}/{month:02d}"
+                daily_file = f"{output_dir}/{index_params['filename_lead']}_{area_str}_{year}"\
+                    f"{month:02d}.nc"
+                os.makedirs(output_dir, exist_ok=True)
                 file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
-                download_file = f"{data_out}/{format}/{year}/{month:02d}/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
+                input_file = f"{data_out}/{format}/{year}/{month:02d}/"\
+                f"{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
                 
                 # check if data already exists including all relevant data variables
                 data_already_exists = self._is_data_present(
-                    daily_file, 'nc',
-                    indicator.get_index_params(tf_index)['variables']
+                    daily_file, 'nc', index_params['variables']
                 )
                 
+                # process and save the data
                 if not data_already_exists or overwrite:
                     try:
                         if format == self._FORMAT_GRIB:
-                            with xr.open_dataset(download_file, engine="cfgrib") as ds:
+                            with xr.open_dataset(input_file, engine="cfgrib") as ds:
                                 ds_daily = ds.coarsen(step=4, boundary='trim').mean()
                         else:
-                            with xr.open_dataset(download_file) as ds:
+                            with xr.open_dataset(input_file) as ds:
                                 ds_daily = ds.coarsen(step=4, boundary='trim').mean()
                     except FileNotFoundError:
-                        self.logger.error(f"{format.capitalize()} file does not exist, download failed.")
+                        self.logger.error(f"{format.capitalize()} file does not exist, "\
+                                          "download failed.")
                         continue
                     ds_daily.to_netcdf(f"{daily_file}")
                 else:
@@ -435,14 +376,14 @@ class ForecastHandler:
                     f"/{index_params['filename_lead']}_{area_str}_{year}{month:02d}.grib"
                 
                 # paths to output files
-                output_dir = f"{data_out}/{tf_index}/{year}/{month:02d}"
-                output_daily_path = f'{output_dir}/daily_{tf_index}_{area_str}_{year}{month:02d}.nc'
-                output_stats_path = f'{output_dir}/stats/stats_{tf_index}_{area_str}_{year}{month:02d}.nc'
-                output_monthly_path = f'{output_dir}/{tf_index}_{area_str}_{year}{month:02d}.nc'
-                os.makedirs(os.path.dirname(output_stats_path), exist_ok=True)
+                out_dir = f"{data_out}/{tf_index}/{year}/{month:02d}"
+                out_daily_path = f'{out_dir}/daily_{tf_index}_{area_str}_{year}{month:02d}.nc'
+                out_stats_path = f'{out_dir}/stats/stats_{tf_index}_{area_str}_{year}{month:02d}.nc'
+                out_monthly_path = f'{out_dir}/{tf_index}_{area_str}_{year}{month:02d}.nc'
+                os.makedirs(os.path.dirname(out_stats_path), exist_ok=True)
 
                 # check if index (monthly) file exists
-                if os.path.exists(output_monthly_path) and not overwrite:
+                if os.path.exists(out_monthly_path) and not overwrite:
                     self.logger.info(
                         f'Index file {tf_index}_{area_str}_{year}{month:02d}.nc already exists.'
                     )
@@ -450,26 +391,37 @@ class ForecastHandler:
                 # calculate indeces
                 else:
                     if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_heat_indices(input_file_name, tf_index)
+                        ds_daily, ds_monthly, ds_stats = indicator.calculate_heat_indices(
+                            input_file_name, tf_index
+                        )
                     elif tf_index == "TR":
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_and_save_tropical_nights_per_lag(grib_file_name, tf_index)
+                        ds_daily, ds_monthly, ds_stats = indicator.calculate_tropical_nights_per_lag(
+                            grib_file_name, tf_index
+                        )
                     elif tf_index == "TX30":
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_and_save_tx30_per_lag(grib_file_name, tf_index)
+                        ds_daily, ds_monthly, ds_stats = indicator.calculate_tx30_per_lag(
+                            grib_file_name, tf_index
+                        )
                     # TODO: add functionality
                     # elif tf_index == "HW":
-                        # calculate_and_save_heat_wave_days_per_lag(data_out, year_list, month_list, tf_index, area_selection)
+                    #     indicator.calculate_and_save_heat_wave_days_per_lag(
+                    #         data_out, year_list, month_list, tf_index, area_selection
+                    #     )
 
                     else:
-                        logging.error(f"Index {tf_index} is not implemented. Supported indices are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'.")
+                        logging.error(f"Index {tf_index} is not implemented. Supported indices "\
+                        "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'.")
 
                     # save files
-                    self.logger.info(f"Writing index data to {output_monthly_path}.")
+                    self.logger.info(f"Writing index data to {out_monthly_path}.")
                     if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                        ds_daily.to_netcdf(output_daily_path)
-                    ds_monthly.to_netcdf(output_monthly_path)
-                    ds_stats.to_netcdf(output_stats_path)
+                        ds_daily.to_netcdf(out_daily_path)
+                    ds_monthly.to_netcdf(out_monthly_path)
+                    ds_stats.to_netcdf(out_stats_path)
 
-    def save_index_to_hazard(self, year_list, month_list, area_selection, data_out, overwrite, tf_index):
+    def save_index_to_hazard(
+            self, year_list, month_list, area_selection, data_out, overwrite, tf_index
+        ):
         """
         Processes the calculated climate indices into hazard objects and saves them.
 
@@ -489,26 +441,30 @@ class ForecastHandler:
 
         for year in year_list:
             for month in month_list:
-                # define directories
+                # define input and output paths
                 input_file_name = f'{data_out}/{tf_index}/{year}/{month:02d}/' \
                 f'{hazard_type}_{area_str}_{year}{month:02d}.nc'
                 output_dir = f'{data_out}/{tf_index}/hazard/{year}/{month:02d}'
                 os.makedirs(output_dir, exist_ok=True)
 
                 try:
+                    # open input file
                     ds = xr.open_dataset(input_file_name)
-                    ds["step"] = xr.DataArray([f"{date}-01" for date in ds["step"].values], dims=["step"])
+                    ds["step"] = xr.DataArray(
+                        [f"{date}-01" for date in ds["step"].values], dims=["step"]
+                    )
                     ds["step"] = pd.to_datetime(ds["step"].values)
                     ensemble_members = ds["number"].values
 
                     for member in ensemble_members:
                         # check if data already exists
-                        filename = f"hazard_{hazard_type}_member_{member}_{area_str}_{year}{month:02d}.hdf5"
-                        file_path = f'{output_dir}/{filename}'
+                        file_path = f"{output_dir}/hazard_{hazard_type}_member_{member}_' \
+                            f'{area_str}_{year}{month:02d}.hdf5"
                         if os.path.exists(file_path) and not overwrite:
                             self.logger.info(f'Index file ' \
                                 f'{tf_index}_{area_str}_{year}{month:02d}.nc already exists.')
-                        # write hazard
+
+                        # create and write hazard object
                         else:
                             ds_subset = ds.sel(number=member)
                             hazard = Hazard.from_xarray_raster(
@@ -516,13 +472,16 @@ class ForecastHandler:
                                 hazard_type=hazard_type,
                                 intensity_unit=intensity_unit,
                                 intensity=intensity_variable,
-                                coordinate_vars={"event": "step", "longitude": "longitude", "latitude": "latitude"}
+                                coordinate_vars={
+                                    "event": "step", "longitude": "longitude",
+                                    "latitude": "latitude"}
                             )
 
                             hazard.check()
                             hazard.write_hdf5(file_path)
 
-                    print(f"Completed processing for {year}-{month:02d}. Data saved in {output_dir}.")
+                    print(f"Completed processing for {year}-{month:02d}. "\
+                          f"Data saved in {output_dir}.")
 
                 except FileNotFoundError as e:
                     print(f"File not found: {e.filename}")
