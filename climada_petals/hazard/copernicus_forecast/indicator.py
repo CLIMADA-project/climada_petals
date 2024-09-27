@@ -302,15 +302,15 @@ def calculate_tropical_nights_per_lag(grib_file_path, tf_index):
     """            
     try:
         # prepare dataarray
-        ds = xr.open_dataset(grib_file_path, engine="cfgrib")
-        t2m_celsius = ds["t2m"] - 273.15
-        daily_min_temp = t2m_celsius.resample(step="1D").min()
-        valid_times = pd.to_datetime(ds.valid_time.values)
-        forecast_months_str = valid_times.to_period("M").astype(str)
-        step_to_month = dict(zip(ds.step.values, forecast_months_str))
-        forecast_month_da = xr.DataArray(list(
-            step_to_month.values()), coords=[ds.step], dims=["step"]
-        )
+        with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
+            t2m_celsius = ds["t2m"] - 273.15
+            daily_min_temp = t2m_celsius.resample(step="1D").min()
+            valid_times = pd.to_datetime(ds.valid_time.values)
+            forecast_months_str = valid_times.to_period("M").astype(str)
+            step_to_month = dict(zip(ds.step.values, forecast_months_str))
+            forecast_month_da = xr.DataArray(list(
+                step_to_month.values()), coords=[ds.step], dims=["step"]
+            )
         daily_min_temp.coords["forecast_month"] = forecast_month_da
 
         #compute tropical nights
@@ -345,15 +345,15 @@ def calculate_tx30_per_lag(grib_file_path, tf_index):
     """
     try:
         # prepare dataarray
-        ds = xr.open_dataset(grib_file_path, engine="cfgrib")
-        t2m_celsius = ds["t2m"] - 273.15
-        daily_max_temp = t2m_celsius.resample(step="1D").max()
-        valid_times = pd.to_datetime(ds.valid_time.values)
-        forecast_months_str = valid_times.to_period("M").astype(str)
-        step_to_month = dict(zip(ds.step.values, forecast_months_str))
-        forecast_month_da = xr.DataArray(list(
-            step_to_month.values()), coords=[ds.step], dims=["step"]
-        )
+        with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
+            t2m_celsius = ds["t2m"] - 273.15
+            daily_max_temp = t2m_celsius.resample(step="1D").max()
+            valid_times = pd.to_datetime(ds.valid_time.values)
+            forecast_months_str = valid_times.to_period("M").astype(str)
+            step_to_month = dict(zip(ds.step.values, forecast_months_str))
+            forecast_month_da = xr.DataArray(list(
+                step_to_month.values()), coords=[ds.step], dims=["step"]
+            )
         daily_max_temp.coords["forecast_month"] = forecast_month_da
 
         # Calculate TX30: Days where Tmax > 30°C

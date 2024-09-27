@@ -470,28 +470,28 @@ class ForecastHandler:
 
                     else:
                         # open input file
-                        ds = xr.open_dataset(input_file_name)
-                        ds["step"] = xr.DataArray(
-                            [f"{date}-01" for date in ds["step"].values], dims=["step"]
-                        )
-                        ds["step"] = pd.to_datetime(ds["step"].values)
-                        ensemble_members = ds["number"].values
-                        hazard = []
+                        with xr.open_dataset(input_file_name) as ds:
+                            ds["step"] = xr.DataArray(
+                                [f"{date}-01" for date in ds["step"].values], dims=["step"]
+                            )
+                            ds["step"] = pd.to_datetime(ds["step"].values)
+                            ensemble_members = ds["number"].values
+                            hazard = []
 
-                        for i, member in enumerate(ensemble_members):
-                            ds_subset = ds.sel(number=member)
-                            hazard.append(Hazard.from_xarray_raster(
-                                data=ds_subset,
-                                hazard_type=hazard_type,
-                                intensity_unit=intensity_unit,
-                                intensity=intensity_variable,
-                                coordinate_vars={
-                                    "event": "step", "longitude": "longitude",
-                                    "latitude": "latitude"}
-                            ))
-                            if i==0:
-                                number_lead_times = len(hazard[0].event_name)
-                            hazard[i].event_name = [f'member{member}'] * number_lead_times
+                            for i, member in enumerate(ensemble_members):
+                                ds_subset = ds.sel(number=member)
+                                hazard.append(Hazard.from_xarray_raster(
+                                    data=ds_subset,
+                                    hazard_type=hazard_type,
+                                    intensity_unit=intensity_unit,
+                                    intensity=intensity_variable,
+                                    coordinate_vars={
+                                        "event": "step", "longitude": "longitude",
+                                        "latitude": "latitude"}
+                                ))
+                                if i==0:
+                                    number_lead_times = len(hazard[0].event_name)
+                                hazard[i].event_name = [f'member{member}'] * number_lead_times
 
                         # concatenate and write hazards
                         hazard = Hazard.concat(hazard)
