@@ -462,25 +462,25 @@ class ForecastHandler:
                 os.makedirs(output_dir, exist_ok=True)
 
                 try:
-                    # open input file
-                    ds = xr.open_dataset(input_file_name)
-                    ds["step"] = xr.DataArray(
-                        [f"{date}-01" for date in ds["step"].values], dims=["step"]
-                    )
-                    ds["step"] = pd.to_datetime(ds["step"].values)
-                    ensemble_members = ds["number"].values
+                    # check if file already exists
+                    file_path = f"{output_dir}/hazard_{hazard_type}_" \
+                    f"{area_str}_{year}{month:02d}.hdf5"
+                    if os.path.exists(file_path) and not overwrite:
+                        self.logger.info(f'hazard file {file_path} already exists.')
 
-                    for member in ensemble_members:
-                        # check if data already exists
-                        file_path = f"{output_dir}/hazard_{hazard_type}_member_{member}_" \
-                            f"{area_str}_{year}{month:02d}.hdf5"
-                        if os.path.exists(file_path) and not overwrite:
-                            self.logger.info(f'hazard file {file_path} already exists.')
+                    else:
+                        # open input file
+                        ds = xr.open_dataset(input_file_name)
+                        ds["step"] = xr.DataArray(
+                            [f"{date}-01" for date in ds["step"].values], dims=["step"]
+                        )
+                        ds["step"] = pd.to_datetime(ds["step"].values)
+                        ensemble_members = ds["number"].values
+                        hazard = []
 
-                        # create and write hazard object
-                        else:
+                        for i, member in enumerate(ensemble_members):
                             ds_subset = ds.sel(number=member)
-                            hazard = Hazard.from_xarray_raster(
+                            hazard.append(Hazard.from_xarray_raster(
                                 data=ds_subset,
                                 hazard_type=hazard_type,
                                 intensity_unit=intensity_unit,
@@ -488,13 +488,18 @@ class ForecastHandler:
                                 coordinate_vars={
                                     "event": "step", "longitude": "longitude",
                                     "latitude": "latitude"}
-                            )
+                            ))
+                            if i==0:
+                                number_lead_times = len(hazard[0].event_name)
+                            hazard[i].event_name = [f'member{member}'] * number_lead_times
 
-                            hazard.check()
-                            hazard.write_hdf5(file_path)
+                        # concatenate and write hazards
+                        hazard = Hazard.concat(hazard)
+                        hazard.check()
+                        hazard.write_hdf5(file_path)
 
-                    print(f"Completed processing for {year}-{month:02d}. "\
-                          f"Data saved in {output_dir}.")
+                        print(f"Completed processing for {year}-{month:02d}. "\
+                            f"Data saved in {output_dir}.")
 
                 except FileNotFoundError as e:
                     print(f"File not found: {e.filename}")
