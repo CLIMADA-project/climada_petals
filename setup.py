@@ -28,7 +28,7 @@ setup(
 
     classifiers=[
         'Development Status :: 4 - Beta',
-        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3',
         'Topic :: Scientific/Engineering :: Atmospheric Science',
         'Topic :: Scientific/Engineering :: GIS',
         'Topic :: Scientific/Engineering :: Mathematics',
@@ -37,6 +37,7 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
+        'boario',
         'climada>=5.0',
         'cdsapi',
         'osm-flex',
