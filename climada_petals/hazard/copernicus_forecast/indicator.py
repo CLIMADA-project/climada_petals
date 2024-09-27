@@ -1,11 +1,29 @@
-# indicator.py
+"""
+This file is part of CLIMADA.
 
-import xarray as xr # Called in the .ipynb
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+File to calculate differen seasonal forecast indeces.
+"""
+
+
+import xarray as xr 
 import numpy as np
 import pandas as pd
 import logging
-import os
-# from climada.util.coordinates import country_to_iso, get_country_geometries # Called in the .ipynb
 
 VAR_SPECS = {
         "2m_temperature": {
@@ -156,10 +174,21 @@ def calculate_heat_index_adjusted(t2k, tdk):
         + 0.00085282 * t2f * rh**2
         - 0.00000199 * t2f**2 * rh**2
     )
-    return (hi - 32) * 5 / 9  # convert back to Celsius
+    return (hi - 32) * 5 / 9  # converted back to Celsius
 
 
 def calculate_heat_index(da_t2k, da_tdk, index):
+    """
+    Calculates the heat index based on temperature and dewpoint temperature.
+
+    Parameters:
+    da_t2k (xarray.DataArray): 2-meter temperature in Kelvin.
+    da_tdk (xarray.DataArray): 2-meter dewpoint temperature in Kelvin.
+    index (str): heat index to calculate
+
+    Returns:
+    xarray.DataArray: heat index.
+    """
     if index == "HIS":
         index_long_name = "heat_index_simplified"
         unit = "degC"
@@ -180,17 +209,18 @@ def calculate_heat_index(da_t2k, da_tdk, index):
     return da_index
 
 
-def calculate_heat_indices(input_file_name, tf_index):
+def calculate_heat_indices_metrics(input_file_name, tf_index):
     """
-    Calculates and saves heat indices or temperature metrics.
+    Calculates heat indices or temperature metrics.
 
     Parameters:
-    data_out (str): Base directory path for output data.
-    year_list (list of int): Years for which to calculate indices.
-    month_list (list of int): Months to calculate indices (1-12).
-    area_selection (str): Area specification.
-    overwrite (bool): If True, overwrites existing files.
+    input_file_name (str): path to input data file.
     tf_index (str): The climate index being processed.
+
+    Returns: tuple
+    xarray:Dataset: daily index
+    xarray:Dataset: montly index
+    xarray:Dataset: index statistics
     """
 
     # Calculate index
@@ -234,8 +264,7 @@ def calculate_heat_indices(input_file_name, tf_index):
 
     # Calculate statistics
     valid_times = pd.to_datetime(daily_ds.valid_time.values)
-    forecast_months = valid_times.to_period("M")
-    forecast_months_str = forecast_months.astype(str)
+    forecast_months_str = valid_times.to_period("M").astype(str)
     step_to_month = dict(zip(daily_ds.step.values, forecast_months_str))
     forecast_month_da = xr.DataArray(
         list(step_to_month.values()), coords=[daily_ds.step], dims=["step"]
@@ -246,17 +275,13 @@ def calculate_heat_indices(input_file_name, tf_index):
     # Calculate monthly means
     monthly_means = da_index.groupby("forecast_month").mean(dim="step")
     monthly_means = monthly_means.rename(tf_index)
-
-    # Rename forecast_month to step
     monthly_means = monthly_means.rename({"forecast_month": "step"})
-
-    # Save the monthly means for all members in one file
     ds_monthly = xr.Dataset({f"{tf_index}": monthly_means})
 
     # Ensure 'number' dimension starts from 1 instead of 0
     ds_monthly = ds_monthly.assign_coords(number=ds_monthly.number)
 
-    # Now calculate ensemble statistics across members
+    # calculate ensemble statistics across members
     ds_stats = calculate_statistics_from_index(monthly_means)
 
     return ds_combined, ds_monthly, ds_stats
@@ -267,23 +292,28 @@ def calculate_tropical_nights_per_lag(grib_file_path, tf_index):
     Calculates and saves the tropical nights index.
 
     Parameters:
-    base_path (str): Base directory path for input and output data.
-    year_list (list of int): Years for which to calculate the index.
-    month_list (list of int): Months for which to calculate the index (1-12).
-    tf_index (str): The climate index being processed ('TR').
-    area_selection (str): Area specification.
+    input_file_name (str): path to input grib data file.
+    tf_index (str): The climate index being processed.
+
+    Returns: tuple
+    None
+    xarray:Dataset: montly index
+    xarray:Dataset: index statistics
     """            
     try:
-        # calculate index
+        # prepare dataarray
         ds = xr.open_dataset(grib_file_path, engine="cfgrib")
         t2m_celsius = ds["t2m"] - 273.15
         daily_min_temp = t2m_celsius.resample(step="1D").min()
         valid_times = pd.to_datetime(ds.valid_time.values)
-        forecast_months = valid_times.to_period("M")
-        forecast_months_str = forecast_months.astype(str)
+        forecast_months_str = valid_times.to_period("M").astype(str)
         step_to_month = dict(zip(ds.step.values, forecast_months_str))
-        forecast_month_da = xr.DataArray(list(step_to_month.values()), coords=[ds.step], dims=["step"])
+        forecast_month_da = xr.DataArray(list(
+            step_to_month.values()), coords=[ds.step], dims=["step"]
+        )
         daily_min_temp.coords["forecast_month"] = forecast_month_da
+
+        #compute tropical nights
         tropical_nights = daily_min_temp >= 20
         tropical_nights_count = tropical_nights.groupby("forecast_month").sum(dim="step")
         tropical_nights_count = tropical_nights_count.rename(tf_index)
@@ -305,21 +335,25 @@ def calculate_tx30_per_lag(grib_file_path, tf_index):
     Calculates and saves the TX30 index (Tmax > 30°C).
 
     Parameters:
-    base_path (str): Base directory path for input and output data.
-    year_list (list of int): Years for which to calculate the index.
-    month_list (list of int): Months for which to calculate the index (1-12).
-    tf_index (str): The climate index being processed ('TX30').
-    area_selection (str): Area specification.
+    input_file_name (str): path to input grib data file.
+    tf_index (str): The climate index being processed.
+
+    Returns: tuple
+    None
+    xarray:Dataset: montly index
+    xarray:Dataset: index statistics
     """
     try:
+        # prepare dataarray
         ds = xr.open_dataset(grib_file_path, engine="cfgrib")
         t2m_celsius = ds["t2m"] - 273.15
         daily_max_temp = t2m_celsius.resample(step="1D").max()
         valid_times = pd.to_datetime(ds.valid_time.values)
-        forecast_months = valid_times.to_period("M")
-        forecast_months_str = forecast_months.astype(str)
+        forecast_months_str = valid_times.to_period("M").astype(str)
         step_to_month = dict(zip(ds.step.values, forecast_months_str))
-        forecast_month_da = xr.DataArray(list(step_to_month.values()), coords=[ds.step], dims=["step"])
+        forecast_month_da = xr.DataArray(list(
+            step_to_month.values()), coords=[ds.step], dims=["step"]
+        )
         daily_max_temp.coords["forecast_month"] = forecast_month_da
 
         # Calculate TX30: Days where Tmax > 30°C
@@ -328,9 +362,9 @@ def calculate_tx30_per_lag(grib_file_path, tf_index):
         # Count the number of TX30 days per forecast month
         tx30_days_count = tx30_days.groupby("forecast_month").sum(dim="step")
         tx30_days_count = tx30_days_count.rename(tf_index)
-
         tx30_days_count = tx30_days_count.rename({"forecast_month": "step"})
-
+   
+        # calculate statistics
         ds_stats = calculate_statistics_from_index(tx30_days_count)
         
         return None, tx30_days_count, ds_stats
@@ -341,6 +375,15 @@ def calculate_tx30_per_lag(grib_file_path, tf_index):
         print(f"An error occurred: {e}")
 
 def calculate_statistics_from_index(dataarray):
+    """
+    Calculates statistics for dataarray (mean, median, percentiles, etc.).
+
+    Parameters:
+    dataarray (xarray:DataArray): input dataarray
+
+    Returns:
+    xarray:Dataset: index statistics
+    """
 
     # Calculate ensemble statistics (mean, median, etc.)
     ensemble_mean = dataarray.mean(dim="number")
@@ -349,10 +392,7 @@ def calculate_statistics_from_index(dataarray):
     ensemble_min = dataarray.min(dim="number")
     ensemble_std = dataarray.std(dim="number")
 
-    # Percentiles
-    percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
-    ensemble_percentiles = dataarray.quantile(percentile_levels, dim="number")
-    
+    # create dataset
     ds_stats = xr.Dataset({
         "ensemble_mean": ensemble_mean,
         "ensemble_median": ensemble_median,
@@ -360,7 +400,10 @@ def calculate_statistics_from_index(dataarray):
         "ensemble_min": ensemble_min,
         "ensemble_std": ensemble_std,
     })
-    
+
+    # add percentiles
+    percentile_levels = [0.05, 0.25, 0.5, 0.75, 0.95]
+    ensemble_percentiles = dataarray.quantile(percentile_levels, dim="number")
     for level in percentile_levels:
         label = f"ensemble_p{int(level * 100)}"
         ds_stats[label] = ensemble_percentiles.sel(quantile=level)
@@ -378,35 +421,45 @@ def index_explanations(tf_index):
     """
     index_explanations = {
         "HIA": {
-            "explanation": "Heat Index Adjusted: This indicator measures apparent temperature, considering both air temperature and humidity, providing a more accurate perception of how hot it feels.",
+            "explanation": "Heat Index Adjusted: This indicator measures apparent "\
+                "temperature, considering both air temperature and humidity, providing a more "\
+                "accurate perception of how hot it feels.",
             "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"]
         },
         "HIS": {
-            "explanation": "Heat Index Simplified: This indicator is a simpler version of the Heat Index, focusing on a quick estimate of perceived heat based on temperature and humidity.",
+            "explanation": "Heat Index Simplified: This indicator is a simpler version of the "\
+                "Heat Index, focusing on a quick estimate of perceived heat based on temperature "\
+                "and humidity.",
             "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"]
         },
         "Tmean": {
-            "explanation": "Mean Temperature: This indicator calculates the average temperature over the specified period.",
+            "explanation": "Mean Temperature: This indicator calculates the average temperature "\
+                "over the specified period.",
             "input_data": ["2m temperature (t2m)"]
         },
         "Tmin": {
-            "explanation": "Minimum Temperature: This indicator tracks the lowest temperature recorded over a specified period.",
+            "explanation": "Minimum Temperature: This indicator tracks the lowest temperature "\
+                "recorded over a specified period.",
             "input_data": ["2m temperature (t2m)"]
         },
         "Tmax": {
-            "explanation": "Maximum Temperature: This indicator tracks the highest temperature recorded over a specified period.",
+            "explanation": "Maximum Temperature: This indicator tracks the highest temperature "\
+                "recorded over a specified period.",
             "input_data": ["2m temperature (t2m)"]
         },
         "HW": {
-            "explanation": "Heat Wave: This indicator identifies heat waves, defined as at least 3 consecutive days with temperatures exceeding a certain threshold.",
+            "explanation": "Heat Wave: This indicator identifies heat waves, defined as at least "\
+                "3 consecutive days with temperatures exceeding a certain threshold.",
             "input_data": ["2m temperature (t2m)"]
         },
         "TR": {
-            "explanation": "Tropical Nights: This indicator counts the number of nights where the minimum temperature remains above a certain threshold, typically 20°C.",
+            "explanation": "Tropical Nights: This indicator counts the number of nights where "\
+                "the minimum temperature remains above a certain threshold, typically 20°C.",
             "input_data": ["2m temperature (t2m)"]
         },
         "TX30": {
-            "explanation": "Hot Days: This indicator counts the number of days where the maximum temperature exceeds 30°C.",
+            "explanation": "Hot Days: This indicator counts the number of days where the maximum "\
+                "temperature exceeds 30°C.",
             "input_data": ["2m temperature (t2m)"]
         }
     }
@@ -416,6 +469,7 @@ def index_explanations(tf_index):
         explanation += f"Explanation: {index_explanations[tf_index]['explanation']}\n"
         explanation += f"Input Data: {', '.join(index_explanations[tf_index]['input_data'])}"
     else:
-        explanation = f"Error: {tf_index} is not a valid index. Please choose from {list(index_explanations.keys())}"
+        explanation = f"Error: {tf_index} is not a valid index. Please choose "\
+                f"from {list(index_explanations.keys())}"
 
     print(explanation)

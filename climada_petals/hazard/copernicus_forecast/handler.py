@@ -391,7 +391,7 @@ class ForecastHandler:
                 # calculate indeces
                 else:
                     if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_heat_indices(
+                        ds_daily, ds_monthly, ds_stats = indicator.calculate_heat_indices_metrics(
                             input_file_name, tf_index
                         )
                     elif tf_index == "TR":
