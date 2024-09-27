@@ -27,7 +27,7 @@ import operator  # See https://stackoverflow.com/questions/33533148/how-do-i-typ
 
 # Replace by `from typing import Self` when python 3.11+ is the min required version.
 
-__all__ = ["SupplyChain"]
+__all__ = ["DirectShock"]
 
 import logging
 from typing import Iterable, Literal
@@ -74,80 +74,178 @@ VA_NAME = "value added"
 class DirectShock:
     """DirectShock class.
 
-    The DirectShock class provides methods for 'translating' an Impact object into
-    an economic shock, corresponding to an MRIOT table, from which indirect economic
+    The DirectShock class provides methods for 'translating' an Impact and Exposure into
+    an economic shock, corresponding to a specific MRIOT table, from which indirect economic
     costs can be computed.
 
     Attributes
     ----------
-    mriot : pymrio.IOSystem
-            An object containing all MRIOT related info (see also pymrio package):
-                mriot.Z : transaction matrix, or interindustry flows matrix
-                mriot.Y : final demand
-                mriot.x : industry or total output
-                mriot.meta : metadata
+    mriot_name: str
+            The name of the MRIOT defining the typology of assets.
 
-    exposed_assets: pd.DataFrame
-            Exposure for each region/sector in the MRIOT.
+    mriot_sectors: list[str]
+            The list of possible sectors.
+
+    mriot_regions: list[str]
+            The list of possible regions.
+
+    name: str, default "unnamed"
+            A name to identify the object.
+
+    exposure_assets: pd.Series
+            Exposure translated in the region/sector typology of the MRIOT. The index of the Series is a subset
+            of the possible (region, sector).
 
     impacted_assets: pd.DataFrame
-            Impact for each region/sector in the MRIOT, for each events.
-            Row indexes correspond to event_ids of the original initial object.
-
+            Impact translated in the region/sector typology of the MRIOT. The columns index of the DataFrame is a subset
+            of the possible (region, sector), and the row index correspond to event_ids of the Impact.
 
     """
 
     def __init__(
         self,
+        mriot_name: str,
+        mriot_sectors: list[str],
+        mriot_regions: list[str],
+        exposure_assets: pd.Series,
+        impacted_assets: pd.DataFrame,
+        shock_name: str = "unnamed",
+    ) -> None:
+        self.mriot_sectors = mriot_sectors
+        self.mriot_regions = mriot_regions
+        self.mriot_name = mriot_name
+        self.name = shock_name
+        self.exposure_assets = exposure_assets
+        self.impacted_assets = impacted_assets
+
+    @classmethod
+    def _init_with_mriot(
+        cls,
         mriot: pymrio.IOSystem,
         exposed_assets: pd.Series,
         impacted_assets: pd.DataFrame,
-        shock_name :str = "unnamed"
-    ) -> None:
-        self.mriot_sectors = mriot.get_sectors()
-        self.mriot_regions = mriot.get_regions()
-        self.mriot_name = mriot.name
-        self.shock_name = shock_name
-        self.exposed_assets = exposed_assets
-        self.impacted_assets = impacted_assets # indexed should be named "event_id".
-
-    # constructor without mriot (for combine)?
+        shock_name: str,
+    ):
+        return cls(
+            mriot.name,
+            mriot.get_sectors(),
+            mriot.get_regions(),
+            exposed_assets,
+            impacted_assets,
+            shock_name,
+        )
 
     @property
-    def shock(self):
-        return 1 - (self.impacted_assets / self.exposed_assets)
+    def relative_impact(self):
+        """The ratio of impacted assets over total assets."""
+        return (self.impacted_assets / self.exposure_assets)
 
     @classmethod
-    def from_exp_imp(
+    def from_exp_and_imp(
         cls,
         mriot: pymrio.IOSystem,
         exposure: Exposures,
         impact: Impact,
         shock_name: str,
-        affected_sectors: Iterable[str] | dict[str, float] | Literal["all"],
+        affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
         impact_distribution: dict[str, float] | pd.Series | None,
         exp_value_col: str = "value",
     ):
+        """Build a DirectShock from an MRIOT, Exposure and Impact objects.
+
+        This method translates both the given Exposure and Impact objects to the MRIOT typology.
+        First, it aggregates exposure values by `region_id` and then maps them to the
+        regions of the given mriot. Assets are then distributed to the
+        different sectors specified by `affected_sectors`.
+        It proceeds with a similar process for the Impact object, using `impact_distribution` to
+        distribute the impact across sectors.
+
+        Parameters
+        ----------
+        mriot : pymrio.IOSystem
+            The MRIOT to use for the typology of region and sectors.
+        exposure : Exposures
+            The Exposures object to use to derive total assets from.
+        impact : Impact
+            The Impact object to derive the impact on assets from.
+        shock_name : str
+            An optional name to identify the object.
+        affected_sectors : Iterable[str] | dict[str, float] | pd.Series | Literal["all"]
+            The sectors of the MRIOT that are impacted. If given as a
+            collection of string, or `"all"`, then the total assets of the
+            region are distributed proportionally to each sectors gross output.
+            A dictionnary `sector:share` can also be passed to specify which
+            share of the total regional assets should be distributed to each
+            sector.
+        impact_distribution : dict[str, float] | pd.Series, optional
+            This argument specify how the impact per region should be
+            distributed to the impacted sectors. Using `None` will distribute
+            proportionally to each sectors gross output in the MRIOT. A
+            dictionnary in the form `sector:share` or similarly a `Series` can
+            be used to specify a custom distribution.
+        exp_value_col : str
+            The name of the column of the Exposure data representing the value
+            of assets in each centroids.
+
+        """
 
         mriot_type = get_mriot_type(mriot)
         exp = translate_exp_to_regions(exposure, mriot_type=mriot_type)
-        exposed_assets = translate_exp_to_sectors(
+        exposure_assets = translate_exp_to_sectors(
             exp, affected_sectors=affected_sectors, mriot=mriot, value_col=exp_value_col
         )
-        return cls.from_assets_imp(
-            mriot, exposed_assets, impact, shock_name, affected_sectors, impact_distribution
+        return cls.from_assets_and_imp(
+            mriot,
+            exposure_assets,
+            impact,
+            shock_name,
+            affected_sectors,
+            impact_distribution,
         )
 
     @classmethod
-    def from_assets_imp(
+    def from_assets_and_imp(
         cls,
         mriot: pymrio.IOSystem,
-        exposed_assets: pd.Series,
+        exposure_assets: pd.Series,
         impact: Impact,
         shock_name: str,
-        affected_sectors: Iterable[str] | dict[str, float] | Literal["all"],
+        affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
         impact_distribution: dict[str, float] | pd.Series | None,
     ):
+        """Build a DirectShock from an MRIOT, assets Series, and Impact objects.
+
+        This method translates the given Impact object to the MRIOT typology
+        (see :py:meth:`from_exp_and_imp`).
+
+        Parameters
+        ----------
+        mriot : pymrio.IOSystem
+            The MRIOT to use for the typology of region and sectors.
+        exposure_assets : pd.Series
+            A pandas `Series` with (region,sector) as index and assets value.
+        impact : Impact
+            The Impact object to derive the impact on assets from.
+        shock_name : str
+            An optional name to identify the object.
+        affected_sectors : Iterable[str] | dict[str, float] | Literal["all"]
+            The sectors of the MRIOT that are impacted. If given as a
+            collection of string, or `"all"`, then the total assets of the
+            region are distributed proportionally to each sectors gross output.
+            A dictionnary `sector:share` can also be passed to specify which
+            share of the total regional assets should be distributed to each
+            sector.
+        impact_distribution : dict[str, float] | pd.Series, optional
+            This argument specify how the impact per region should be
+            distributed to the impacted sectors. Using `None` will distribute
+            proportionally to each sectors gross output in the MRIOT. A
+            dictionnary in the form `sector:share` or similarly a `Series` can
+            be used to specify a custom distribution.
+        exp_value_col : str
+            The name of the column of the Exposure data representing the value
+            of assets in each centroids.
+
+        """
 
         mriot_type = get_mriot_type(mriot)
         impacted_assets = impact.impact_at_reg()
@@ -174,46 +272,80 @@ class DirectShock:
         impacted_assets = distribute_reg_impact_to_sectors(
             impacted_assets, impact_distribution
         )
-
-        return cls(mriot, exposed_assets, impacted_assets, shock_name)
+        impacted_assets.rename_axis(index="event_id", inplace=True)
+        return cls._init_with_mriot(mriot, exposure_assets, impacted_assets, shock_name)
 
     @classmethod
-    def combine(cls, direct_shocks: list[DirectShock], kind:Literal["merge", "concat"] = "merge"):
-        # 1. Check that MRIOT name and assets are the same
-        cls._check_compatible(direct_shocks)
-        # 2. concat the impacted assets
+    def combine(
+        cls,
+        direct_shocks: list[DirectShock],
+        kind: Literal["merge", "concat"] = "merge",
+        direct_shock_ids: list | None = None,
+        combine_name: str = "unnamed_combine",
+    ):
+        # 1. Check that MRIOT name and exposed assets are the same
+        combined_exp_assets = cls._combine_exp_assets(direct_shocks)
 
-        # New name ? optional in arg ?
-
+        imp_assets = [shock.impacted_assets for shock in direct_shocks]
         if kind == "merge":
-            imp_assets = [shock.impacted_assets for shock in direct_shocks]
-            if not all([set(imp_assets[0].columns) == set(df.columns) for df in imp_assets]):
-                raise ValueError("Provide DirectShock do not all share the same columns (i.e., region-sector), merging shock is not possible.")
-            if not all([set(imp_assets[0].index) == set(df.index) for df in imp_assets]):
-                raise ValueError("Provide DirectShock do not all share the same index (i.e., event_id), merging shocks is not possible.")
-            LOGGER.info("Merging direct shocks together. The resulting direct shock per event and per each region,sector will be the sum of the different direct shocks")
-            merged_imp_assets = reduce(lambda left, right: left.combine(right,sum), imp_assets)
-            return cls()
+            LOGGER.info(
+                "Merging direct shocks together. The resulting direct shock per event and per each region,sector will be the sum of the different direct shocks."
+            )
+            merged_imp_assets = (
+                pd.concat(imp_assets, join="outer", sort=True)
+                .fillna(0)
+                .groupby(level=0)
+                .sum()
+            )
+            return cls(
+                direct_shocks[0].mriot_name,
+                direct_shocks[0].mriot_sectors,
+                direct_shocks[0].mriot_regions,
+                combined_exp_assets,
+                merged_imp_assets,
+                combine_name,
+            )
 
-        # concat case
-        # add a shock name index / keep original event_id
-        #
+        if kind == "concat":
+            if direct_shock_ids is None:
+                direct_shock_ids = list(range(len(direct_shocks)))
+            LOGGER.info(
+                "Concatenating direct shocks. This assume the different direct shocks are from independent events."
+            )
+            concatenated_imp_assets = pd.concat(
+                imp_assets,
+                axis=0,
+                keys=direct_shock_ids,
+                names=["DirectShock_id", "event_id"],
+                sort=True,
+            ).fillna(0)
+            return cls(
+                direct_shocks[0].mriot_name,
+                direct_shocks[0].mriot_sectors,
+                direct_shocks[0].mriot_regions,
+                direct_shocks[0].exposure_assets,
+                concatenated_imp_assets,
+                combine_name,
+            )
 
     @staticmethod
-    def _check_compatible(direct_shocks: list[DirectShock]) -> None:
-        def _check_mriot_name(mriot_names:list[str]) -> bool:
+    def _combine_exp_assets(direct_shocks: list[DirectShock]) -> pd.Series:
+        def _check_mriot_name(mriot_names: list[str]) -> bool:
             return all(name == mriot_names[0] for name in mriot_names)
 
-        def _check_assets(assets: list[pd.Series]) -> bool:
-            return all(            [pd.Series.equals(asset,assets[0]) for asset in assets]        )
-
         mriot_names, assets = zip(
-            *[(shock.mriot_name, shock.exposed_assets) for shock in direct_shocks]
+            *[(shock.mriot_name, shock.exposure_assets) for shock in direct_shocks]
         )
         if not _check_mriot_name(mriot_names):
             raise ValueError("DirectShocks do not all have the same mriot_name.")
-        if not _check_assets(assets):
-            raise ValueError("DirectShocks do not all have the same exposed_assets.")
+
+        concat_assets = pd.concat(assets, join="outer")
+        duplicated_idx = concat_assets.index[concat_assets.index.duplicated()]
+        duplicated_values = concat_assets.loc[duplicated_idx]
+        if not duplicated_values.groupby(duplicated_values.index).nunique().eq(1).all():
+            raise ValueError("Assets present in multiple shocks have different values.")
+        else:
+            return concat_assets.groupby(level=[0,1]).first()
 
 
 class IndirectCostModel:

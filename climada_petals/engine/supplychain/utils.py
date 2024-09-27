@@ -340,7 +340,7 @@ def parse_mriot(mriot_type, downloaded_file):
         )
 
         # This should include the year as well
-        mriot.name = "WIOD16"
+        mriot.meta.change_meta("name", "WIOD16")
 
     elif mriot_type == "OECD21":
         mriot = pymrio.parse_oecd(path=downloaded_file)
@@ -349,6 +349,7 @@ def parse_mriot(mriot_type, downloaded_file):
     else:
         raise RuntimeError(f"Unknown mriot_type: {mriot_type}")
     return mriot
+
 
 def check_sectors_in_mriot(sectors: Iterable[str], mriot: pymrio.IOSystem) -> None:
     """
@@ -415,96 +416,79 @@ def translate_exp_to_regions(
     )
     return exp
 
+
 def translate_exp_to_sectors(
     exp: Exposures,
-    affected_sectors: Iterable[str] | dict[str, float]|Literal["all"],
+    affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
     mriot: pymrio.IOSystem,
     value_col: str = "value",
 ) -> pd.Series:
     """
     Translate exposure data to the Multi-Regional Input-Output Table (MRIOT) context.
 
+    By default the function distribute the exposure value to the sectors according to the production ratios
+    of the affected sectors (Their relative share of the gross output (in the MRIOT) of all affected sectors).
+    The ratios can also be provided directly using a dict or a Series, and are applied as is.
+
     Parameters
     ----------
     exp : Exposures
         An instance of the `Exposures` class containing geospatial exposure data for a group of sectors.
-    affected_sectors : list of str or dict of {str: float} or None
+        The Exposures GeoDataFrame has to contain a `region` column with regions present in the MRIOTs. Such an Exposures object can be built with :py:func:`translate_exp_to_regions`
+    affected_sectors : Iterable[str] | dict[str, float] | pd.Series | Literal["all"]
         Sectors affected by the event. Can be either:
         - A list of sector names (str) if sectors distribution at each point is to be proportional
         to their production share in the MRIOT.
-        - A dictionary where keys are sector names (str) and values are predefined shares of the relative
-        presence of each sectors within each coordinates (float).
         - "all", in which case all sectors of the MRIOT are considered affected.
+        - A dictionary/Series where keys/index are sector names (str) and values are predefined shares of the relative
+        presence of each sectors within each coordinates (float).
     mriot : pym.IOSystem
         An instance of `pymrio.IOSystem`, representing the multi-regional input-output model.
 
     Returns
     -------
     pd.Series
-        A pandas Series with a MultiIndex of regions and sectors, containing the translated exposure values.
+        A pandas Series with a MultiIndex of regions and sectors, containing the 'translated' exposure values.
 
-    Notes
-    -----
-    The function adjusts the exposure values according to the production ratios of the affected sectors.
-    If the production ratios are provided directly, they are applied as is. If a list of affected sectors
-    is provided, the production ratios are calculated using the MRIOT data.
     """
 
-    ## If production ratios are provided as a dictionary, use them directly
     if affected_sectors == "all":
-        affected_sectors = mriot.get_sectors()
+        affected_sectors = list(mriot.get_sectors())
 
-    if isinstance(affected_sectors, dict):
-        # logger.info("Using predefined production ratios from affected_sectors dictionary.")
-
-        # Ensure that all sectors in the dictionary exist
-        check_sectors_in_mriot(affected_sectors.keys(), mriot)
-        prod_ratio = pd.Series(affected_sectors, name="sector")
-
-        # Sum the exposure values by region
-        exposed_assets = exp.gdf.groupby("region")[value_col].sum()
-
-        # Create a MultiIndex to match regions with each sector
-        multi_index = pd.MultiIndex.from_product(
-            [exposed_assets.index, prod_ratio.index], names=["region", "sector"]
-        )
-
-        # Repeat the exposure values for each sector within each region
-        exposed_assets = exposed_assets.repeat(len(prod_ratio))
-        exposed_assets.index = multi_index
-
-        # Multiply the exposure values by the corresponding production ratios
-        exposed_assets = exposed_assets.mul(prod_ratio, level="sector")
-
-    elif isinstance(affected_sectors, list):
+    if isinstance(affected_sectors, list):
         # logger.info("Calculating production ratios using MRIOT data for the provided sectors.")
-
-        # Check if all sectors are present in the MRIOT data
         check_sectors_in_mriot(affected_sectors, mriot)
-
-        # Extract and normalize production ratios for the affected sectors
         prod_ratio = mriot.x.loc[
             pd.IndexSlice[exp.gdf["region"].unique(), affected_sectors], "indout"
         ]
-
-        # Normalize the production ratios by region
         prod_ratio = prod_ratio.groupby("region").transform(lambda x: x / x.sum())
-
-        # Apply the production ratios to the summed exposure values
-        exposed_assets = exp.gdf.groupby("region")[value_col].sum() * prod_ratio
-
+    elif isinstance(affected_sectors, (dict, pd.Series)):
+        # logger.info("Using predefined production ratios from affected_sectors dictionary.")
+        check_sectors_in_mriot(affected_sectors.keys(), mriot)
+        prod_ratio = pd.Series(affected_sectors)
+        repeated = pd.concat([prod_ratio] * exp.gdf["region"].nunique())
+        multi_index = pd.MultiIndex.from_product(
+            [exp.gdf["region"].unique(), prod_ratio.index], names=["region", "sector"]
+        )
+        prod_ratio = pd.Series(repeated.values, index=multi_index)
     else:
-        raise ValueError(
-            "`affected_sectors` must be either a list of sector names or a dictionary with sector ratios."
+        raise TypeError(
+            "Wrong type for `affected_sectors` (Iterable[str] | dict[str, float] | pd.Series | Literal['all'])."
         )
 
+    if (prod_ratio.groupby("region").sum() != 1).any():
+        raise ValueError("The distribution share do not sum to 1. for all regions.")
+    exposed_assets = exp.gdf.groupby("region")[value_col].sum() * prod_ratio
     return exposed_assets
 
-def get_mriot_type(mriot:pymrio.IOSystem)->str:
+
+def get_mriot_type(mriot: pymrio.IOSystem) -> str:
     if "WIOD" in mriot.name:
         return "WIOD"
     else:
-        raise NotImplementedError("This MRIOT is not yet implemented (or its name is not set properly).")
+        raise NotImplementedError(
+            "This MRIOT is not yet implemented (or its name is not set properly)."
+        )
 
 
 def translate_reg_impact_to_mriot_regions(
@@ -543,21 +527,25 @@ def translate_reg_impact_to_mriot_regions(
     valid_iso3_regions = set(cc.ISO3["ISO3"])
     invalid_regions = set(reg_impact.columns) - valid_iso3_regions
     if invalid_regions:
-        raise ValueError(f"`reg_impact` contains regions that are not valid ISO3 regions: {', '.join(invalid_regions)}")
+        raise ValueError(
+            f"`reg_impact` contains regions that are not valid ISO3 regions: {', '.join(invalid_regions)}"
+        )
 
     reg_impact = reg_impact.copy()
 
     reg_impact = reg_impact.rename_axis(index="event_id", columns="region")
-    reg_impact = reg_impact.melt(ignore_index=False, var_name="region", value_name="value")
+    reg_impact = reg_impact.melt(
+        ignore_index=False, var_name="region", value_name="value"
+    )
     reg_impact["region_mriot"] = cc.pandas_convert(
         reg_impact["region"], to=mriot_type
     ).str.upper()
-    reg_impact = reg_impact.set_index("region_mriot", append=True)[["value"]]
+    ret = reg_impact.set_index("region_mriot", append=True)["value"]
 
     # Multiple ISO3 regions can end up in same MRIOT region (ROW for instance)
     # so we need to groupby-sum these before unstacking
-    reg_impact = reg_impact["value"].groupby(level=[0, 1]).sum().unstack()
-    return reg_impact
+    ret = ret.groupby(level=[0, 1]).sum().unstack()
+    return ret
 
 
 def distribute_reg_impact_to_sectors(
@@ -596,7 +584,9 @@ def distribute_reg_impact_to_sectors(
     if not isinstance(distributor, pd.Series):
         raise ValueError("`distributor` must be a pandas Series.")
 
-    if not isinstance(distributor.index, pd.MultiIndex) and not isinstance(distributor.index, pd.Index):
+    if not isinstance(distributor.index, pd.MultiIndex) and not isinstance(
+        distributor.index, pd.Index
+    ):
         raise ValueError("`distributor` index must be a pandas MultiIndex or Index.")
 
     # Create a MultiIndex for the resulting columns (region, sector)
@@ -610,10 +600,13 @@ def distribute_reg_impact_to_sectors(
     if not isinstance(distributor.index, pd.MultiIndex):
         distributor = distributor.reindex(multi_index.get_level_values("sector"))
 
-    missing_sectors = set(distributor.index.get_level_values('sector')) - set(multi_index.get_level_values('sector'))
+    missing_sectors = set(distributor.index.get_level_values("sector")) - set(
+        multi_index.get_level_values("sector")
+    )
     if missing_sectors:
-        raise ValueError(f"The following sectors are missing in the distributor: {', '.join(missing_sectors)}")
-
+        raise ValueError(
+            f"The following sectors are missing in the distributor: {', '.join(missing_sectors)}"
+        )
 
     # Expand regional_impact to have matching multi-level columns
     sector_count = len(multi_index.get_level_values("sector").unique())
