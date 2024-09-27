@@ -512,7 +512,7 @@ class TCForecast(TCTracks):
                 # prevent issueing a million warnings about conversion of non-nanosecond precision
                 # datetime to nanosecond precision, e.g. in fetch_ecmwf
                 # TODO: fix it through converting those _before_ creating the xr.Dataset
-                warnings.simplefilter(action='error', category=UserWarning)
+                warnings.simplefilter(action='ignore', category=UserWarning)
 
                 track = xr.Dataset(
                     data_vars={
