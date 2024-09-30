@@ -37,6 +37,7 @@ import os
 import logging
 import calendar
 import re
+from pathlib import Path
 
 import xarray as xr
 import pandas as pd
@@ -76,7 +77,7 @@ class ForecastHandler:
         """
         logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s', level=logging.INFO)
         self.logger = logging.getLogger()
-        self.data_dir = data_dir
+        self.data_dir = Path(data_dir)
         self.key = key
         self.url = url
     
@@ -206,9 +207,8 @@ class ForecastHandler:
         """
         try:
             # Ensure the directory exists before downloading
-            output_dir = os.path.dirname(filename)
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
+            output_dir = Path(filename).parent
+            output_dir.mkdir(parents=True, exist_ok=True) 
             
             # Initialize the CDS API client and attempt to download the file
             c = cdsapi.Client(url=self.url, key=self.key)
@@ -229,7 +229,7 @@ class ForecastHandler:
             )
 
             # Check if the file was actually downloaded
-            if not os.path.exists(filename):  # Added check to confirm the file exists
+            if not Path(filename).exists():   # Added check to confirm the file exists
                 raise FileNotFoundError(f"Failed to download {format} file to {filename}.")
             self.logger.info(f'{format.capitalize()} file successfully downloaded to {filename}.')
             
@@ -268,13 +268,12 @@ class ForecastHandler:
         for year in year_list:
             for month in month_list:
                 # Prepare output paths
-                out_dir = f"{data_out}/input_data/{format}/{year}/{month:02d}"
-                os.makedirs(out_dir, exist_ok=True)
+                out_dir = Path(f"{data_out}/input_data/{format}/{year}/{month:02d}")
+                out_dir.mkdir(parents=True, exist_ok=True)
 
                 # Construct the correct download file path
                 file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
-                download_file = f'{out_dir}/{"_".join(vars_short)}_{area_str}_'\
-                    f'{year}{month:02d}.{file_extension}'
+                download_file = out_dir / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.{file_extension}'
 
                 # Check if data already exists
                 existing_file = self._is_data_present(download_file, variables)
@@ -562,14 +561,17 @@ class ForecastHandler:
         str: File path if data exists, else returns None.
         """
         vars_short = [indicator.VAR_SPECS[var]['short_name'] for var in vars]
+        file = str(file) if isinstance(file, Path) else file
+
         parent_dir = os.path.dirname(file)
         if not os.path.exists(parent_dir):
             return None
 
+        # Adjust rest for Path compatibility
         rest = re.search(r'(area.*)', file).group(0)
         for filename in os.listdir(parent_dir):
             s = re.search(fr'.*{".*".join(vars_short)}.*{rest}', filename)
             if s:
                 return f'{parent_dir}/{s.group(0)}'
-        return None  # Note: I change from `False` to `None` to handle missing data correctly
-        
+        return None
+            
