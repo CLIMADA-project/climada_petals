@@ -140,7 +140,8 @@ class ForecastHandler:
         Parameters:
         tf_index (str): The climate index identifier.
 
-        Returns: None
+        Returns: dict: A dictionary with 'explanation' and 'input_data' if the index is found.
+                       None if the index is not found.
         """
         if not isinstance(tf_index, str):
             raise TypeError(f"The function expects a string parameter, but received '{type(tf_index).__name__}'.\n"
@@ -324,10 +325,10 @@ class ForecastHandler:
                 os.makedirs(output_dir, exist_ok=True)
                 file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
                 input_file = f"{data_out}/input_data/{format}/{year}/{month:02d}/"\
-                f"{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
+                            f"{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
                 input_file = self._is_data_present(input_file, index_params['variables'])
 
-                if input_file is None:  
+                if input_file is None:
                     self.logger.error(f"Input file {input_file} not found. Skipping processing for {year}-{month:02d}.")
                     continue
 
@@ -336,11 +337,25 @@ class ForecastHandler:
                     try:
                         if format == self._FORMAT_GRIB:
                             with xr.open_dataset(input_file, engine="cfgrib") as ds:
-                                ds_daily = ds.coarsen(step=4, boundary='trim').mean()
+                                ds_mean = ds.coarsen(step=4, boundary='trim').mean()
+                                ds_max = ds.coarsen(step=4, boundary='trim').max()
+                                ds_min = ds.coarsen(step=4, boundary='trim').min()
                         else:
                             with xr.open_dataset(input_file) as ds:
-                                ds_daily = ds.coarsen(step=4, boundary='trim').mean()
-                        ds_daily.to_netcdf(f"{daily_file}")
+                                ds_mean = ds.coarsen(step=4, boundary='trim').mean()
+                                ds_max = ds.coarsen(step=4, boundary='trim').max()
+                                ds_min = ds.coarsen(step=4, boundary='trim').min()
+
+                        # Create a new dataset combining mean, max, and min values
+                        combined_ds = xr.Dataset()
+                        for var in vars_short:
+                            combined_ds[f"{var}_mean"] = ds_mean[var]
+                            combined_ds[f"{var}_max"] = ds_max[var]
+                            combined_ds[f"{var}_min"] = ds_min[var]
+
+                        # Save combined dataset to NetCDF
+                        combined_ds.to_netcdf(f"{daily_file}")
+
                     except FileNotFoundError:
                         self.logger.error(f"{format.capitalize()} file does not exist, download failed.")
                         continue

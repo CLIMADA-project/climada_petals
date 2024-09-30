@@ -229,29 +229,29 @@ def calculate_heat_indices_metrics(input_file_name, tf_index):
             # Handling various indices
             if tf_index == "Tmean":
                 # Calculate mean temperature
-                da_index = daily_ds["t2m"] - 273.15  # Convert from Kelvin to Celsius
+                da_index = daily_ds["t2m_mean"] - 273.15  # Convert from Kelvin to Celsius
                 da_index.attrs["units"] = "degC"
             elif tf_index == "Tmax":
                 # Calculate max daily temperature
                 da_index = (
-                    daily_ds["t2m"].resample(step="1D").max() - 273.15
+                    daily_ds["t2m_max"].resample(step="1D").max() - 273.15
                 )
                 da_index.attrs["units"] = "degC"
             elif tf_index == "Tmin":
                 # Calculate min daily temperature
                 da_index = (
-                    daily_ds["t2m"].resample(step="1D").min() - 273.15
+                    daily_ds["t2m_min"].resample(step="1D").min() - 273.15
                 )
                 da_index.attrs["units"] = "degC"
             elif tf_index == "HIS":
                 # Calculate simplified heat index
                 da_index = calculate_heat_index(
-                    daily_ds["t2m"], daily_ds["d2m"], "HIS"
+                    daily_ds["t2m_mean"], daily_ds["d2m_mean"], "HIS"
                 )
             elif tf_index == "HIA":
                 # Calculate adjusted heat index
                 da_index = calculate_heat_index(
-                    daily_ds["t2m"], daily_ds["d2m"], "HIA"
+                    daily_ds["t2m_mean"], daily_ds["d2m_mean"], "HIA"
                 )
             else:
                 raise ValueError(f"Unsupported index: {tf_index}")
