@@ -142,7 +142,17 @@ class ForecastHandler:
 
         Returns: None
         """
-        indicator.index_explanations(tf_index)
+        if not isinstance(tf_index, str):
+            raise TypeError(f"The function expects a string parameter, but received '{type(tf_index).__name__}'.\n"
+                            f"Did you mean to use quotation marks? For example, use 'TX30' instead of {tf_index}.")
+        
+        explanation = indicator.index_explanations(tf_index)
+        if "error" not in explanation:
+            print(f"Explanation for '{tf_index}': {explanation['explanation']}\nRequired Input Data: {explanation['input_data']}")
+        else:
+            # Display an informative error message including valid indices
+            valid_indices = ", ".join(explanation["valid_indices"])
+            raise ValueError(f"Unknown index '{tf_index}'. Please use a valid index from the following list: {valid_indices}.")
 
     def _calc_min_max_lead(self, year, month, leadtime_months=1):
         """
@@ -185,7 +195,8 @@ class ForecastHandler:
         l_hours (list of int): List of lead times in hours to download.
         area (list of float): Geographic bounds [north, west, south, east].
         overwrite (bool): If True, overwrites existing files.
-        format (str): File format for download, either 'grib' or 'nc'.
+        format (str): File format for download, either 'grib' or 'nc'. GRIB files 
+        are more complex and slower to process compared to NetCDF.
         originating_centre (str): The meteorological center producing the forecast.
         system (str): The forecast system version.
 
@@ -193,6 +204,12 @@ class ForecastHandler:
         None
         """
         try:
+            # Ensure the directory exists before downloading
+            output_dir = os.path.dirname(filename)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Initialize the CDS API client and attempt to download the file
             c = cdsapi.Client(url=self.url, key=self.key)
             c.retrieve(
                 'seasonal-original-single-levels',
@@ -207,13 +224,18 @@ class ForecastHandler:
                     'day': '01',
                     'leadtime_hour': l_hours,
                 },
-                f'{filename}'
+                filename
             )
-            self.logger.info(f'{format.capitalize()} file successfully downloaded '\
-                                f'to {filename}.')
+
+            # Check if the file was actually downloaded
+            if not os.path.exists(filename):  # Added check to confirm the file exists
+                raise FileNotFoundError(f"Failed to download {format} file to {filename}.")
+            self.logger.info(f'{format.capitalize()} file successfully downloaded to {filename}.')
+            
         except Exception as e:
-            self.logger.error(f'{format.capitalize()} file {filename} could '\
-                                f'not be downloaded. Error: {e}')
+            self.logger.error(f'{format.capitalize()} file {filename} could not be downloaded. Error: {e}')
+            raise e  # Re-raise the exception for higher-level handling
+
 
     def _download_data(
         self, data_out, year_list, month_list, bounds, overwrite, tf_index,
@@ -244,30 +266,34 @@ class ForecastHandler:
 
         for year in year_list:
             for month in month_list:
-                # prepare output paths
+                # Prepare output paths
                 out_dir = f"{data_out}/input_data/{format}/{year}/{month:02d}"
                 os.makedirs(out_dir, exist_ok=True)
+
+                # Construct the correct download file path
                 file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
                 download_file = f'{out_dir}/{"_".join(vars_short)}_{area_str}_'\
                     f'{year}{month:02d}.{file_extension}'
-                
-                # check if data already exists
-                download_file = self._is_data_present(download_file, variables)
 
-                if not download_file or overwrite:
-                    # compute lead times
+                # Check if data already exists
+                existing_file = self._is_data_present(download_file, variables)
+
+                # Decide whether to download based on `overwrite` flag
+                if existing_file and not overwrite:
+                    self.logger.info(f'File {existing_file} already exists.')
+                    continue  # Skip downloading
+                else:
+                    # Compute lead times
                     min_lead, max_lead = self._calc_min_max_lead(year, month, max_lead_month)
                     leadtimes = list(range(min_lead, max_lead, 6))
                     self.logger.info(f"{len(leadtimes)} leadtimes to download.")
-                    self.logger.debug(f"which are: {leadtimes}")
+                    self.logger.debug(f"Lead times are: {leadtimes}")
                     
-                    # download data
+                    # Download data
                     self._download_multvar_multlead(
                         download_file, variables, year, month, leadtimes, bounds,
                         overwrite, format, originating_centre, system
-                    )
-                else:
-                    self.logger.info(f'File {download_file} already exists.')
+                )
 
 
     def _process_data(self, data_out, year_list, month_list, bounds, overwrite, tf_index, format):
@@ -293,23 +319,20 @@ class ForecastHandler:
 
         for year in year_list:
             for month in month_list:
-                # prepare input and output paths
                 output_dir = f"{data_out}/input_data/netcdf/daily/{year}/{month:02d}"
-                daily_file = f'{output_dir}/{"_".join(vars_short)}_{area_str}_{year}'\
-                    f'{month:02d}.nc'
+                daily_file = f'{output_dir}/{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
                 os.makedirs(output_dir, exist_ok=True)
                 file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
                 input_file = f"{data_out}/input_data/{format}/{year}/{month:02d}/"\
                 f"{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
                 input_file = self._is_data_present(input_file, index_params['variables'])
-                
-                # check if data already exists including all relevant data variables
-                data_already_exists = self._is_data_present(
-                    daily_file, index_params['variables']
-                )
-                
-                # process and save the data
-                if not data_already_exists or overwrite:
+
+                if input_file is None:  
+                    self.logger.error(f"Input file {input_file} not found. Skipping processing for {year}-{month:02d}.")
+                    continue
+
+                # Process and save the data
+                if not os.path.exists(daily_file) or overwrite:
                     try:
                         if format == self._FORMAT_GRIB:
                             with xr.open_dataset(input_file, engine="cfgrib") as ds:
@@ -317,13 +340,13 @@ class ForecastHandler:
                         else:
                             with xr.open_dataset(input_file) as ds:
                                 ds_daily = ds.coarsen(step=4, boundary='trim').mean()
+                        ds_daily.to_netcdf(f"{daily_file}")
                     except FileNotFoundError:
-                        self.logger.error(f"{format.capitalize()} file does not exist, "\
-                                          "download failed.")
+                        self.logger.error(f"{format.capitalize()} file does not exist, download failed.")
                         continue
-                    ds_daily.to_netcdf(f"{daily_file}")
                 else:
-                    self.logger.info(f"Daily file {data_already_exists} already exists.")
+                    self.logger.info(f"Daily file {daily_file} already exists.")
+
 
     def download_and_process_data(
         self, tf_index, data_out, year_list, month_list, area_selection, overwrite,
@@ -409,11 +432,11 @@ class ForecastHandler:
                             input_file_name, tf_index
                         )
                     elif tf_index == "TR":
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_tropical_nights_per_lag(
+                        ds_daily, ds_monthly, ds_stats = indicator.calculate_TR(
                             grib_file_name, tf_index
                         )
                     elif tf_index == "TX30":
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_tx30_per_lag(
+                        ds_daily, ds_monthly, ds_stats = indicator.calculate_tx30(
                             grib_file_name, tf_index
                         )
                     # TODO: add functionality
@@ -514,21 +537,24 @@ class ForecastHandler:
     @staticmethod
     def _is_data_present(file, vars):
         """
-        Util function to check if data is already present
-        
+        Util function to check if data is already present.
+
         Parameters:
-        file (str): filename to be checked
-        vars (list of str): list of variables that should be in data
+        file (str): filename to be checked.
+        vars (list of str): list of variables that should be in data.
 
         Returns:
-        False if data does not exist
-        file path if data exists
+        str: File path if data exists, else returns None.
         """
         vars_short = [indicator.VAR_SPECS[var]['short_name'] for var in vars]
         parent_dir = os.path.dirname(file)
+        if not os.path.exists(parent_dir):
+            return None
+
         rest = re.search(r'(area.*)', file).group(0)
         for filename in os.listdir(parent_dir):
-            s = re.search(fr'.*{".*".join(vars_short)}.*{rest}',filename)
+            s = re.search(fr'.*{".*".join(vars_short)}.*{rest}', filename)
             if s:
                 return f'{parent_dir}/{s.group(0)}'
-        return False        
+        return None  # Note: I change from `False` to `None` to handle missing data correctly
+        

@@ -287,7 +287,7 @@ def calculate_heat_indices_metrics(input_file_name, tf_index):
     return ds_combined, ds_monthly, ds_stats
 
 
-def calculate_tropical_nights_per_lag(grib_file_path, tf_index):
+def calculate_TR(grib_file_path, tf_index):
     """
     Calculates and saves the tropical nights index.
 
@@ -330,7 +330,7 @@ def calculate_tropical_nights_per_lag(grib_file_path, tf_index):
         print(f"An error occurred: {e}")
 
 
-def calculate_tx30_per_lag(grib_file_path, tf_index):
+def calculate_tx30(grib_file_path, tf_index):
     """
     Calculates and saves the TX30 index (Tmax > 30°C).
 
@@ -412,12 +412,14 @@ def calculate_statistics_from_index(dataarray):
 
 def index_explanations(tf_index):
     """
-    Prints an explanation and input data for the selected index.
+    Returns an explanation and input data for the selected index.
 
     Parameters:
     tf_index (str): The climate index identifier.
 
-    Returns: None
+    Returns:
+    dict: A dictionary with 'explanation' and 'input_data' if the index is found.
+          None if the index is not found.
     """
     index_explanations = {
         "HIA": {
@@ -463,13 +465,6 @@ def index_explanations(tf_index):
             "input_data": ["2m temperature (t2m)"]
         }
     }
-
-    if tf_index in index_explanations:
-        explanation = f"Selected Index: {tf_index}\n"
-        explanation += f"Explanation: {index_explanations[tf_index]['explanation']}\n"
-        explanation += f"Input Data: {', '.join(index_explanations[tf_index]['input_data'])}"
-    else:
-        explanation = f"Error: {tf_index} is not a valid index. Please choose "\
-                f"from {list(index_explanations.keys())}"
-
-    print(explanation)
+    
+    # Return the explanation if found; otherwise, provide valid index options
+    return index_explanations.get(tf_index, {"error": "Unknown index", "valid_indices": list(index_explanations.keys())})
