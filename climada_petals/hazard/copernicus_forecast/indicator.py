@@ -16,7 +16,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-File to calculate differen seasonal forecast indeces.
+File to calculate differen seasonal forecast indices.
 """
 
 

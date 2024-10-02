@@ -45,9 +45,13 @@ import numpy as np
 import cdsapi
 
 from climada.hazard import Hazard
+from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries
 import climada_petals.hazard.copernicus_forecast.indicator as indicator
 
+
+# set path to store data
+DATA_OUT = SYSTEM_DIR / "copernicus_forecast"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -60,7 +64,7 @@ class ForecastHandler:
     _FORMAT_GRIB = 'grib'
     _FORMAT_NC = 'nc'
     
-    def __init__(self, data_dir='.', url = None, key = None):
+    def __init__(self, data_dir=DATA_OUT, url = None, key = None):
         """
         Initializes the ForecastHandler instance.
 
@@ -77,7 +81,7 @@ class ForecastHandler:
         """
         logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s', level=logging.INFO)
         self.logger = logging.getLogger()
-        self.data_dir = Path(data_dir)
+        self.data_dir = Path(DATA_OUT)
         self.key = key
         self.url = url
     
@@ -319,12 +323,14 @@ class ForecastHandler:
 
         for year in year_list:
             for month in month_list:
-                output_dir = f"{data_out}/input_data/netcdf/daily/{year}/{month:02d}"
-                daily_file = f'{output_dir}/{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
-                os.makedirs(output_dir, exist_ok=True)
+
+                output_dir = Path(f"{data_out}/input_data/netcdf/daily/{year}/{month:02d}")  
+                daily_file = output_dir / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'  
+                output_dir.mkdir(parents=True, exist_ok=True)  
+            
                 file_extension = 'grib' if format == self._FORMAT_GRIB else self._FORMAT_NC
                 input_file = f"{data_out}/input_data/{format}/{year}/{month:02d}/"\
-                            f"{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
+                    f"{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
                 input_file = self._is_data_present(input_file, index_params['variables'])
 
                 if input_file is None:
@@ -332,7 +338,7 @@ class ForecastHandler:
                     continue
 
                 # Process and save the data
-                if not os.path.exists(daily_file) or overwrite:
+                if not daily_file.exists() or overwrite: 
                     try:
                         if format == self._FORMAT_GRIB:
                             with xr.open_dataset(input_file, engine="cfgrib") as ds:
@@ -353,8 +359,8 @@ class ForecastHandler:
                             combined_ds[f"{var}_min"] = ds_min[var]
 
                         # Save combined dataset to NetCDF
-                        combined_ds.to_netcdf(f"{daily_file}")
-
+                        combined_ds.to_netcdf(str(daily_file))  # Convert Path to string for compatibility
+                    
                     except FileNotFoundError:
                         self.logger.error(f"{format.capitalize()} file does not exist, download failed.")
                         continue
@@ -362,9 +368,10 @@ class ForecastHandler:
                     self.logger.info(f"Daily file {daily_file} already exists.")
 
 
+
     def download_and_process_data(
-        self, tf_index, data_out, year_list, month_list, area_selection, overwrite,
-        format, originating_centre, system, max_lead_month
+        self, tf_index, year_list, month_list, area_selection, overwrite,
+        format, originating_centre, system, max_lead_month, data_out=None
     ):
         """
         Downloads and processes climate forecast data for specified parameters.
@@ -384,6 +391,8 @@ class ForecastHandler:
         Returns:
         None
         """
+        if not data_out:
+            data_out = self.data_dir
 
         bounds = self._get_bounds_for_area_selection(area_selection)
         self._download_data(
@@ -392,7 +401,7 @@ class ForecastHandler:
         self._process_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format)
 
     def calculate_index(
-        self, tf_index, data_out, year_list, month_list, area_selection, overwrite
+        self, tf_index, year_list, month_list, area_selection, overwrite, data_out=None
     ):
         """
         Calculates the specified climate index for given years and months.
@@ -405,6 +414,8 @@ class ForecastHandler:
         overwrite (bool): If True, overwrites existing files.
         tf_index (str): The climate index to be calculated.
         """
+        if not data_out:
+            data_out = self.data_dir
         bounds = self._get_bounds_for_area_selection(area_selection)
         area_str = f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         index_params = indicator.get_index_params(tf_index)
@@ -414,32 +425,26 @@ class ForecastHandler:
         for year in year_list:
             for month in month_list:
                 # path to input file of daily variables
-                input_file_name = f"{data_out}/input_data/netcdf/daily/{year}/{month:02d}" \
-                    f'/{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
-                grib_file_name = f"{data_out}/input_data/grib/{year}/{month:02d}" \
-                    f'/{"_".join(vars_short)}_{area_str}_{year}{month:02d}.grib'
-                # check for correct input data name
-                input_file_name = self._is_data_present(
-                    input_file_name, index_params['variables']
-                )
-                grib_file_name = self._is_data_present(
-                    grib_file_name, index_params['variables']
-                )
-                
-                # paths to output files
-                out_dir = f"{data_out}/indeces/{tf_index}/{year}/{month:02d}"
-                out_daily_path = f'{out_dir}/daily_{tf_index}_{area_str}_{year}{month:02d}.nc'
-                out_stats_path = f'{out_dir}/stats/stats_{tf_index}_{area_str}_{year}{month:02d}.nc'
-                out_monthly_path = f'{out_dir}/{tf_index}_{area_str}_{year}{month:02d}.nc'
-                os.makedirs(os.path.dirname(out_stats_path), exist_ok=True)
+                input_file_name = Path(data_out) / "input_data" / "netcdf" / "daily" / str(year) / f"{month:02d}" / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'  
+                grib_file_name = Path(data_out) / "input_data" / "grib" / str(year) / f"{month:02d}" / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.grib' 
 
-                # check if index (monthly) file exists
-                if os.path.exists(out_monthly_path) and not overwrite:
-                    self.logger.info(
-                        f'Index file {out_monthly_path} already exists.'
-                    )
+                # Check if input data is present
+                input_file_name = self._is_data_present(str(input_file_name), index_params['variables'])  
+                grib_file_name = self._is_data_present(str(grib_file_name), index_params['variables'])  
+            
+                # Define output paths using Pathlib
+                out_dir = Path(data_out) / "indices" / tf_index / str(year) / f"{month:02d}"  
+                out_daily_path = out_dir / f'daily_{tf_index}_{area_str}_{year}{month:02d}.nc' 
+                out_stats_path = out_dir / "stats" / f'stats_{tf_index}_{area_str}_{year}{month:02d}.nc'  
+                out_monthly_path = out_dir / f'{tf_index}_{area_str}_{year}{month:02d}.nc'  
+                out_stats_path.parent.mkdir(parents=True, exist_ok=True)  
 
-                # calculate indeces
+                # Check if the index (monthly) file exists
+                if out_monthly_path.exists() and not overwrite:  
+                    self.logger.info(f'Index file {out_monthly_path} already exists.')
+                    continue
+
+                # calculate indices
                 else:
                     if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
                         ds_daily, ds_monthly, ds_stats = indicator.calculate_heat_indices_metrics(
@@ -466,12 +471,13 @@ class ForecastHandler:
                     # save files
                     self.logger.info(f"Writing index data to {out_monthly_path}.")
                     if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                        ds_daily.to_netcdf(out_daily_path)
-                    ds_monthly.to_netcdf(out_monthly_path)
-                    ds_stats.to_netcdf(out_stats_path)
+                       ds_daily.to_netcdf(str(out_daily_path))  
+                    ds_monthly.to_netcdf(str(out_monthly_path))  
+                    ds_stats.to_netcdf(str(out_stats_path))  
+
 
     def save_index_to_hazard(
-            self, tf_index, year_list, month_list, area_selection, data_out, overwrite
+            self, tf_index, year_list, month_list, area_selection, overwrite, data_out=None
         ):
         """
         Processes the calculated climate indices into hazard objects and saves them.
@@ -479,7 +485,8 @@ class ForecastHandler:
         This method converts the NetCDF files of climate indices into CLIMADA Hazard objects,
         which can be used for further risk analysis.
         """
-
+        if not data_out:
+            data_out = self.data_dir
         bounds = self._get_bounds_for_area_selection(area_selection)
         area_str = f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         hazard_type = tf_index
@@ -493,21 +500,21 @@ class ForecastHandler:
         for year in year_list:
             for month in month_list:
                 # define input and output paths
-                input_file_name = f'{data_out}/indeces/{tf_index}/{year}/{month:02d}/' \
-                f'{hazard_type}_{area_str}_{year}{month:02d}.nc'
-                output_dir = f'{data_out}/hazard/{tf_index}/{year}/{month:02d}'
-                os.makedirs(output_dir, exist_ok=True)
+
+                input_file_name = Path(data_out) / "indices" / tf_index / str(year) / f"{month:02d}" / f"{hazard_type}_{area_str}_{year}{month:02d}.nc"  
+                output_dir = Path(data_out) / "hazard" / tf_index / str(year) / f"{month:02d}"  
+                output_dir.mkdir(parents=True, exist_ok=True)  
 
                 try:
-                    # check if file already exists
-                    file_path = f"{output_dir}/hazard_{hazard_type}_" \
-                    f"{area_str}_{year}{month:02d}.hdf5"
-                    if os.path.exists(file_path) and not overwrite:
-                        self.logger.info(f'hazard file {file_path} already exists.')
+                    # Check if the file already exists
+                    file_path = output_dir / f"hazard_{hazard_type}_{area_str}_{year}{month:02d}.hdf5"  
+                    if file_path.exists() and not overwrite:  
+                        self.logger.info(f'Hazard file {file_path} already exists.')
+                        continue
 
                     else:
                         # open input file
-                        with xr.open_dataset(input_file_name) as ds:
+                        with xr.open_dataset(str(input_file_name)) as ds:  
                             ds["step"] = xr.DataArray(
                                 [f"{date}-01" for date in ds["step"].values], dims=["step"]
                             )
@@ -533,7 +540,7 @@ class ForecastHandler:
                         # concatenate and write hazards
                         hazard = Hazard.concat(hazard)
                         hazard.check()
-                        hazard.write_hdf5(file_path)
+                        hazard.write_hdf5(str(file_path)) 
 
                         print(f"Completed processing for {year}-{month:02d}. "\
                             f"Data saved in {output_dir}.")
@@ -545,7 +552,7 @@ class ForecastHandler:
 
         # print final hazard
         last_hazard_file = file_path
-        hazard_obj = Hazard.from_hdf5(last_hazard_file)
+        hazard_obj = Hazard.from_hdf5(str(last_hazard_file))
         hazard_obj.plot_intensity(1, smooth=False)
     
     @staticmethod
@@ -560,18 +567,18 @@ class ForecastHandler:
         Returns:
         str: File path if data exists, else returns None.
         """
+        file = Path(file) if isinstance(file, str) else file  
         vars_short = [indicator.VAR_SPECS[var]['short_name'] for var in vars]
-        file = str(file) if isinstance(file, Path) else file
+        parent_dir = file.parent  
 
-        parent_dir = os.path.dirname(file)
-        if not os.path.exists(parent_dir):
+        if not parent_dir.exists():  
             return None
 
         # Adjust rest for Path compatibility
-        rest = re.search(r'(area.*)', file).group(0)
-        for filename in os.listdir(parent_dir):
-            s = re.search(fr'.*{".*".join(vars_short)}.*{rest}', filename)
+        rest = re.search(r'(area.*)', str(file)).group(0)
+        for filename in parent_dir.iterdir():  
+            s = re.search(fr'.*{".*".join(vars_short)}.*{rest}', filename.name)
             if s:
-                return f'{parent_dir}/{s.group(0)}'
+                return parent_dir / s.group(0)  
         return None
             
