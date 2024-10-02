@@ -44,13 +44,29 @@ def get_index_params(index):
     """
     Retrieves parameters associated with a specific climate index.
 
-    Parameters:
-    index (str): The climate index identifier.
+    Parameters
+    ----------
+    index : str
+        The climate index identifier for which the parameters are being retrieved. 
+        It could be one of the following:
+        - "HIA" : Heat Index Adjusted
+        - "HIS" : Heat Index Simplified
+        - "Tmean" : Mean Temperature
+        - "Tmin" : Minimum Temperature
+        - "Tmax" : Maximum Temperature
+        - "HW" : Heat Wave
+        - "TR" : Tropical Nights
+        - "TX30" : Hot Days (Tmax > 30°C)
 
-    Returns:
-    dict: A dictionary containing the parameters for the specified index.
+    Returns
+    -------
+    dict
+        A dictionary containing the parameters associated with the specified index. 
+        The dictionary includes:
+        - "variables" : List of variable names required for the index calculation.
+        - "filename_lead" : String prefix used in the filename.
+        - "index_long_name" : Full descriptive name of the index.
     """
-
     index_params = {
         "HIA": {
             "variables": [
@@ -105,12 +121,17 @@ def calculate_relative_humidity_percent(t2k, tdk):
     """
     Calculates the relative humidity percentage from temperature and dewpoint temperature.
 
-    Parameters:
-    t2k (float or array-like): 2-meter temperature in Kelvin.
-    tdk (float or array-like): 2-meter dewpoint temperature in Kelvin.
+    Parameters
+    ----------
+    t2k : float or array-like
+        2-meter temperature in Kelvin. This parameter represents the air temperature measured at a height of 2 meters above ground level.
+    tdk : float or array-like
+        2-meter dewpoint temperature in Kelvin. The dewpoint temperature is the temperature at which air becomes saturated and condensation begins.
 
-    Returns:
-    float or array-like: Relative humidity as a percentage.
+    Returns
+    -------
+    float or array-like
+        Relative humidity as a percentage. The result is constrained between 0 and 100, where 0 indicates completely dry air, and 100 indicates saturated air.
     """
     t2c = t2k - 273.15
     tdc = tdk - 273.15
@@ -127,12 +148,17 @@ def calculate_heat_index_simplified(t2k, tdk):
     """
     Calculates the simplified heat index based on temperature and dewpoint temperature.
 
-    Parameters:
-    t2k (float or array-like): 2-meter temperature in Kelvin.
-    tdk (float or array-like): 2-meter dewpoint temperature in Kelvin.
+    Parameters
+    ----------
+    t2k : float or array-like
+        2-meter air temperature in Kelvin. This value represents the temperature measured at a height of 2 meters above ground level.
+    tdk : float or array-like
+        2-meter dewpoint temperature in Kelvin. The dewpoint temperature is the temperature at which air becomes saturated and moisture begins to condense.
 
-    Returns:
-    float or array-like: Simplified heat index in degrees Celsius.
+    Returns
+    -------
+    float or array-like
+        Simplified heat index in degrees Celsius. This is an estimate of how hot it feels to the human body by combining the effects of temperature and relative humidity.
     """
     t2c = t2k - 273.15
     rh = calculate_relative_humidity_percent(t2k, tdk)
@@ -154,12 +180,17 @@ def calculate_heat_index_adjusted(t2k, tdk):
     """
     Calculates the adjusted heat index based on temperature and dewpoint temperature.
 
-    Parameters:
-    t2k (float or array-like): 2-meter temperature in Kelvin.
-    tdk (float or array-like): 2-meter dewpoint temperature in Kelvin.
+    Parameters
+    ----------
+    t2k : float or array-like
+        2-meter air temperature in Kelvin. This value represents the temperature measured at a height of 2 meters above ground level.
+    tdk : float or array-like
+        2-meter dewpoint temperature in Kelvin. The dewpoint temperature is the temperature at which the air becomes saturated and condensation begins.
 
-    Returns:
-    float or array-like: Adjusted heat index in degrees Celsius.
+    Returns
+    -------
+    float or array-like
+        Adjusted heat index in degrees Celsius. This value indicates the perceived temperature, accounting for the combined effect of temperature and relative humidity. It is a refined version of the heat index formula that adjusts for extreme values of temperature and humidity.
     """
     rh = calculate_relative_humidity_percent(t2k, tdk)
     t2f = (t2k - 273.15) * 9 / 5 + 32
@@ -179,15 +210,23 @@ def calculate_heat_index_adjusted(t2k, tdk):
 
 def calculate_heat_index(da_t2k, da_tdk, index):
     """
-    Calculates the heat index based on temperature and dewpoint temperature.
+    Calculates the heat index based on temperature and dewpoint temperature using either the simplified or adjusted formula.
 
-    Parameters:
-    da_t2k (xarray.DataArray): 2-meter temperature in Kelvin.
-    da_tdk (xarray.DataArray): 2-meter dewpoint temperature in Kelvin.
-    index (str): heat index to calculate
+    Parameters
+    ----------
+    da_t2k : xarray.DataArray
+        2-meter air temperature in Kelvin. This value represents the air temperature measured at a height of 2 meters above ground level.
+    da_tdk : xarray.DataArray
+        2-meter dewpoint temperature in Kelvin. The dewpoint temperature is the temperature at which the air becomes saturated and condensation begins.
+    index : str
+        Identifier for the type of heat index to calculate. Options are:
+        - "HIS": Heat Index Simplified.
+        - "HIA": Heat Index Adjusted.
 
-    Returns:
-    xarray.DataArray: heat index.
+    Returns
+    -------
+    xarray.DataArray
+        The calculated heat index in degrees Celsius, represented as an `xarray.DataArray` with the same dimensions and coordinates as the input data. It includes the heat index values along with relevant metadata, such as units and a description.
     """
     if index == "HIS":
         index_long_name = "heat_index_simplified"
@@ -211,19 +250,35 @@ def calculate_heat_index(da_t2k, da_tdk, index):
 
 def calculate_heat_indices_metrics(input_file_name, tf_index):
     """
-    Calculates heat indices or temperature metrics.
+    Calculates heat indices or temperature metrics based on the provided input file and index type.
 
-    Parameters:
-    input_file_name (str): path to input data file.
-    tf_index (str): The climate index being processed.
+    Parameters
+    ----------
+    input_file_name : str
+        Path to the input data file containing temperature and dewpoint information.
+    tf_index : str
+        The climate index to be processed. Supported indices include:
+        - "Tmean" : Mean daily temperature
+        - "Tmax" : Maximum daily temperature
+        - "Tmin" : Minimum daily temperature
+        - "HIS" : Simplified Heat Index
+        - "HIA" : Adjusted Heat Index
 
-    Returns: tuple
-    xarray:Dataset: daily index
-    xarray:Dataset: montly index
-    xarray:Dataset: index statistics
+    Returns
+    -------
+    tuple
+        A tuple containing three `xarray.Dataset` objects:
+        - `daily index` : The calculated daily index values.
+        - `monthly index` : Monthly mean values of the index.
+        - `index statistics` : Ensemble statistics calculated from the index.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported index is provided.
+    FileNotFoundError
+        If the specified input file does not exist.
     """
-
-    # Calculate index
     try:
         with xr.open_dataset(input_file_name) as daily_ds:
             # Handling various indices
@@ -289,17 +344,30 @@ def calculate_heat_indices_metrics(input_file_name, tf_index):
 
 def calculate_TR(grib_file_path, tf_index):
     """
-    Calculates and saves the tropical nights index.
+    Calculates and saves the tropical nights index, defined as the number of nights where the minimum temperature remains at or above 20°C.
 
-    Parameters:
-    input_file_name (str): path to input grib data file.
-    tf_index (str): The climate index being processed.
+    Parameters
+    ----------
+    grib_file_path : str
+        Path to the input GRIB data file containing temperature data. The file should be structured to include 2-meter temperature values (`t2m`).
+    tf_index : str
+        The climate index being processed. This should specify the name for the tropical nights index, such as "TR" (Tropical Nights).
 
-    Returns: tuple
-    None
-    xarray:Dataset: montly index
-    xarray:Dataset: index statistics
-    """            
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - `None` : No daily index is returned for this calculation.
+        - `xarray.Dataset` : The monthly count of tropical nights, stored as an `xarray.Dataset` with the index values and relevant metadata.
+        - `xarray.Dataset` : Statistics calculated across the monthly tropical nights index values, representing ensemble statistics.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the specified input GRIB file does not exist.
+    Exception
+        For any other errors encountered during the data processing.
+    """           
     try:
         # prepare dataarray
         with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
@@ -332,19 +400,32 @@ def calculate_TR(grib_file_path, tf_index):
 
 def calculate_tx30(grib_file_path, tf_index):
     """
-    Calculates and saves the TX30 index (Tmax > 30°C).
+    Calculates and saves the TX30 index, defined as the number of days with maximum temperature above 30°C.
 
-    Parameters:
-    input_file_name (str): path to input grib data file.
-    tf_index (str): The climate index being processed.
+    Parameters
+    ----------
+    grib_file_path : str
+        Path to the input GRIB data file containing temperature data. The file should include 2-meter temperature values (`t2m`) for daily maximum temperature calculations.
+    tf_index : str
+        The climate index being processed. This should specify the name for the TX30 index, typically "TX30".
 
-    Returns: tuple
-    None
-    xarray:Dataset: montly index
-    xarray:Dataset: index statistics
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - `None` : No daily index is returned for this calculation.
+        - `xarray.Dataset` : The monthly count of TX30 days, represented as an `xarray.Dataset` with the index values and relevant metadata.
+        - `xarray.Dataset` : Statistics calculated across the monthly TX30 index values, representing ensemble statistics.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the specified input GRIB file does not exist.
+    Exception
+        For any other errors encountered during the data processing.
     """
     try:
-        # prepare dataarray
+        # Prepare dataarray
         with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
             t2m_celsius = ds["t2m"] - 273.15
             daily_max_temp = t2m_celsius.resample(step="1D").max()
@@ -376,15 +457,26 @@ def calculate_tx30(grib_file_path, tf_index):
 
 def calculate_statistics_from_index(dataarray):
     """
-    Calculates statistics for dataarray (mean, median, percentiles, etc.).
+    Calculates a set of ensemble statistics for the given data array, including mean, median, standard deviation, and selected percentiles.
 
-    Parameters:
-    dataarray (xarray:DataArray): input dataarray
+    Parameters
+    ----------
+    dataarray : xarray.DataArray
+        Input data array representing climate index values across multiple ensemble members.
+        It should have a dimension named "number" corresponding to the different ensemble members.
 
-    Returns:
-    xarray:Dataset: index statistics
+    Returns
+    -------
+    xarray.Dataset
+        A dataset containing the calculated statistics:
+        - `ensemble_mean`: The mean value across the ensemble members.
+        - `ensemble_median`: The median value across the ensemble members.
+        - `ensemble_max`: The maximum value across the ensemble members.
+        - `ensemble_min`: The minimum value across the ensemble members.
+        - `ensemble_std`: The standard deviation across the ensemble members.
+        - `ensemble_p05`, `ensemble_p25`, `ensemble_p50`, `ensemble_p75`, `ensemble_p95`: Percentile values (5th, 25th, 50th, 75th, and 95th) across the ensemble members.
+
     """
-
     # Calculate ensemble statistics (mean, median, etc.)
     ensemble_mean = dataarray.mean(dim="number")
     ensemble_median = dataarray.median(dim="number")
@@ -412,14 +504,32 @@ def calculate_statistics_from_index(dataarray):
 
 def index_explanations(tf_index):
     """
-    Returns an explanation and input data for the selected index.
+    Provides a detailed explanation and required input data for a given climate index.
 
-    Parameters:
-    tf_index (str): The climate index identifier.
+    Parameters
+    ----------
+    tf_index : str
+        The climate index identifier for which an explanation and input data are needed. 
+        Supported indices include:
+        - "HIA" : Heat Index Adjusted
+        - "HIS" : Heat Index Simplified
+        - "Tmean" : Mean Temperature
+        - "Tmin" : Minimum Temperature
+        - "Tmax" : Maximum Temperature
+        - "HW" : Heat Wave
+        - "TR" : Tropical Nights
+        - "TX30" : Hot Days (Tmax > 30°C)
 
-    Returns:
-    dict: A dictionary with 'explanation' and 'input_data' if the index is found.
-          None if the index is not found.
+    Returns
+    -------
+    dict
+        A dictionary containing two keys:
+        - 'explanation': A detailed description of the climate index.
+        - 'input_data': A list of required variables for calculating the index.
+        
+        If the index is not found, it returns a dictionary with:
+        - 'error': Description of the issue.
+        - 'valid_indices': A list of supported index identifiers.
     """
     index_explanations = {
         "HIA": {
