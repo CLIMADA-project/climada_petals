@@ -232,16 +232,16 @@ def calculate_heat_index(da_t2k, da_tdk, index):
     if index == "HIS":
         index_long_name = "heat_index_simplified"
         unit = "degC"
-        tf_index_data = calculate_heat_index_simplified(da_t2k.data, da_tdk.data)
+        index_metric_data = calculate_heat_index_simplified(da_t2k.data, da_tdk.data)
     elif index == "HIA":
         index_long_name = "heat_index_adjusted"
         unit = "degC"
-        tf_index_data = calculate_heat_index_adjusted(da_t2k.data, da_tdk.data)
+        index_metric_data = calculate_heat_index_adjusted(da_t2k.data, da_tdk.data)
     else:
         logging.error(f'Index {index} is not implemented, use either "HIS" or "HIA".')
         return None
     da_index = xr.DataArray(
-        tf_index_data,
+        index_metric_data,
         coords=da_tdk.coords,
         dims=da_tdk.dims,
         attrs={"description": index_long_name, "units": unit},
@@ -249,7 +249,7 @@ def calculate_heat_index(da_t2k, da_tdk, index):
     return da_index
 
 
-def calculate_heat_indices_metrics(input_file_name, tf_index):
+def calculate_heat_indices_metrics(input_file_name, index_metric):
     """
     Calculates heat indices or temperature metrics based on the provided input file and index type.
 
@@ -257,7 +257,7 @@ def calculate_heat_indices_metrics(input_file_name, tf_index):
     ----------
     input_file_name : str
         Path to the input data file containing temperature and dewpoint information.
-    tf_index : str
+    index_metric : str
         The climate index to be processed. Supported indices include:
         - "Tmean" : Mean daily temperature
         - "Tmax" : Maximum daily temperature
@@ -283,35 +283,35 @@ def calculate_heat_indices_metrics(input_file_name, tf_index):
     try:
         with xr.open_dataset(input_file_name) as daily_ds:
             # Handling various indices
-            if tf_index == "Tmean":
+            if index_metric == "Tmean":
                 # Calculate mean temperature
                 da_index = (
                     daily_ds["t2m_mean"] - 273.15
                 )  # Convert from Kelvin to Celsius
                 da_index.attrs["units"] = "degC"
-            elif tf_index == "Tmax":
+            elif index_metric == "Tmax":
                 # Calculate max daily temperature
                 da_index = daily_ds["t2m_max"].resample(step="1D").max() - 273.15
                 da_index.attrs["units"] = "degC"
-            elif tf_index == "Tmin":
+            elif index_metric == "Tmin":
                 # Calculate min daily temperature
                 da_index = daily_ds["t2m_min"].resample(step="1D").min() - 273.15
                 da_index.attrs["units"] = "degC"
-            elif tf_index == "HIS":
+            elif index_metric == "HIS":
                 # Calculate simplified heat index
                 da_index = calculate_heat_index(
                     daily_ds["t2m_mean"], daily_ds["d2m_mean"], "HIS"
                 )
-            elif tf_index == "HIA":
+            elif index_metric == "HIA":
                 # Calculate adjusted heat index
                 da_index = calculate_heat_index(
                     daily_ds["t2m_mean"], daily_ds["d2m_mean"], "HIA"
                 )
             else:
-                raise ValueError(f"Unsupported index: {tf_index}")
+                raise ValueError(f"Unsupported index: {index_metric}")
 
             # Save the index to a NetCDF file
-            ds_combined = xr.Dataset({tf_index: da_index})
+            ds_combined = xr.Dataset({index_metric: da_index})
 
     except FileNotFoundError:
         logging.error(f"Data file {input_file_name} does not exist.")
@@ -328,9 +328,9 @@ def calculate_heat_indices_metrics(input_file_name, tf_index):
 
     # Calculate monthly means
     monthly_means = da_index.groupby("forecast_month").mean(dim="step")
-    monthly_means = monthly_means.rename(tf_index)
+    monthly_means = monthly_means.rename(index_metric)
     monthly_means = monthly_means.rename({"forecast_month": "step"})
-    ds_monthly = xr.Dataset({f"{tf_index}": monthly_means})
+    ds_monthly = xr.Dataset({f"{index_metric}": monthly_means})
 
     # Ensure 'number' dimension starts from 1 instead of 0
     ds_monthly = ds_monthly.assign_coords(number=ds_monthly.number)
@@ -341,7 +341,7 @@ def calculate_heat_indices_metrics(input_file_name, tf_index):
     return ds_combined, ds_monthly, ds_stats
 
 
-def calculate_TR(grib_file_path, tf_index):
+def calculate_TR(grib_file_path, index_metric):
     """
     Calculates and saves the tropical nights index, defined as the number of nights where the minimum temperature remains at or above 20°C.
 
@@ -349,7 +349,7 @@ def calculate_TR(grib_file_path, tf_index):
     ----------
     grib_file_path : str
         Path to the input GRIB data file containing temperature data. The file should be structured to include 2-meter temperature values (`t2m`).
-    tf_index : str
+    index_metric : str
         The climate index being processed. This should specify the name for the tropical nights index, such as "TR" (Tropical Nights).
 
     Returns
@@ -385,7 +385,7 @@ def calculate_TR(grib_file_path, tf_index):
         tropical_nights_count = tropical_nights.groupby("forecast_month").sum(
             dim="step"
         )
-        tropical_nights_count = tropical_nights_count.rename(tf_index)
+        tropical_nights_count = tropical_nights_count.rename(index_metric)
         tropical_nights_count = tropical_nights_count.rename({"forecast_month": "step"})
 
         # calculate statistics
@@ -399,7 +399,7 @@ def calculate_TR(grib_file_path, tf_index):
         print(f"An error occurred: {e}")
 
 
-def calculate_tx30(grib_file_path, tf_index):
+def calculate_tx30(grib_file_path, index_metric):
     """
     Calculates and saves the TX30 index, defined as the number of days with maximum temperature above 30°C.
 
@@ -407,7 +407,7 @@ def calculate_tx30(grib_file_path, tf_index):
     ----------
     grib_file_path : str
         Path to the input GRIB data file containing temperature data. The file should include 2-meter temperature values (`t2m`) for daily maximum temperature calculations.
-    tf_index : str
+    index_metric : str
         The climate index being processed. This should specify the name for the TX30 index, typically "TX30".
 
     Returns
@@ -443,7 +443,7 @@ def calculate_tx30(grib_file_path, tf_index):
 
         # Count the number of TX30 days per forecast month
         tx30_days_count = tx30_days.groupby("forecast_month").sum(dim="step")
-        tx30_days_count = tx30_days_count.rename(tf_index)
+        tx30_days_count = tx30_days_count.rename(index_metric)
         tx30_days_count = tx30_days_count.rename({"forecast_month": "step"})
 
         # calculate statistics
@@ -507,13 +507,13 @@ def calculate_statistics_from_index(dataarray):
     return ds_stats
 
 
-def index_explanations(tf_index):
+def index_explanations(index_metric):
     """
     Provides a detailed explanation and required input data for a given climate index.
 
     Parameters
     ----------
-    tf_index : str
+    index_metric : str
         The climate index identifier for which an explanation and input data are needed.
         Supported indices include:
         - "HIA" : Heat Index Adjusted
@@ -583,6 +583,6 @@ def index_explanations(tf_index):
 
     # Return the explanation if found; otherwise, provide valid index options
     return index_explanations.get(
-        tf_index,
+        index_metric,
         {"error": "Unknown index", "valid_indices": list(index_explanations.keys())},
     )

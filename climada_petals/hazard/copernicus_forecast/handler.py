@@ -19,7 +19,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Module to handle seasonal forecast data from the Copernicus Climate Data Store (CDS)
 in the U-CLIMADAPT project.
 
-TODO: update prerequisites
 Prerequisites:
 1. CDS API client installation:
    pip install cdsapi
@@ -31,9 +30,12 @@ Prerequisites:
    Create a .cdsapirc file in your home directory with your API key and URL.
    For instructions, visit:
    https://cds-beta.climate.copernicus.eu/how-to-api#install-the-cds-api-client
+
+4. Dataset Terms and Conditions: After selecting the dataset to download, make 
+   sure to accept the terms and conditions on the corresponding dataset webpage 
+   in the CDS portal before running the script.
 """
 
-import os
 import logging
 import calendar
 import re
@@ -89,7 +91,7 @@ class ForecastHandler:
     _get_bounds_for_area_selection(area_selection, margin=0.2)
         Determines the geographic bounds for a given area selection and adds a margin if specified.
 
-    explain_index(tf_index)
+    explain_index(index_metric)
         Provides an explanation and required input data for a specified climate index.
 
     _calc_min_max_lead(year, month, leadtime_months=1)
@@ -98,19 +100,19 @@ class ForecastHandler:
     _download_multvar_multlead(filename, vars, year, month, l_hours, area, overwrite, format, originating_centre, system)
         Downloads multiple climate variables over multiple lead times from the Copernicus Climate Data Store (CDS).
 
-    _download_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format, originating_centre, system, max_lead_month)
+    _download_data(data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre, system, max_lead_month)
         Handles the downloading of seasonal climate forecast data for specific years, months, and climate indices.
 
-    _process_data(data_out, year_list, month_list, bounds, overwrite, tf_index, format)
+    _process_data(data_out, year_list, month_list, bounds, overwrite, index_metric, format)
         Processes downloaded forecast data into daily averages and saves results in NetCDF format.
 
-    download_and_process_data(tf_index, year_list, month_list, area_selection, overwrite, format, originating_centre, system, max_lead_month, data_out=None)
+    download_and_process_data(index_metric, year_list, month_list, area_selection, overwrite, format, originating_centre, system, max_lead_month, data_out=None)
         Downloads and processes climate forecast data for given years, months, and a specified climate index.
 
-    calculate_index(tf_index, year_list, month_list, area_selection, overwrite, data_out=None)
+    calculate_index(index_metric, year_list, month_list, area_selection, overwrite, data_out=None)
         Calculates a specified climate index for given years, months, and geographical areas.
 
-    save_index_to_hazard(tf_index, year_list, month_list, area_selection, overwrite, data_out=None)
+    save_index_to_hazard(index_metric, year_list, month_list, area_selection, overwrite, data_out=None)
         Converts the calculated climate indices into hazard objects compatible with the CLIMADA framework.
 
     _is_data_present(file, vars)
@@ -132,31 +134,29 @@ class ForecastHandler:
     _FORMAT_GRIB = "grib"
     _FORMAT_NC = "nc"
 
-    def __init__(self, data_dir=DATA_OUT, url=None, key=None):
+    def __init__(self, data_out=None):
         """Initialize the ForecastHandler instance.
 
         This method sets up logging and initializes the directory for storing
-        downloaded and processed data, along with setting up the CDS API client configuration.
+        downloaded and processed data.
 
         Parameters
         ----------
-        data_dir : pathlib.Path, optional
+        data_out : pathlib.Path or str, optional
             Path to the directory where downloaded and processed data will be stored.
-            Defaults to the global constant DATA_OUT.
-        url : str, optional
-            URL to the Copernicus Climate Data Store (CDS) API. If not provided, the URL
-            specified in the `~/.cdsapirc` file is used by default.
-        key : str, optional
-            CDS API key for authentication. If not provided, the key from the `~/.cdsapirc`
-            configuration file is used by default.
+            If not provided, defaults to the global constant `DATA_OUT`.
+
+        Notes
+        -----
+        The Copernicus Climate Data Store (CDS) API credentials (`url` and `key`) should be configured in the `~/.cdsapirc` file.
+        These are not required as input parameters for this script.
+        Ensure that your `.cdsapirc` file contains valid API credentials for successful data downloads.
         """
         logging.basicConfig(
             format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO
         )
         self.logger = logging.getLogger()
-        self.data_dir = Path(DATA_OUT)
-        self.key = key
-        self.url = url
+        self.data_out = Path(data_out) if data_out else DATA_OUT
 
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
@@ -188,33 +188,45 @@ class ForecastHandler:
         ValueError
             Raised if area_selection contains unrecognized ISO codes.
         """
+        # Handle "global" area selection
         if isinstance(area_selection, str):
             if area_selection.lower() == "global":
-                return [90, -180, -90, 180]  # north, west, south, east
-        else:
-            # try if area was given in bounds
-            try:
-                north, west, south, east = area_selection
-                lat_margin = margin * (north - south)
-                lon_margin = margin * (east - west)
-                north += lat_margin
-                east += lon_margin
-                south -= lat_margin
-                west -= lon_margin
-                return [north, west, south, east]
-            except:
-                pass
+                return [90, -180, -90, 180]  # Global bounds: [north, west, south, east]
+            else:
+                raise ValueError(
+                    f"Invalid string for area_selection: '{area_selection}'. Expected 'global' or a list of ISO codes."
+                )  # UPDATE
 
-            # check if countries are given
+        # Handle bounding box selection
+        elif isinstance(area_selection, list):
+            # Check if the list is a bounding box of four values
+            if len(area_selection) == 4:
+                try:
+                    north, west, south, east = area_selection
+                    lat_margin = margin * (north - south)
+                    lon_margin = margin * (east - west)
+                    north += lat_margin
+                    east += lon_margin
+                    south -= lat_margin
+                    west -= lon_margin
+                    return [north, west, south, east]
+                except ValueError:
+                    self.logger.error(
+                        f"Invalid area selection bounds provided: {area_selection}. "
+                        "Expected a list of four numerical values [north, west, south, east]."
+                    )  # UPDATE
+                    raise
+
+            # Handle list of country ISO codes
             combined_bounds = [-90, 180, 90, -180]
             for iso in area_selection:
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
                 bounds = geo.total_bounds
                 if np.any(np.isnan(bounds)):
-                    logging.warning(
-                        f"ISO code '{iso}' not recognized. "
-                        "This region will not be included."
-                    )
+                    self.logger.warning(
+                        f"ISO code '{iso}' not recognized. This region will not be included."
+                    )  # UPDATE
+                    continue
 
                 min_lon, min_lat, max_lon, max_lat = bounds
 
@@ -231,20 +243,26 @@ class ForecastHandler:
             else:
                 return combined_bounds
 
-    def explain_index(self, tf_index):
+        else:
+            raise ValueError(
+                f"Invalid area_selection format: {area_selection}. "
+                "Expected 'global', a list of ISO codes, or [north, west, south, east]."
+            )
+
+    def explain_index(self, index_metric):
         """Provide an explanation and required input data for the specified climate index.
 
         Parameters
         ----------
-        tf_index : str
+        index_metric : str
             The climate index identifier to be explained (e.g., 'TX30', 'Tmean').
 
         Raises
         ------
         TypeError
-            Raised if `tf_index` is not provided as a string type.
+            Raised if `index_metric` is not provided as a string type.
         ValueError
-            Raised if the specified `tf_index` is not recognized or does not exist.
+            Raised if the specified `index_metric` is not recognized or does not exist.
 
         Returns
         -------
@@ -252,22 +270,22 @@ class ForecastHandler:
             A dictionary containing 'explanation' and 'input_data' if the index is found.
             Returns None if the index is not found or invalid.
         """
-        if not isinstance(tf_index, str):
+        if not isinstance(index_metric, str):
             raise TypeError(
-                f"The function expects a string parameter, but received '{type(tf_index).__name__}'.\n"
-                f"Did you mean to use quotation marks? For example, use 'TX30' instead of {tf_index}."
+                f"The function expects a string parameter, but received '{type(index_metric).__name__}'.\n"
+                f"Did you mean to use quotation marks? For example, use 'TX30' instead of {index_metric}."
             )
 
-        explanation = indicator.index_explanations(tf_index)
+        explanation = indicator.index_explanations(index_metric)
         if "error" not in explanation:
             print(
-                f"Explanation for '{tf_index}': {explanation['explanation']}\nRequired Input Data: {explanation['input_data']}"
+                f"Explanation for '{index_metric}': {explanation['explanation']}\nRequired Input Data: {explanation['input_data']}"
             )
         else:
             # Display an informative error message including valid indices
             valid_indices = ", ".join(explanation["valid_indices"])
             raise ValueError(
-                f"Unknown index '{tf_index}'. Please use a valid index from the following list: {valid_indices}."
+                f"Unknown index '{index_metric}'. Please use a valid index from the following list: {valid_indices}."
             )
 
     def _calc_min_max_lead(self, year, month, leadtime_months=1):
@@ -316,43 +334,57 @@ class ForecastHandler:
     ):
         """Download multiple climate variables over multiple lead times from the CDS.
 
+        This method handles downloading multiple climate variables for a given year and month
+        over various forecast lead times. The file is saved to the specified path, and the
+        CDS API client is used to retrieve data based on the provided parameters.
+
         Parameters
         ----------
         filename : pathlib.Path or str
-            Full path and name for the downloaded file.
+            Full path and filename where the downloaded data will be stored.
         vars : list[str]
-            List of variable names to download.
+            List of climate variables to download (e.g., temperature, precipitation).
         year : int
-            The forecast initialization year.
+            The forecast initialization year (e.g., 2022).
         month : int
-            The forecast initialization month.
+            The forecast initialization month (values 1-12).
         l_hours : list[int]
-            List of lead times in hours to download.
+            List of lead times (in hours) to download. Each value represents a forecast hour
+            relative to the initialization time (e.g., [0, 24, 48] for daily steps).
         area : list[float]
-            Geographic bounds specified as [north, west, south, east].
+            Geographic bounds for data extraction specified as [north, west, south, east].
         overwrite : bool
-            If True, overwrites existing files.
+            If True, overwrites the file if it already exists. If False, skips downloading
+            if the file is already present.
         format : str
-            File format for download, either 'grib' or 'nc'. GRIB files are more complex and slower to process compared to NetCDF.
+            File format for downloading data, either 'grib' or 'netcdf'. The choice impacts
+            the processing speed and compatibility. GRIB files are often larger and more
+            complex than NetCDF.
         originating_centre : str
-            The meteorological center producing the forecast.
+            The name of the meteorological center providing the forecast (e.g., 'ecmwf', 'dwd').
         system : str
-            The forecast system version.
+            The seasonal forecast system version (e.g., '21' for DWD).
 
         Raises
         ------
         FileNotFoundError
-            Raised if the download fails and the file is not found at the specified location.
-        e : Exception
-            Catches and re-raises any exception that occurs during the download process.
+            Raised if the download attempt fails and the file is not found at the specified location.
+        Exception
+            Raised for any other error during the download process.
+
+        Notes
+        -----
+        The CDS API client (`cdsapi.Client()`) uses the default configuration stored in the `.cdsapirc` file.
+        Make sure the configuration file is correctly set up with your API key and URL before executing
+        this function.
         """
         try:
             # Ensure the directory exists before downloading
             output_dir = Path(filename).parent
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Initialize the CDS API client and attempt to download the file
-            c = cdsapi.Client(url=self.url, key=self.key)
+            # Directly instantiate the CDS API client using the default configuration from .cdsapirc
+            c = cdsapi.Client()
             c.retrieve(
                 "seasonal-original-single-levels",
                 {
@@ -391,7 +423,7 @@ class ForecastHandler:
         month_list,
         bounds,
         overwrite,
-        tf_index,
+        index_metric,
         format,
         originating_centre,
         system,
@@ -411,7 +443,7 @@ class ForecastHandler:
             Geographical area bounds for data selection in the format [north, west, south, east].
         overwrite : bool
             If True, overwrites existing files.
-        tf_index : str
+        index_metric : str
             Climate index identifier for the requested data.
         format : str
             File format for download, either 'grib' or 'netcdf'.
@@ -426,7 +458,8 @@ class ForecastHandler:
         -------
         None
         """
-        index_params = indicator.get_index_params(tf_index)
+        data_out = self.data_out
+        index_params = indicator.get_index_params(index_metric)
         variables = index_params["variables"]
         vars_short = [indicator.VAR_SPECS[var]["short_name"] for var in variables]
         area_str = (
@@ -479,7 +512,7 @@ class ForecastHandler:
                     )
 
     def _process_data(
-        self, data_out, year_list, month_list, bounds, overwrite, tf_index, format
+        self, data_out, year_list, month_list, bounds, overwrite, index_metric, format
     ):
         """Process the downloaded climate forecast data into daily average values.
 
@@ -495,7 +528,7 @@ class ForecastHandler:
             Geographical area bounds for processing, specified as [north, west, south, east].
         overwrite : bool
             If True, overwrites existing processed files.
-        tf_index : str
+        index_metric : str
             Climate index identifier being processed (e.g., 'Tmean', 'TX30').
         format : str
             File format of the downloaded data, either 'grib' or 'nc'.
@@ -504,7 +537,8 @@ class ForecastHandler:
         -------
         None
         """
-        index_params = indicator.get_index_params(tf_index)
+        data_out = self.data_out
+        index_params = indicator.get_index_params(index_metric)
         variables = index_params["variables"]
         vars_short = [indicator.VAR_SPECS[var]["short_name"] for var in variables]
         area_str = (
@@ -576,7 +610,7 @@ class ForecastHandler:
 
     def download_and_process_data(
         self,
-        tf_index,
+        index_metric,
         year_list,
         month_list,
         area_selection,
@@ -592,7 +626,7 @@ class ForecastHandler:
 
         Parameters
         ----------
-        tf_index : str
+        index_metric : str
             Climate index identifier to be processed (e.g., 'Tmean', 'TR').
         year_list : list of int
             List of years for which to download and process data.
@@ -618,9 +652,8 @@ class ForecastHandler:
         -------
         None
         """
-        if not data_out:
-            data_out = self.data_dir
-
+        # if not data_out: data_out = self.data_dir
+        self.data_out = Path(data_out) if data_out else self.data_out
         bounds = self._get_bounds_for_area_selection(area_selection)
         self._download_data(
             data_out,
@@ -628,25 +661,25 @@ class ForecastHandler:
             month_list,
             bounds,
             overwrite,
-            tf_index,
+            index_metric,
             format,
             originating_centre,
             system,
             max_lead_month,
         )
         self._process_data(
-            data_out, year_list, month_list, bounds, overwrite, tf_index, format
+            data_out, year_list, month_list, bounds, overwrite, index_metric, format
         )
 
     def calculate_index(
-        self, tf_index, year_list, month_list, area_selection, overwrite, data_out=None
+        self, index_metric, year_list, month_list, area_selection, overwrite, data_out=None
     ):
         """
         _summary_
 
         Parameters
         ----------
-        tf_index : str
+        index_metric : str
             The climate index to be calculated (e.g., 'Tmean', 'TR').
         year_list : list of int
             List of years for which to calculate the index.
@@ -664,22 +697,22 @@ class ForecastHandler:
         -------
         None
         """
-        if not data_out:
-            data_out = self.data_dir
+        # if not data_out:data_out = self.data_dir
+        self.data_out = Path(data_out) if data_out else self.data_out
         bounds = self._get_bounds_for_area_selection(area_selection)
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
-        index_params = indicator.get_index_params(tf_index)
+        index_params = indicator.get_index_params(index_metric)
         vars_short = [
             indicator.VAR_SPECS[var]["short_name"] for var in index_params["variables"]
         ]
 
         for year in year_list:
             for month in month_list:
-                # path to input file of daily variables
+                # Path to input file of daily variables
                 input_file_name = (
-                    Path(data_out)
+                    self.data_out
                     / "input_data"
                     / "netcdf"
                     / "daily"
@@ -687,8 +720,9 @@ class ForecastHandler:
                     / f"{month:02d}"
                     / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
                 )
+
                 grib_file_name = (
-                    Path(data_out)
+                    self.data_out
                     / "input_data"
                     / "grib"
                     / str(year)
@@ -706,18 +740,18 @@ class ForecastHandler:
 
                 # Define output paths using Pathlib
                 out_dir = (
-                    Path(data_out) / "indices" / tf_index / str(year) / f"{month:02d}"
+                    self.data_out / "indices" / index_metric / str(year) / f"{month:02d}"
                 )
                 out_daily_path = (
-                    out_dir / f"daily_{tf_index}_{area_str}_{year}{month:02d}.nc"
+                    out_dir / f"daily_{index_metric}_{area_str}_{year}{month:02d}.nc"
                 )
                 out_stats_path = (
                     out_dir
                     / "stats"
-                    / f"stats_{tf_index}_{area_str}_{year}{month:02d}.nc"
+                    / f"stats_{index_metric}_{area_str}_{year}{month:02d}.nc"
                 )
                 out_monthly_path = (
-                    out_dir / f"{tf_index}_{area_str}_{year}{month:02d}.nc"
+                    out_dir / f"{index_metric}_{area_str}_{year}{month:02d}.nc"
                 )
                 out_stats_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -726,99 +760,116 @@ class ForecastHandler:
                     self.logger.info(f"Index file {out_monthly_path} already exists.")
                     continue
 
-                # calculate indices
+                # Calculate indices
                 else:
-                    if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
                         ds_daily, ds_monthly, ds_stats = (
                             indicator.calculate_heat_indices_metrics(
-                                input_file_name, tf_index
+                                input_file_name, index_metric
                             )
                         )
-                    elif tf_index == "TR":
+                    elif index_metric == "TR":
                         ds_daily, ds_monthly, ds_stats = indicator.calculate_TR(
-                            grib_file_name, tf_index
+                            grib_file_name, index_metric
                         )
-                    elif tf_index == "TX30":
+                    elif index_metric == "TX30":
                         ds_daily, ds_monthly, ds_stats = indicator.calculate_tx30(
-                            grib_file_name, tf_index
+                            grib_file_name, index_metric
                         )
                     # TODO: add functionality
-                    # elif tf_index == "HW":
+                    # elif index_metric == "HW":
                     #     indicator.calculate_and_save_heat_wave_days_per_lag(
-                    #         data_out, year_list, month_list, tf_index, area_selection
+                    #         data_out, year_list, month_list, index_metric, area_selection
                     #     )
 
                     else:
                         logging.error(
-                            f"Index {tf_index} is not implemented. Supported indices "
+                            f"Index {index_metric} is not implemented. Supported indices "
                             "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'."
                         )
 
-                    # save files
+                    # Save files
                     self.logger.info(f"Writing index data to {out_monthly_path}.")
-                    if tf_index in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
                         ds_daily.to_netcdf(str(out_daily_path))
                     ds_monthly.to_netcdf(str(out_monthly_path))
                     ds_stats.to_netcdf(str(out_stats_path))
 
+                    # Confirm data saving
+                    if out_monthly_path.exists() and out_stats_path.exists():
+                        self.logger.info(f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}.")
+                        print(f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}")  # UPDATE
+                        if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+                            print(f"- Daily index data: {out_daily_path}")  # UPDATE
+                    else:
+                        self.logger.warning(f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly.")
+
     def save_index_to_hazard(
-        self, tf_index, year_list, month_list, area_selection, overwrite, data_out=None
+        self, index_metric, year_list, month_list, area_selection, overwrite, data_out=None
     ):
         """
         _summary_
 
         Parameters
         ----------
-        tf_index : str
-            The climate index identifier to be processed (e.g., 'TR', 'TX30', or 'HW').
+        index_metric : str
+            The climate index identifier to be processed into hazard format (e.g., 'TR' for tropical nights,
+            'TX30' for hot days, or 'HW' for heatwave days).
         year_list : list of int
-            List of years for which to process the climate index.
+            List of years for which to process the climate index (e.g., [2020, 2021]).
         month_list : list of int
-            List of months for which to process the climate index.
+            List of months for which to process the climate index (values 1-12).
         area_selection : str or list
-            Specifies the geographical area for which data should be downloaded.
-            It can be set to "global" for worldwide data or specified using:
+            Specifies the geographical area for which data should be processed. This parameter can be:
+            - "global" for worldwide data.
             - A list of ISO alpha-3 codes (e.g., ["DEU", "CHE"]) for multiple countries.
-            - A list of four numbers representing [north, west, south, east] in degrees.
+            - A list of four numbers representing [north, west, south, east] in degrees for a bounding box.
         overwrite : bool
-            If True, forces the system to overwrite existing files. If False, skips processing
-            if files are already present.
+            If True, forces the system to overwrite existing hazard files. If False, skips processing
+            if files are already present for the specified year, month, and region.
         data_out : str or Path, optional
-            The base directory path for storing output data. If not provided, the default data directory is used.
-
+            The base directory path for storing output data. If not provided, the default data directory
+            is used as defined in the class (`self.data_out`).
         Returns
         -------
         None
-            Saves processed climate indices as hazard objects for further analysis.
+        Saves the processed climate indices as hazard objects in HDF5 format, ready for further analysis.
         """
-        if not data_out:
-            data_out = self.data_dir
+        # Handle potential None values
+        self.data_out = Path(data_out) if data_out else self.data_out
+        if self.data_out is None:  # Ensure data_out is defined
+            raise ValueError(
+                "Data output directory must be provided or set in the class."
+            )
+
+        # Calculate the bounds and area string
         bounds = self._get_bounds_for_area_selection(area_selection)
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
-        hazard_type = tf_index
-        intensity_variable = f"{tf_index}"
 
-        if tf_index in ["TR", "TX30", "HW"]:
+        hazard_type = index_metric
+        intensity_variable = f"{index_metric}"
+
+        # Set intensity unit based on the type of index
+        if index_metric in ["TR", "TX30", "HW"]:
             intensity_unit = "days"
         else:
             intensity_unit = "°C"
 
         for year in year_list:
             for month in month_list:
-                # define input and output paths
-
+                # Define input and output paths
                 input_file_name = (
-                    Path(data_out)
+                    self.data_out
                     / "indices"
-                    / tf_index
+                    / index_metric
                     / str(year)
                     / f"{month:02d}"
                     / f"{hazard_type}_{area_str}_{year}{month:02d}.nc"
                 )
                 output_dir = (
-                    Path(data_out) / "hazard" / tf_index / str(year) / f"{month:02d}"
+                    self.data_out / "hazard" / index_metric / str(year) / f"{month:02d}"
                 )
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -833,7 +884,7 @@ class ForecastHandler:
                         continue
 
                     else:
-                        # open input file
+                        # Open input file and process data
                         with xr.open_dataset(str(input_file_name)) as ds:
                             ds["step"] = xr.DataArray(
                                 [f"{date}-01" for date in ds["step"].values],
@@ -843,6 +894,7 @@ class ForecastHandler:
                             ensemble_members = ds["number"].values
                             hazard = []
 
+                            # Iterate through ensemble members and create Hazard objects
                             for i, member in enumerate(ensemble_members):
                                 ds_subset = ds.sel(number=member)
                                 hazard.append(
@@ -864,22 +916,23 @@ class ForecastHandler:
                                     f"member{member}"
                                 ] * number_lead_times
 
-                        # concatenate and write hazards
+                        # Concatenate and write hazards
                         hazard = Hazard.concat(hazard)
                         hazard.check()
                         hazard.write_hdf5(str(file_path))
 
                         print(
-                            f"Completed processing for {year}-{month:02d}. "
-                            f"Data saved in {output_dir}."
+                            f"Completed processing for {year}-{month:02d}. Data saved in {output_dir}."
                         )
 
                 except FileNotFoundError as e:
-                    print(f"File not found: {e.filename}")
+                    print(
+                        f"File not found: {e.filename}"
+                    )  # Error handling for missing files
                 except Exception as e:
-                    print(f"An error occurred: {e}")
+                    print(f"An error occurred: {e}")  # General error handling
 
-        # print final hazard
+        # Display the final hazard object for verification
         last_hazard_file = file_path
         hazard_obj = Hazard.from_hdf5(str(last_hazard_file))
         hazard_obj.plot_intensity(1, smooth=False)
@@ -888,17 +941,24 @@ class ForecastHandler:
     def _is_data_present(file, vars):
         """Check if data is already present in the given directory.
 
+        This utility function verifies the presence of a data file in the specified directory.
+        It checks if the file exists and if it contains the required climate variables, ensuring
+        that the data is complete and meets the required specifications.
+
         Parameters
         ----------
         file : str or Path
-            The filename or path to be checked for the presence of data.
+            The file path or filename to be checked. If the input is a string, it is automatically
+            converted to a Path object for compatibility.
         vars : list of str
-            A list of variable names that should be present in the data.
+            A list of variable names that should be present in the data file (e.g., ['2m_dewpoint_temperature', '2m_temperature']).
+            The function uses these variables to verify if the required dataset is present.
 
         Returns
         -------
         Path or None
-            The file path if data exists and matches the criteria, else returns None.
+            - Returns the file path (Path object) if a matching file is found in the directory.
+            - Returns None if no matching file is present or the directory does not contain the required data.
         """
         file = Path(file) if isinstance(file, str) else file
         vars_short = [indicator.VAR_SPECS[var]["short_name"] for var in vars]
