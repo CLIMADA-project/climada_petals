@@ -195,7 +195,7 @@ class ForecastHandler:
             else:
                 raise ValueError(
                     f"Invalid string for area_selection: '{area_selection}'. Expected 'global' or a list of ISO codes."
-                )  # UPDATE
+                )  
 
         # Handle bounding box selection
         elif isinstance(area_selection, list):
@@ -214,7 +214,7 @@ class ForecastHandler:
                     self.logger.error(
                         f"Invalid area selection bounds provided: {area_selection}. "
                         "Expected a list of four numerical values [north, west, south, east]."
-                    )  # UPDATE
+                    )  
                     raise
 
             # Handle list of country ISO codes
@@ -225,7 +225,7 @@ class ForecastHandler:
                 if np.any(np.isnan(bounds)):
                     self.logger.warning(
                         f"ISO code '{iso}' not recognized. This region will not be included."
-                    )  # UPDATE
+                    )  
                     continue
 
                 min_lon, min_lat, max_lon, max_lat = bounds
@@ -798,9 +798,9 @@ class ForecastHandler:
                     # Confirm data saving
                     if out_monthly_path.exists() and out_stats_path.exists():
                         self.logger.info(f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}.")
-                        print(f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}")  # UPDATE
+                        print(f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}")  
                         if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                            print(f"- Daily index data: {out_daily_path}")  # UPDATE
+                            print(f"- Daily index data: {out_daily_path}")  
                     else:
                         self.logger.warning(f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly.")
 
