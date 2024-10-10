@@ -476,10 +476,11 @@ class ForecastHandler:
                 file_extension = (
                     "grib" if format == self._FORMAT_GRIB else self._FORMAT_NC
                 )
+
                 download_file = (
                     out_dir
-                    / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.{file_extension}'
-                )
+                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.{file_extension}'
+                )  
 
                 # Check if data already exists
                 existing_file = self._is_data_present(download_file, variables)
@@ -512,7 +513,7 @@ class ForecastHandler:
                     )
 
     def _process_data(
-        self, data_out, year_list, month_list, bounds, overwrite, index_metric, format
+        self, data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre
     ):
         """Process the downloaded climate forecast data into daily average values.
 
@@ -551,19 +552,23 @@ class ForecastHandler:
                 output_dir = Path(
                     f"{data_out}/input_data/netcdf/daily/{year}/{month:02d}"
                 )
+
                 daily_file = (
                     output_dir
-                    / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
-                )
+                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
+                )  
+
                 output_dir.mkdir(parents=True, exist_ok=True)
 
                 file_extension = (
                     "grib" if format == self._FORMAT_GRIB else self._FORMAT_NC
                 )
+
                 input_file = (
                     f"{data_out}/input_data/{format}/{year}/{month:02d}/"
-                    f"{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
-                )
+                    f"{originating_centre}_{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
+                )  
+
                 input_file = self._is_data_present(
                     input_file, index_params["variables"]
                 )
@@ -668,11 +673,11 @@ class ForecastHandler:
             max_lead_month,
         )
         self._process_data(
-            data_out, year_list, month_list, bounds, overwrite, index_metric, format
+            data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre
         )
 
     def calculate_index(
-        self, index_metric, year_list, month_list, area_selection, overwrite, data_out=None
+        self, index_metric, year_list, month_list, area_selection, overwrite, originating_centre=None, data_out=None
     ):
         """
         _summary_
@@ -710,7 +715,6 @@ class ForecastHandler:
 
         for year in year_list:
             for month in month_list:
-                # Path to input file of daily variables
                 input_file_name = (
                     self.data_out
                     / "input_data"
@@ -718,7 +722,7 @@ class ForecastHandler:
                     / "daily"
                     / str(year)
                     / f"{month:02d}"
-                    / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
+                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'  
                 )
 
                 grib_file_name = (
@@ -727,8 +731,9 @@ class ForecastHandler:
                     / "grib"
                     / str(year)
                     / f"{month:02d}"
-                    / f'{"_".join(vars_short)}_{area_str}_{year}{month:02d}.grib'
+                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.grib'  
                 )
+
 
                 # Check if input data is present
                 input_file_name = self._is_data_present(
@@ -740,18 +745,18 @@ class ForecastHandler:
 
                 # Define output paths using Pathlib
                 out_dir = (
-                    self.data_out / "indices" / index_metric / str(year) / f"{month:02d}"
+                    self.data_out / "indices" / originating_centre / index_metric / str(year) / f"{month:02d}"  
                 )
                 out_daily_path = (
-                    out_dir / f"daily_{index_metric}_{area_str}_{year}{month:02d}.nc"
+                    out_dir / f"daily_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"  
                 )
                 out_stats_path = (
                     out_dir
                     / "stats"
-                    / f"stats_{index_metric}_{area_str}_{year}{month:02d}.nc"
+                    / f"stats_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"  
                 )
                 out_monthly_path = (
-                    out_dir / f"{index_metric}_{area_str}_{year}{month:02d}.nc"
+                    out_dir / f"{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"  
                 )
                 out_stats_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -805,7 +810,7 @@ class ForecastHandler:
                         self.logger.warning(f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly.")
 
     def save_index_to_hazard(
-        self, index_metric, year_list, month_list, area_selection, overwrite, data_out=None
+        self, index_metric, year_list, month_list, area_selection, overwrite, originating_centre, data_out=None
     ):
         """
         _summary_
@@ -863,13 +868,14 @@ class ForecastHandler:
                 input_file_name = (
                     self.data_out
                     / "indices"
+                    / originating_centre
                     / index_metric
                     / str(year)
                     / f"{month:02d}"
-                    / f"{hazard_type}_{area_str}_{year}{month:02d}.nc"
+                    / f"{hazard_type}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
                 )
                 output_dir = (
-                    self.data_out / "hazard" / index_metric / str(year) / f"{month:02d}"
+                    self.data_out / "hazard" / originating_centre / index_metric / str(year) / f"{month:02d}"
                 )
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -877,7 +883,7 @@ class ForecastHandler:
                     # Check if the file already exists
                     file_path = (
                         output_dir
-                        / f"hazard_{hazard_type}_{area_str}_{year}{month:02d}.hdf5"
+                        / f"hazard_{hazard_type}_{originating_centre}_{area_str}_{year}{month:02d}.hdf5"
                     )
                     if file_path.exists() and not overwrite:
                         self.logger.info(f"Hazard file {file_path} already exists.")
@@ -967,10 +973,11 @@ class ForecastHandler:
         if not parent_dir.exists():
             return None
 
-        # Adjust rest for Path compatibility
-        rest = re.search(r"(area.*)", str(file)).group(0)
+        # Adjusted to match the new naming pattern without validating the originating center
+        rest = re.search(r"(area.*)", str(file)).group(0)  
         for filename in parent_dir.iterdir():
-            s = re.search(rf'.*{".*".join(vars_short)}.*{rest}', filename.name)
+            s = re.search(rf'.*{".*".join(vars_short)}.*{rest}', filename.name)  
             if s:
                 return parent_dir / s.group(0)
         return None
+
