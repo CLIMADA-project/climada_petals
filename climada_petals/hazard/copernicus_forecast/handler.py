@@ -40,6 +40,8 @@ import logging
 import calendar
 import re
 from pathlib import Path
+import datetime as dt
+import matplotlib.pyplot as plt
 
 import xarray as xr
 import pandas as pd
@@ -182,6 +184,9 @@ class ForecastHandler:
         list
             A list of four floats representing the calculated geographic bounds [north, west, south, east].
             If the area selection is invalid or unrecognized, it returns None.
+
+        Notes
+            " here include a warning is WGS84 or add comment on this [north, west, south, east]"
 
         Raises
         ------
@@ -942,6 +947,9 @@ class ForecastHandler:
         last_hazard_file = file_path
         hazard_obj = Hazard.from_hdf5(str(last_hazard_file))
         hazard_obj.plot_intensity(1, smooth=False)
+        converted_dates = [dt.datetime.fromordinal(date) for date in hazard_obj.date]
+        plt.figtext(0.5, 0.23, f"Date: {converted_dates[0].strftime('%Y-%m-%d')}", ha="center", fontsize=16) 
+        plt.tight_layout()
 
     @staticmethod
     def _is_data_present(file, vars):
