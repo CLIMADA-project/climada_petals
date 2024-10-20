@@ -23,6 +23,7 @@ import unittest
 import numpy as np
 from climada.engine import Impact
 from climada.entity import ImpactFuncSet
+from climada.entity.exposures import INDICATOR_IMPF
 from climada.util.constants import DEMO_DIR as INPUT_DIR
 from climada_petals.entity import ImpfRelativeCropyield
 from climada_petals.entity.exposures.crop_production import CropProduction, value_to_usd
@@ -52,6 +53,7 @@ class TestIntegr(unittest.TestCase):
                                                 crop='whe', irr='firr')
         exp = value_to_usd(exp, INPUT_DIR, yearrange=(2000, 2018))
         exp.assign_centroids(haz, threshold=20)
+        exp.data[INDICATOR_IMPF + haz_new.haz_type] = 1
 
         impf_cp = ImpactFuncSet()
         impf_def = ImpfRelativeCropyield.impf_relativeyield()
@@ -93,6 +95,7 @@ class TestIntegr(unittest.TestCase):
                                                 bbox=bbox, yearrange=(2001, 2005),
                                                 scenario='flexible', unit='t/y', crop='whe', irr='firr')
         exp.assign_centroids(haz, threshold=20)
+        exp.data[INDICATOR_IMPF + haz.haz_type] = 1
 
         impf_cp = ImpactFuncSet()
         impf_def = ImpfRelativeCropyield.impf_relativeyield()
@@ -107,6 +110,7 @@ class TestIntegr(unittest.TestCase):
                                               scenario='flexible', unit='t/y', crop='whe', irr='firr')
         exp_nan.gdf.value[exp_nan.gdf.value==0] = np.nan
         exp_nan.assign_centroids(haz, threshold=20)
+        exp_nan.data[INDICATOR_IMPF + haz.haz_type] = 1
 
         impact_nan = Impact()
         impact_nan.calc(exp_nan, impf_cp, haz, save_mat=True)
