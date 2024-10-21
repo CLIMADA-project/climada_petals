@@ -16,4 +16,12 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 """
-from .core import DirectShock
+
+import logging
+logging.getLogger("boario").setLevel(logging.DEBUG)
+
+LOGGER = logging.getLogger(__name__)
+
+from .core import DirectShock, IndirectCostModel, StaticIOModel, BoARIOModel # noqa: E402 (ignore import order PEP8 rule because we have to define the logger before importing any other sub-modules)
+
+__all__ = ["DirectShock","IndirectCostModel", "StaticIOModel", "BoARIOModel"]
