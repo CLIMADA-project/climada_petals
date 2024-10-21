@@ -241,7 +241,7 @@ def disaster_impact_allservices_df(df_pre, df_post,
     """
     Note
     -----
-    same as disaster_impact_allservices, just that it's performed on a df, 
+    same as disaster_impact_allservices, just that it's performed on a df,
     not on the graph
     """
     dict_pre = number_noservices_df(df_pre, services)
@@ -288,13 +288,13 @@ def get_pop_cutoff(gdf_people, cutoff):
     """
     find the maximum population value per grid point which accounts cumulatively across
     the entire gdf for less than a cutoff fraction of the entire population number
-    to decrease the 
+    to decrease the
     """
     bins = [0, 10, 20, 35, 50, 75]
     bins.extend(
         list(np.linspace(start=100, stop=gdf_people["counts"].max(), num=30)))
     df_cum = gdf_people.groupby(
-        pd.cut(gdf_people["counts"], bins)).sum()/gdf_people["counts"].sum()
+        pd.cut(gdf_people["counts"], bins)).sum(numeric_only=True)/gdf_people["counts"].sum()
     cutoff_bool = (df_cum.cumsum() >= cutoff).counts.values
     cutoff_interval = df_cum.index.categories[cutoff_bool][0]
     return cutoff_interval.left
@@ -399,13 +399,13 @@ class PowerFunctionalData():
         """
         Takes a countries' annual electricity consumption value (as
         gathered by the IEA in https://www.iea.org/data-and-statistics/data-tables?,
-        "Total Final Consumption, Electricity") and assigns this 
+        "Total Final Consumption, Electricity") and assigns this
         i) to gdf_people, proportional to population count
-        ii) to gdf_pplants, either proportional to plant capacity reported in 
+        ii) to gdf_pplants, either proportional to plant capacity reported in
         the global power plant database, or equally distributed.
 
-        If no consumption value is available for the country, dummy demands 
-        proportional to population are assigned to gdf_people, and equally 
+        If no consumption value is available for the country, dummy demands
+        proportional to population are assigned to gdf_people, and equally
         distributed onto gdf_pplants.
 
         Returns
@@ -456,7 +456,7 @@ class PowerFunctionalData():
         clusters based on per capita consuption statistics
         retrieved from IEA.org --> Heat & Electricity --> Electricity Consumption
         per capita.
-        Returns a pd.Series with el_consumption in GWh for the last reported year 
+        Returns a pd.Series with el_consumption in GWh for the last reported year
         (currently 2019)
         """
 
