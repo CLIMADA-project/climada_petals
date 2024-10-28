@@ -599,6 +599,15 @@ class ForecastHandler:
         data_out : str or Path, optional
             Base directory path for storing data, by default None.
 
+        Important Notes
+        ---------------
+        - **CDS Parameter Selection**: Please refer to the Copernicus Climate Data Store (CDS) website 
+        for information on valid parameter values. Proper knowledge of CDS dataset specifications 
+        (including variable names, temporal resolutions, and spatial configurations) is required 
+        for effective parameter selection.
+        - **Terms and Conditions**: Before using this function, remember to accept 
+        the terms and conditions of this dataset. These terms can be reviewed on the download 
+        page of "Seasonal forecast daily and subdaily data on single levels"(https://cds.climate.copernicus.eu/datasets/seasonal-original-single-levels?tab=overview)
 
         Returns
         -------
