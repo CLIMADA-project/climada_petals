@@ -117,6 +117,87 @@ def get_index_params(index):
     }
     return index_params.get(index)
 
+def index_explanations(index_metric):
+    """
+    Provides a detailed explanation and required input data for a given climate index.
+
+    Parameters
+    ----------
+    index_metric : str
+        The climate index identifier for which an explanation and input data are needed.
+        Supported indices include:
+        - "HIA" : Heat Index Adjusted
+        - "HIS" : Heat Index Simplified
+        - "Tmean" : Mean Temperature
+        - "Tmin" : Minimum Temperature
+        - "Tmax" : Maximum Temperature
+        - "HW" : Heat Wave
+        - "TR" : Tropical Nights
+        - "TX30" : Hot Days (Tmax > 30°C)
+
+    Returns
+    -------
+    dict
+        A dictionary containing two keys:
+        - 'explanation': A detailed description of the climate index.
+        - 'input_data': A list of required variables for calculating the index.
+
+        If the index is not found, it returns a dictionary with:
+        - 'error': Description of the issue.
+        - 'valid_indices': A list of supported index identifiers.
+    """
+    index_explanations = {
+        "HIA": {
+            "explanation": "Heat Index Adjusted: This indicator measures apparent "
+            "temperature, considering both air temperature and humidity, providing a more "
+            "accurate perception of how hot it feels.",
+            "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"],
+        },
+        "HIS": {
+            "explanation": "Heat Index Simplified: This indicator is a simpler version of the "
+            "Heat Index, focusing on a quick estimate of perceived heat based on temperature "
+            "and humidity.",
+            "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"],
+        },
+        "Tmean": {
+            "explanation": "Mean Temperature: This indicator calculates the average temperature "
+            "over the specified period.",
+            "input_data": ["2m temperature (t2m)"],
+        },
+        "Tmin": {
+            "explanation": "Minimum Temperature: This indicator tracks the lowest temperature "
+            "recorded over a specified period.",
+            "input_data": ["2m temperature (t2m)"],
+        },
+        "Tmax": {
+            "explanation": "Maximum Temperature: This indicator tracks the highest temperature "
+            "recorded over a specified period.",
+            "input_data": ["2m temperature (t2m)"],
+        },
+        "HW": {
+            "explanation": "Heat Wave: This indicator identifies heat waves, defined as at least "
+            "3 consecutive days with temperatures exceeding a certain threshold.",
+            "input_data": ["2m temperature (t2m)"],
+        },
+        "TR": {
+            "explanation": "Tropical Nights: This indicator counts the number of nights where "
+            "the minimum temperature remains above a certain threshold, typically 20°C.",
+            "input_data": ["2m temperature (t2m)"],
+        },
+        "TX30": {
+            "explanation": "Hot Days: This indicator counts the number of days where the maximum "
+            "temperature exceeds 30°C.",
+            "input_data": ["2m temperature (t2m)"],
+        },
+    }
+
+    # Return the explanation if found; otherwise, provide valid index options
+    return index_explanations.get(
+        index_metric,
+        {"error": "Unknown index", "valid_indices": list(index_explanations.keys())},
+    )
+
+
 
 def calculate_relative_humidity_percent(t2k, tdk):
     """
@@ -507,82 +588,3 @@ def calculate_statistics_from_index(dataarray):
     return ds_stats
 
 
-def index_explanations(index_metric):
-    """
-    Provides a detailed explanation and required input data for a given climate index.
-
-    Parameters
-    ----------
-    index_metric : str
-        The climate index identifier for which an explanation and input data are needed.
-        Supported indices include:
-        - "HIA" : Heat Index Adjusted
-        - "HIS" : Heat Index Simplified
-        - "Tmean" : Mean Temperature
-        - "Tmin" : Minimum Temperature
-        - "Tmax" : Maximum Temperature
-        - "HW" : Heat Wave
-        - "TR" : Tropical Nights
-        - "TX30" : Hot Days (Tmax > 30°C)
-
-    Returns
-    -------
-    dict
-        A dictionary containing two keys:
-        - 'explanation': A detailed description of the climate index.
-        - 'input_data': A list of required variables for calculating the index.
-
-        If the index is not found, it returns a dictionary with:
-        - 'error': Description of the issue.
-        - 'valid_indices': A list of supported index identifiers.
-    """
-    index_explanations = {
-        "HIA": {
-            "explanation": "Heat Index Adjusted: This indicator measures apparent "
-            "temperature, considering both air temperature and humidity, providing a more "
-            "accurate perception of how hot it feels.",
-            "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"],
-        },
-        "HIS": {
-            "explanation": "Heat Index Simplified: This indicator is a simpler version of the "
-            "Heat Index, focusing on a quick estimate of perceived heat based on temperature "
-            "and humidity.",
-            "input_data": ["2m temperature (t2m)", "2m dewpoint temperature (d2m)"],
-        },
-        "Tmean": {
-            "explanation": "Mean Temperature: This indicator calculates the average temperature "
-            "over the specified period.",
-            "input_data": ["2m temperature (t2m)"],
-        },
-        "Tmin": {
-            "explanation": "Minimum Temperature: This indicator tracks the lowest temperature "
-            "recorded over a specified period.",
-            "input_data": ["2m temperature (t2m)"],
-        },
-        "Tmax": {
-            "explanation": "Maximum Temperature: This indicator tracks the highest temperature "
-            "recorded over a specified period.",
-            "input_data": ["2m temperature (t2m)"],
-        },
-        "HW": {
-            "explanation": "Heat Wave: This indicator identifies heat waves, defined as at least "
-            "3 consecutive days with temperatures exceeding a certain threshold.",
-            "input_data": ["2m temperature (t2m)"],
-        },
-        "TR": {
-            "explanation": "Tropical Nights: This indicator counts the number of nights where "
-            "the minimum temperature remains above a certain threshold, typically 20°C.",
-            "input_data": ["2m temperature (t2m)"],
-        },
-        "TX30": {
-            "explanation": "Hot Days: This indicator counts the number of days where the maximum "
-            "temperature exceeds 30°C.",
-            "input_data": ["2m temperature (t2m)"],
-        },
-    }
-
-    # Return the explanation if found; otherwise, provide valid index options
-    return index_explanations.get(
-        index_metric,
-        {"error": "Unknown index", "valid_indices": list(index_explanations.keys())},
-    )

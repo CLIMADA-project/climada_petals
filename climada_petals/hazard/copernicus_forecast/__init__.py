@@ -19,5 +19,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 init Copernicus forecast handler
 """
 from .handler import ForecastHandler
+from .downloader import Downloader # This will import all functions from downloader.py
 from .indicator import *  # This will import all functions from indicator.py
  

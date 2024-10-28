@@ -52,6 +52,7 @@ from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries
 import climada_petals.hazard.copernicus_forecast.indicator as indicator
+from climada_petals.hazard.copernicus_forecast.downloader import Downloader
 
 
 # set path to store data
@@ -154,11 +155,52 @@ class ForecastHandler:
         These are not required as input parameters for this script.
         Ensure that your `.cdsapirc` file contains valid API credentials for successful data downloads.
         """
-        logging.basicConfig(
-            format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO
-        )
+        logging.basicConfig(format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO)
         self.logger = logging.getLogger()
         self.data_out = Path(data_out) if data_out else DATA_OUT
+        self.downloader = Downloader() 
+
+    @staticmethod
+    def explain_index(index_metric):
+        """Provide an explanation and required input data for the specified climate index.
+
+        Parameters
+        ----------
+        index_metric : str
+            The climate index identifier to be explained (e.g., 'TX30', 'Tmean').
+
+        Raises
+        ------
+        TypeError
+            Raised if `index_metric` is not provided as a string type.
+        ValueError
+            Raised if the specified `index_metric` is not recognized or does not exist.
+
+        Returns
+        -------
+        dict
+            A dictionary containing 'explanation' and 'input_data' if the index is found.
+            Returns None if the index is not found or invalid.
+        """
+        if not isinstance(index_metric, str):
+            raise TypeError(
+                f"The function expects a string parameter, but received '{type(index_metric).__name__}'.\n"
+                f"Did you mean to use quotation marks? For example, use 'TX30' instead of {index_metric}."
+            )
+
+        explanation = indicator.index_explanations(index_metric)
+        if "error" not in explanation:
+            print(
+                f"Explanation for '{index_metric}': {explanation['explanation']}\nRequired Input Data: {explanation['input_data']}"
+            )
+        else:
+            # Display an informative error message including valid indices
+            valid_indices = ", ".join(explanation["valid_indices"])
+            raise ValueError(
+                f"Unknown index '{index_metric}'. Please use a valid index from the following list: {valid_indices}."
+            )
+
+
 
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
@@ -254,44 +296,7 @@ class ForecastHandler:
                 "Expected 'global', a list of ISO codes, or [north, west, south, east]."
             )
 
-    def explain_index(self, index_metric):
-        """Provide an explanation and required input data for the specified climate index.
 
-        Parameters
-        ----------
-        index_metric : str
-            The climate index identifier to be explained (e.g., 'TX30', 'Tmean').
-
-        Raises
-        ------
-        TypeError
-            Raised if `index_metric` is not provided as a string type.
-        ValueError
-            Raised if the specified `index_metric` is not recognized or does not exist.
-
-        Returns
-        -------
-        dict
-            A dictionary containing 'explanation' and 'input_data' if the index is found.
-            Returns None if the index is not found or invalid.
-        """
-        if not isinstance(index_metric, str):
-            raise TypeError(
-                f"The function expects a string parameter, but received '{type(index_metric).__name__}'.\n"
-                f"Did you mean to use quotation marks? For example, use 'TX30' instead of {index_metric}."
-            )
-
-        explanation = indicator.index_explanations(index_metric)
-        if "error" not in explanation:
-            print(
-                f"Explanation for '{index_metric}': {explanation['explanation']}\nRequired Input Data: {explanation['input_data']}"
-            )
-        else:
-            # Display an informative error message including valid indices
-            valid_indices = ", ".join(explanation["valid_indices"])
-            raise ValueError(
-                f"Unknown index '{index_metric}'. Please use a valid index from the following list: {valid_indices}."
-            )
 
     def _calc_min_max_lead(self, year, month, leadtime_months=1):
         """Calculate the minimum and maximum lead time in hours for a given start date.
@@ -324,102 +329,7 @@ class ForecastHandler:
         max_lead = total_timesteps + 6
         return 0, max_lead
 
-    def _download_multvar_multlead(
-        self,
-        filename,
-        vars,
-        year,
-        month,
-        l_hours,
-        area,
-        overwrite,
-        format,
-        originating_centre,
-        system,
-    ):
-        """Download multiple climate variables over multiple lead times from the CDS.
 
-        This method handles downloading multiple climate variables for a given year and month
-        over various forecast lead times. The file is saved to the specified path, and the
-        CDS API client is used to retrieve data based on the provided parameters.
-
-        Parameters
-        ----------
-        filename : pathlib.Path or str
-            Full path and filename where the downloaded data will be stored.
-        vars : list[str]
-            List of climate variables to download (e.g., temperature, precipitation).
-        year : int
-            The forecast initialization year (e.g., 2022).
-        month : int
-            The forecast initialization month (values 1-12).
-        l_hours : list[int]
-            List of lead times (in hours) to download. Each value represents a forecast hour
-            relative to the initialization time (e.g., [0, 24, 48] for daily steps).
-        area : list[float]
-            Geographic bounds for data extraction specified as [north, west, south, east].
-        overwrite : bool
-            If True, overwrites the file if it already exists. If False, skips downloading
-            if the file is already present.
-        format : str
-            File format for downloading data, either 'grib' or 'netcdf'. The choice impacts
-            the processing speed and compatibility. GRIB files are often larger and more
-            complex than NetCDF.
-        originating_centre : str
-            The name of the meteorological center providing the forecast (e.g., 'ecmwf', 'dwd').
-        system : str
-            The seasonal forecast system version (e.g., '21' for DWD).
-
-        Raises
-        ------
-        FileNotFoundError
-            Raised if the download attempt fails and the file is not found at the specified location.
-        Exception
-            Raised for any other error during the download process.
-
-        Notes
-        -----
-        The CDS API client (`cdsapi.Client()`) uses the default configuration stored in the `.cdsapirc` file.
-        Make sure the configuration file is correctly set up with your API key and URL before executing
-        this function.
-        """
-        try:
-            # Ensure the directory exists before downloading
-            output_dir = Path(filename).parent
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            # Directly instantiate the CDS API client using the default configuration from .cdsapirc
-            c = cdsapi.Client()
-            c.retrieve(
-                "seasonal-original-single-levels",
-                {
-                    "format": format,
-                    "originating_centre": originating_centre,
-                    "area": area,
-                    "system": system,
-                    "variable": vars,
-                    "month": f"{month:02d}",
-                    "year": year,
-                    "day": "01",
-                    "leadtime_hour": l_hours,
-                },
-                filename,
-            )
-
-            # Check if the file was actually downloaded
-            if not Path(filename).exists():  # Added check to confirm the file exists
-                raise FileNotFoundError(
-                    f"Failed to download {format} file to {filename}."
-                )
-            self.logger.info(
-                f"{format.capitalize()} file successfully downloaded to {filename}."
-            )
-
-        except Exception as e:
-            self.logger.error(
-                f"{format.capitalize()} file {filename} could not be downloaded. Error: {e}"
-            )
-            raise e  # Re-raise the exception for higher-level handling
 
     def _download_data(
         self,
@@ -463,6 +373,7 @@ class ForecastHandler:
         -------
         None
         """
+
         data_out = self.data_out
         index_params = indicator.get_index_params(index_metric)
         variables = index_params["variables"]
@@ -474,7 +385,7 @@ class ForecastHandler:
         for year in year_list:
             for month in month_list:
                 # Prepare output paths
-                out_dir = Path(f"{data_out}/input_data/{format}/{year}/{month:02d}")
+                out_dir = Path(f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}")
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 # Construct the correct download file path
@@ -503,19 +414,43 @@ class ForecastHandler:
                     self.logger.info(f"{len(leadtimes)} leadtimes to download.")
                     self.logger.debug(f"Lead times are: {leadtimes}")
 
-                    # Download data
-                    self._download_multvar_multlead(
-                        download_file,
-                        variables,
-                        year,
-                        month,
-                        leadtimes,
-                        bounds,
-                        overwrite,
-                        format,
-                        originating_centre,
-                        system,
-                    )
+                    # Define the parameters for the Downloader
+                    download_params = {  
+                        "format": format,
+                        "originating_centre": originating_centre,
+                        "area": bounds,
+                        "system": system,
+                        "variable": variables,
+                        "month": f"{month:02d}",
+                        "year": year,
+                        "day": "01",
+                        "leadtime_hour": leadtimes,
+                    }
+    
+                    try:
+                        self.downloader.download_data(
+                            "seasonal-original-single-levels",  
+                            download_params,
+                            download_file,
+                            overwrite=overwrite
+                        )
+                    except requests.HTTPError as e:
+                        if "MARS returned no data" in str(e):
+                            # Check which specific parameter is missing data
+                            missing_params = [param for param, value in download_params.items() if not value]
+                            missing_info = (
+                                f"No data returned for parameters: {', '.join(missing_params) or 'specified request'}. "
+                                "This may indicate unavailable or incorrect parameter selection. Please verify the existence and accuracy of the selected parameters on the CDS website."
+                            )
+
+                            self.logger.error(missing_info)
+                            raise ValueError(missing_info) from e
+                        else:
+                            self.logger.error(f"Failed to download due to HTTPError: {e}")
+                            raise
+                    except Exception as e:
+                        self.logger.error(f"Unexpected error during download: {e}")
+                        raise e
 
     def _process_data(
         self, data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre
@@ -555,7 +490,7 @@ class ForecastHandler:
             for month in month_list:
 
                 output_dir = Path(
-                    f"{data_out}/input_data/netcdf/daily/{year}/{month:02d}"
+                    f"{data_out}/input_data/netcdf/daily/{originating_centre}/{year}/{month:02d}"
                 )
 
                 daily_file = (
@@ -570,7 +505,7 @@ class ForecastHandler:
                 )
 
                 input_file = (
-                    f"{data_out}/input_data/{format}/{year}/{month:02d}/"
+                    f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
                     f"{originating_centre}_{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
                 )  
 
@@ -632,7 +567,9 @@ class ForecastHandler:
         data_out=None,
     ):
         """
-        _summary_
+        Download and process climate forecast data from CDS Copernicus Climate Data Store, specifically 
+        Seasonal forecast daily and subdaily data on single levels for specified years, months, area, 
+        and climate index.
 
         Parameters
         ----------
@@ -658,6 +595,7 @@ class ForecastHandler:
         data_out : str or Path, optional
             Base directory path for storing data, by default None.
 
+
         Returns
         -------
         None
@@ -678,7 +616,14 @@ class ForecastHandler:
             max_lead_month,
         )
         self._process_data(
-            data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre
+            data_out, 
+            year_list, 
+            month_list, 
+            bounds, 
+            overwrite, 
+            index_metric, 
+            format, 
+            originating_centre
         )
 
     def calculate_index(
@@ -725,18 +670,20 @@ class ForecastHandler:
                     / "input_data"
                     / "netcdf"
                     / "daily"
+                    / originating_centre
                     / str(year)
                     / f"{month:02d}"
-                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'  
+                    / f'{originating_centre}_{"_".join(list(vars_short))}_{area_str}_{year}{month:02d}.nc'
                 )
 
                 grib_file_name = (
                     self.data_out
                     / "input_data"
+                    /originating_centre
                     / "grib"
                     / str(year)
                     / f"{month:02d}"
-                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.grib'  
+                    / f'{originating_centre}_{"_".join(list(vars_short))}_{area_str}_{year}{month:02d}.grib'  
                 )
 
 
