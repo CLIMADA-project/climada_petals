@@ -5,10 +5,11 @@ from pathlib import Path
 from climada.util.constants import SYSTEM_DIR
 
 class Downloader:
-    """A class to download data from the Copernicus Climate Data Store (CDS).
+    """A class to download data from the Copernicus Data Stores, including cds.climate.copernicus.eu, 
+    ads.atmosphere.copernicus.eu and ewds.climate.copernicus.eu.
 
-    This downloader allows for retrieving various climate datasets from the CDS by specifying the
-    dataset type and required parameters.
+    This downloader allows for retrieving various climate datasets from the Copernicus Data Stores by 
+    specifying the dataset type and required parameters.
 
     Attributes
     ----------
@@ -30,7 +31,7 @@ class Downloader:
         
 
     def download_data(self, dataset_type, params, filename, overwrite=False):
-        """Download data from CDS using specified dataset type and parameters.
+        """Download data from Copernicus Data Stores using specified dataset type and parameters.
 
         Parameters
         ----------
