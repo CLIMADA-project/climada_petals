@@ -42,6 +42,7 @@ import re
 from pathlib import Path
 import datetime as dt
 import matplotlib.pyplot as plt
+import requests
 
 import xarray as xr
 import pandas as pd
@@ -444,17 +445,21 @@ class ForecastHandler:
                             missing_params = [param for param, value in download_params.items() if not value]
                             missing_info = (
                                 f"No data returned for parameters: {', '.join(missing_params) or 'specified request'}. "
-                                "This may indicate unavailable or incorrect parameter selection. Please verify the existence and accuracy of the selected parameters on the CDS website."
+                                "This may indicate unavailable or incorrect parameter selection. Please verify the existence "
+                                "and accuracy of the selected parameters on the Climate Data Store website. "
+                                "If you require more information about this error, please visit: "
+                                "https://confluence.ecmwf.int/display/CKB/Common+Error+Messages+for+CDS+Requests"
                             )
 
                             self.logger.error(missing_info)
-                            raise ValueError(missing_info) from e
+                            return  # Exit function gracefully without traceback
+
                         else:
                             self.logger.error(f"Failed to download due to HTTPError: {e}")
-                            raise
+                            return  # Exit function gracefully without traceback
                     except Exception as e:
                         self.logger.error(f"Unexpected error during download: {e}")
-                        raise e
+                        return  # Exit function gracefully without traceback
 
     def _process_data(
         self, data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre
