@@ -136,7 +136,6 @@ class ImpfRiverFlood(ImpactFunc):
         impf.continent = f"{region}"
         impf.id = impf_id
         impf.mdd = impf_values
-        impf.mdr = impf_values
         impf.intensity = np.array([0., 0.05, 0.5, 1., 1.5, 2., 3., 4., 5., 6., 12.])
         impf.paa = np.ones(len(impf.intensity))
 
