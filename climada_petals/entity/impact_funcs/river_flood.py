@@ -51,18 +51,6 @@ VALID_REGIONS = "Africa, Asia, Europe, North America, Oceania, South America"
 
 LOGGER = logging.getLogger(__name__)
 
-DEF_VAR_EXCEL = {'sheet_name': 'damagefunctions',
-                 'col_name': {'func_id': 'DamageFunID',
-                              'inten': 'Intensity',
-                              'mdd': 'MDD',
-                              'paa': 'PAA',
-                              'mdr': 'MDR',
-                              'name': 'name',
-                              'peril': 'peril_ID',
-                              'unit': 'Intensity_unit'
-                              }
-                 }
-
 class ImpfRiverFlood(ImpactFunc):
     """Impact functions for tropical cyclones."""
 
