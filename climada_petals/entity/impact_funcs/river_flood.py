@@ -369,25 +369,21 @@ def flood_imp_func_set(sector="residential"):
     """Builds impact function set for river flood, using standard files. By default, it reads
     functions for the residential sector"""
 
-    impf_set = ImpactFuncSet()
-
     impf_africa = ImpfRiverFlood.from_jrc_region_sector("Africa", sector=sector)
-    impf_set.append(impf_africa)
-
     impf_asia = ImpfRiverFlood.from_jrc_region_sector("Asia", sector=sector)
-    impf_set.append(impf_asia)
-
     impf_europe = ImpfRiverFlood.from_jrc_region_sector("Europe", sector=sector)
-    impf_set.append(impf_europe)
-
     impf_na = ImpfRiverFlood.from_jrc_region_sector("NorthAmerica", sector=sector)
-    impf_set.append(impf_na)
-
     impf_oceania = ImpfRiverFlood.from_jrc_region_sector("Oceania", sector=sector)
-    impf_set.append(impf_oceania)
-
     impf_sa = ImpfRiverFlood.from_jrc_region_sector("SouthAmerica", sector=sector)
-    impf_set.append(impf_sa)
+
+    impf_set = ImpactFuncSet([
+                impf_africa,
+                impf_asia,
+                impf_europe,
+                impf_na,
+                impf_oceania,
+                impf_sa
+    ])
 
     return impf_set
 
