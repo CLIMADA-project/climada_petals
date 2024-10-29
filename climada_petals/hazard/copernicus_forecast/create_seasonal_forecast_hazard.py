@@ -19,6 +19,14 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Module to handle seasonal forecast data from the Copernicus Climate Data Store (CDS)
 in the U-CLIMADAPT project.
 
+---
+
+This "SeasonalForecast" class serves as a wrapper around the "Downloader" class, centralizing all forecast data
+management. It handles multiple stages in the seasonal forecast workflow, including data downloading, processing,
+index calculations, and hazard conversion, enabling ease of use and extensibility.
+
+---
+
 Prerequisites:
 1. CDS API client installation:
    pip install cdsapi
@@ -62,7 +70,7 @@ DATA_OUT = SYSTEM_DIR / "copernicus_forecast"
 LOGGER = logging.getLogger(__name__)
 
 
-class ForecastHandler:
+class SeasonalForecast:
     """A handler for downloading, processing, and calculating climate indices based on seasonal forecast data.
 
     This class is designed to handle various operations related to seasonal climate forecasts,
@@ -70,7 +78,7 @@ class ForecastHandler:
     downloaded data, calculating specific climate indices, and converting the results into
     hazard objects for further risk analysis.
 
-    The `ForecastHandler` offers multiple methods for handling CDS API connections,
+    The "ForecastHandler" offers multiple methods for handling CDS API connections,
     calculating indices such as heat stress or temperature thresholds, and saving these
     indices in formats compatible with the CLIMADA hazard framework.
 
@@ -124,7 +132,7 @@ class ForecastHandler:
 
     Example Usage
     -------------
-    >>> handler = ForecastHandler()
+    >>> handler = SeasonalForecast()
     >>> handler.download_and_process_data("Tmean", [2021, 2022], [6, 7], "global", True, "netcdf", "ecmwf", "21", 6)
     >>> handler.calculate_index("TX30", [2022], [8], ["DEU", "CHE"], False)
     >>> handler.save_index_to_hazard("TX30", [2022], [8], ["DEU", "CHE"], True)
@@ -139,7 +147,7 @@ class ForecastHandler:
     _FORMAT_NC = "nc"
 
     def __init__(self, data_out=None):
-        """Initialize the ForecastHandler instance.
+        """Initialize the SeasonalForecast instance.
 
         This method sets up logging and initializes the directory for storing
         downloaded and processed data.
@@ -156,10 +164,12 @@ class ForecastHandler:
         These are not required as input parameters for this script.
         Ensure that your `.cdsapirc` file contains valid API credentials for successful data downloads.
         """
-        logging.basicConfig(format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO)
+        logging.basicConfig(
+            format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO
+        )
         self.logger = logging.getLogger()
         self.data_out = Path(data_out) if data_out else DATA_OUT
-        self.downloader = Downloader() 
+        self.downloader = Downloader()
 
     @staticmethod
     def explain_index(index_metric):
@@ -201,8 +211,6 @@ class ForecastHandler:
                 f"Unknown index '{index_metric}'. Please use a valid index from the following list: {valid_indices}."
             )
 
-
-
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
         """Determine the geographic bounds based on an area selection string.
@@ -243,7 +251,7 @@ class ForecastHandler:
             else:
                 raise ValueError(
                     f"Invalid string for area_selection: '{area_selection}'. Expected 'global' or a list of ISO codes."
-                )  
+                )
 
         # Handle bounding box selection
         elif isinstance(area_selection, list):
@@ -262,7 +270,7 @@ class ForecastHandler:
                     self.logger.error(
                         f"Invalid area selection bounds provided: {area_selection}. "
                         "Expected a list of four numerical values [north, west, south, east]."
-                    )  
+                    )
                     raise
 
             # Handle list of country ISO codes
@@ -273,7 +281,7 @@ class ForecastHandler:
                 if np.any(np.isnan(bounds)):
                     self.logger.warning(
                         f"ISO code '{iso}' not recognized. This region will not be included."
-                    )  
+                    )
                     continue
 
                 min_lon, min_lat, max_lon, max_lat = bounds
@@ -296,8 +304,6 @@ class ForecastHandler:
                 f"Invalid area_selection format: {area_selection}. "
                 "Expected 'global', a list of ISO codes, or [north, west, south, east]."
             )
-
-
 
     def _calc_min_max_lead(self, year, month, leadtime_months=1):
         """Calculate the minimum and maximum lead time in hours for a given start date.
@@ -329,8 +335,6 @@ class ForecastHandler:
 
         max_lead = total_timesteps + 6
         return 0, max_lead
-
-
 
     def _download_data(
         self,
@@ -377,7 +381,8 @@ class ForecastHandler:
         # Warning about terms and conditions
         self.logger.warning(
             "Before downloading, please ensure you have reviewed and accepted the terms and conditions "
-            "for the use of this dataset. Access the terms here: https://cds.climate.copernicus.eu/datasets/seasonal-original-single-levels?tab=download")
+            "for the use of this dataset. Access the terms here: https://cds.climate.copernicus.eu/datasets/seasonal-original-single-levels?tab=download"
+        )
 
         data_out = self.data_out
         index_params = indicator.get_index_params(index_metric)
@@ -390,7 +395,9 @@ class ForecastHandler:
         for year in year_list:
             for month in month_list:
                 # Prepare output paths
-                out_dir = Path(f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}")
+                out_dir = Path(
+                    f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}"
+                )
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 # Construct the correct download file path
@@ -401,7 +408,7 @@ class ForecastHandler:
                 download_file = (
                     out_dir
                     / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.{file_extension}'
-                )  
+                )
 
                 # Check if data already exists
                 existing_file = self._is_data_present(download_file, variables)
@@ -420,7 +427,7 @@ class ForecastHandler:
                     self.logger.debug(f"Lead times are: {leadtimes}")
 
                     # Define the parameters for the Downloader
-                    download_params = {  
+                    download_params = {
                         "format": format,
                         "originating_centre": originating_centre,
                         "area": bounds,
@@ -431,18 +438,22 @@ class ForecastHandler:
                         "day": "01",
                         "leadtime_hour": leadtimes,
                     }
-    
+
                     try:
                         self.downloader.download_data(
-                            "seasonal-original-single-levels",  
+                            "seasonal-original-single-levels",
                             download_params,
                             download_file,
-                            overwrite=overwrite
+                            overwrite=overwrite,
                         )
                     except requests.HTTPError as e:
                         if "MARS returned no data" in str(e):
                             # Check which specific parameter is missing data
-                            missing_params = [param for param, value in download_params.items() if not value]
+                            missing_params = [
+                                param
+                                for param, value in download_params.items()
+                                if not value
+                            ]
                             missing_info = (
                                 f"No data returned for parameters: {', '.join(missing_params) or 'specified request'}. "
                                 "This may indicate unavailable or incorrect parameter selection. Please verify the existence "
@@ -455,14 +466,24 @@ class ForecastHandler:
                             return  # Exit function gracefully without traceback
 
                         else:
-                            self.logger.error(f"Failed to download due to HTTPError: {e}")
+                            self.logger.error(
+                                f"Failed to download due to HTTPError: {e}"
+                            )
                             return  # Exit function gracefully without traceback
                     except Exception as e:
                         self.logger.error(f"Unexpected error during download: {e}")
                         return  # Exit function gracefully without traceback
 
     def _process_data(
-        self, data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre
+        self,
+        data_out,
+        year_list,
+        month_list,
+        bounds,
+        overwrite,
+        index_metric,
+        format,
+        originating_centre,
     ):
         """Process the downloaded climate forecast data into daily average values.
 
@@ -505,7 +526,7 @@ class ForecastHandler:
                 daily_file = (
                     output_dir
                     / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
-                )  
+                )
 
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -516,7 +537,7 @@ class ForecastHandler:
                 input_file = (
                     f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
                     f"{originating_centre}_{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
-                )  
+                )
 
                 input_file = self._is_data_present(
                     input_file, index_params["variables"]
@@ -576,8 +597,8 @@ class ForecastHandler:
         data_out=None,
     ):
         """
-        Download and process climate forecast data from CDS Copernicus Climate Data Store, specifically 
-        Seasonal forecast daily and subdaily data on single levels for specified years, months, area, 
+        Download and process climate forecast data from CDS Copernicus Climate Data Store, specifically
+        Seasonal forecast daily and subdaily data on single levels for specified years, months, area,
         and climate index.
 
         Parameters
@@ -606,12 +627,12 @@ class ForecastHandler:
 
         Important Notes
         ---------------
-        - **CDS Parameter Selection**: Please refer to the Copernicus Climate Data Store (CDS) website 
-        for information on valid parameter values. Proper knowledge of CDS dataset specifications 
-        (including variable names, temporal resolutions, and spatial configurations) is required 
+        - **CDS Parameter Selection**: Please refer to the Copernicus Climate Data Store (CDS) website
+        for information on valid parameter values. Proper knowledge of CDS dataset specifications
+        (including variable names, temporal resolutions, and spatial configurations) is required
         for effective parameter selection.
-        - **Terms and Conditions**: Before using this function, remember to accept 
-        the terms and conditions of this dataset. These terms can be reviewed on the download 
+        - **Terms and Conditions**: Before using this function, remember to accept
+        the terms and conditions of this dataset. These terms can be reviewed on the download
         page of "Seasonal forecast daily and subdaily data on single levels"(https://cds.climate.copernicus.eu/datasets/seasonal-original-single-levels?tab=overview)
 
         Returns
@@ -634,21 +655,31 @@ class ForecastHandler:
             max_lead_month,
         )
         self._process_data(
-            data_out, 
-            year_list, 
-            month_list, 
-            bounds, 
-            overwrite, 
-            index_metric, 
-            format, 
-            originating_centre
+            data_out,
+            year_list,
+            month_list,
+            bounds,
+            overwrite,
+            index_metric,
+            format,
+            originating_centre,
         )
 
     def calculate_index(
-        self, index_metric, year_list, month_list, area_selection, overwrite, originating_centre=None, data_out=None
+        self,
+        index_metric,
+        year_list,
+        month_list,
+        area_selection,
+        overwrite,
+        originating_centre=None,
+        data_out=None,
     ):
         """
-        _summary_
+        Calculate a specified climate index for given years, months, and regions.
+
+        This function processes input climate data and computes daily, monthly, and statistical summaries
+        for a specified climate index, saving the outputs in NetCDF format.
 
         Parameters
         ----------
@@ -670,7 +701,6 @@ class ForecastHandler:
         -------
         None
         """
-        # if not data_out:data_out = self.data_dir
         self.data_out = Path(data_out) if data_out else self.data_out
         bounds = self._get_bounds_for_area_selection(area_selection)
         area_str = (
@@ -697,13 +727,12 @@ class ForecastHandler:
                 grib_file_name = (
                     self.data_out
                     / "input_data"
-                    /originating_centre
+                    / originating_centre
                     / "grib"
                     / str(year)
                     / f"{month:02d}"
-                    / f'{originating_centre}_{"_".join(list(vars_short))}_{area_str}_{year}{month:02d}.grib'  
+                    / f'{originating_centre}_{"_".join(list(vars_short))}_{area_str}_{year}{month:02d}.grib'
                 )
-
 
                 # Check if input data is present
                 input_file_name = self._is_data_present(
@@ -715,18 +744,25 @@ class ForecastHandler:
 
                 # Define output paths using Pathlib
                 out_dir = (
-                    self.data_out / "indices" / originating_centre / index_metric / str(year) / f"{month:02d}"  
+                    self.data_out
+                    / "indices"
+                    / originating_centre
+                    / index_metric
+                    / str(year)
+                    / f"{month:02d}"
                 )
                 out_daily_path = (
-                    out_dir / f"daily_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"  
+                    out_dir
+                    / f"daily_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
                 )
                 out_stats_path = (
                     out_dir
                     / "stats"
-                    / f"stats_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"  
+                    / f"stats_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
                 )
                 out_monthly_path = (
-                    out_dir / f"{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"  
+                    out_dir
+                    / f"{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
                 )
                 out_stats_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -772,18 +808,35 @@ class ForecastHandler:
 
                     # Confirm data saving
                     if out_monthly_path.exists() and out_stats_path.exists():
-                        self.logger.info(f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}.")
-                        print(f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}")  
+                        self.logger.info(
+                            f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}."
+                        )
+                        print(
+                            f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}"
+                        )
                         if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                            print(f"- Daily index data: {out_daily_path}")  
+                            print(f"- Daily index data: {out_daily_path}")
                     else:
-                        self.logger.warning(f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly.")
+                        self.logger.warning(
+                            f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly."
+                        )
 
     def save_index_to_hazard(
-        self, index_metric, year_list, month_list, area_selection, overwrite, originating_centre, data_out=None
+        self,
+        index_metric,
+        year_list,
+        month_list,
+        area_selection,
+        overwrite,
+        originating_centre,
+        data_out=None,
     ):
         """
-        _summary_
+        Convert climate indices to hazard objects in HDF5 format.
+
+        Processes specified climate indices by year, month, and region, creating and storing Hazard objects
+        with attributes like hazard type, intensity, and coordinates. Results are saved in structured HDF5
+        format for storage and easy retrieval.
 
         Parameters
         ----------
@@ -845,7 +898,12 @@ class ForecastHandler:
                     / f"{hazard_type}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
                 )
                 output_dir = (
-                    self.data_out / "hazard" / originating_centre / index_metric / str(year) / f"{month:02d}"
+                    self.data_out
+                    / "hazard"
+                    / originating_centre
+                    / index_metric
+                    / str(year)
+                    / f"{month:02d}"
                 )
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -913,7 +971,13 @@ class ForecastHandler:
         hazard_obj = Hazard.from_hdf5(str(last_hazard_file))
         hazard_obj.plot_intensity(1, smooth=False)
         converted_dates = [dt.datetime.fromordinal(date) for date in hazard_obj.date]
-        plt.figtext(0.5, 0.23, f"Date: {converted_dates[0].strftime('%Y-%m-%d')}", ha="center", fontsize=16) 
+        plt.figtext(
+            0.5,
+            0.23,
+            f"Date: {converted_dates[0].strftime('%Y-%m-%d')}",
+            ha="center",
+            fontsize=16,
+        )
         plt.tight_layout()
 
     @staticmethod
@@ -947,10 +1011,9 @@ class ForecastHandler:
             return None
 
         # Adjusted to match the new naming pattern without validating the originating center
-        rest = re.search(r"(area.*)", str(file)).group(0)  
+        rest = re.search(r"(area.*)", str(file)).group(0)
         for filename in parent_dir.iterdir():
-            s = re.search(rf'.*{".*".join(vars_short)}.*{rest}', filename.name)  
+            s = re.search(rf'.*{".*".join(vars_short)}.*{rest}', filename.name)
             if s:
                 return parent_dir / s.group(0)
         return None
-
