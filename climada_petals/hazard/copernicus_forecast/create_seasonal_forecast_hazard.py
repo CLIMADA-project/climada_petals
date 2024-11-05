@@ -72,16 +72,13 @@ LOGGER = logging.getLogger(__name__)
 
 
 class SeasonalForecast:
-    """A handler for downloading, processing, and calculating climate indices based on seasonal forecast data.
-
-    This class is designed to handle various operations related to seasonal climate forecasts,
-    including data retrieval from the Copernicus Climate Data Store (CDS), processing the
-    downloaded data, calculating specific climate indices, and converting the results into
-    hazard objects for further risk analysis.
-
-    The "ForecastHandler" offers multiple methods for handling CDS API connections,
-    calculating indices such as heat stress or temperature thresholds, and saving these
-    indices in formats compatible with the CLIMADA hazard framework.
+    """A module for downloading, processing, and calculating climate indices based on seasonal forecast data.
+    The "SeasonalForecast" class serves as a wrapper around the "Downloader" class, centralizing all forecast data management. 
+    It encompasses multiple stages in the seasonal forecast workflow, including data downloading, processing, index calculations, 
+    and hazard conversion, enabling ease of use and extensibility.
+    This class is designed to perform various operations related to seasonal climate forecasts, such as retrieving data from the 
+    Copernicus Climate Data Store (CDS), processing the downloaded data, calculating specific climate indices, and converting the 
+    results into hazard objects for further risk analysis. 
 
     Attributes
     ----------
@@ -99,37 +96,34 @@ class SeasonalForecast:
     Methods
     -------
     __init__(data_dir=DATA_OUT, url=None, key=None)
-        Initializes the ForecastHandler instance, setting up the data directory and CDS API configurations.
+        Initializes the SeasonalForecast instance, setting up the data directory and CDS API configurations.
 
     _get_bounds_for_area_selection(area_selection, margin=0.2)
-        Determines the geographic bounds for a given area selection and adds a margin if specified.
+        Determines geographic bounds for a given area selection and adds a margin if specified.
 
     explain_index(index_metric)
         Provides an explanation and required input data for a specified climate index.
 
     _calc_min_max_lead(year, month, leadtime_months=1)
-        Calculates the minimum and maximum lead time in hours for a given forecast start date.
-
-    _download_multvar_multlead(filename, vars, year, month, l_hours, area, overwrite, format, originating_centre, system)
-        Downloads multiple climate variables over multiple lead times from the Copernicus Climate Data Store (CDS).
+        Calculates minimum and maximum lead times in hours for a given forecast start date.
 
     _download_data(data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre, system, max_lead_month)
-        Handles the downloading of seasonal climate forecast data for specific years, months, and climate indices.
+        Handles downloading seasonal forecast data for specific years, months, and indices.
 
     _process_data(data_out, year_list, month_list, bounds, overwrite, index_metric, format)
-        Processes downloaded forecast data into daily averages and saves results in NetCDF format.
+        Processes forecast data into daily averages and saves in NetCDF format.
 
     download_and_process_data(index_metric, year_list, month_list, area_selection, overwrite, format, originating_centre, system, max_lead_month, data_out=None)
-        Downloads and processes climate forecast data for given years, months, and a specified climate index.
+        Downloads and processes forecast data for specified years, months, and climate indices.
 
     calculate_index(index_metric, year_list, month_list, area_selection, overwrite, data_out=None)
-        Calculates a specified climate index for given years, months, and geographical areas.
+        Calculates a specified climate index for given years, months, and regions.
 
     save_index_to_hazard(index_metric, year_list, month_list, area_selection, overwrite, data_out=None)
-        Converts the calculated climate indices into hazard objects compatible with the CLIMADA framework.
+        Converts calculated indices into hazard objects compatible with the CLIMADA framework.
 
     _is_data_present(file, vars)
-        Checks if the specified data file already exists in the given directory and meets the variable requirements.
+        Checks if a specified data file already exists in the directory and meets variable requirements.
 
     Example Usage
     -------------
@@ -685,22 +679,33 @@ class SeasonalForecast:
         Parameters
         ----------
         index_metric : str
-            The climate index to be calculated (e.g., 'Tmean', 'TR').
+            The climate index to be calculated (e.g., 'Tmean', 'TR'). Supported indices include:
+            'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HUM', 'RH', 'AT', 'WBGT', 'TR', and 'TX30'.
         year_list : list of int
             List of years for which to calculate the index.
         month_list : list of int
-            List of months for which to calculate the index (values 1-12).
+            List of months (1-12) for which to calculate the index.
         area_selection : str or list
-            Area specification for the calculation. This can be "global", a list of ISO-3 country codes
-            (e.g., ["DEU", "CHE"]), or a list of coordinates specified as [north, west, south, east].
+            Specifies the area for data selection. Options include:
+            - "global": Selects the entire globe.
+            - A list of ISO-3 country codes, e.g., ["DEU", "CHE"].
+            - A list of coordinates [north, west, south, east] in degrees.
         overwrite : bool
-            If True, overwrites existing files. If False, skips calculation if files already exist.
+            If True, existing files will be overwritten. If False, skips the calculation if files already exist.
+        originating_centre : str, optional
+            The meteorological center that produced the forecast (e.g., 'ecmwf', 'dwd').
         data_out : str or Path, optional
-            Base directory path for output data, by default None.
+            Directory path where output data will be stored. If None, uses the default path.
 
         Returns
         -------
         None
+
+        Notes
+        -----
+        - This method checks if the necessary data files already exist and processes them only if required.
+        - The function can calculate different climate indices using predefined parameters and methods.
+        - Results are saved as daily data, monthly summaries, and statistical summaries in the specified output directory.
         """
         self.data_out = Path(data_out) if data_out else self.data_out
         bounds = self._get_bounds_for_area_selection(area_selection)
@@ -881,7 +886,7 @@ class SeasonalForecast:
         elif index_metric in ["Tmean", "Tmin", "Tmax", "HIA", "HIS", "HUM", "AT", "WBGT"]:
             intensity_unit = "°C"
         elif index_metric == "RH":
-            intensity_unit = "%"  # Relative Humidity is in percentage
+            intensity_unit = "%"  
         else:
             intensity_unit = "°C"  # Default to Celsius if not specified
 
@@ -991,17 +996,22 @@ class SeasonalForecast:
         Parameters
         ----------
         file : str or Path
-            The file path or filename to be checked. If the input is a string, it is automatically
-            converted to a Path object for compatibility.
+            The path or filename to be checked. If given as a string, it is converted to a Path object.
         vars : list of str
-            A list of variable names that should be present in the data file (e.g., ['2m_dewpoint_temperature', '2m_temperature']).
-            The function uses these variables to verify if the required dataset is present.
+            A list of variable names expected to be present in the file (e.g., ['2m_dewpoint_temperature', '2m_temperature']).
+            Short names of these variables are used to verify the contents of the file.
 
         Returns
         -------
         Path or None
-            - Returns the file path (Path object) if a matching file is found in the directory.
-            - Returns None if no matching file is present or the directory does not contain the required data.
+            - Returns the file path (as a Path object) if a matching file with the required variables is found.
+            - Returns None if the file does not exist or does not contain the required data.
+
+        Notes
+        -----
+        - The function uses short names from the `VAR_SPECS` dictionary to perform the validation.
+        - File naming patterns are matched using regular expressions, ensuring compatibility with 
+        specific naming conventions.
         """
         file = Path(file) if isinstance(file, str) else file
         vars_short = [seasonal_statistics.VAR_SPECS[var]["short_name"] for var in vars]
