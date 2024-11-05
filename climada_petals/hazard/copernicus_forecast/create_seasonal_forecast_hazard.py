@@ -60,7 +60,8 @@ import cdsapi
 from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries
-import climada_petals.hazard.copernicus_forecast.indicator as indicator
+import climada_petals.hazard.copernicus_forecast.seasonal_statistics as seasonal_statistics
+import climada_petals.hazard.copernicus_forecast.heat_index as heat_index
 from climada_petals.hazard.copernicus_forecast.downloader import Downloader
 
 
@@ -199,7 +200,7 @@ class SeasonalForecast:
                 f"Did you mean to use quotation marks? For example, use 'TX30' instead of {index_metric}."
             )
 
-        explanation = indicator.index_explanations(index_metric)
+        explanation = seasonal_statistics.index_explanations(index_metric)
         if "error" not in explanation:
             print(
                 f"Explanation for '{index_metric}': {explanation['explanation']}\nRequired Input Data: {explanation['input_data']}"
@@ -385,9 +386,9 @@ class SeasonalForecast:
         )
 
         data_out = self.data_out
-        index_params = indicator.get_index_params(index_metric)
+        index_params = seasonal_statistics.get_index_params(index_metric)
         variables = index_params["variables"]
-        vars_short = [indicator.VAR_SPECS[var]["short_name"] for var in variables]
+        vars_short = [seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables]
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
@@ -509,9 +510,9 @@ class SeasonalForecast:
         None
         """
         data_out = self.data_out
-        index_params = indicator.get_index_params(index_metric)
+        index_params = seasonal_statistics.get_index_params(index_metric)
         variables = index_params["variables"]
-        vars_short = [indicator.VAR_SPECS[var]["short_name"] for var in variables]
+        vars_short = [seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables]
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
@@ -706,9 +707,9 @@ class SeasonalForecast:
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
-        index_params = indicator.get_index_params(index_metric)
+        index_params = seasonal_statistics.get_index_params(index_metric)
         vars_short = [
-            indicator.VAR_SPECS[var]["short_name"] for var in index_params["variables"]
+            seasonal_statistics.VAR_SPECS[var]["short_name"] for var in index_params["variables"]
         ]
 
         for year in year_list:
@@ -773,18 +774,18 @@ class SeasonalForecast:
 
                 # Calculate indices
                 else:
-                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin", "HUM", "RH", "AT", "WBGT"]:
                         ds_daily, ds_monthly, ds_stats = (
-                            indicator.calculate_heat_indices_metrics(
+                            seasonal_statistics.calculate_heat_indices_metrics(
                                 input_file_name, index_metric
                             )
                         )
                     elif index_metric == "TR":
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_TR(
+                        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_TR(
                             grib_file_name, index_metric
                         )
                     elif index_metric == "TX30":
-                        ds_daily, ds_monthly, ds_stats = indicator.calculate_tx30(
+                        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tx30(
                             grib_file_name, index_metric
                         )
                     # TODO: add functionality
@@ -796,30 +797,25 @@ class SeasonalForecast:
                     else:
                         logging.error(
                             f"Index {index_metric} is not implemented. Supported indices "
-                            "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HotDays', 'TR', and 'HW'."
+                            "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HUM', 'RH', 'AT', 'WBGT', 'TR', and 'TX30'"
                         )
 
                     # Save files
                     self.logger.info(f"Writing index data to {out_monthly_path}.")
-                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
+                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin", "HUM", "RH", "AT", "WBGT"]:
                         ds_daily.to_netcdf(str(out_daily_path))
                     ds_monthly.to_netcdf(str(out_monthly_path))
                     ds_stats.to_netcdf(str(out_stats_path))
 
                     # Confirm data saving
                     if out_monthly_path.exists() and out_stats_path.exists():
-                        self.logger.info(
-                            f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}."
-                        )
-                        print(
-                            f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}"
-                        )
-                        if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin"]:
-                            print(f"- Daily index data: {out_daily_path}")
+                        self.logger.info(f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}.")
+                        print(f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}")  
+                        if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin", "HUM", "RH", "AT", "WBGT"]:
+                            print(f"- Daily index data: {out_daily_path}")  
                     else:
-                        self.logger.warning(
-                            f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly."
-                        )
+                        self.logger.warning(f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly.")
+
 
     def save_index_to_hazard(
         self,
@@ -882,8 +878,12 @@ class SeasonalForecast:
         # Set intensity unit based on the type of index
         if index_metric in ["TR", "TX30", "HW"]:
             intensity_unit = "days"
-        else:
+        elif index_metric in ["Tmean", "Tmin", "Tmax", "HIA", "HIS", "HUM", "AT", "WBGT"]:
             intensity_unit = "°C"
+        elif index_metric == "RH":
+            intensity_unit = "%"  # Relative Humidity is in percentage
+        else:
+            intensity_unit = "°C"  # Default to Celsius if not specified
 
         for year in year_list:
             for month in month_list:
@@ -1004,7 +1004,7 @@ class SeasonalForecast:
             - Returns None if no matching file is present or the directory does not contain the required data.
         """
         file = Path(file) if isinstance(file, str) else file
-        vars_short = [indicator.VAR_SPECS[var]["short_name"] for var in vars]
+        vars_short = [seasonal_statistics.VAR_SPECS[var]["short_name"] for var in vars]
         parent_dir = file.parent
 
         if not parent_dir.exists():
