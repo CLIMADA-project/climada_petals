@@ -55,8 +55,8 @@ def link_clusters(graph, dist_thresh=np.inf, metres=True, link_attrs=None):
     graph
     """
 
-    gdf_vs = graph_linked.graph.get_vertex_dataframe()
-    gdf_vs['membership'] = graph_linked.graph.connected_components().membership
+    gdf_vs = graph.graph.get_vertex_dataframe()
+    gdf_vs['membership'] = graph.graph.connected_components().membership
 
     v_ids_source = []
     v_ids_target = []
@@ -81,10 +81,10 @@ def link_clusters(graph, dist_thresh=np.inf, metres=True, link_attrs=None):
             continue
 
     if len(v_ids_source) > 0:
-        graph_linked = _edges_from_vlists(
-            graph_linked, v_ids_source, v_ids_target, link_attrs)
+        graph = _edges_from_vlists(
+            graph, v_ids_source, v_ids_target, link_attrs)
 
-    return graph_linked
+    return graph
 
 
 def link_vertices_closest_k(graph, source_attrs, target_attrs, link_attrs=None,
@@ -491,7 +491,7 @@ def cascade(graph, df_dependencies, p_source='power_plant',
         _update_internal_dependencies(
             p_source=p_source, p_sink=p_sink, source_var=source_var, demand_var=demand_var)
 
-        self._update_functional_dependencies(df_dependencies)
+        _update_functional_dependencies(df_dependencies)
         func_states_vs2, func_states_es2 = self._funcstates_sum()
         delta = max(abs(func_states_vs-func_states_vs2),
                     abs(func_states_es-func_states_es2))
@@ -500,7 +500,7 @@ def cascade(graph, df_dependencies, p_source='power_plant',
     LOGGER.info('Ended functional state update.' +
                 ' Proceeding to end-user update.')
     if (cycles > 1) or initial:
-        self._update_enduser_dependencies(
+        _update_enduser_dependencies(
             df_dependencies, preselect, friction_surf, dur_thresh)
 
 
@@ -613,6 +613,7 @@ def _update_enduser_dependencies(self, df_dependencies, preselect,
                 print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
                 ) - starttime)
         self._propagate_check_fail(row.source, row.target, row.thresh_func)
+
 
 
 def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
