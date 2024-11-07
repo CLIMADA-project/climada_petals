@@ -62,23 +62,23 @@ from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries
 import climada_petals.hazard.copernicus_forecast.seasonal_statistics as seasonal_statistics
 import climada_petals.hazard.copernicus_forecast.heat_index as heat_index
-from climada_petals.hazard.copernicus_forecast.downloader import Downloader
+from climada_petals.hazard.copernicus_forecast.downloader import download_data
 
 
 # set path to store data
-DATA_OUT = SYSTEM_DIR / "copernicus_forecast"
+DATA_OUT = SYSTEM_DIR / "copernicus_data/seasonal_forecasts"
 
 LOGGER = logging.getLogger(__name__)
 
 
 class SeasonalForecast:
     """A module for downloading, processing, and calculating climate indices based on seasonal forecast data.
-    The "SeasonalForecast" class serves as a wrapper around the "Downloader" class, centralizing all forecast data management. 
-    It encompasses multiple stages in the seasonal forecast workflow, including data downloading, processing, index calculations, 
+    The "SeasonalForecast" class serves as a wrapper around the "Downloader" class, centralizing all forecast data management.
+    It encompasses multiple stages in the seasonal forecast workflow, including data downloading, processing, index calculations,
     and hazard conversion, enabling ease of use and extensibility.
-    This class is designed to perform various operations related to seasonal climate forecasts, such as retrieving data from the 
-    Copernicus Climate Data Store (CDS), processing the downloaded data, calculating specific climate indices, and converting the 
-    results into hazard objects for further risk analysis. 
+    This class is designed to perform various operations related to seasonal climate forecasts, such as retrieving data from the
+    Copernicus Climate Data Store (CDS), processing the downloaded data, calculating specific climate indices, and converting the
+    results into hazard objects for further risk analysis.
 
     Attributes
     ----------
@@ -164,7 +164,6 @@ class SeasonalForecast:
         )
         self.logger = logging.getLogger()
         self.data_out = Path(data_out) if data_out else DATA_OUT
-        self.downloader = Downloader()
 
     @staticmethod
     def explain_index(index_metric):
@@ -262,7 +261,7 @@ class SeasonalForecast:
                     west -= lon_margin
                     return [north, west, south, east]
                 except ValueError:
-                    self.logger.error(
+                    LOGGER.debug(
                         f"Invalid area selection bounds provided: {area_selection}. "
                         "Expected a list of four numerical values [north, west, south, east]."
                     )
@@ -274,7 +273,7 @@ class SeasonalForecast:
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
                 bounds = geo.total_bounds
                 if np.any(np.isnan(bounds)):
-                    self.logger.warning(
+                    LOGGER.debug(
                         f"ISO code '{iso}' not recognized. This region will not be included."
                     )
                     continue
@@ -382,7 +381,9 @@ class SeasonalForecast:
         data_out = self.data_out
         index_params = seasonal_statistics.get_index_params(index_metric)
         variables = index_params["variables"]
-        vars_short = [seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables]
+        vars_short = [
+            seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables
+        ]
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
@@ -401,8 +402,7 @@ class SeasonalForecast:
                 )
 
                 download_file = (
-                    out_dir
-                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.{file_extension}'
+                    out_dir / f'{"_".join(vars_short)}_{area_str}.{file_extension}'
                 )
 
                 # Check if data already exists
@@ -435,7 +435,7 @@ class SeasonalForecast:
                     }
 
                     try:
-                        self.downloader.download_data(
+                        download_data(
                             "seasonal-original-single-levels",
                             download_params,
                             download_file,
@@ -506,7 +506,9 @@ class SeasonalForecast:
         data_out = self.data_out
         index_params = seasonal_statistics.get_index_params(index_metric)
         variables = index_params["variables"]
-        vars_short = [seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables]
+        vars_short = [
+            seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables
+        ]
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
@@ -518,10 +520,7 @@ class SeasonalForecast:
                     f"{data_out}/input_data/netcdf/daily/{originating_centre}/{year}/{month:02d}"
                 )
 
-                daily_file = (
-                    output_dir
-                    / f'{originating_centre}_{"_".join(vars_short)}_{area_str}_{year}{month:02d}.nc'
-                )
+                daily_file = output_dir / f'{"_".join(vars_short)}_{area_str}.nc'
 
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -531,7 +530,7 @@ class SeasonalForecast:
 
                 input_file = (
                     f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
-                    f"{originating_centre}_{index_params['filename_lead']}_{area_str}_{year}{month:02d}.{file_extension}"
+                    f"{index_params['filename_lead']}_{area_str}.{file_extension}"
                 )
 
                 input_file = self._is_data_present(
@@ -714,7 +713,8 @@ class SeasonalForecast:
         )
         index_params = seasonal_statistics.get_index_params(index_metric)
         vars_short = [
-            seasonal_statistics.VAR_SPECS[var]["short_name"] for var in index_params["variables"]
+            seasonal_statistics.VAR_SPECS[var]["short_name"]
+            for var in index_params["variables"]
         ]
 
         for year in year_list:
@@ -727,7 +727,7 @@ class SeasonalForecast:
                     / originating_centre
                     / str(year)
                     / f"{month:02d}"
-                    / f'{originating_centre}_{"_".join(list(vars_short))}_{area_str}_{year}{month:02d}.nc'
+                    / f'{"_".join(list(vars_short))}_{area_str}.nc'
                 )
 
                 grib_file_name = (
@@ -737,7 +737,7 @@ class SeasonalForecast:
                     / "grib"
                     / str(year)
                     / f"{month:02d}"
-                    / f'{originating_centre}_{"_".join(list(vars_short))}_{area_str}_{year}{month:02d}.grib'
+                    / f'{"_".join(list(vars_short))}_{area_str}.grib'
                 )
 
                 # Check if input data is present
@@ -757,19 +757,9 @@ class SeasonalForecast:
                     / str(year)
                     / f"{month:02d}"
                 )
-                out_daily_path = (
-                    out_dir
-                    / f"daily_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
-                )
-                out_stats_path = (
-                    out_dir
-                    / "stats"
-                    / f"stats_{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
-                )
-                out_monthly_path = (
-                    out_dir
-                    / f"{index_metric}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
-                )
+                out_daily_path = out_dir / f"daily_{area_str}.nc"
+                out_stats_path = out_dir / f"stats_{area_str}.nc"
+                out_monthly_path = out_dir / f"monthly_{area_str}.nc"
                 out_stats_path.parent.mkdir(parents=True, exist_ok=True)
 
                 # Check if the index (monthly) file exists
@@ -779,19 +769,33 @@ class SeasonalForecast:
 
                 # Calculate indices
                 else:
-                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin", "HUM", "RH", "AT", "WBGT"]:
+                    if index_metric in [
+                        "HIS",
+                        "HIA",
+                        "Tmean",
+                        "Tmax",
+                        "Tmin",
+                        "HUM",
+                        "RH",
+                        "AT",
+                        "WBGT",
+                    ]:
                         ds_daily, ds_monthly, ds_stats = (
                             seasonal_statistics.calculate_heat_indices_metrics(
                                 input_file_name, index_metric
                             )
                         )
                     elif index_metric == "TR":
-                        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_TR(
-                            grib_file_name, index_metric
+                        ds_daily, ds_monthly, ds_stats = (
+                            seasonal_statistics.calculate_TR(
+                                grib_file_name, index_metric
+                            )
                         )
                     elif index_metric == "TX30":
-                        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tx30(
-                            grib_file_name, index_metric
+                        ds_daily, ds_monthly, ds_stats = (
+                            seasonal_statistics.calculate_tx30(
+                                grib_file_name, index_metric
+                            )
                         )
                     # TODO: add functionality
                     # elif index_metric == "HW":
@@ -807,20 +811,45 @@ class SeasonalForecast:
 
                     # Save files
                     self.logger.info(f"Writing index data to {out_monthly_path}.")
-                    if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin", "HUM", "RH", "AT", "WBGT"]:
+                    if index_metric in [
+                        "HIS",
+                        "HIA",
+                        "Tmean",
+                        "Tmax",
+                        "Tmin",
+                        "HUM",
+                        "RH",
+                        "AT",
+                        "WBGT",
+                    ]:
                         ds_daily.to_netcdf(str(out_daily_path))
                     ds_monthly.to_netcdf(str(out_monthly_path))
                     ds_stats.to_netcdf(str(out_stats_path))
 
                     # Confirm data saving
                     if out_monthly_path.exists() and out_stats_path.exists():
-                        self.logger.info(f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}.")
-                        print(f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}")  
-                        if index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin", "HUM", "RH", "AT", "WBGT"]:
-                            print(f"- Daily index data: {out_daily_path}")  
+                        self.logger.info(
+                            f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}."
+                        )
+                        print(
+                            f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}"
+                        )
+                        if index_metric in [
+                            "HIS",
+                            "HIA",
+                            "Tmean",
+                            "Tmax",
+                            "Tmin",
+                            "HUM",
+                            "RH",
+                            "AT",
+                            "WBGT",
+                        ]:
+                            print(f"- Daily index data: {out_daily_path}")
                     else:
-                        self.logger.warning(f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly.")
-
+                        self.logger.warning(
+                            f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly."
+                        )
 
     def save_index_to_hazard(
         self,
@@ -883,10 +912,19 @@ class SeasonalForecast:
         # Set intensity unit based on the type of index
         if index_metric in ["TR", "TX30", "HW"]:
             intensity_unit = "days"
-        elif index_metric in ["Tmean", "Tmin", "Tmax", "HIA", "HIS", "HUM", "AT", "WBGT"]:
+        elif index_metric in [
+            "Tmean",
+            "Tmin",
+            "Tmax",
+            "HIA",
+            "HIS",
+            "HUM",
+            "AT",
+            "WBGT",
+        ]:
             intensity_unit = "°C"
         elif index_metric == "RH":
-            intensity_unit = "%"  
+            intensity_unit = "%"
         else:
             intensity_unit = "°C"  # Default to Celsius if not specified
 
@@ -900,7 +938,7 @@ class SeasonalForecast:
                     / index_metric
                     / str(year)
                     / f"{month:02d}"
-                    / f"{hazard_type}_{originating_centre}_{area_str}_{year}{month:02d}.nc"
+                    / f"monthly_{area_str}.nc"
                 )
                 output_dir = (
                     self.data_out
@@ -914,10 +952,7 @@ class SeasonalForecast:
 
                 try:
                     # Check if the file already exists
-                    file_path = (
-                        output_dir
-                        / f"hazard_{hazard_type}_{originating_centre}_{area_str}_{year}{month:02d}.hdf5"
-                    )
+                    file_path = output_dir / f"hazard_{area_str}.hdf5"
                     if file_path.exists() and not overwrite:
                         self.logger.info(f"Hazard file {file_path} already exists.")
                         continue
@@ -1010,7 +1045,7 @@ class SeasonalForecast:
         Notes
         -----
         - The function uses short names from the `VAR_SPECS` dictionary to perform the validation.
-        - File naming patterns are matched using regular expressions, ensuring compatibility with 
+        - File naming patterns are matched using regular expressions, ensuring compatibility with
         specific naming conventions.
         """
         file = Path(file) if isinstance(file, str) else file
