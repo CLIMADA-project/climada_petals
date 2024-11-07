@@ -650,7 +650,7 @@ def drop_duplicate_geometries(dataframe, keep='first'):
 
     mask = dataframe.geometry.apply(lambda geom: shapely.to_wkb(geom))
     # use dropped duplicates index to drop from actual dataframe
-    return dataframe.iloc[mask.drop_duplicates(keep).index]
+    return dataframe.iloc[mask.drop_duplicates(keep=keep).index]
 
 
 def reset_ids(network):
