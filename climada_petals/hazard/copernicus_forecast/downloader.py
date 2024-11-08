@@ -17,6 +17,24 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 ---
 
 Functionality to download data from the Copernicus Data Stores.
+
+---
+
+Prerequisites:
+1. CDS API client installation:
+   pip install cdsapi
+
+2. CDS account and API key:
+   Register at https://cds.climate.copernicus.eu
+
+3. CDS API configuration:
+   Create a .cdsapirc file in your home directory with your API key and URL of the CDS you want to access.
+   For instance, if you want to access the Climate Data Store, see here for instructions:
+   https://cds.climate.copernicus.eu/how-to-api#install-the-cds-api-client
+
+4. Dataset Terms and Conditions: After selecting the dataset to download, make 
+   sure to accept the terms and conditions on the corresponding dataset webpage 
+   in the CDS portal before running the script.
 """
 
 import logging
@@ -39,7 +57,7 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
     params : dict
         Dictionary containing the parameters for the CDS API call (e.g., variables, time range, area).
     filename : pathlib.Path or str
-        Full path and filename where the downloaded data will be stored.
+        Full path and filename where the downloaded data will be stored. If None, data will be saved with the filename as suggested by the data store. Defaults to None.
     datastore_url : str
         Url of the Copernicus data store to be accessed. If None, the url of the .cdsapirc file is used. Defaults to None.
     overwrite : bool, optional
@@ -51,7 +69,7 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
     FileNotFoundError
         Raised if the download attempt fails and the file is not found at the specified location.
     Exception
-        Raised for any other error during the download process.
+        Raised for any other error during the download process, with further details corresponding to typical errors.
     """
 
     # Warning about terms and conditions
@@ -107,8 +125,8 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
         # user key is wrong
         if "401 Client Error" in str(e):
             error_message = (
-                "Authentification failed. Please ensure the"
-                "correct key in the .cdsapirc file (see instructions)."
+                "Authentification failed. Please ensure that the"
+                "API key in the .cdsapirc file is correct (see instructions)."
             )
         # dataset does not exist
         elif "404 Client Error" in str(e):

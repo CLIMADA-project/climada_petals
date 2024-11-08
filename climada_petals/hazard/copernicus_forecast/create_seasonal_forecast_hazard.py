@@ -24,24 +24,6 @@ in the U-CLIMADAPT project.
 This "SeasonalForecast" class serves as a wrapper around the "Downloader" class, centralizing all forecast data
 management. It handles multiple stages in the seasonal forecast workflow, including data downloading, processing,
 index calculations, and hazard conversion, enabling ease of use and extensibility.
-
----
-
-Prerequisites:
-1. CDS API client installation:
-   pip install cdsapi
-
-2. CDS account and API key:
-   Register at https://cds-beta.climate.copernicus.eu
-
-3. CDS API configuration:
-   Create a .cdsapirc file in your home directory with your API key and URL.
-   For instructions, visit:
-   https://cds-beta.climate.copernicus.eu/how-to-api#install-the-cds-api-client
-
-4. Dataset Terms and Conditions: After selecting the dataset to download, make 
-   sure to accept the terms and conditions on the corresponding dataset webpage 
-   in the CDS portal before running the script.
 """
 
 import logging
@@ -61,7 +43,6 @@ from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries
 import climada_petals.hazard.copernicus_forecast.seasonal_statistics as seasonal_statistics
-import climada_petals.hazard.copernicus_forecast.heat_index as heat_index
 from climada_petals.hazard.copernicus_forecast.downloader import download_data
 
 
@@ -72,7 +53,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class SeasonalForecast:
-    """A module for downloading, processing, and calculating climate indices based on seasonal forecast data.
+    """A class for downloading, processing, and calculating climate indices based on seasonal forecast data.
     The "SeasonalForecast" class serves as a wrapper around the "Downloader" class, centralizing all forecast data management.
     It encompasses multiple stages in the seasonal forecast workflow, including data downloading, processing, index calculations,
     and hazard conversion, enabling ease of use and extensibility.
@@ -82,16 +63,8 @@ class SeasonalForecast:
 
     Attributes
     ----------
-    _FORMAT_GRIB : str
-        Constant for the GRIB file format ("grib").
-    _FORMAT_NC : str
-        Constant for the NetCDF file format ("nc").
     data_dir : pathlib.Path
         Directory path where downloaded and processed data will be stored.
-    key : str, optional
-        CDS API key for accessing climate data. This should be configured through the `~/.cdsapirc` file.
-    url : str, optional
-        URL for the CDS API. If not provided, the default from `~/.cdsapirc` is used.
 
     Methods
     -------
@@ -138,9 +111,6 @@ class SeasonalForecast:
     respectively. Additionally, ensure that your CDS API key and URL are correctly set up in the `~/.cdsapirc` file.
     """
 
-    _FORMAT_GRIB = "grib"
-    _FORMAT_NC = "nc"
-
     def __init__(self, data_out=None):
         """Initialize the SeasonalForecast instance.
 
@@ -155,8 +125,7 @@ class SeasonalForecast:
 
         Notes
         -----
-        The Copernicus Climate Data Store (CDS) API credentials (`url` and `key`) should be configured in the `~/.cdsapirc` file.
-        These are not required as input parameters for this script.
+        The Copernicus Climate Data Store (CDS) API credentials should be configured in the `~/.cdsapirc` file.
         Ensure that your `.cdsapirc` file contains valid API credentials for successful data downloads.
         """
         logging.basicConfig(
@@ -247,28 +216,10 @@ class SeasonalForecast:
                     f"Invalid string for area_selection: '{area_selection}'. Expected 'global' or a list of ISO codes."
                 )
 
-        # Handle bounding box selection
-        elif isinstance(area_selection, list):
-            # Check if the list is a bounding box of four values
-            if len(area_selection) == 4:
-                try:
-                    north, west, south, east = area_selection
-                    lat_margin = margin * (north - south)
-                    lon_margin = margin * (east - west)
-                    north += lat_margin
-                    east += lon_margin
-                    south -= lat_margin
-                    west -= lon_margin
-                    return [north, west, south, east]
-                except ValueError:
-                    error_message = (
-                        f"Invalid area selection bounds provided: {area_selection}. "
-                        "Expected a list of four numerical values [north, west, south, east]."
-                    )
-
-                    raise Exception(error_message)
-
-            # Handle list of country ISO codes
+        # Handle list of country ISO codes
+        elif isinstance(area_selection, list) and all(
+            isinstance(item, str) for item in area_selection
+        ):
             combined_bounds = [-90, 180, 90, -180]
             for iso in area_selection:
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
@@ -294,10 +245,31 @@ class SeasonalForecast:
             else:
                 return combined_bounds
 
+        # Handle bounding box selection
+        elif isinstance(area_selection, list):
+            # Check if the list is a bounding box of four values
+            if len(area_selection) == 4:
+                try:
+                    north, west, south, east = area_selection
+                    lat_margin = margin * (north - south)
+                    lon_margin = margin * (east - west)
+                    north += lat_margin
+                    east += lon_margin
+                    south -= lat_margin
+                    west -= lon_margin
+                    return [north, west, south, east]
+                except ValueError:
+                    error_message = (
+                        f"Invalid area selection bounds provided: {area_selection}. "
+                        "Expected a list of four numerical values [north, west, south, east]."
+                    )
+
+                    raise Exception(error_message)
+
         else:
             raise ValueError(
                 f"Invalid area_selection format: {area_selection}. "
-                "Expected 'global', a list of ISO codes, or [north, west, south, east]."
+                "Expected 'global', a list of ISO codes, or a list of four numerical values [north, west, south, east]."
             )
 
     def _calc_min_max_lead(self, year, month, leadtime_months=1):
@@ -374,7 +346,6 @@ class SeasonalForecast:
         None
         """
 
-        data_out = self.data_out
         index_params = seasonal_statistics.get_index_params(index_metric)
         variables = index_params["variables"]
         vars_short = [
@@ -388,14 +359,12 @@ class SeasonalForecast:
             for month in month_list:
                 # Prepare output paths
                 out_dir = Path(
-                    f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}"
+                    f"{self.data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}"
                 )
                 out_dir.mkdir(parents=True, exist_ok=True)
 
                 # Construct the correct download file path
-                file_extension = (
-                    "grib" if format == self._FORMAT_GRIB else self._FORMAT_NC
-                )
+                file_extension = "grib" if format == "grib" else "nc"
 
                 download_file = (
                     out_dir / f'{"_".join(vars_short)}_{area_str}.{file_extension}'
@@ -520,9 +489,7 @@ class SeasonalForecast:
 
                 output_dir.mkdir(parents=True, exist_ok=True)
 
-                file_extension = (
-                    "grib" if format == self._FORMAT_GRIB else self._FORMAT_NC
-                )
+                file_extension = "grib" if format == "grib" else "nc"
 
                 input_file = (
                     f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
@@ -542,7 +509,7 @@ class SeasonalForecast:
                 # Process and save the data
                 if not daily_file.exists() or overwrite:
                     try:
-                        if format == self._FORMAT_GRIB:
+                        if format == "grib":
                             with xr.open_dataset(input_file, engine="cfgrib") as ds:
                                 ds_mean = ds.coarsen(step=4, boundary="trim").mean()
                                 ds_max = ds.coarsen(step=4, boundary="trim").max()
