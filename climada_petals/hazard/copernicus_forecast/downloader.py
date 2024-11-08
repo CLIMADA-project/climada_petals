@@ -28,7 +28,7 @@ from climada.util.constants import SYSTEM_DIR
 LOGGER = logging.getLogger(__name__)
 
 
-def download_data(dataset, params, filename=None, overwrite=False):
+def download_data(dataset, params, filename=None, datastore_url=None, overwrite=False):
     """Download data from Copernicus Data Stores (e.g., ds.climate.copernicus.eu,
     ads.atmosphere.copernicus.eu and ewds.climate.copernicus.eu) using specified dataset type and parameters.
 
@@ -40,6 +40,8 @@ def download_data(dataset, params, filename=None, overwrite=False):
         Dictionary containing the parameters for the CDS API call (e.g., variables, time range, area).
     filename : pathlib.Path or str
         Full path and filename where the downloaded data will be stored.
+    datastore_url : str
+        Url of the Copernicus data store to be accessed. If None, the url of the .cdsapirc file is used. Defaults to None.
     overwrite : bool, optional
         If True, overwrite the file if it already exists. If False, skip downloading
         if the file is already present. The default is False.
@@ -53,9 +55,12 @@ def download_data(dataset, params, filename=None, overwrite=False):
     """
 
     # Warning about terms and conditions
-    cds_filepath = str(Path.home()) + "/.cdsapirc"
-    with open(cds_filepath, "r") as file:
-        url = file.read().split("\n")[0].split(" ")[1].strip().removesuffix("/api")
+    if not datastore_url:
+        cds_filepath = str(Path.home()) + "/.cdsapirc"
+        with open(cds_filepath, "r") as file:
+            url = file.read().split("\n")[0].split(" ")[1].strip().removesuffix("/api")
+    else:
+        url = datastore_url.removesuffix("/api")
     LOGGER.warning(
         "Please ensure you have reviewed and accepted the terms and conditions "
         "for the use of this dataset. Access the terms here: "
@@ -70,7 +75,7 @@ def download_data(dataset, params, filename=None, overwrite=False):
 
     try:
         # Initialize CDS API client
-        c = cdsapi.Client()
+        c = cdsapi.Client(url=datastore_url)
         request = c.retrieve(dataset, params)
 
         # prepare filename if not given
@@ -79,6 +84,11 @@ def download_data(dataset, params, filename=None, overwrite=False):
                 SYSTEM_DIR
                 / f'copernicus_data/{dataset}/{request.location.split("/")[-1]}'
             )
+
+            # Check if file exists and skip download if overwrite is False
+            if Path(filename).exists() and not overwrite:
+                LOGGER.warning(f"File {filename} already exists. Skipping download.")
+                return
 
         # make parent directory
         output_dir = Path(filename).parent
