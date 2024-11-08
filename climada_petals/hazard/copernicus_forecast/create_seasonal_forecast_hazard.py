@@ -305,7 +305,6 @@ class SeasonalForecast:
 
     def _download_data(
         self,
-        data_out,
         year_list,
         month_list,
         bounds,
@@ -320,8 +319,6 @@ class SeasonalForecast:
 
         Parameters
         ----------
-        data_out : pathlib.Path or str
-            Base directory path for storing downloaded data.
         year_list : list[int]
             List of years for which to download data.
         month_list : list[int]
@@ -436,7 +433,6 @@ class SeasonalForecast:
 
     def _process_data(
         self,
-        data_out,
         year_list,
         month_list,
         bounds,
@@ -449,8 +445,6 @@ class SeasonalForecast:
 
         Parameters
         ----------
-        data_out : pathlib.Path or str
-            Base directory path for storing processed output data.
         year_list : list[int]
             List of years for which to process data.
         month_list : list[int]
@@ -468,7 +462,6 @@ class SeasonalForecast:
         -------
         None
         """
-        data_out = self.data_out
         index_params = seasonal_statistics.get_index_params(index_metric)
         variables = index_params["variables"]
         vars_short = [
@@ -482,7 +475,7 @@ class SeasonalForecast:
             for month in month_list:
 
                 output_dir = Path(
-                    f"{data_out}/input_data/netcdf/daily/{originating_centre}/{year}/{month:02d}"
+                    f"{self.data_out}/input_data/netcdf/daily/{originating_centre}/{year}/{month:02d}"
                 )
 
                 daily_file = output_dir / f'{"_".join(vars_short)}_{area_str}.nc'
@@ -492,7 +485,7 @@ class SeasonalForecast:
                 file_extension = "grib" if format == "grib" else "nc"
 
                 input_file = (
-                    f"{data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
+                    f"{self.data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
                     f"{index_params['filename_lead']}_{area_str}.{file_extension}"
                 )
 
@@ -551,7 +544,6 @@ class SeasonalForecast:
         originating_centre,
         system,
         max_lead_month,
-        data_out=None,
     ):
         """
         Download and process climate forecast data from CDS Copernicus Climate Data Store, specifically
@@ -579,8 +571,6 @@ class SeasonalForecast:
             The forecast system version (e.g., '21').
         max_lead_month : int
             Maximum lead time in months for which forecast data should be downloaded.
-        data_out : str or Path, optional
-            Base directory path for storing data, by default None.
 
         Important Notes
         ---------------
@@ -596,11 +586,8 @@ class SeasonalForecast:
         -------
         None
         """
-        # if not data_out: data_out = self.data_dir
-        self.data_out = Path(data_out) if data_out else self.data_out
         bounds = self._get_bounds_for_area_selection(area_selection)
         self._download_data(
-            data_out,
             year_list,
             month_list,
             bounds,
@@ -612,7 +599,6 @@ class SeasonalForecast:
             max_lead_month,
         )
         self._process_data(
-            data_out,
             year_list,
             month_list,
             bounds,
@@ -630,7 +616,6 @@ class SeasonalForecast:
         area_selection,
         overwrite,
         originating_centre=None,
-        data_out=None,
     ):
         """
         Calculate a specified climate index for given years, months, and regions.
@@ -656,8 +641,6 @@ class SeasonalForecast:
             If True, existing files will be overwritten. If False, skips the calculation if files already exist.
         originating_centre : str, optional
             The meteorological center that produced the forecast (e.g., 'ecmwf', 'dwd').
-        data_out : str or Path, optional
-            Directory path where output data will be stored. If None, uses the default path.
 
         Returns
         -------
@@ -669,7 +652,6 @@ class SeasonalForecast:
         - The function can calculate different climate indices using predefined parameters and methods.
         - Results are saved as daily data, monthly summaries, and statistical summaries in the specified output directory.
         """
-        self.data_out = Path(data_out) if data_out else self.data_out
         bounds = self._get_bounds_for_area_selection(area_selection)
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
@@ -822,7 +804,6 @@ class SeasonalForecast:
         area_selection,
         overwrite,
         originating_centre,
-        data_out=None,
     ):
         """
         Convert climate indices to hazard objects in HDF5 format.
@@ -848,20 +829,11 @@ class SeasonalForecast:
         overwrite : bool
             If True, forces the system to overwrite existing hazard files. If False, skips processing
             if files are already present for the specified year, month, and region.
-        data_out : str or Path, optional
-            The base directory path for storing output data. If not provided, the default data directory
-            is used as defined in the class (`self.data_out`).
         Returns
         -------
         None
         Saves the processed climate indices as hazard objects in HDF5 format, ready for further analysis.
         """
-        # Handle potential None values
-        self.data_out = Path(data_out) if data_out else self.data_out
-        if self.data_out is None:  # Ensure data_out is defined
-            raise ValueError(
-                "Data output directory must be provided or set in the class."
-            )
 
         # Calculate the bounds and area string
         bounds = self._get_bounds_for_area_selection(area_selection)
