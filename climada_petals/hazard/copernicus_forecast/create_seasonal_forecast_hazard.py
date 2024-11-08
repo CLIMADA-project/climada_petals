@@ -241,7 +241,9 @@ class SeasonalForecast:
                 combined_bounds[3] = max(combined_bounds[3], max_lon + lon_margin)
 
             if combined_bounds == [-90, 180, 90, -180]:
-                return None
+                raise Exception(
+                    f"No area could be identified from ISO codes in {area_selection}"
+                )
             else:
                 return combined_bounds
 
@@ -404,32 +406,13 @@ class SeasonalForecast:
                             overwrite=overwrite,
                         )
                     except requests.HTTPError as e:
-                        if "MARS returned no data" in str(e):
-                            # Check which specific parameter is missing data
-                            missing_params = [
-                                param
-                                for param, value in download_params.items()
-                                if not value
-                            ]
-                            missing_info = (
-                                f"No data returned for parameters: {', '.join(missing_params) or 'specified request'}. "
-                                "This may indicate unavailable or incorrect parameter selection. Please verify the existence "
-                                "and accuracy of the selected parameters on the Climate Data Store website. "
-                                "If you require more information about this error, please visit: "
-                                "https://confluence.ecmwf.int/display/CKB/Common+Error+Messages+for+CDS+Requests"
-                            )
-
-                            self.logger.error(missing_info)
-                            return  # Exit function gracefully without traceback
-
-                        else:
-                            self.logger.error(
-                                f"Failed to download due to HTTPError: {e}"
-                            )
-                            return  # Exit function gracefully without traceback
+                        raise requests.HTTPError(
+                            f"Failed to download due to HTTPError: {e}"
+                        )  # Exit function gracefully without traceback
                     except Exception as e:
-                        self.logger.error(f"Unexpected error during download: {e}")
-                        return  # Exit function gracefully without traceback
+                        raise Exception(
+                            f"Unexpected error during download: {e}"
+                        )  # Exit function gracefully without traceback
 
     def _process_data(
         self,
@@ -457,6 +440,8 @@ class SeasonalForecast:
             Climate index identifier being processed (e.g., 'Tmean', 'TX30').
         format : str
             File format of the downloaded data, either 'grib' or 'nc'.
+        originating_centre : str
+            The meteorological center producing the forecast (e.g., "dwd", "ecmwf").
 
         Returns
         -------
@@ -749,7 +734,7 @@ class SeasonalForecast:
                     #     )
 
                     else:
-                        logging.error(
+                        self.logger.error(
                             f"Index {index_metric} is not implemented. Supported indices "
                             "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HUM', 'RH', 'AT', 'WBGT', 'TR', and 'TX30'"
                         )

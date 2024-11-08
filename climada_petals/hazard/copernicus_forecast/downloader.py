@@ -136,7 +136,7 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
             error_message = f"Required licences not accepted. Please accept here: {url}/datasets/{dataset}?tab=download"
         # parameter choice not available
         elif "MARS returned no data" in str(e):
-            error_message = "No data available for the given Copernicus data store, dataset, and parameters. This may indicate unavailable or incorrect parameter selection. Please verify the existence of the data on the Climate Data Store website."
+            error_message = "No data available for the given parameters. This may indicate unavailable or incorrect parameter selection. Please verify the existence of the data on the Climate Data Store website."
         # general error
         else:
             LOGGER.warning(f"Error downloading file {filename}: {e}")
