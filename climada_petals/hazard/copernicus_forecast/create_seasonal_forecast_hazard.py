@@ -261,11 +261,12 @@ class SeasonalForecast:
                     west -= lon_margin
                     return [north, west, south, east]
                 except ValueError:
-                    LOGGER.debug(
+                    error_message = (
                         f"Invalid area selection bounds provided: {area_selection}. "
                         "Expected a list of four numerical values [north, west, south, east]."
                     )
-                    raise
+
+                    raise Exception(error_message)
 
             # Handle list of country ISO codes
             combined_bounds = [-90, 180, 90, -180]
@@ -273,7 +274,7 @@ class SeasonalForecast:
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
                 bounds = geo.total_bounds
                 if np.any(np.isnan(bounds)):
-                    LOGGER.debug(
+                    LOGGER.warning(
                         f"ISO code '{iso}' not recognized. This region will not be included."
                     )
                     continue
