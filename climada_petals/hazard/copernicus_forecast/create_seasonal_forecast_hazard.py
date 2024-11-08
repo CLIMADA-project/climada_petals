@@ -372,11 +372,6 @@ class SeasonalForecast:
         -------
         None
         """
-        # Warning about terms and conditions
-        self.logger.warning(
-            "Before downloading, please ensure you have reviewed and accepted the terms and conditions "
-            "for the use of this dataset. Access the terms here: https://cds.climate.copernicus.eu/datasets/seasonal-original-single-levels?tab=download"
-        )
 
         data_out = self.data_out
         index_params = seasonal_statistics.get_index_params(index_metric)
