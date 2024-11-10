@@ -663,6 +663,9 @@ class SeasonalForecast:
         area_selection,
         overwrite,
         originating_centre=None,
+        threshold=27,
+        min_duration=3,
+        max_gap=0,
         data_out=None,
     ):
         """
@@ -793,16 +796,28 @@ class SeasonalForecast:
                                 grib_file_name, index_metric
                             )
                         )
-                    # TODO: add functionality
-                    # elif index_metric == "HW":
-                    #     indicator.calculate_and_save_heat_wave_days_per_lag(
-                    #         data_out, year_list, month_list, index_metric, area_selection
-                    #     )
 
+                    elif index_metric == "HW":  # Handling heat waves
+                        ds_daily, ds_monthly, ds_stats = (
+                            seasonal_statistics.calculate_hw_days(
+                                grib_file_name,
+                                index_metric,
+                                threshold,
+                                min_duration,
+                                max_gap,
+                            )
+                        )
+
+                    # Check for None outputs before attempting to save
+                    if ds_monthly is None or ds_stats is None:
+                        print(
+                            "Warning: calculate_hw_days returned None, skipping save."
+                        )
+                        continue
                     else:
                         logging.error(
                             f"Index {index_metric} is not implemented. Supported indices "
-                            "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HUM', 'RH', 'AT', 'WBGT', 'TR', and 'TX30'"
+                            "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HUM', 'RH', 'AT', 'WBGT', 'TR', and 'TX30' and 'HW'"
                         )
 
                     # Save files
@@ -920,7 +935,7 @@ class SeasonalForecast:
         ]:
             intensity_unit = "°C"
         elif index_metric == "RH":
-            intensity_unit = "%"
+            intensity_unit = "%"  # Relative Humidity is in percentage
         else:
             intensity_unit = "°C"  # Default to Celsius if not specified
 

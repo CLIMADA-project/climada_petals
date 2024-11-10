@@ -352,3 +352,69 @@ def calculate_heat_index(da_t2k, da_tdk, index):
         attrs={"description": index_long_name, "units": unit},
     )
     return da_index
+
+
+def calculate_hw(
+    temperatures: np.ndarray,
+    threshold: float = 27,
+    min_duration: int = 3,
+    max_gap: int = 0,
+) -> list:
+    """
+    Identify and define heatwave events based on a sequence of daily temperatures.
+
+    This function scans an array of temperature data to detect periods of heatwaves,
+    defined as consecutive days where temperatures exceed a given threshold for a minimum duration.
+    If two such periods are separated by days with temperatures below the threshold but within a specified maximum gap,
+    they are merged into one continuous heatwave event.
+
+    Parameters
+    ----------
+    temperatures : np.ndarray
+        Array of daily temperatures.
+    threshold : float, optional
+        Temperature threshold above which days are considered part of a heatwave. Default is 27°C.
+    min_duration : int, optional
+        Minimum number of consecutive days required to define a heatwave event. Default is 3 days.
+    max_gap : int, optional
+        Maximum allowed gap (in days) of below-threshold temperatures to merge two consecutive heatwave events into one. Default is 0 days.
+
+    Returns
+    -------
+    list
+        List of tuples representing start and end indices of detected heatwaves. Each tuple indicates the beginning and ending day of a heatwave period.
+    """
+
+    # Create a binary array: 1 for temperatures > threshold, 0 for ≤ threshold
+    # Initialize array to store heatwave days, filled with 0s
+    hw_days = np.zeros(len(temperatures), dtype=int)
+
+    # Create a binary array: 1 for temperatures > threshold, 0 for ≤ threshold
+    binary_array = np.where(temperatures >= threshold, 1, 0)
+
+    events = []
+    prev_continous_ones = 0
+
+    for i in range(len(binary_array)):
+        value = binary_array[i]
+        if value == 0:
+            prev_continous_ones = 0
+        elif value == 1:
+            prev_continous_ones += 1
+            if prev_continous_ones == min_duration:
+                new_event_start = i - min_duration + 1
+                should_merge_with_latest_event = (
+                    len(events) > 0 and (new_event_start - events[-1][1] - 1) <= max_gap
+                )
+                if should_merge_with_latest_event:
+                    events[-1] = (events[-1][0], i)
+                else:
+                    events.append((new_event_start, i))
+            if prev_continous_ones >= min_duration:
+                events[-1] = (events[-1][0], i)
+
+    # Mark the identified heatwave periods in the hw_days array
+    for start, end in events:
+        hw_days[start : end + 1] = 1
+
+    return hw_days
