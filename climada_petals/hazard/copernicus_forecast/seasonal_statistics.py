@@ -29,6 +29,7 @@ from climada_petals.hazard.copernicus_forecast.heat_index import (
     calculate_wind_speed,
     calculate_apparent_temperature,
     calculate_wbgt_simple,
+    calculate_hw,
 )
 
 
@@ -403,6 +404,95 @@ def calculate_tx30(grib_file_path, index_metric):
         print(f"File not found: {e.filename}")
     except Exception as e:
         print(f"An error occurred: {e}")
+
+
+def calculate_hw_days(
+    grib_file_path, index_metric, threshold=27, min_duration=3, max_gap=0
+):
+    """
+    Calculates and saves the heatwave days index, which is defined as the number of days in each month where
+    the daily mean temperature exceeds a specified threshold for a minimum consecutive duration. This index
+    helps to identify periods of extreme heat events.
+
+    Parameters
+    ----------
+    grib_file_path : str
+        Path to the input GRIB data file containing temperature data. The file should include 2-meter temperature values (`t2m`).
+    index_metric : str
+        The climate index being processed. This should specify the name for the heatwave days index, such as "HW" (Heatwave Days).
+    threshold : float, optional
+        Temperature threshold in Celsius that defines a heatwave day. Defaults to 27°C.
+    min_duration : int, optional
+        Minimum consecutive days required to define a heatwave event. Defaults to 3 days.
+    max_gap : int, optional
+        Maximum allowable gap (in days) within a heatwave event for it to still count as a single event. Defaults to 0, meaning no gaps are allowed.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - `None` : No daily index is returned for this calculation.
+        - `xarray.Dataset` : The monthly count of heatwave days, stored as an `xarray.Dataset` with the index values and relevant metadata.
+        - `xarray.Dataset` : Statistics calculated across the monthly heatwave days index values, representing ensemble statistics.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the specified input GRIB file does not exist.
+    Exception
+        For any other errors encountered during data processing.
+    """
+    try:
+        with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
+            # Convert to Celsius and calculate daily mean temperature
+            t2m_celsius = ds["t2m"] - 273.15
+            daily_mean_temp = t2m_celsius.resample(step="1D").mean()
+
+            # Convert valid_time to monthly periods
+            valid_times = pd.to_datetime(ds.valid_time.values)
+            forecast_months_str = valid_times.to_period("M").astype(str)
+            step_to_month = dict(zip(ds.step.values, forecast_months_str))
+            forecast_month_da = xr.DataArray(
+                list(step_to_month.values()), coords=[ds.step], dims=["step"]
+            )
+            daily_mean_temp.coords["forecast_month"] = forecast_month_da
+
+            # Initialize DataArray for heatwave days
+            hw_days = xr.zeros_like(daily_mean_temp, dtype=int)
+
+            # Apply `calculate_hw` individually for each member, latitude, and longitude
+            for member in range(daily_mean_temp.sizes["number"]):
+                for lat in range(daily_mean_temp.sizes["latitude"]):
+                    for lon in range(daily_mean_temp.sizes["longitude"]):
+                        temp_series = daily_mean_temp.isel(
+                            number=member, latitude=lat, longitude=lon
+                        ).values
+                        hw_event_days = calculate_hw(
+                            temp_series, threshold, min_duration, max_gap
+                        )
+                        hw_days.loc[
+                            dict(
+                                number=member,
+                                latitude=daily_mean_temp.latitude[lat],
+                                longitude=daily_mean_temp.longitude[lon],
+                            )
+                        ] = hw_event_days
+
+            # Count heatwave days by month
+            hw_days_count = hw_days.groupby("forecast_month").sum(dim="step")
+            hw_days_count = hw_days_count.rename(index_metric)
+            hw_days_count = hw_days_count.rename({"forecast_month": "step"})
+
+            # Placeholder for statistics calculation
+            ds_stats = calculate_statistics_from_index(hw_days_count)
+
+            return None, hw_days_count, ds_stats
+
+    except FileNotFoundError as e:
+        print(f"File not found: {e.filename}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None, None, None
 
 
 def calculate_statistics_from_index(dataarray):
