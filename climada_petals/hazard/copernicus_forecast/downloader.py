@@ -139,7 +139,9 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
             error_message = "No data available for the given parameters. This may indicate unavailable or incorrect parameter selection. Please verify the existence of the data on the Climate Data Store website."
         # general error
         else:
-            LOGGER.warning(f"Error downloading file {filename}: {e}")
+            LOGGER.warning(
+                f"Unexpected error downloading file {filename} (for common error sources, check out https://confluence.ecmwf.int/display/CKB/Common+Error+Messages+for+CDS+Requests)."
+            )
             raise e
 
         raise Exception(error_message)

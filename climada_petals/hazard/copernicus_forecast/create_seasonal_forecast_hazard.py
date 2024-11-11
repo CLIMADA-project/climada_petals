@@ -405,14 +405,8 @@ class SeasonalForecast:
                             download_file,
                             overwrite=overwrite,
                         )
-                    except requests.HTTPError as e:
-                        raise requests.HTTPError(
-                            f"Failed to download due to HTTPError: {e}"
-                        )  # Exit function gracefully without traceback
                     except Exception as e:
-                        raise Exception(
-                            f"Unexpected error during download: {e}"
-                        )  # Exit function gracefully without traceback
+                        raise Exception(str(e))
 
     def _process_data(
         self,
