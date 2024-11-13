@@ -61,6 +61,11 @@ class BlackMarble(Exposures):
 
     _metadata = Exposures._metadata + ['nightlight_file']
 
+    def __init__(self, *args, meta=None, nightlight_file=None, **kwargs):
+        super().__init__(*args, meta=meta, **kwargs)
+        meta = meta or {}
+        self.nightlight_file = Exposures._consolidate(meta, 'nightlight_file', nightlight_file)
+
     def set_countries(self, countries, ref_year=2016, res_km=None, from_hr=None,
                       admin_file='admin_0_countries', **kwargs):
         """ Model countries using values at reference year. If GDP or income
@@ -123,13 +128,6 @@ class BlackMarble(Exposures):
             description="\n".join(descr_lines),
             nightlight_file = Path(fn_nl).name,
         )
-
-        rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-            (self.gdf.longitude.min(), self.gdf.latitude.min(),
-             self.gdf.longitude.max(), self.gdf.latitude.max()),
-            (coord_nl[0, 1], -coord_nl[0, 1])
-        )
-        self.meta = {'width': cols, 'height': rows, 'crs': self.crs, 'transform': ras_trans}
 
     @staticmethod
     def _set_one_country(cntry_info, nightlight, coord_nl, res_fact,
