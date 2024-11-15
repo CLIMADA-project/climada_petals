@@ -354,6 +354,47 @@ def calculate_heat_index(da_t2k, da_tdk, index):
     return da_index
 
 
+def calculate_tr(temperature_data, tr_threshold=20):
+    """
+    Calculate the Tropical Nights index, defined as the number of nights with minimum temperature above a given threshold.
+
+    Parameters
+    ----------
+    temperature_data : xarray.DataArray
+        DataArray containing daily minimum temperatures in Celsius.
+    threshold : float, optional
+        Temperature threshold in Celsius for a tropical night. Default is 20°C.
+
+    Returns
+    -------
+    xarray.DataArray
+        Boolean DataArray where True indicates nights with Tmin > threshold.
+    """
+    tropical_nights = temperature_data >= tr_threshold
+    return tropical_nights
+
+
+def calculate_tx30(temperature_data, threshold=30):
+    """
+    Calculate TX30, the number of days with maximum temperature above the given threshold (default is 30°C).
+
+    Parameters
+    ----------
+    temperature_data : xarray.DataArray
+        DataArray containing daily maximum temperatures in Celsius. Can be from any dataset, not specific to seasonal forecasts.
+    threshold : float, optional
+        Temperature threshold in Celsius for a TX30 day. Default is 30°C.
+
+    Returns
+    -------
+    xarray.DataArray
+        Boolean DataArray where True indicates days where Tmax > threshold.
+    """
+    # Check that the input data is daily data. The caller should ensure data is resampled if needed.
+    tx30_days = temperature_data > threshold
+    return tx30_days
+
+
 def calculate_hw(
     temperatures: np.ndarray,
     threshold: float = 27,
