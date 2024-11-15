@@ -24,6 +24,8 @@ import numpy as np
 import pandas as pd
 import logging
 
+LOGGER = logging.getLogger(__name__)
+
 
 def calculate_relative_humidity_percent(t2k, tdk):
     """
@@ -343,7 +345,7 @@ def calculate_heat_index(da_t2k, da_tdk, index):
         unit = "degC"
         index_metric_data = calculate_heat_index_adjusted(da_t2k.data, da_tdk.data)
     else:
-        logging.error(f'Index {index} is not implemented, use either "HIS" or "HIA".')
+        LOGGER.error(f'Index {index} is not implemented, use either "HIS" or "HIA".')
         return None
     da_index = xr.DataArray(
         index_metric_data,

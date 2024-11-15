@@ -99,10 +99,7 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
 
         # prepare filename if not given
         if not filename:
-            filename = (
-                DATA_DIR
-                / f'{dataset}/{request.location.split("/")[-1]}'
-            )
+            filename = DATA_DIR / f'{dataset}/{request.location.split("/")[-1]}'
 
             # Check if file exists and skip download if overwrite is False
             if Path(filename).exists() and not overwrite:

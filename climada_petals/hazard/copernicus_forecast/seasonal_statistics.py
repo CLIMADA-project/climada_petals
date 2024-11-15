@@ -40,6 +40,8 @@ from climada_petals.hazard.copernicus_forecast.heat_index import (
     calculate_hw,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 
 def calculate_heat_indices_metrics(input_file_name, index_metric):
     """
@@ -121,7 +123,7 @@ def calculate_heat_indices_metrics(input_file_name, index_metric):
             ds_combined = xr.Dataset({index_metric: da_index})
 
     except FileNotFoundError:
-        logging.error(f"Data file {input_file_name} does not exist.")
+        LOGGER.error(f"Data file {input_file_name} does not exist.")
 
     # Calculate statistics
     valid_times = pd.to_datetime(daily_ds.valid_time.values)
