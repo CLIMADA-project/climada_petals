@@ -40,15 +40,14 @@ import numpy as np
 import cdsapi
 
 from climada.hazard import Hazard
-from climada.util.constants import SYSTEM_DIR
+from climada import CONFIG
 from climada.util.coordinates import get_country_geometries
 import climada_petals.hazard.copernicus_forecast.seasonal_statistics as seasonal_statistics
 from climada_petals.hazard.copernicus_forecast.downloader import download_data
 
 
 # set path to store data
-DATA_OUT = SYSTEM_DIR / "copernicus_data/seasonal_forecasts"
-
+DATA_DIR = CONFIG.hazard.copernicus.seasonal_forecasts.dir()
 LOGGER = logging.getLogger(__name__)
 
 
@@ -68,7 +67,7 @@ class SeasonalForecast:
 
     Methods
     -------
-    __init__(data_dir=DATA_OUT, url=None, key=None)
+    __init__()
         Initializes the SeasonalForecast instance, setting up the data directory and CDS API configurations.
 
     _get_bounds_for_area_selection(area_selection, margin=0.2)
@@ -80,19 +79,19 @@ class SeasonalForecast:
     _calc_min_max_lead(year, month, leadtime_months=1)
         Calculates minimum and maximum lead times in hours for a given forecast start date.
 
-    _download_data(data_out, year_list, month_list, bounds, overwrite, index_metric, format, originating_centre, system, max_lead_month)
+    _download_data(year_list, month_list, bounds, overwrite, index_metric, format, originating_centre, system, max_lead_month)
         Handles downloading seasonal forecast data for specific years, months, and indices.
 
-    _process_data(data_out, year_list, month_list, bounds, overwrite, index_metric, format)
+    _process_data(year_list, month_list, bounds, overwrite, index_metric, format)
         Processes forecast data into daily averages and saves in NetCDF format.
 
-    download_and_process_data(index_metric, year_list, month_list, area_selection, overwrite, format, originating_centre, system, max_lead_month, data_out=None)
+    download_and_process_data(index_metric, year_list, month_list, area_selection, overwrite, format, originating_centre, system, max_lead_month)
         Downloads and processes forecast data for specified years, months, and climate indices.
 
-    calculate_index(index_metric, year_list, month_list, area_selection, overwrite, data_out=None)
+    calculate_index(index_metric, year_list, month_list, area_selection, overwrite)
         Calculates a specified climate index for given years, months, and regions.
 
-    save_index_to_hazard(index_metric, year_list, month_list, area_selection, overwrite, data_out=None)
+    save_index_to_hazard(index_metric, year_list, month_list, area_selection, overwrite)
         Converts calculated indices into hazard objects compatible with the CLIMADA framework.
 
     _is_data_present(file, vars)
@@ -111,7 +110,7 @@ class SeasonalForecast:
     respectively. Additionally, ensure that your CDS API key and URL are correctly set up in the `~/.cdsapirc` file.
     """
 
-    def __init__(self, data_out=None):
+    def __init__(self):
         """Initialize the SeasonalForecast instance.
 
         This method sets up logging and initializes the directory for storing
@@ -119,9 +118,7 @@ class SeasonalForecast:
 
         Parameters
         ----------
-        data_out : pathlib.Path or str, optional
-            Path to the directory where downloaded and processed data will be stored.
-            If not provided, defaults to the global constant `DATA_OUT`.
+        
 
         Notes
         -----
@@ -132,7 +129,6 @@ class SeasonalForecast:
             format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO
         )
         self.logger = logging.getLogger()
-        self.data_out = Path(data_out) if data_out else DATA_OUT
 
     @staticmethod
     def explain_index(index_metric):
@@ -358,7 +354,7 @@ class SeasonalForecast:
             for month in month_list:
                 # Prepare output paths
                 out_dir = Path(
-                    f"{self.data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}"
+                    f"{DATA_DIR}/input_data/{originating_centre}/{format}/{year}/{month:02d}"
                 )
                 out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -454,7 +450,7 @@ class SeasonalForecast:
             for month in month_list:
 
                 output_dir = Path(
-                    f"{self.data_out}/input_data/netcdf/daily/{originating_centre}/{year}/{month:02d}"
+                    f"{DATA_DIR}/input_data/netcdf/daily/{originating_centre}/{year}/{month:02d}"
                 )
 
                 daily_file = output_dir / f'{"_".join(vars_short)}_{area_str}.nc'
@@ -464,7 +460,7 @@ class SeasonalForecast:
                 file_extension = "grib" if format == "grib" else "nc"
 
                 input_file = (
-                    f"{self.data_out}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
+                    f"{DATA_DIR}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
                     f"{index_params['filename_lead']}_{area_str}.{file_extension}"
                 )
 
@@ -647,7 +643,7 @@ class SeasonalForecast:
         for year in year_list:
             for month in month_list:
                 input_file_name = (
-                    self.data_out
+                    DATA_DIR
                     / "input_data"
                     / "netcdf"
                     / "daily"
@@ -658,7 +654,7 @@ class SeasonalForecast:
                 )
 
                 grib_file_name = (
-                    self.data_out
+                    DATA_DIR
                     / "input_data"
                     / originating_centre
                     / "grib"
@@ -677,7 +673,7 @@ class SeasonalForecast:
 
                 # Define output paths using Pathlib
                 out_dir = (
-                    self.data_out
+                    DATA_DIR
                     / "indices"
                     / originating_centre
                     / index_metric
@@ -736,12 +732,12 @@ class SeasonalForecast:
                             )
                         )
 
-                    # Check for None outputs before attempting to save
-                    if ds_monthly is None or ds_stats is None:
-                        print(
-                            "Warning: calculate_hw_days returned None, skipping save."
-                        )
-                        continue
+                        # Check for None outputs before attempting to save
+                        if ds_monthly is None or ds_stats is None:
+                            print(
+                                "Warning: calculate_hw_days returned None, skipping save."
+                            )
+                            continue
                     else:
                         self.logger.error(
                             f"Index {index_metric} is not implemented. Supported indices "
@@ -861,7 +857,7 @@ class SeasonalForecast:
             for month in month_list:
                 # Define input and output paths
                 input_file_name = (
-                    self.data_out
+                    DATA_DIR
                     / "indices"
                     / originating_centre
                     / index_metric
@@ -870,7 +866,7 @@ class SeasonalForecast:
                     / f"monthly_{area_str}.nc"
                 )
                 output_dir = (
-                    self.data_out
+                    DATA_DIR
                     / "hazard"
                     / originating_centre
                     / index_metric

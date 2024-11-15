@@ -41,8 +41,9 @@ import logging
 import cdsapi
 from pathlib import Path
 
-from climada.util.constants import SYSTEM_DIR
+from climada import CONFIG
 
+DATA_DIR = CONFIG.hazard.copernicus.local_data.dir()
 LOGGER = logging.getLogger(__name__)
 
 
@@ -99,8 +100,8 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
         # prepare filename if not given
         if not filename:
             filename = (
-                SYSTEM_DIR
-                / f'copernicus_data/{dataset}/{request.location.split("/")[-1]}'
+                DATA_DIR
+                / f'{dataset}/{request.location.split("/")[-1]}'
             )
 
             # Check if file exists and skip download if overwrite is False
