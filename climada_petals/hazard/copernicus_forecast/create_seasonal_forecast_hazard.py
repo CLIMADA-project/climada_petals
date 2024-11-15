@@ -594,6 +594,8 @@ class SeasonalForecast:
         threshold=27,
         min_duration=3,
         max_gap=0,
+        tr_threshold=20,
+        data_out=None,
     ):
         """
         Calculate a specified climate index for given years, months, and regions.
@@ -690,8 +692,89 @@ class SeasonalForecast:
                     self.logger.info(f"Index file {out_monthly_path} already exists.")
                     continue
 
-                # Calculate indices
+                # Define index-specific parameters in kwargs
+                kwargs = {}
+                if index_metric == "TR":
+                    kwargs["tr_threshold"] = tr_threshold
+                elif index_metric == "HW":
+                    kwargs["threshold"] = threshold
+                    kwargs["min_duration"] = min_duration
+                    kwargs["max_gap"] = max_gap
+
+                # Select and execute the correct function based on index_metric
+                if index_metric in [
+                    "HIS",
+                    "HIA",
+                    "Tmean",
+                    "Tmax",
+                    "Tmin",
+                    "HUM",
+                    "RH",
+                    "AT",
+                    "WBGT",
+                ]:
+                    ds_daily, ds_monthly, ds_stats = (
+                        seasonal_statistics.calculate_heat_indices_metrics(
+                            input_file_name, index_metric
+                        )
+                    )
+                elif index_metric == "TR":
+                    ds_daily, ds_monthly, ds_stats = (
+                        seasonal_statistics.calculate_tr_days(
+                            grib_file_name, index_metric, **kwargs
+                        )
+                    )
+                elif index_metric == "TX30":
+                    ds_daily, ds_monthly, ds_stats = (
+                        seasonal_statistics.calculate_tx30_days(
+                            grib_file_name, index_metric
+                        )
+                    )
+                elif index_metric == "HW":
+                    ds_daily, ds_monthly, ds_stats = (
+                        seasonal_statistics.calculate_hw_days(
+                            grib_file_name, index_metric, **kwargs
+                        )
+                    )
                 else:
+                    self.logger.error(
+                        f"Index {index_metric} is not implemented. Supported indices are "
+                        "'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HUM', 'RH', 'AT', 'WBGT', 'TR', 'TX30', and 'HW'."
+                    )
+                    continue
+
+                # Skip saving if calculation returned None
+                if ds_monthly is None or ds_stats is None:
+                    self.logger.warning(
+                        f"Calculation returned None for {index_metric}, skipping save."
+                    )
+                    continue
+
+                # Save output files
+                self.logger.info(f"Writing index data to {out_monthly_path}.")
+                if index_metric in [
+                    "HIS",
+                    "HIA",
+                    "Tmean",
+                    "Tmax",
+                    "Tmin",
+                    "HUM",
+                    "RH",
+                    "AT",
+                    "WBGT",
+                ]:
+                    ds_daily.to_netcdf(str(out_daily_path))
+                ds_monthly.to_netcdf(str(out_monthly_path))
+                ds_stats.to_netcdf(str(out_stats_path))
+
+                # Confirm data saving
+                if out_monthly_path.exists() and out_stats_path.exists():
+                    self.logger.info(
+                        f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}."
+                    )
+                    print(
+                        f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}"
+                    )
                     if index_metric in [
                         "HIS",
                         "HIA",
@@ -703,88 +786,11 @@ class SeasonalForecast:
                         "AT",
                         "WBGT",
                     ]:
-                        ds_daily, ds_monthly, ds_stats = (
-                            seasonal_statistics.calculate_heat_indices_metrics(
-                                input_file_name, index_metric
-                            )
-                        )
-                    elif index_metric == "TR":
-                        ds_daily, ds_monthly, ds_stats = (
-                            seasonal_statistics.calculate_TR(
-                                grib_file_name, index_metric
-                            )
-                        )
-                    elif index_metric == "TX30":
-                        ds_daily, ds_monthly, ds_stats = (
-                            seasonal_statistics.calculate_tx30(
-                                grib_file_name, index_metric
-                            )
-                        )
-
-                    elif index_metric == "HW":  # Handling heat waves
-                        ds_daily, ds_monthly, ds_stats = (
-                            seasonal_statistics.calculate_hw_days(
-                                grib_file_name,
-                                index_metric,
-                                threshold,
-                                min_duration,
-                                max_gap,
-                            )
-                        )
-
-                        # Check for None outputs before attempting to save
-                        if ds_monthly is None or ds_stats is None:
-                            print(
-                                "Warning: calculate_hw_days returned None, skipping save."
-                            )
-                            continue
-                    else:
-                        self.logger.error(
-                            f"Index {index_metric} is not implemented. Supported indices "
-                            "are 'HIS', 'HIA', 'Tmean', 'Tmax', 'Tmin', 'HUM', 'RH', 'AT', 'WBGT', 'TR', and 'TX30' and 'HW'"
-                        )
-
-                    # Save files
-                    self.logger.info(f"Writing index data to {out_monthly_path}.")
-                    if index_metric in [
-                        "HIS",
-                        "HIA",
-                        "Tmean",
-                        "Tmax",
-                        "Tmin",
-                        "HUM",
-                        "RH",
-                        "AT",
-                        "WBGT",
-                    ]:
-                        ds_daily.to_netcdf(str(out_daily_path))
-                    ds_monthly.to_netcdf(str(out_monthly_path))
-                    ds_stats.to_netcdf(str(out_stats_path))
-
-                    # Confirm data saving
-                    if out_monthly_path.exists() and out_stats_path.exists():
-                        self.logger.info(
-                            f"Index {index_metric} successfully calculated and saved for {year}-{month:02d}."
-                        )
-                        print(
-                            f"Data saved at:\n- Monthly index: {out_monthly_path}\n- Statistics: {out_stats_path}"
-                        )
-                        if index_metric in [
-                            "HIS",
-                            "HIA",
-                            "Tmean",
-                            "Tmax",
-                            "Tmin",
-                            "HUM",
-                            "RH",
-                            "AT",
-                            "WBGT",
-                        ]:
-                            print(f"- Daily index data: {out_daily_path}")
-                    else:
-                        self.logger.warning(
-                            f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly."
-                        )
+                        print(f"- Daily index data: {out_daily_path}")
+                else:
+                    self.logger.warning(
+                        f"Index {index_metric} for {year}-{month:02d} may not have been saved correctly."
+                    )
 
     def save_index_to_hazard(
         self,

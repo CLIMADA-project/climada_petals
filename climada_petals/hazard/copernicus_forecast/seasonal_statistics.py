@@ -22,6 +22,12 @@ File to calculate different seasonal forecast indices.
 import xarray as xr
 import pandas as pd
 import logging
+from climada_petals.hazard.copernicus_forecast.index_definitions import (
+    VAR_SPECS,
+    get_index_params,
+    index_explanations,
+)
+
 from climada_petals.hazard.copernicus_forecast.heat_index import (
     calculate_heat_index,
     calculate_relative_humidity,
@@ -29,158 +35,10 @@ from climada_petals.hazard.copernicus_forecast.heat_index import (
     calculate_wind_speed,
     calculate_apparent_temperature,
     calculate_wbgt_simple,
+    calculate_tx30,
+    calculate_tr,
     calculate_hw,
 )
-
-
-VAR_SPECS = {
-    "2m_temperature": {
-        "unit": "K",
-        "standard_name": "air_temperature",
-        "short_name": "t2m",
-        "full_name": "2m_temperature",
-    },
-    "2m_dewpoint_temperature": {
-        "unit": "K",
-        "standard_name": "dew_point_temperature",
-        "short_name": "d2m",
-        "full_name": "2m_dewpoint_temperature",
-    },
-    "10m_u_component_of_wind": {
-        "unit": "m/s",
-        "standard_name": "eastward_wind",
-        "short_name": "u10",
-        "full_name": "10m_u_component_of_wind",
-    },
-    "10m_v_component_of_wind": {
-        "unit": "m/s",
-        "standard_name": "northward_wind",
-        "short_name": "v10",
-        "full_name": "10m_v_component_of_wind",
-    },
-    "10m_wind_gust_since_previous_post_processing": {
-        "unit": "m/s",
-        "standard_name": "wind_gust",
-        "short_name": "wind_gust10m",
-        "full_name": "10m_wind_gust_since_previous_post_processing",
-    },
-}
-
-
-def get_index_params(index):
-    """
-    Retrieves parameters associated with a specific climate index.
-
-    Parameters
-    ----------
-    index : str
-        The climate index identifier for which the parameters are being retrieved.
-        It could be one of the following:
-        - "HIA" : Heat Index Adjusted
-        - "HIS" : Heat Index Simplified
-        - "Tmean" : Mean Temperature
-        - "Tmin" : Minimum Temperature
-        - "Tmax" : Maximum Temperature
-        - "HW" : Heat Wave
-        - "TR" : Tropical Nights
-        - "TX30" : Hot Days (Tmax > 30°C)
-        - "HUM" : Humidex
-        - "RH" : Relative Humidity
-        - "AT" : Apparent Temperature
-        - "WBGT" : Wet Bulb Globe Temperature (Simple)
-
-    Returns
-    -------
-    dict
-        A dictionary containing the parameters associated with the specified index.
-        The dictionary includes:
-        - "variables" : List of variable names required for the index calculation.
-        - "filename_lead" : String prefix used in the filename.
-        - "index_long_name" : Full descriptive name of the index.
-    """
-    index_params = {
-        "HIA": {
-            "variables": [
-                VAR_SPECS["2m_temperature"]["full_name"],
-                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
-            ],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Heat_Index_Adjusted",
-        },
-        "HIS": {
-            "variables": [
-                VAR_SPECS["2m_temperature"]["full_name"],
-                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
-            ],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Heat_Index_Simplified",
-        },
-        "Tmean": {
-            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Mean_Temperature",
-        },
-        "Tmin": {
-            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Minimum_Temperature",
-        },
-        "Tmax": {
-            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Maximum_Temperature",
-        },
-        "HW": {
-            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Heat_Wave",
-        },
-        "TR": {
-            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Tropical_Nights",
-        },
-        "TX30": {
-            "variables": [VAR_SPECS["2m_temperature"]["full_name"]],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Hot Days (Tmax > 30°C)",
-        },
-        "RH": {
-            "variables": [
-                VAR_SPECS["2m_temperature"]["full_name"],
-                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
-            ],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Relative_Humidity",
-        },
-        "HUM": {
-            "variables": [
-                VAR_SPECS["2m_temperature"]["full_name"],
-                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
-            ],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Humidex",
-        },
-        "AT": {
-            "variables": [
-                VAR_SPECS["2m_temperature"]["full_name"],
-                VAR_SPECS["10m_u_component_of_wind"]["full_name"],
-                VAR_SPECS["10m_v_component_of_wind"]["full_name"],
-                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
-            ],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Apparent_Temperature",
-        },
-        "WBGT": {
-            "variables": [
-                VAR_SPECS["2m_temperature"]["full_name"],
-                VAR_SPECS["2m_dewpoint_temperature"]["full_name"],
-            ],
-            "filename_lead": "2m_temps",
-            "index_long_name": "Wet_Bulb_Globe_Temperature_Simple",
-        },
-    }
-    return index_params.get(index)
 
 
 def calculate_heat_indices_metrics(input_file_name, index_metric):
@@ -290,9 +148,10 @@ def calculate_heat_indices_metrics(input_file_name, index_metric):
     return ds_combined, ds_monthly, ds_stats
 
 
-def calculate_TR(grib_file_path, index_metric):
+def calculate_tr_days(grib_file_path, index_metric, tr_threshold=20):
     """
-    Calculates and saves the tropical nights index, defined as the number of nights where the minimum temperature remains at or above 20°C.
+    Calculates and saves the tropical nights index, defined as the number of nights where the minimum temperature remains at or above a threshold.
+    The default is 20°C.
 
     Parameters
     ----------
@@ -317,10 +176,12 @@ def calculate_TR(grib_file_path, index_metric):
         For any other errors encountered during the data processing.
     """
     try:
-        # prepare dataarray
+        # Open the seasonal forecast data
         with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
             t2m_celsius = ds["t2m"] - 273.15
             daily_min_temp = t2m_celsius.resample(step="1D").min()
+
+            # Convert valid_time to monthly periods for grouping
             valid_times = pd.to_datetime(ds.valid_time.values)
             forecast_months_str = valid_times.to_period("M").astype(str)
             step_to_month = dict(zip(ds.step.values, forecast_months_str))
@@ -329,56 +190,57 @@ def calculate_TR(grib_file_path, index_metric):
             )
         daily_min_temp.coords["forecast_month"] = forecast_month_da
 
-        # compute tropical nights
-        tropical_nights = daily_min_temp >= 20
+        # Use the generic TR calculation with a configurable threshold
+        tropical_nights = calculate_tr(daily_min_temp, tr_threshold=tr_threshold)
+
+        # Count tropical nights by month
         tropical_nights_count = tropical_nights.groupby("forecast_month").sum(
             dim="step"
         )
         tropical_nights_count = tropical_nights_count.rename(index_metric)
         tropical_nights_count = tropical_nights_count.rename({"forecast_month": "step"})
 
-        # calculate statistics
+        # Calculate ensemble statistics, if relevant
         ds_stats = calculate_statistics_from_index(tropical_nights_count)
-
         return None, tropical_nights_count, ds_stats
 
     except FileNotFoundError as e:
         print(f"File not found: {e.filename}")
+
     except Exception as e:
         print(f"An error occurred: {e}")
 
+    # **Updated: Return `(None, None, None)` to avoid unpacking error**
+    return None, None, None
 
-def calculate_tx30(grib_file_path, index_metric):
+
+def calculate_tx30_days(grib_file_path, index_metric):
     """
-    Calculates and saves the TX30 index, defined as the number of days with maximum temperature above 30°C.
+    Calculate TX30 index for seasonal forecast data, specifically counting the number of days with Tmax > 30°C.
 
     Parameters
     ----------
     grib_file_path : str
-        Path to the input GRIB data file containing temperature data. The file should include 2-meter temperature values (`t2m`) for daily maximum temperature calculations.
+        Path to the GRIB file containing temperature data.
     index_metric : str
-        The climate index being processed. This should specify the name for the TX30 index, typically "TX30".
+        Name of the TX30 index, typically "TX30".
 
     Returns
     -------
     tuple
-        A tuple containing:
-        - `None` : No daily index is returned for this calculation.
-        - `xarray.Dataset` : The monthly count of TX30 days, represented as an `xarray.Dataset` with the index values and relevant metadata.
-        - `xarray.Dataset` : Statistics calculated across the monthly TX30 index values, representing ensemble statistics.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the specified input GRIB file does not exist.
-    Exception
-        For any other errors encountered during the data processing.
+        - None: No daily index is returned.
+        - xarray.Dataset: Monthly count of TX30 days.
+        - xarray.Dataset: Ensemble statistics of the TX30 index.
     """
     try:
-        # Prepare dataarray
+        # Open the seasonal forecast data
         with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
             t2m_celsius = ds["t2m"] - 273.15
-            daily_max_temp = t2m_celsius.resample(step="1D").max()
+            daily_max_temp = t2m_celsius.resample(
+                step="1D"
+            ).max()  # Ensure daily max temp is calculated
+
+            # Convert valid_time to monthly periods for grouping
             valid_times = pd.to_datetime(ds.valid_time.values)
             forecast_months_str = valid_times.to_period("M").astype(str)
             step_to_month = dict(zip(ds.step.values, forecast_months_str))
@@ -387,15 +249,15 @@ def calculate_tx30(grib_file_path, index_metric):
             )
         daily_max_temp.coords["forecast_month"] = forecast_month_da
 
-        # Calculate TX30: Days where Tmax > 30°C
-        tx30_days = daily_max_temp > 30  # Boolean array where True means a TX30 day
+        # Use the generic TX30 calculation
+        tx30_days = calculate_tx30(daily_max_temp)
 
-        # Count the number of TX30 days per forecast month
+        # Count TX30 days by month
         tx30_days_count = tx30_days.groupby("forecast_month").sum(dim="step")
         tx30_days_count = tx30_days_count.rename(index_metric)
         tx30_days_count = tx30_days_count.rename({"forecast_month": "step"})
 
-        # calculate statistics
+        # Calculate ensemble statistics, if relevant
         ds_stats = calculate_statistics_from_index(tx30_days_count)
 
         return None, tx30_days_count, ds_stats
