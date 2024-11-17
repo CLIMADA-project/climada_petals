@@ -44,6 +44,7 @@ from climada import CONFIG
 from climada.util.coordinates import get_country_geometries
 import climada_petals.hazard.copernicus_forecast.seasonal_statistics as seasonal_statistics
 from climada_petals.hazard.copernicus_forecast.downloader import download_data
+from climada_petals.hazard.copernicus_forecast.index_definitions import IndexSpecEnum
 
 
 # set path to store data
@@ -67,8 +68,8 @@ class SeasonalForecast:
 
     Methods
     -------
-    __init__()
-        Initializes the SeasonalForecast instance, setting up the data directory and CDS API configurations.
+    __init__(data_out=None)
+        Initializes the SeasonalForecast instance, setting up logging, and defines a data output directory.
 
     _get_bounds_for_area_selection(area_selection, margin=0.2)
         Determines geographic bounds for a given area selection and adds a margin if specified.
@@ -110,7 +111,7 @@ class SeasonalForecast:
     respectively. Additionally, ensure that your CDS API key and URL are correctly set up in the `~/.cdsapirc` file.
     """
 
-    def __init__(self):
+    def __init__(self, data_out=None):
         """Initialize the SeasonalForecast instance.
 
         This method sets up logging and initializes the directory for storing
@@ -118,7 +119,7 @@ class SeasonalForecast:
 
         Parameters
         ----------
-        
+
 
         Notes
         -----
@@ -129,46 +130,16 @@ class SeasonalForecast:
             format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO
         )
         self.logger = logging.getLogger()
+        self.data_out = Path(data_out) if data_out else DATA_DIR
 
-    @staticmethod
-    def explain_index(index_metric):
-        """Provide an explanation and required input data for the specified climate index.
-
-        Parameters
-        ----------
-        index_metric : str
-            The climate index identifier to be explained (e.g., 'TX30', 'Tmean').
-
-        Raises
-        ------
-        TypeError
-            Raised if `index_metric` is not provided as a string type.
-        ValueError
-            Raised if the specified `index_metric` is not recognized or does not exist.
-
-        Returns
-        -------
-        dict
-            A dictionary containing 'explanation' and 'input_data' if the index is found.
-            Returns None if the index is not found or invalid.
-        """
-        if not isinstance(index_metric, str):
-            raise TypeError(
-                f"The function expects a string parameter, but received '{type(index_metric).__name__}'.\n"
-                f"Did you mean to use quotation marks? For example, use 'TX30' instead of {index_metric}."
-            )
-
-        explanation = seasonal_statistics.index_explanations(index_metric)
-        if "error" not in explanation:
-            print(
-                f"Explanation for '{index_metric}': {explanation['explanation']}\nRequired Input Data: {explanation['input_data']}"
-            )
-        else:
-            # Display an informative error message including valid indices
-            valid_indices = ", ".join(explanation["valid_indices"])
-            raise ValueError(
-                f"Unknown index '{index_metric}'. Please use a valid index from the following list: {valid_indices}."
-            )
+    def explain_index(self, index_name: str):
+        """Provide an explanation and required input data for the specified climate index."""
+        try:
+            index_info = IndexSpecEnum.get_info(index_name)
+            print(f"Explanation for index '{index_name}': {index_info.explanation}")
+            print(f"Required Input Data: {index_info.variables}")
+        except ValueError as e:
+            print(e)
 
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
@@ -341,11 +312,9 @@ class SeasonalForecast:
         None
         """
 
-        index_params = seasonal_statistics.get_index_params(index_metric)
-        variables = index_params["variables"]
-        vars_short = [
-            seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables
-        ]
+        index_spec = IndexSpecEnum.get_info(index_metric)
+        variables = index_spec.variables  # Use the short names directly
+        vars_short = [index_spec.short_name for var in variables]
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
@@ -437,11 +406,10 @@ class SeasonalForecast:
         -------
         None
         """
-        index_params = seasonal_statistics.get_index_params(index_metric)
-        variables = index_params["variables"]
-        vars_short = [
-            seasonal_statistics.VAR_SPECS[var]["short_name"] for var in variables
-        ]
+
+        index_spec = IndexSpecEnum.get_info(index_metric)
+        variables = [index_spec.short_name for var in index_spec.variables]
+        filename_lead = index_spec.filename_lead
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
@@ -453,7 +421,7 @@ class SeasonalForecast:
                     f"{DATA_DIR}/input_data/netcdf/daily/{originating_centre}/{year}/{month:02d}"
                 )
 
-                daily_file = output_dir / f'{"_".join(vars_short)}_{area_str}.nc'
+                daily_file = output_dir / f'{"_".join(variables)}_{area_str}.nc'
 
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -461,13 +429,10 @@ class SeasonalForecast:
 
                 input_file = (
                     f"{DATA_DIR}/input_data/{originating_centre}/{format}/{year}/{month:02d}/"
-                    f"{index_params['filename_lead']}_{area_str}.{file_extension}"
+                    f"{originating_centre}_{filename_lead}_{area_str}_{year}{month:02d}.{file_extension}"
                 )
 
-                input_file = self._is_data_present(
-                    input_file, index_params["variables"]
-                )
-
+                input_file = self._is_data_present(input_file, variables)
                 if input_file is None:
                     self.logger.error(
                         f"Input file {input_file} not found. Skipping processing for {year}-{month:02d}."
@@ -490,7 +455,7 @@ class SeasonalForecast:
 
                         # Create a new dataset combining mean, max, and min values
                         combined_ds = xr.Dataset()
-                        for var in vars_short:
+                        for var in variables:
                             combined_ds[f"{var}_mean"] = ds_mean[var]
                             combined_ds[f"{var}_max"] = ds_max[var]
                             combined_ds[f"{var}_min"] = ds_min[var]
@@ -636,11 +601,11 @@ class SeasonalForecast:
         area_str = (
             f"area{int(bounds[1])}_{int(bounds[0])}_{int(bounds[2])}_{int(bounds[3])}"
         )
-        index_params = seasonal_statistics.get_index_params(index_metric)
-        vars_short = [
-            seasonal_statistics.VAR_SPECS[var]["short_name"]
-            for var in index_params["variables"]
-        ]
+
+        # Get index specification
+        index_spec = IndexSpecEnum.get_info(index_metric)
+        variables = index_spec.variables  # Full variable names as expected by CDS
+        vars_short = [index_spec.short_name]  # Use the defined short_name directly
 
         for year in year_list:
             for month in month_list:
@@ -666,12 +631,8 @@ class SeasonalForecast:
                 )
 
                 # Check if input data is present
-                input_file_name = self._is_data_present(
-                    str(input_file_name), index_params["variables"]
-                )
-                grib_file_name = self._is_data_present(
-                    str(grib_file_name), index_params["variables"]
-                )
+                input_file_name = self._is_data_present(str(input_file_name), variables)
+                grib_file_name = self._is_data_present(str(grib_file_name), variables)
 
                 # Define output paths using Pathlib
                 out_dir = (
@@ -980,7 +941,11 @@ class SeasonalForecast:
         specific naming conventions.
         """
         file = Path(file) if isinstance(file, str) else file
-        vars_short = [seasonal_statistics.VAR_SPECS[var]["short_name"] for var in vars]
+        vars_short = [
+            IndexSpecEnum[var].value.short_name
+            for var in vars
+            if var in IndexSpecEnum.__members__
+        ]
         parent_dir = file.parent
 
         if not parent_dir.exists():

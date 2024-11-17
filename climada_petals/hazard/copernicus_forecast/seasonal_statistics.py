@@ -22,11 +22,8 @@ File to calculate different seasonal forecast indices.
 import xarray as xr
 import pandas as pd
 import logging
-from climada_petals.hazard.copernicus_forecast.index_definitions import (
-    VAR_SPECS,
-    get_index_params,
-    index_explanations,
-)
+
+from climada_petals.hazard.copernicus_forecast.index_definitions import IndexSpecEnum
 
 from climada_petals.hazard.copernicus_forecast.heat_index import (
     calculate_heat_index,
