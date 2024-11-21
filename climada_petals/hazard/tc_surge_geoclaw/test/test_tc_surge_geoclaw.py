@@ -102,8 +102,7 @@ class TestHazardInit(unittest.TestCase):
                 [-23.36615826, -149.45798872],
             ]
         )
-        centroids = Centroids()
-        centroids.set_lat_lon(coord[:, 0], coord[:, 1])
+        centroids = Centroids(lat=coord[:, 0], lon=coord[:, 1])
         haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, topo_path)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape, (2, coord.shape[0]))
