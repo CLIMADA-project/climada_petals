@@ -236,7 +236,7 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertTrue(isinstance(wf.fraction, sparse.csr_matrix))
         self.assertEqual(wf.intensity.shape, (7, 19454))
         self.assertEqual(wf.fraction.shape, (7, 19454))
-        self.assertEqual(wf.fraction.max(), 1.0)
+        self.assertEqual(wf.fraction.nnz, 0)  # Zero everywhere means 1 everywhere
         self.assertAlmostEqual(wf.intensity[0, 16618], firms.loc[100].brightness)
         self.assertAlmostEqual(wf.intensity[1, 123], max(firms.loc[6721].brightness, firms.loc[6722].brightness))
         self.assertAlmostEqual(wf.intensity[2, :].max(), firms.loc[8105].brightness)
