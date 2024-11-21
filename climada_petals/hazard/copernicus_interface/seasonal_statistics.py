@@ -23,9 +23,9 @@ import xarray as xr
 import pandas as pd
 import logging
 
-from climada_petals.hazard.copernicus_forecast.index_definitions import IndexSpecEnum
+from climada_petals.hazard.copernicus_interface.index_definitions import IndexSpecEnum
 
-from climada_petals.hazard.copernicus_forecast.heat_index import (
+from climada_petals.hazard.copernicus_interface.heat_index import (
     calculate_heat_index,
     calculate_relative_humidity,
     calculate_humidex,

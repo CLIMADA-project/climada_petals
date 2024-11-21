@@ -16,11 +16,9 @@ from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries
 from climada import CONFIG
 
-import climada_petals.hazard.copernicus_forecast.seasonal_statistics as seasonal_statistics
-from climada_petals.hazard.copernicus_forecast.downloader import download_data
-from climada_petals.hazard.copernicus_forecast.index_definitions import IndexSpecEnum, get_short_name_from_variable
-from climada_petals.hazard.copernicus_forecast.path_manager import PathManager
-
+import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
+from climada_petals.hazard.copernicus_interface.downloader import download_data
+from climada_petals.hazard.copernicus_interface.index_definitions import IndexSpecEnum, get_short_name_from_variable
 
 # set path to store data
 DATA_OUT = CONFIG.hazard.copernicus.seasonal_forecasts.dir()
@@ -276,13 +274,13 @@ class SeasonalForecast:
                 )
 
                 # Get the input index file and the hazard output file paths
-                input_file_name = self.path_manager.get_monthly_index_path(
+                input_file_name = self.path_manager.get_index_paths(
                     self.originating_centre,
                     year,
                     month,
                     self.index_metric,
                     self.area_str
-                )
+                )["monthly"]
                 output_file_name = self.path_manager.get_hazard_path(
                     self.originating_centre,
                     year,
@@ -304,6 +302,58 @@ class SeasonalForecast:
 
         return hazard_outputs
 
+class PathManager:
+    """Centralized path management for input, processed, and hazard data."""
+
+    def __init__(self, base_dir):
+        self.base_dir = Path(base_dir)
+
+    def construct_path(self, sub_dir, file_name):
+        """Constructs a full path from a sub-directory and file name."""
+        Path(self.base_dir / sub_dir).mkdir(parents=True, exist_ok=True)
+        return self.base_dir / sub_dir / file_name
+
+    def get_download_path(
+        self, originating_centre, year, month, index_metric, area_str, format
+    ):
+        """
+        Path for downloaded grib data.
+        Example: input_data/dwd/grib/2002/07/HW_dwd_area4_49_33_20_200207.grib
+        """
+        sub_dir = f"{originating_centre}/{year}/{month}/downloaded_data/{format}"
+        file_name = (
+            f"{index_metric.lower()}_{area_str}.{format}"
+        )
+        return self.construct_path(sub_dir, file_name)
+
+    def get_daily_processed_path(
+        self, originating_centre, year, month, index_metric, area_str
+    ):
+        """
+        Path for processed daily netcdf data.
+        Example: input_data/netcdf/daily/dwd/2002/07/dwd_t2m_area4_49_33_20_200207.nc
+        """
+        sub_dir = f"{originating_centre}/{year}/{month}/processed_daily_data"
+        file_name = f"{index_metric.lower()}_{area_str}.nc"
+        return self.construct_path(sub_dir, file_name)
+
+    def get_index_paths(self, originating_centre, year, month, index_metric, area_str):
+        sub_dir = f"{originating_centre}/{year}/{month}/indeces/{index_metric}"
+        return {
+            timeframe: self.construct_path(sub_dir, f"{timeframe}_{area_str}.nc") for timeframe in ["daily", "monthly", "stats"]
+        }
+
+    def get_hazard_path(
+        self, originating_centre, year, month, index_metric, area_str
+    ):
+        """
+        Path for hazard HDF5 output data.
+        Example: hazard/dwd/HW/2002/07/hazard_HW_dwd_area4_49_33_20_200207.hdf5
+        """
+        sub_dir = f"{originating_centre}/{year}/{month}/hazard/{index_metric}"
+        file_name = f"{area_str}.hdf5"
+        return self.construct_path(sub_dir, file_name)
+
 
 def handle_overwriting(function):
     """Decorator to manage overwriting functionality."""
@@ -315,7 +365,7 @@ def handle_overwriting(function):
                 LOGGER.info(f"{output_file_name} already exists.")
                 return output_file_name
         elif isinstance(output_file_name, dict):
-            if not overwrite:
+            if not overwrite and any([path.exists() for path in output_file_name.values()]):
                 LOGGER.info(f"A file of {[str(path) for path in output_file_name.values()]} already exists.")
                 return output_file_name
 
@@ -477,15 +527,13 @@ def _calculate_index(
     # Save outputs
     if ds_daily is not None:
         ds_daily.to_netcdf(daily_output_path)
+        LOGGER.info(f"Saved daily index to {daily_output_path}")
     if ds_monthly is not None:
         ds_monthly.to_netcdf(monthly_output_path)
+        LOGGER.info(f"Saved monthly index to {monthly_output_path}")
     if ds_stats is not None:
         ds_stats.to_netcdf(stats_output_path)
-
-    # Log success
-    LOGGER.info(f"Saved daily index to {daily_output_path}")
-    LOGGER.info(f"Saved monthly index to {monthly_output_path}")
-    LOGGER.info(f"Saved stats index to {stats_output_path}")
+        LOGGER.info(f"Saved stats index to {stats_output_path}")
 
     return {
         "daily": daily_output_path,
