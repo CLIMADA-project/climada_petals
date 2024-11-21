@@ -4,6 +4,7 @@ channels:
   - nodefaults
 dependencies:
   - cdsapi>=0.6
+  - gfortran>=13.0
   - meson-python=0.15
   - osm-flex>=1.1
   - overpy>=0.7
