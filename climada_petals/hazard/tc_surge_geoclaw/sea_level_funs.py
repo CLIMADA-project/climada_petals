@@ -35,10 +35,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 def sea_level_from_nc(
-    path : Union[pathlib.Path, str],
-    t_agg : str = "mean",
-    t_pad : Optional[np.timedelta64] = None,
-    mod_zos : float = 0.0,
+    path: Union[pathlib.Path, str],
+    t_agg: str = "mean",
+    t_pad: Optional[np.timedelta64] = None,
+    mod_zos: float = 0.0,
 ) -> Callable:
     """Generate a function that reads centroid sea levels from a NetCDF file
 
@@ -72,7 +72,10 @@ def sea_level_from_nc(
     if t_agg not in ["mean", "min", "max"]:
         raise ValueError(f"Aggregation method not supported: {t_agg}")
     _sea_level_nc_info(path)
-    def sea_level_fun(bounds, period, path=path, t_agg=t_agg, t_pad=t_pad, mod_zos=mod_zos):
+
+    def sea_level_fun(
+        bounds, period, path=path, t_agg=t_agg, t_pad=t_pad, mod_zos=mod_zos
+    ):
         t_pad = np.timedelta64(0, "D") if t_pad is None or t_pad == 0 else t_pad
         period = (period[0] - t_pad, period[1] + t_pad)
         centroid = (0.5 * (bounds[0] + bounds[2]), 0.5 * (bounds[1] + bounds[3]))
@@ -86,14 +89,15 @@ def sea_level_from_nc(
             da_zos = da_zos.sel(lon=lon, lat=lat)
             v_agg = getattr(da_zos, t_agg)().item()
         return v_agg + mod_zos
+
     return sea_level_fun
 
 
 def _get_closest_valid_cell(
-    ds_var : xr.DataArray,
-    lon : float,
-    lat : float,
-    threshold_deg : float = 10.0,
+    ds_var: xr.DataArray,
+    lon: float,
+    lat: float,
+    threshold_deg: float = 10.0,
 ) -> Tuple[float, float]:
     """Extract the grid cell with valid entries that is closest to the given location
 
@@ -134,7 +138,7 @@ def _get_closest_valid_cell(
     coords = xr.broadcast(*[getattr(ds_var, d) for d in finite_mask.dims])
     finite_coords = [c.values[finite_mask] for c in coords]
     lats, lons = finite_coords if finite_mask.dims[0] == "lat" else finite_coords[::-1]
-    dist_sq = (lats - lat)**2 + (lons - lon)**2
+    dist_sq = (lats - lat) ** 2 + (lons - lon) ** 2
     idx = np.argmin(dist_sq)
     lon_close, lat_close = lons[idx], lats[idx]
 
@@ -147,8 +151,8 @@ def _get_closest_valid_cell(
 
 
 def _get_closest_date_in_index(
-    dt_index : pd.DatetimeIndex,
-    date : np.datetime64,
+    dt_index: pd.DatetimeIndex,
+    date: np.datetime64,
 ) -> np.datetime64:
     """Extract the entry from the given DatetimeIndex that is closest to the given date
 
@@ -177,9 +181,9 @@ def _get_closest_date_in_index(
 
 
 def area_sea_level_from_monthly_nc(
-    path : Union[pathlib.Path, str],
-    t_pad : Optional[np.timedelta64] = None,
-    mod_zos : float = 0.0,
+    path: Union[pathlib.Path, str],
+    t_pad: Optional[np.timedelta64] = None,
+    mod_zos: float = 0.0,
 ) -> Callable:
     """Generate a function that reads area-aggregated sea levels from a NetCDF file
 
@@ -207,19 +211,21 @@ def area_sea_level_from_monthly_nc(
         in the specified region and time period.
     """
     _sea_level_nc_info(path)
+
     def sea_level_fun(bounds, period, path=path, t_pad=t_pad, mod_zos=mod_zos):
         t_pad = np.timedelta64(7, "D") if t_pad is None else t_pad
         period = (period[0] - t_pad, period[1] + t_pad)
         times = pd.date_range(*period, freq="12H")
         months = np.unique(np.stack((times.year, times.month), axis=-1), axis=0)
         return _mean_max_sea_level_monthly(path, months, bounds) + mod_zos
+
     return sea_level_fun
 
 
 def _mean_max_sea_level_monthly(
-    path : Union[pathlib.Path, str],
-    months : np.ndarray,
-    bounds : Tuple[float, float, float, float],
+    path: Union[pathlib.Path, str],
+    months: np.ndarray,
+    bounds: Tuple[float, float, float, float],
 ) -> float:
     """Mean of maxima over affected area in affected months
 
@@ -241,10 +247,13 @@ def _mean_max_sea_level_monthly(
     max_pad_deg = 5
     with xr.open_dataset(path) as ds:
         ds = _nc_rename_vars(ds)
-        mask_time = np.any([
-            (ds["time"].dt.year == m[0]) & (ds["time"].dt.month == m[1])
-            for m in months
-        ], axis=0)
+        mask_time = np.any(
+            [
+                (ds["time"].dt.year == m[0]) & (ds["time"].dt.month == m[1])
+                for m in months
+            ],
+            axis=0,
+        )
         if np.count_nonzero(mask_time) != months.shape[0]:
             raise IndexError(
                 "The sea level data set doesn't contain the required months: "
@@ -263,16 +272,18 @@ def _mean_max_sea_level_monthly(
                 )
             mean = _temporal_mean_of_max_within_bounds(ds, bounds_padded)
             bounds_padded = (
-                bounds_padded[0] - pad_deg, bounds_padded[1] - pad_deg,
-                bounds_padded[2] + pad_deg, bounds_padded[3] + pad_deg,
+                bounds_padded[0] - pad_deg,
+                bounds_padded[1] - pad_deg,
+                bounds_padded[2] + pad_deg,
+                bounds_padded[3] + pad_deg,
             )
             i_pad += 1
     return mean
 
 
 def _temporal_mean_of_max_within_bounds(
-    ds : xr.Dataset,
-    bounds : Tuple[float, float, float, float],
+    ds: xr.Dataset,
+    bounds: Tuple[float, float, float, float],
 ) -> float:
     """Take the maximum over a given spatial extent, then the mean over the time dimension
 
@@ -304,9 +315,9 @@ def _temporal_mean_of_max_within_bounds(
 
 
 def _select_bounds_dim(
-    ds : Union[xr.Dataset, xr.DataArray],
-    dim : str,
-    bounds : Tuple[float, float],
+    ds: Union[xr.Dataset, xr.DataArray],
+    dim: str,
+    bounds: Tuple[float, float],
 ) -> Union[xr.Dataset, xr.DataArray]:
     """Restrict the data set's dimension to the specified bounds
 
@@ -330,17 +341,22 @@ def _select_bounds_dim(
         if d_min > ref_min or d_max < ref_max:
             LOGGER.warning(
                 "The dimension '%s' (%f -- %f) does not cover the range of the reference"
-                " dimension (%f -- %f).", dim, d_min, d_max, ref_min, ref_max,
+                " dimension (%f -- %f).",
+                dim,
+                d_min,
+                d_max,
+                ref_min,
+                ref_max,
             )
     sl_start, sl_end = (idx[0], idx[-1] + 1) if idx.size > 0 else (0, 0)
-    with dask.config.set(**{'array.slicing.split_large_chunks': True}):
+    with dask.config.set(**{"array.slicing.split_large_chunks": True}):
         ds = ds.isel(indexers={dim: slice(sl_start, sl_end)})
     return ds
 
 
 def _select_bounds(
-    ds : Union[xr.Dataset, xr.DataArray],
-    bounds : Tuple[float, float, float, float],
+    ds: Union[xr.Dataset, xr.DataArray],
+    bounds: Tuple[float, float, float, float],
 ) -> Union[xr.Dataset, xr.DataArray]:
     """Restrict the raster data set to the specified bounds
 
@@ -361,13 +377,15 @@ def _select_bounds(
     """
     ds = _select_bounds_dim(ds, "lat", (bounds[1], bounds[3]))
     mid_lon = 0.5 * (bounds[0] + bounds[2])
-    ds = ds.assign_coords(lon=u_coord.lon_normalize(ds["lon"].values.copy(), center=mid_lon))
+    ds = ds.assign_coords(
+        lon=u_coord.lon_normalize(ds["lon"].values.copy(), center=mid_lon)
+    )
     ds = ds.reindex(lon=np.unique(ds["lon"].values))
     ds = _select_bounds_dim(ds, "lon", (bounds[0], bounds[2]))
     return ds
 
 
-def _sea_level_nc_info(path : Union[pathlib.Path, str]) -> None:
+def _sea_level_nc_info(path: Union[pathlib.Path, str]) -> None:
     """Log information about the spatiotemporal bounds of the specified NetCDF file.
 
     Parameters
@@ -380,19 +398,23 @@ def _sea_level_nc_info(path : Union[pathlib.Path, str]) -> None:
     with xr.open_dataset(path) as ds:
         ds = _nc_rename_vars(ds)
         ds_bounds = (
-            ds["lon"].values.min(), ds["lat"].values.min(),
-            ds["lon"].values.max(), ds["lat"].values.max(),
+            ds["lon"].values.min(),
+            ds["lat"].values.min(),
+            ds["lon"].values.max(),
+            ds["lat"].values.max(),
         )
         ds_period = (ds["time"][0], ds["time"][-1])
         LOGGER.info("Sea level data available within bounds %s", ds_bounds)
         LOGGER.info(
             "Sea level data available within period from %04d-%02d till %04d-%02d",
-            ds_period[0].dt.year, ds_period[0].dt.month,
-            ds_period[1].dt.year, ds_period[1].dt.month,
+            ds_period[0].dt.year,
+            ds_period[0].dt.month,
+            ds_period[1].dt.year,
+            ds_period[1].dt.month,
         )
 
 
-def _nc_rename_vars(ds : xr.Dataset) -> xr.Dataset:
+def _nc_rename_vars(ds: xr.Dataset) -> xr.Dataset:
     """Rename several coordinate and data variable names to their defaults
 
     The default names are "lon", "lat", "time", and "zos" (for sea surface height).
@@ -408,10 +430,10 @@ def _nc_rename_vars(ds : xr.Dataset) -> xr.Dataset:
     xr.Dataset
     """
     var_names = {
-        'lon': ('coords', ["longitude", "lon", "x"]),
-        'lat': ('coords', ["latitude", "lat", "y"]),
-        'time': ('coords', ["time", "date", "datetime"]),
-        'zos': ('variables', ["zos", "sla", "ssh", "adt"]),
+        "lon": ("coords", ["longitude", "lon", "x"]),
+        "lat": ("coords", ["latitude", "lat", "y"]),
+        "time": ("coords", ["time", "date", "datetime"]),
+        "zos": ("variables", ["zos", "sla", "ssh", "adt"]),
     }
     for new_name, (var_type, all_names) in var_names.items():
         old_name = [c for c in getattr(ds, var_type) if c.lower() in all_names][0]

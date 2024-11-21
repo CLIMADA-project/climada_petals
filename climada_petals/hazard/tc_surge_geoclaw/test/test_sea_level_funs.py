@@ -37,7 +37,7 @@ def _test_altimetry_nc():
     """
     client = Client()
     _, [altimetry_nc] = client.download_dataset(
-        client.get_dataset_info(name='test_altimetry_tubuai', status='test_dataset')
+        client.get_dataset_info(name="test_altimetry_tubuai", status="test_dataset")
     )
     return altimetry_nc
 

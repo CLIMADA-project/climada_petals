@@ -35,7 +35,7 @@ DEG_TO_NM = 60
 """Unit conversion factors."""
 
 
-class TCSurgeEvents():
+class TCSurgeEvents:
     """Periods and areas along TC track where centroids are reachable by surge
 
     When iterating over this object, it will return single events represented
@@ -74,9 +74,15 @@ class TCSurgeEvents():
         For each event, a mask along first axis of `centroids` indicating which centroids are
         reachable by surge during this landfall event.
     """
+
     keys = [
-        'period', 'time_mask', 'time_mask_buffered', 'wind_area', 'landfall_area',
-        'surge_areas', 'centroid_mask',
+        "period",
+        "time_mask",
+        "time_mask_buffered",
+        "wind_area",
+        "landfall_area",
+        "surge_areas",
+        "centroid_mask",
     ]
     """Keys that are available in each dict returned when iterating over this object"""
 
@@ -101,7 +107,7 @@ class TCSurgeEvents():
     minwind_kt = 34
     """The wind speed threshold (in knots) for a track position to be considered."""
 
-    def __init__(self, track : xr.Dataset, centroids : np.ndarray) -> None:
+    def __init__(self, track: xr.Dataset, centroids: np.ndarray) -> None:
         """Determine temporal periods and geographical regions where the storm
         affects the centroids
 
@@ -117,29 +123,27 @@ class TCSurgeEvents():
 
         locs = np.stack([self.track["lat"], self.track["lon"]], axis=1)
         self.d_centroids = u_coord.dist_approx(
-            locs[None, :, 0], locs[None, :, 1],
-            self.centroids[None, :, 0], self.centroids[None, :, 1],
+            locs[None, :, 0],
+            locs[None, :, 1],
+            self.centroids[None, :, 0],
+            self.centroids[None, :, 1],
             method="geosphere",
         )[0]
 
         self._set_periods()
         self.time_mask = [self._period_to_mask(p) for p in self.period]
         self.time_mask_buffered = [
-            self._period_to_mask(p, buffer=self.period_buffer_d)
-            for p in self.period
+            self._period_to_mask(p, buffer=self.period_buffer_d) for p in self.period
         ]
         self._set_areas()
         self._remove_harmless_events()
-
 
     def __iter__(self):
         for i_event in range(self.nevents):
             yield {key: getattr(self, key)[i_event] for key in self.keys}
 
-
     def __len__(self) -> int:
         return self.nevents
-
 
     def _remove_harmless_events(self) -> None:
         """Remove events without affected areas (surge_areas)"""
@@ -148,13 +152,15 @@ class TCSurgeEvents():
             setattr(self, key, [getattr(self, key)[i] for i in relevant_idx])
         self.nevents = len(relevant_idx)
 
-
     def _set_periods(self) -> None:
         """Determine beginning and end of landfall events."""
-        radii = np.fmax(
-            self.lf_roci_factor * self.track["radius_oci"].values,
-            self.lf_rmw_factor * self.track["radius_max_wind"].values,
-        ) * NM_TO_KM
+        radii = (
+            np.fmax(
+                self.lf_roci_factor * self.track["radius_oci"].values,
+                self.lf_rmw_factor * self.track["radius_max_wind"].values,
+            )
+            * NM_TO_KM
+        )
         centr_counts = np.count_nonzero(self.d_centroids < radii[:, None], axis=1)
         # below a certain wind speed, winds are not strong enough for significant surge
         mask = (centr_counts > 1) & (self.track["max_sustained_wind"] > self.minwind_kt)
@@ -166,8 +172,10 @@ class TCSurgeEvents():
             if start is not None:
                 # periods cover at most {maxlen_h} hours and a split will be forced
                 # at breaks of more than {maxbreak_h} hours.
-                exceed_maxbreak = (date - end) / np.timedelta64(1, 'h') > self.maxbreak_h
-                exceed_maxlen = (date - start) / np.timedelta64(1, 'h') > self.maxlen_h
+                exceed_maxbreak = (date - end) / np.timedelta64(
+                    1, "h"
+                ) > self.maxbreak_h
+                exceed_maxlen = (date - start) / np.timedelta64(1, "h") > self.maxlen_h
                 if exceed_maxlen or exceed_maxbreak:
                     period.append((start, end))
                     start = end = None
@@ -180,11 +188,10 @@ class TCSurgeEvents():
         self.period = period
         self.nevents = len(self.period)
 
-
     def _period_to_mask(
         self,
-        period : Tuple[np.datetime64, np.datetime64],
-        buffer : Union[Tuple[float, float], float] = 0.0,
+        period: Tuple[np.datetime64, np.datetime64],
+        buffer: Union[Tuple[float, float], float] = 0.0,
     ) -> np.ndarray:
         """Compute buffered 1d-mask over track time series from period
 
@@ -201,12 +208,13 @@ class TCSurgeEvents():
         """
         if not isinstance(buffer, tuple):
             buffer = (buffer, buffer)
-        diff_start = np.array([(t - period[0]) / np.timedelta64(1, 'D')
-                               for t in self.track["time"]])
-        diff_end = np.array([(t - period[1]) / np.timedelta64(1, 'D')
-                             for t in self.track["time"]])
+        diff_start = np.array(
+            [(t - period[0]) / np.timedelta64(1, "D") for t in self.track["time"]]
+        )
+        diff_end = np.array(
+            [(t - period[1]) / np.timedelta64(1, "D") for t in self.track["time"]]
+        )
         return (diff_start >= -buffer[0]) & (diff_end <= buffer[1])
-
 
     def _set_areas(self) -> None:
         """For each event, determine areas affected by wind and surge."""
@@ -227,47 +235,54 @@ class TCSurgeEvents():
 
             # wind area (maximum bounds to consider)
             pad = self.total_roci_factor * track["radius_oci"].values / DEG_TO_NM
-            self.wind_area.append(_round_bounds_enlarge(
-                (track["lon"].values - pad).min(),
-                (track["lat"].values - pad).min(),
-                (track["lon"].values + pad).max(),
-                (track["lat"].values + pad).max(),
-                precision=5,
-            ))
+            self.wind_area.append(
+                _round_bounds_enlarge(
+                    (track["lon"].values - pad).min(),
+                    (track["lat"].values - pad).min(),
+                    (track["lon"].values + pad).max(),
+                    (track["lat"].values + pad).max(),
+                    precision=5,
+                )
+            )
 
             # landfall area
             pad = lf_radii / DEG_TO_NM
-            self.landfall_area.append(_round_bounds_enlarge(
-                (track["lon"].values - pad)[mask].min(),
-                (track["lat"].values - pad)[mask].min(),
-                (track["lon"].values + pad)[mask].max(),
-                (track["lat"].values + pad)[mask].max(),
-                precision=2,
-            ))
+            self.landfall_area.append(
+                _round_bounds_enlarge(
+                    (track["lon"].values - pad)[mask].min(),
+                    (track["lat"].values - pad)[mask].min(),
+                    (track["lon"].values + pad)[mask].max(),
+                    (track["lat"].values + pad)[mask].max(),
+                    precision=2,
+                )
+            )
 
             # surge areas
             lf_radii *= NM_TO_KM
             centroids_mask = np.any(
-                self.d_centroids[mask_buf][mask] < lf_radii[mask, None], axis=0)
+                self.d_centroids[mask_buf][mask] < lf_radii[mask, None], axis=0
+            )
             points = self.centroids[centroids_mask, ::-1]
             surge_areas = []
             if points.shape[0] > 0:
                 pt_bounds = tuple(points.min(axis=0)) + tuple(points.max(axis=0))
                 pt_size = (pt_bounds[2] - pt_bounds[0]) * (pt_bounds[3] - pt_bounds[1])
-                if pt_size < (2 * lf_radii.max() / u_const.ONE_LAT_KM)**2:
+                if pt_size < (2 * lf_radii.max() / u_const.ONE_LAT_KM) ** 2:
                     small_bounds = [pt_bounds]
                 else:
                     small_bounds, pt_size = _boxcover_points_along_axis(points, 3)
-                min_size = 3. / (60. * 60.)
-                if pt_size > (2 * min_size)**2:
+                min_size = 3.0 / (60.0 * 60.0)
+                if pt_size > (2 * min_size) ** 2:
                     for bounds in small_bounds:
-                        surge_areas.append(_round_bounds_enlarge(
-                            bounds[0] - min_size,
-                            bounds[1] - min_size,
-                            bounds[2] + min_size,
-                            bounds[3] + min_size,
-                            precision=1,
-                        ))
+                        surge_areas.append(
+                            _round_bounds_enlarge(
+                                bounds[0] - min_size,
+                                bounds[1] - min_size,
+                                bounds[2] + min_size,
+                                bounds[3] + min_size,
+                                precision=1,
+                            )
+                        )
             surge_areas = [tuple([float(b) for b in bounds]) for bounds in surge_areas]
             self.surge_areas.append(surge_areas)
 
@@ -282,11 +297,10 @@ class TCSurgeEvents():
                 )
             self.centroid_mask.append(centroids_mask)
 
-
     def plot_areas(
         self,
-        path : Optional[Union[pathlib.Path, str]] = None,
-        pad_deg : float = 5.5,
+        path: Optional[Union[pathlib.Path, str]] = None,
+        pad_deg: float = 5.5,
     ) -> None:
         """Plot areas associated with this track's landfall events
 
@@ -328,7 +342,9 @@ def _round_bounds_enlarge(x_min, y_min, x_max, y_max, precision=1):
     )
 
 
-def _boxcover_points_along_axis(points : np.ndarray, nsplits : int) -> Tuple[List[Tuple], float]:
+def _boxcover_points_along_axis(
+    points: np.ndarray, nsplits: int
+) -> Tuple[List[Tuple], float]:
     """Cover n-dimensional points with grid-aligned boxes
 
     Parameters
@@ -351,7 +367,8 @@ def _boxcover_points_along_axis(points : np.ndarray, nsplits : int) -> Tuple[Lis
     final_boxes_size = 1 + np.prod(bounds_max - bounds_min)
     for axis in range(ndim):
         splits = [
-            ((nsplits - i) / nsplits) * bounds_min[axis] + (i / nsplits) * bounds_max[axis]
+            ((nsplits - i) / nsplits) * bounds_min[axis]
+            + (i / nsplits) * bounds_max[axis]
             for i in range(1, nsplits)
         ]
         boxes = []
@@ -361,9 +378,8 @@ def _boxcover_points_along_axis(points : np.ndarray, nsplits : int) -> Tuple[Lis
             elif i == nsplits - 1:
                 mask = points[:, axis] > splits[-1]
             else:
-                mask = (
-                    (points[:, axis] <= splits[i])
-                    & (points[:, axis] > splits[i - 1])
+                mask = (points[:, axis] <= splits[i]) & (
+                    points[:, axis] > splits[i - 1]
                 )
             masked_points = points[mask, :]
             if masked_points.shape[0] > 0:

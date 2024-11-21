@@ -42,7 +42,7 @@ from .tc_surge_events import TCSurgeEvents
 
 LOGGER = logging.getLogger(__name__)
 
-HAZ_TYPE = 'TCSurgeGeoClaw'
+HAZ_TYPE = "TCSurgeGeoClaw"
 """Hazard type acronym for this module."""
 
 GEOCLAW_WORK_DIR = CONFIG.hazard.tc_surge_geoclaw.geoclaw_work_dir.dir()
@@ -87,7 +87,8 @@ class TCSurgeGeoClaw(Hazard):
         Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
         can manually pickle it in a separate file using the `write_gauge_data` method.
     """
-    vars_opt = Hazard.vars_opt.union({'category'})
+
+    vars_opt = Hazard.vars_opt.union({"category"})
     """Names of variables that are not needed to compute the impact."""
 
     def __init__(
@@ -128,7 +129,7 @@ class TCSurgeGeoClaw(Hazard):
             Due to this format, this data will NOT be stored when using `write_hdf5`. However, you
             can manually pickle it in a separate file using the `write_gauge_data` method.
         """
-        kwargs.setdefault('haz_type', HAZ_TYPE)
+        kwargs.setdefault("haz_type", HAZ_TYPE)
         Hazard.__init__(self, **kwargs)
         self.category = category if category is not None else np.array([], int)
         self.basin = basin if basin is not None else []
@@ -137,15 +138,15 @@ class TCSurgeGeoClaw(Hazard):
     @classmethod
     def from_tc_tracks(
         cls,
-        tracks : TCTracks,
-        centroids : Centroids,
-        topo_path : Union[pathlib.Path, str],
-        max_dist_eye_deg : float = 5.5,
-        max_dist_inland_km : float = 50.0,
-        max_dist_offshore_km : float = 10.0,
-        max_latitude : float = 61.0,
-        geoclaw_kwargs : Optional[dict] = None,
-        pool : Any = None,
+        tracks: TCTracks,
+        centroids: Centroids,
+        topo_path: Union[pathlib.Path, str],
+        max_dist_eye_deg: float = 5.5,
+        max_dist_inland_km: float = 50.0,
+        max_dist_offshore_km: float = 10.0,
+        max_latitude: float = 61.0,
+        geoclaw_kwargs: Optional[dict] = None,
+        pool: Any = None,
     ):
         """Generate a TC surge hazard instance from a TCTracks object
 
@@ -253,37 +254,44 @@ class TCSurgeGeoClaw(Hazard):
 
         max_dist_coast_km = (max_dist_offshore_km, max_dist_inland_km)
         coastal_idx = _get_coastal_centroids_idx(
-            centroids, max_dist_coast_km, max_latitude=max_latitude,
+            centroids,
+            max_dist_coast_km,
+            max_latitude=max_latitude,
         )
 
-        LOGGER.info('Computing TC surge of %d tracks on %d centroids.',
-                    tracks.size, coastal_idx.size)
+        LOGGER.info(
+            "Computing TC surge of %d tracks on %d centroids.",
+            tracks.size,
+            coastal_idx.size,
+        )
 
-        haz = cls.concat([
-            cls.from_xr_track(
-                track,
-                centroids,
-                coastal_idx,
-                topo_path,
-                max_dist_eye_deg=max_dist_eye_deg,
-                geoclaw_kwargs={"resume_i": resume_i, **geoclaw_kwargs},
-                pool=pool,
-            )
-            for resume_i, track in enumerate(tracks.data)
-        ])
+        haz = cls.concat(
+            [
+                cls.from_xr_track(
+                    track,
+                    centroids,
+                    coastal_idx,
+                    topo_path,
+                    max_dist_eye_deg=max_dist_eye_deg,
+                    geoclaw_kwargs={"resume_i": resume_i, **geoclaw_kwargs},
+                    pool=pool,
+                )
+                for resume_i, track in enumerate(tracks.data)
+            ]
+        )
         TropCyclone.frequency_from_tracks(haz, tracks.data)
         return haz
 
     @classmethod
     def from_xr_track(
         cls,
-        track : xr.Dataset,
-        centroids : Centroids,
-        coastal_idx : np.ndarray,
-        topo_path : Union[pathlib.Path, str],
-        max_dist_eye_deg : float = 5.5,
-        geoclaw_kwargs : Optional[dict] = None,
-        pool : Any = None,
+        track: xr.Dataset,
+        centroids: Centroids,
+        coastal_idx: np.ndarray,
+        topo_path: Union[pathlib.Path, str],
+        max_dist_eye_deg: float = 5.5,
+        geoclaw_kwargs: Optional[dict] = None,
+        pool: Any = None,
     ):
         """Generate a TC surge hazard from a single xarray track dataset
 
@@ -324,13 +332,15 @@ class TCSurgeGeoClaw(Hazard):
             pool=pool,
         )
         intensity = sparse.csr_matrix(intensity)
-        date = np.array([
-            dt.datetime(
-                track["time"].dt.year.values[0],
-                track["time"].dt.month.values[0],
-                track["time"].dt.day.values[0]
-            ).toordinal()
-        ])
+        date = np.array(
+            [
+                dt.datetime(
+                    track["time"].dt.year.values[0],
+                    track["time"].dt.month.values[0],
+                    track["time"].dt.day.values[0],
+                ).toordinal()
+            ]
+        )
         return cls(
             centroids=centroids,
             intensity=intensity,
@@ -357,7 +367,7 @@ class TCSurgeGeoClaw(Hazard):
         Hazard.write_hdf5(self, *args, **kwargs)
         self.gauge_data = gauge_data
 
-    def write_gauge_data(self, file_name : Union[pathlib.Path, str]) -> None:
+    def write_gauge_data(self, file_name: Union[pathlib.Path, str]) -> None:
         """Write this object's gauge_data attribute to a file in pickle format
 
         Parameters
@@ -368,7 +378,7 @@ class TCSurgeGeoClaw(Hazard):
         with open(file_name, "wb") as fp:
             pickle.dump(self.gauge_data, fp)
 
-    def read_gauge_data(self, file_name : Union[pathlib.Path, str]) -> None:
+    def read_gauge_data(self, file_name: Union[pathlib.Path, str]) -> None:
         """Overwrite this object's gauge_data attribute by data from a file
 
         Parameters
@@ -381,9 +391,9 @@ class TCSurgeGeoClaw(Hazard):
 
 
 def _get_coastal_centroids_idx(
-    centroids : Centroids,
-    max_dist_coast_km : Union[float, Tuple[float, float]],
-    max_latitude : float = 90.0,
+    centroids: Centroids,
+    max_dist_coast_km: Union[float, Tuple[float, float]],
+    max_latitude: float = 90.0,
 ) -> np.ndarray:
     """Get indices of coastal centroids
 
@@ -411,19 +421,19 @@ def _get_coastal_centroids_idx(
         centroids.set_meta_to_lat_lon()
 
     dist_coast = centroids.get_dist_coast(signed=True)
-    coastal_msk = (dist_coast <= max_dist_offshore_km * 1000)
-    coastal_msk &= (dist_coast >= -max_dist_inland_km * 1000)
-    coastal_msk &= (np.abs(centroids.lat) <= max_latitude)
+    coastal_msk = dist_coast <= max_dist_offshore_km * 1000
+    coastal_msk &= dist_coast >= -max_dist_inland_km * 1000
+    coastal_msk &= np.abs(centroids.lat) <= max_latitude
     return coastal_msk.nonzero()[0]
 
 
 def _geoclaw_surge_from_track(
-    track : xr.Dataset,
-    centroids : np.ndarray,
-    topo_path : Union[pathlib.Path, str],
-    max_dist_eye_deg : float = 5.5,
-    geoclaw_kwargs : Optional[dict] = None,
-    pool : Any = None,
+    track: xr.Dataset,
+    centroids: np.ndarray,
+    topo_path: Union[pathlib.Path, str],
+    max_dist_eye_deg: float = 5.5,
+    geoclaw_kwargs: Optional[dict] = None,
+    pool: Any = None,
 ) -> Tuple[np.ndarray, List[dict]]:
     """Compute TC surge height on centroids from a single track dataset
 
@@ -464,14 +474,15 @@ def _geoclaw_surge_from_track(
     # initialize gauge data
     gauge_data = [
         {
-            'location': g,
-            'base_sea_level': [],
-            'topo_height': [],
-            'time': [],
-            'height_above_ground': [],
-            'height_above_geoid': [],
-            'amr_level': [],
-        } for g in gauges
+            "location": g,
+            "base_sea_level": [],
+            "topo_height": [],
+            "time": [],
+            "height_above_ground": [],
+            "height_above_geoid": [],
+            "amr_level": [],
+        }
+        for g in gauges
     ]
 
     # initialize intensity
@@ -480,7 +491,7 @@ def _geoclaw_surge_from_track(
     # normalize longitudes of centroids and track
     track_bounds = u_coord.latlon_bounds(track["lat"].values, track["lon"].values)
     mid_lon = 0.5 * (track_bounds[0] + track_bounds[2])
-    track['lon'].values[:] = u_coord.lon_normalize(track["lon"].values, center=mid_lon)
+    track["lon"].values[:] = u_coord.lon_normalize(track["lon"].values, center=mid_lon)
     centroids[:, 1] = u_coord.lon_normalize(centroids[:, 1], center=mid_lon)
 
     # restrict to centroids in rectangular bounding box around track
@@ -501,7 +512,9 @@ def _geoclaw_surge_from_track(
             centroids[track_centr_idx, 1],
             intermediate_res=0.008,
         )
-    track_centr_idx = track_centr_idx[(centroids_height > -10) & (centroids_height < 10)]
+    track_centr_idx = track_centr_idx[
+        (centroids_height > -10) & (centroids_height < 10)
+    ]
     track_centr = centroids[track_centr_idx]
 
     if track_centr.shape[0] == 0:
@@ -509,17 +522,19 @@ def _geoclaw_surge_from_track(
         return intensity, gauge_data
 
     # make sure that radius information is available
-    if 'radius_oci' not in track.coords:
-        track['radius_oci'] = xr.zeros_like(track['radius_max_wind'])
-    track['radius_max_wind'][:] = estimate_rmw(
-        track['radius_max_wind'].values,
-        track['central_pressure'].values,
+    if "radius_oci" not in track.coords:
+        track["radius_oci"] = xr.zeros_like(track["radius_max_wind"])
+    track["radius_max_wind"][:] = estimate_rmw(
+        track["radius_max_wind"].values,
+        track["central_pressure"].values,
     )
-    track['radius_oci'][:] = estimate_roci(
-        track['radius_oci'].values,
-        track['central_pressure'].values,
+    track["radius_oci"][:] = estimate_roci(
+        track["radius_oci"].values,
+        track["central_pressure"].values,
     )
-    track['radius_oci'][:] = np.fmax(track['radius_max_wind'].values, track['radius_oci'].values)
+    track["radius_oci"][:] = np.fmax(
+        track["radius_max_wind"].values, track["radius_oci"].values
+    )
 
     # create work directory
     resume_file = geoclaw_kwargs.pop("resume_file", None)
@@ -558,14 +573,16 @@ def _geoclaw_surge_from_track(
         runners = [
             GeoClawRunner(
                 work_dir,
-                track.sel(time=event['time_mask_buffered']),
-                event['period'][0],
+                track.sel(time=event["time_mask_buffered"]),
+                event["period"][0],
                 event,
-                track_centr[event['centroid_mask']],
+                track_centr[event["centroid_mask"]],
                 topo_path,
                 **(
                     # if specified, only recompile the first event, not every single one
-                    geoclaw_kwargs if i_event == 0 else {**geoclaw_kwargs, "recompile": False}
+                    geoclaw_kwargs
+                    if i_event == 0
+                    else {**geoclaw_kwargs, "recompile": False}
                 ),
             )
             for i_event, event in enumerate(events)
@@ -580,13 +597,17 @@ def _geoclaw_surge_from_track(
         surge_h = []
         for event, runner in zip(events, runners):
             event_surge_h = np.zeros(track_centr.shape[0])
-            event_surge_h[event['centroid_mask']] = runner.surge_h
+            event_surge_h[event["centroid_mask"]] = runner.surge_h
             surge_h.append(event_surge_h)
             for igauge, new_gauge_data in enumerate(runner.gauge_data):
-                if len(new_gauge_data['time']) > 0:
+                if len(new_gauge_data["time"]) > 0:
                     for var in [
-                        'base_sea_level', 'topo_height', 'time', 'height_above_ground',
-                        'height_above_geoid', 'amr_level',
+                        "base_sea_level",
+                        "topo_height",
+                        "time",
+                        "height_above_ground",
+                        "height_above_geoid",
+                        "amr_level",
                     ]:
                         gauge_data[igauge][var].append(new_gauge_data[var])
 

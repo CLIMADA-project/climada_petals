@@ -73,7 +73,7 @@ class TestPlotHelpers(unittest.TestCase):
             (-9000.0, (0.00, 0.00, 0.00, 1.0)),  # deepest ocean => black
             (-4000.0, (0.01, 0.16, 0.25, 1.0)),  # deep ocean => dark blue
             (-300.0, (0.15, 0.43, 0.83, 1.0)),  # shallow ocean => medium blue
-            (-1.0, (0.91, 0.94 , 0.71, 1.0)),  # coastal => (blueish) yellow
+            (-1.0, (0.91, 0.94, 0.71, 1.0)),  # coastal => (blueish) yellow
             (1.0, (0.93, 0.97, 0.66, 1.0)),  # coastal => (greenish) yellow
             (30.0, (0.11, 0.55, 0.10, 1.0)),  # low terrain => medium green
             (200.0, (0.17, 0.43, 0.04, 1.0)),  # high terrain => dark green
@@ -114,10 +114,15 @@ class TestMainPlotFunctions(unittest.TestCase):
 
     def test_plot_dems(self):
         """Test plot_dems function"""
-        plot_dems([
-            ((0.0, 0.0, 1.0, 1.0), np.array([[0.4, 0.7], [0.2, 0.0]])),
-            ((0.3, 0.2, 0.8, 0.5), np.array([[4.5, 7.0, 5.3], [13.0, -300.0, -132.2]])),
-        ])
+        plot_dems(
+            [
+                ((0.0, 0.0, 1.0, 1.0), np.array([[0.4, 0.7], [0.2, 0.0]])),
+                (
+                    (0.3, 0.2, 0.8, 0.5),
+                    np.array([[4.5, 7.0, 5.3], [13.0, -300.0, -132.2]]),
+                ),
+            ]
+        )
         fig = plt.gcf()
 
         # the first axes is the (main) GeoAxes, the second is for the color bar

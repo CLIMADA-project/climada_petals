@@ -49,8 +49,8 @@ from .setup_clawpack import clawpack_info
 LOGGER = logging.getLogger(__name__)
 
 
-class GeoClawRunner():
-    """"Wrapper for work directory setup and running of GeoClaw simulations.
+class GeoClawRunner:
+    """ "Wrapper for work directory setup and running of GeoClaw simulations.
 
     Attributes
     ----------
@@ -60,21 +60,22 @@ class GeoClawRunner():
         For each gauge, a dict containing `location`, `base_sea_level`, `topo_height`, `time`,
         `height_above_geoid`, `height_above_ground`, and `amr_level` information.
     """
+
     def __init__(
         self,
-        base_dir : str,
-        track : xr.Dataset,
-        time_offset : np.datetime64,
-        areas : Dict,
-        centroids : np.ndarray,
-        topo_path : Union[pathlib.Path, str],
-        topo_res_as : float = 30.0,
-        gauges : Optional[List] = None,
-        sea_level : Union[Callable, float] = 0.0,
-        outer_pad_deg : float = 5,
-        boundary_conditions : str = "extrap",
-        output_freq_s : float = 0.0,
-        recompile : bool = False,
+        base_dir: str,
+        track: xr.Dataset,
+        time_offset: np.datetime64,
+        areas: Dict,
+        centroids: np.ndarray,
+        topo_path: Union[pathlib.Path, str],
+        topo_res_as: float = 30.0,
+        gauges: Optional[List] = None,
+        sea_level: Union[Callable, float] = 0.0,
+        outer_pad_deg: float = 5,
+        boundary_conditions: str = "extrap",
+        output_freq_s: float = 0.0,
+        recompile: bool = False,
     ):
         """Initialize GeoClaw working directory with ClawPack rundata
 
@@ -130,9 +131,15 @@ class GeoClawRunner():
 
         if topo_res_as < 3:
             raise ValueError("Specify a topo resolution of at least 3 arc-seconds!")
-        self.topo_resolution_as = [max(360, topo_res_as), max(120, topo_res_as), topo_res_as]
+        self.topo_resolution_as = [
+            max(360, topo_res_as),
+            max(120, topo_res_as),
+            topo_res_as,
+        ]
 
-        LOGGER.info("Prepare GeoClaw to determine surge on %d centroids", centroids.shape[0])
+        LOGGER.info(
+            "Prepare GeoClaw to determine surge on %d centroids", centroids.shape[0]
+        )
         self.track = track
         self.areas = areas
         self.centroids = centroids
@@ -144,15 +151,16 @@ class GeoClawRunner():
         self.topo_path = topo_path
         self.gauge_data = [
             {
-                'location': g,
-                'base_sea_level': 0,
-                'topo_height': -32768.0,
-                'time': [],
-                'height_above_ground': [],
-                'height_above_geoid': [],
-                'amr_level': [],
-                'in_domain': True,
-            } for g in gauges
+                "location": g,
+                "base_sea_level": 0,
+                "topo_height": -32768.0,
+                "time": [],
+                "height_above_ground": [],
+                "height_above_geoid": [],
+                "amr_level": [],
+                "in_domain": True,
+            }
+            for g in gauges
         ]
         self.sea_level_fun = sea_level
         if np.isscalar(sea_level):
@@ -161,7 +169,7 @@ class GeoClawRunner():
 
         # compute time horizon
         self.time_horizon = tuple(
-            int((t - self.time_offset)  / np.timedelta64(1, 's'))
+            int((t - self.time_offset) / np.timedelta64(1, "s"))
             for t in self.track["time"][[0, -1]]
         )
 
@@ -177,7 +185,8 @@ class GeoClawRunner():
         path = self.work_dir.joinpath("Makefile")
         if not path.exists():
             with path.open("w") as file_p:
-                file_p.write(f"""\
+                file_p.write(
+                    f"""\
 CLAW = {clawpack_info()[0]}
 CLAW_PKG = geoclaw
 EXE = xgeoclaw
@@ -186,14 +195,14 @@ SOURCES = $(CLAW)/riemann/src/rpn2_geoclaw.f \\
           $(CLAW)/riemann/src/rpt2_geoclaw.f \\
           $(CLAW)/riemann/src/geoclaw_riemann_utils.f
 include $(CLAW)/clawutil/src/Makefile.common
-""")
+"""
+                )
         path = self.work_dir.joinpath("setrun.py")
         if not path.exists():
             with path.open("w") as file_p:
                 file_p.write("")
 
         self.write_rundata()
-
 
     def run(self) -> None:
         """Run GeoClaw script and set `surge_h` attribute."""
@@ -211,7 +220,6 @@ include $(CLAW)/clawutil/src/Makefile.common
         except FileNotFoundError:
             self.print_stdout()
             LOGGER.warning("Reading GeoClaw output failed (see output above).")
-
 
     def _run_subprocess(self) -> None:
         LOGGER.info("Running GeoClaw in %s ...", self.work_dir)
@@ -261,20 +269,19 @@ include $(CLAW)/clawutil/src/Makefile.common
             self.print_stdout()
             raise RuntimeError("GeoClaw run failed (see output above).")
 
-
     def print_stdout(self) -> None:
-        """"Print standard (and error) output of GeoClaw run."""
+        """ "Print standard (and error) output of GeoClaw run."""
         if not self.stdout_printed:
             LOGGER.info("Output of 'make .output' in GeoClaw work directory:")
             print(self.stdout)
             # make sure to print at most once
             self.stdout_printed = True
 
-
     def read_fgmax_data(self) -> None:
         """Read fgmax output data from GeoClaw working directory."""
         # pylint: disable=import-outside-toplevel
         from clawpack.geoclaw import fgmax_tools
+
         outdir = self.work_dir.joinpath("_output")
         fg_path = outdir.joinpath("fgmax0001.txt")
 
@@ -290,29 +297,28 @@ include $(CLAW)/clawutil/src/Makefile.common
         self.surge_h[:] = fgmax_grid.h
         self.surge_h[fgmax_grid.arrival_time.mask] = 0
 
-
     def read_gauge_data(self) -> None:
         """Read gauge output data from GeoClaw working directory."""
         # pylint: disable=import-outside-toplevel
         from clawpack.pyclaw.gauges import GaugeSolution
+
         outdir = self.work_dir.joinpath("_output")
         for i_gauge, gauge in enumerate(self.gauge_data):
-            if not gauge['in_domain']:
+            if not gauge["in_domain"]:
                 continue
-            gauge['base_sea_level'] = self.rundata.geo_data.sea_level
+            gauge["base_sea_level"] = self.rundata.geo_data.sea_level
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=UserWarning)
                 # suppress warnings about empty gauge files (which is not a problem for us)
                 g = GaugeSolution(gauge_id=i_gauge + 1, path=outdir)
             if g.t is None:
                 continue
-            gauge['time'] = self.time_offset + g.t * np.timedelta64(1, 's')
-            mask_amr_max = (g.level == g.level.max())
-            gauge['topo_height'] = (g.q[1, mask_amr_max] - g.q[0, mask_amr_max]).mean()
-            gauge['height_above_ground'] = g.q[0, :]
-            gauge['height_above_geoid'] = g.q[1, :]
+            gauge["time"] = self.time_offset + g.t * np.timedelta64(1, "s")
+            mask_amr_max = g.level == g.level.max()
+            gauge["topo_height"] = (g.q[1, mask_amr_max] - g.q[0, mask_amr_max]).mean()
+            gauge["height_above_ground"] = g.q[0, :]
+            gauge["height_above_geoid"] = g.q[1, :]
             gauge["amr_level"] = g.level
-
 
     def write_rundata(self) -> None:
         """Create rundata config files in work directory or read if already existent."""
@@ -326,7 +332,6 @@ include $(CLAW)/clawutil/src/Makefile.common
             with contextlib.redirect_stdout(None):
                 self.rundata.write(out_dir=self.work_dir)
 
-
     def _read_rundata(self) -> bool:
         """Read rundata object from files, return whether it was succesful
 
@@ -337,6 +342,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         # pylint: disable=import-outside-toplevel
         import clawpack.amrclaw.data
         import clawpack.geoclaw.data
+
         self._clear_rundata()
         for dataobject in self.rundata.data_list:
             if isinstance(dataobject, clawpack.geoclaw.data.FixedGridData):
@@ -368,12 +374,11 @@ include $(CLAW)/clawutil/src/Makefile.common
             self.rundata.clawdata.write(out_file=self.work_dir / "claw.data")
         return True
 
-
     def _clear_rundata(self) -> None:
         """Reset the rundata object to its initial, empty state"""
         import clawpack.clawutil.data
-        self.rundata = clawpack.clawutil.data.ClawRunData(pkg="geoclaw", num_dim=2)
 
+        self.rundata = clawpack.clawutil.data.ClawRunData(pkg="geoclaw", num_dim=2)
 
     def _set_rundata_claw(self) -> None:
         """Set the rundata parameters in the `clawdata` category."""
@@ -381,8 +386,12 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.verbosity = 1
         clawdata.checkpt_style = -3
         clawdata.checkpt_interval = 25
-        clawdata.lower = [lim - self.outer_pad_deg for lim in self.areas['wind_area'][:2]]
-        clawdata.upper = [lim + self.outer_pad_deg for lim in self.areas['wind_area'][2:]]
+        clawdata.lower = [
+            lim - self.outer_pad_deg for lim in self.areas["wind_area"][:2]
+        ]
+        clawdata.upper = [
+            lim + self.outer_pad_deg for lim in self.areas["wind_area"][2:]
+        ]
         clawdata.num_cells = [
             # coarsest resolution: appx. 0.25 degrees
             int(np.ceil((clawdata.upper[0] - clawdata.lower[0]) * 4)),
@@ -398,9 +407,9 @@ include $(CLAW)/clawutil/src/Makefile.common
                 (clawdata.tfinal - clawdata.t0) * self.output_freq_s
             )
             clawdata.output_t0 = True
-            clawdata.output_format = 'binary64'
-            clawdata.output_q_components = 'all'
-            clawdata.output_aux_components = 'all'
+            clawdata.output_format = "binary64"
+            clawdata.output_q_components = "all"
+            clawdata.output_aux_components = "all"
             clawdata.output_aux_onlyonce = False
         else:
             clawdata.num_output_times = 0
@@ -408,12 +417,11 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.dt_initial = 0.8 / max(clawdata.num_cells)
         clawdata.cfl_desired = 0.75
         clawdata.num_waves = 3
-        clawdata.limiter = ['mc', 'mc', 'mc']
+        clawdata.limiter = ["mc", "mc", "mc"]
         clawdata.use_fwaves = True
-        clawdata.source_split = 'godunov'
+        clawdata.source_split = "godunov"
         clawdata.bc_lower = [self.boundary_conditions, self.boundary_conditions]
         clawdata.bc_upper = [self.boundary_conditions, self.boundary_conditions]
-
 
     def _set_rundata_amr(self) -> None:
         """Set AMR-related rundata attributes."""
@@ -424,7 +432,15 @@ include $(CLAW)/clawutil/src/Makefile.common
         amrdata.refinement_ratios_y = amrdata.refinement_ratios_x
         amrdata.refinement_ratios_t = amrdata.refinement_ratios_x
         amrdata.amr_levels_max = len(amrdata.refinement_ratios_x) + 1
-        amrdata.aux_type = ['center', 'capacity', 'yleft', 'center', 'center', 'center', 'center']
+        amrdata.aux_type = [
+            "center",
+            "capacity",
+            "yleft",
+            "center",
+            "center",
+            "center",
+            "center",
+        ]
         amrdata.regrid_interval = 3
         amrdata.regrid_buffer_width = 2
         amrdata.verbosity_regrid = 0
@@ -433,17 +449,16 @@ include $(CLAW)/clawutil/src/Makefile.common
         maxlevel = amrdata.amr_levels_max
         (x_1, y_1), (x_2, y_2) = clawdata.lower, clawdata.upper
         regions.append([1, 1, t_1, t_2, x_1, x_2, y_1, y_2])
-        x_1, y_1, x_2, y_2 = self.areas['wind_area']
+        x_1, y_1, x_2, y_2 = self.areas["wind_area"]
         regions.append([1, 4, t_1, t_2, x_1, x_2, y_1, y_2])
-        x_1, y_1, x_2, y_2 = self.areas['landfall_area']
+        x_1, y_1, x_2, y_2 = self.areas["landfall_area"]
         regions.append([max(1, maxlevel - 3), maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
-        for area in self.areas['surge_areas']:
+        for area in self.areas["surge_areas"]:
             x_1, y_1, x_2, y_2 = area
             regions.append([maxlevel - 1, maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
         refinedata.speed_tolerance = list(np.arange(1.0, maxlevel - 2))
         refinedata.variable_dt_refinement_ratios = True
         refinedata.wave_tolerance = 1.0
-
 
     def compute_refinement_ratios(self) -> None:
         # select the refinement ratios so that:
@@ -468,10 +483,11 @@ include $(CLAW)/clawutil/src/Makefile.common
             i_ratio = np.argmin(ratio1 * ratio2)
             ratios += [int(ratio1[i_ratio]), int(ratio2[i_ratio])]
         ratios += [min(8, ratios[-1] + 1)]
-        LOGGER.info("GeoClaw resolution in arc-seconds: %s",
-                    str([f"{3600 * base_res / r:.2f}" for r in np.cumprod([1] + ratios)]))
+        LOGGER.info(
+            "GeoClaw resolution in arc-seconds: %s",
+            str([f"{3600 * base_res / r:.2f}" for r in np.cumprod([1] + ratios)]),
+        )
         return ratios
-
 
     def _set_rundata_geo(self) -> None:
         """Set geo-related rundata attributes."""
@@ -486,33 +502,37 @@ include $(CLAW)/clawutil/src/Makefile.common
         # different friction on land and at sea
         geodata.friction_forcing = True
         frictiondata.variable_friction = True
-        frictiondata.friction_regions.append([
-            clawdata.lower, clawdata.upper, [np.infty, 0.0, -np.infty], [0.050, 0.025],
-        ])
-        geodata.dry_tolerance = 1.e-2
+        frictiondata.friction_regions.append(
+            [
+                clawdata.lower,
+                clawdata.upper,
+                [np.infty, 0.0, -np.infty],
+                [0.050, 0.025],
+            ]
+        )
+        geodata.dry_tolerance = 1.0e-2
 
         # get sea level information for affected areas and time period
         tr_period = (self.track["time"].values[0], self.track["time"].values[-1])
-        geodata.sea_level = np.mean([
-            self.sea_level_fun(area, tr_period)
-            for area in self.areas['surge_areas']
-        ])
+        geodata.sea_level = np.mean(
+            [self.sea_level_fun(area, tr_period) for area in self.areas["surge_areas"]]
+        )
 
         # load elevation data, resolution depending on area of refinement
         topodata.topofiles = []
         areas = [
             tuple(clawdata.lower) + tuple(clawdata.upper),
-            self.areas['landfall_area']
-        ] + self.areas['surge_areas']
+            self.areas["landfall_area"],
+        ] + self.areas["surge_areas"]
         resolutions = self.topo_resolution_as[:2]
-        resolutions += [self.topo_resolution_as[2]] * len(self.areas['surge_areas'])
+        resolutions += [self.topo_resolution_as[2]] * len(self.areas["surge_areas"])
         dems_for_plot = []
         for res_as, bounds in zip(resolutions, areas):
             bounds, topo = _load_topography(self.topo_path, bounds, res_as)
             if 0 in topo.Z.shape:
                 LOGGER.warning("Area is ignored because it is too small.")
                 continue
-            tt3_fname = 'topo_{}s_{}.tt3'.format(res_as, _bounds_to_str(bounds))
+            tt3_fname = "topo_{}s_{}.tt3".format(res_as, _bounds_to_str(bounds))
             tt3_fname = self.work_dir.joinpath(tt3_fname)
             topo.write(tt3_fname)
             topodata.topofiles.append([3, tt3_fname])
@@ -524,7 +544,6 @@ include $(CLAW)/clawutil/src/Makefile.common
             # centroids=self.centroids,
             path=self.work_dir.joinpath("dems.pdf"),
         )
-
 
     def _set_rundata_fgmax(self) -> None:
         """Set monitoring-related rundata attributes."""
@@ -539,12 +558,11 @@ include $(CLAW)/clawutil/src/Makefile.common
         fgmax_grid.tend_max = self.rundata.clawdata.tfinal
         fgmax_grid.dt_check = 0
         fgmax_grid.min_level_check = self.rundata.amrdata.amr_levels_max - 1
-        fgmax_grid.arrival_tol = 1.e-2
+        fgmax_grid.arrival_tol = 1.0e-2
         fgmax_grid.npts = self.centroids.shape[0]
         fgmax_grid.X = self.centroids[:, 1]
         fgmax_grid.Y = self.centroids[:, 0]
         self.rundata.fgmax_data.fgmax_grids.append(fgmax_grid)
-
 
     def _set_rundata_storm(self) -> None:
         """Set storm-related rundata attributes."""
@@ -552,23 +570,27 @@ include $(CLAW)/clawutil/src/Makefile.common
         surge_data.wind_forcing = True
         surge_data.drag_law = 1
         surge_data.pressure_forcing = True
-        surge_data.storm_specification_type = 'holland80'
+        surge_data.storm_specification_type = "holland80"
         surge_data.storm_file = str(self.work_dir.joinpath("track.storm"))
         gc_storm = _climada_xarray_to_geoclaw_storm(
-            self.track, offset=_dt64_to_pydt(self.time_offset),
+            self.track,
+            offset=_dt64_to_pydt(self.time_offset),
         )
-        gc_storm.write(surge_data.storm_file, file_format='geoclaw')
-
+        gc_storm.write(surge_data.storm_file, file_format="geoclaw")
 
     def _set_rundata_gauges(self) -> None:
         """Set gauge-related rundata attributes."""
         clawdata = self.rundata.clawdata
         for i_gauge, gauge in enumerate(self.gauge_data):
-            lat, lon = gauge['location']
-            if (clawdata.lower[0] > lon or clawdata.lower[1] > lat
-                or clawdata.upper[0] < lon or clawdata.upper[1] < lat):
+            lat, lon = gauge["location"]
+            if (
+                clawdata.lower[0] > lon
+                or clawdata.lower[1] > lat
+                or clawdata.upper[0] < lon
+                or clawdata.upper[1] < lat
+            ):
                 # skip gauges outside of model domain
-                gauge['in_domain'] = False
+                gauge["in_domain"] = False
                 continue
             self.rundata.gaugedata.gauges.append(
                 [i_gauge + 1, lon, lat, clawdata.t0, clawdata.tfinal]
@@ -578,8 +600,8 @@ include $(CLAW)/clawutil/src/Makefile.common
 
 
 def _climada_xarray_to_geoclaw_storm(
-    track : xr.Dataset,
-    offset : Optional[dt.datetime] = None,
+    track: xr.Dataset,
+    offset: Optional[dt.datetime] = None,
 ) -> Any:
     """Convert CLIMADA's xarray TC track to GeoClaw storm object
 
@@ -596,11 +618,14 @@ def _climada_xarray_to_geoclaw_storm(
     """
     # pylint: disable=import-outside-toplevel
     from clawpack.geoclaw.surge.storm import Storm
+
     gc_storm = Storm()
     gc_storm.t = _dt64_to_pydt(track["time"].values)
     if offset is not None:
         gc_storm.time_offset = offset
-    gc_storm.eye_location = np.stack([track["lon"].values, track["lat"].values], axis=-1)
+    gc_storm.eye_location = np.stack(
+        [track["lon"].values, track["lat"].values], axis=-1
+    )
     gc_storm.max_wind_speed = track["max_sustained_wind"].values * KN_TO_MS
     gc_storm.max_wind_radius = track["radius_max_wind"].values * NM_TO_KM * 1000
     gc_storm.central_pressure = track["central_pressure"].values * MBAR_TO_PA
@@ -609,9 +634,9 @@ def _climada_xarray_to_geoclaw_storm(
 
 
 def _load_topography(
-    path : Union[pathlib.Path, str],
-    bounds : Tuple[float, float, float, float],
-    res_as : float,
+    path: Union[pathlib.Path, str],
+    bounds: Tuple[float, float, float, float],
+    res_as: float,
 ) -> Tuple[Tuple[float, float, float, float], Any]:
     """Load topographical elevation data in specified bounds and resolution
 
@@ -643,7 +668,12 @@ def _load_topography(
         # without this env-setting, reading might crash in a multi-threaded environment:
         # https://gdal.org/drivers/raster/vrt.html#multi-threading-issues
         zvalues, transform = u_coord.read_raster_bounds(
-            path, bounds, res=res, bands=[1], resampling="average", global_origin=(-180, 90),
+            path,
+            bounds,
+            res=res,
+            bands=[1],
+            resampling="average",
+            global_origin=(-180, 90),
         )
     zvalues = zvalues[0]
     xres, _, xmin, _, yres, ymin = transform[:6]
@@ -655,7 +685,8 @@ def _load_topography(
         zvalues = np.flip(zvalues, axis=0)
         yres, ymin, ymax = -yres, ymax, ymin
     xmin, xmax = u_coord.lon_normalize(
-        np.array([xmin, xmax]), center=0.5 * (bounds[0] + bounds[2]),
+        np.array([xmin, xmax]),
+        center=0.5 * (bounds[0] + bounds[2]),
     )
     bounds = (xmin, ymin, xmax, ymax)
     xcoords = np.arange(xmin + xres / 2, xmax, xres)
@@ -665,7 +696,8 @@ def _load_topography(
     nan_count = nan_msk.sum()
     if nan_count > 0:
         LOGGER.warning(
-            "Elevation data contains %d NaN values that are replaced with -1000!", nan_count,
+            "Elevation data contains %d NaN values that are replaced with -1000!",
+            nan_count,
         )
         zvalues[nan_msk] = -1000
 
@@ -674,7 +706,7 @@ def _load_topography(
     return bounds, topo
 
 
-def _bounds_to_str(bounds : Tuple[float, float, float, float]) -> str:
+def _bounds_to_str(bounds: Tuple[float, float, float, float]) -> str:
     """Convert longitude/latitude bounds to a human-readable string
 
     Example
@@ -692,16 +724,20 @@ def _bounds_to_str(bounds : Tuple[float, float, float, float]) -> str:
     string : str
     """
     lon_min, lat_min, lon_max, lat_max = bounds
-    return '{:.4g}{}-{:.4g}{}_{:.4g}{}-{:.4g}{}'.format(
-        abs(lat_min), 'N' if lat_min >= 0 else 'S',
-        abs(lat_max), 'N' if lat_max >= 0 else 'S',
-        abs(lon_min), 'E' if lon_min >= 0 else 'W',
-        abs(lon_max), 'E' if lon_max >= 0 else 'W',
+    return "{:.4g}{}-{:.4g}{}_{:.4g}{}-{:.4g}{}".format(
+        abs(lat_min),
+        "N" if lat_min >= 0 else "S",
+        abs(lat_max),
+        "N" if lat_max >= 0 else "S",
+        abs(lon_min),
+        "E" if lon_min >= 0 else "W",
+        abs(lon_max),
+        "E" if lon_max >= 0 else "W",
     )
 
 
 def _dt64_to_pydt(
-    date : Union[np.datetime64, np.ndarray],
+    date: Union[np.datetime64, np.ndarray],
 ) -> Union[dt.datetime, List[dt.datetime]]:
     """Convert datetime64 value or array to python datetime object or list
 

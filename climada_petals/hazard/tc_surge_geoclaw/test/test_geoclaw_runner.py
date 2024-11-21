@@ -45,7 +45,7 @@ def _test_bathymetry_tif():
     """
     client = Client()
     _, [bathymetry_tif] = client.download_dataset(
-        client.get_dataset_info(name='test_bathymetry_tubuaix10', status='test_dataset')
+        client.get_dataset_info(name="test_bathymetry_tubuaix10", status="test_dataset")
     )
     return bathymetry_tif
 
@@ -56,23 +56,25 @@ class TestFuncs(unittest.TestCase):
     def test_bounds_to_str(self):
         """Test conversion from lon-lat-bounds tuple to lat-lon string"""
         bounds_str = [
-            [(-4.2, 1.0, -3.05, 2.125), '1N-2.125N_4.2W-3.05W'],
-            [(106.9, -7, 111.6875, 25.1), '7S-25.1N_106.9E-111.7E'],
-            [(-6.9, -7.8334, 11, 25.1), '7.833S-25.1N_6.9W-11E'],
+            [(-4.2, 1.0, -3.05, 2.125), "1N-2.125N_4.2W-3.05W"],
+            [(106.9, -7, 111.6875, 25.1), "7S-25.1N_106.9E-111.7E"],
+            [(-6.9, -7.8334, 11, 25.1), "7.833S-25.1N_6.9W-11E"],
         ]
         for bounds, string in bounds_str:
             str_out = _bounds_to_str(bounds)
             self.assertEqual(str_out, string)
 
-
     def test_dt64_to_pydt(self):
         """Test conversion from datetime64 to python datetime objects"""
         # generate test data
-        dt64 = np.array([
-            '1865-03-07T20:41:02.000000',
-            '2008-02-29T00:05:30.000000',
-            '2013-12-02T00:00:00.000000',
-        ], dtype='datetime64[us]')
+        dt64 = np.array(
+            [
+                "1865-03-07T20:41:02.000000",
+                "2008-02-29T00:05:30.000000",
+                "2013-12-02T00:00:00.000000",
+            ],
+            dtype="datetime64[us]",
+        )
         pydt = [
             dt.datetime(1865, 3, 7, 20, 41, 2),
             dt.datetime(2008, 2, 29, 0, 5, 30),
@@ -102,7 +104,7 @@ class TestFuncs(unittest.TestCase):
             (-153.62, -28.79, -144.75, -18.44),
             (-153, -20, -150, -19),
             (-152, -28.5, -145, -27.5),
-            (-150.0, -23.3, -149.6, -23.0)
+            (-150.0, -23.3, -149.6, -23.0),
         ]
         zvalues = []
         for res_as in resolutions:
@@ -123,7 +125,7 @@ class TestFuncs(unittest.TestCase):
 
             # all but last row are positive
             # this also checks that the orientation is correct
-            np.testing.assert_array_less(0, zvalues[-1][:-1,:])
+            np.testing.assert_array_less(0, zvalues[-1][:-1, :])
             self.assertLess(zvalues[-1].min(), 0)
             self.assertLess(150, zvalues[-1].max())
 
@@ -146,28 +148,58 @@ class TestRunner(unittest.TestCase):
     def test_init(self):
         """Test object initialization"""
         # track and centroids are taken from the integration test
-        track = xr.Dataset({
-            'radius_max_wind': ('time', [15., 15, 15, 15, 15, 17, 20, 20]),
-            'radius_oci': ('time', [202., 202, 202, 202, 202, 202, 202, 202]),
-            'max_sustained_wind': ('time', [105., 97, 90, 85, 80, 72, 65, 66]),
-            'central_pressure': ('time', [944., 950, 956, 959, 963, 968, 974, 975]),
-            'time_step': ('time', np.full((8,), 3, dtype=np.float64)),
-        }, coords={
-            'time': np.arange('2010-02-05T09:00', '2010-02-06T09:00',
-                              np.timedelta64(3, 'h'), dtype='datetime64[ns]'),
-            'lat': ('time', [-26.33, -25.54, -24.79, -24.05,
-                             -23.35, -22.7, -22.07, -21.50]),
-            'lon': ('time', [-147.27, -148.0, -148.51, -148.95,
-                             -149.41, -149.85, -150.27, -150.56]),
-        }, attrs={
-            'sid': '2010029S12177_test',
-        })
-        centroids = np.array([
-            [-23.8908, -149.8048], [-23.8628, -149.7431],
-            [-23.7032, -149.3850], [-23.7183, -149.2211],
-            [-23.5781, -149.1434], [-23.5889, -148.8824],
-            [-23.2351, -149.9070], [-23.2049, -149.7927],
-        ])
+        track = xr.Dataset(
+            {
+                "radius_max_wind": ("time", [15.0, 15, 15, 15, 15, 17, 20, 20]),
+                "radius_oci": ("time", [202.0, 202, 202, 202, 202, 202, 202, 202]),
+                "max_sustained_wind": ("time", [105.0, 97, 90, 85, 80, 72, 65, 66]),
+                "central_pressure": (
+                    "time",
+                    [944.0, 950, 956, 959, 963, 968, 974, 975],
+                ),
+                "time_step": ("time", np.full((8,), 3, dtype=np.float64)),
+            },
+            coords={
+                "time": np.arange(
+                    "2010-02-05T09:00",
+                    "2010-02-06T09:00",
+                    np.timedelta64(3, "h"),
+                    dtype="datetime64[ns]",
+                ),
+                "lat": (
+                    "time",
+                    [-26.33, -25.54, -24.79, -24.05, -23.35, -22.7, -22.07, -21.50],
+                ),
+                "lon": (
+                    "time",
+                    [
+                        -147.27,
+                        -148.0,
+                        -148.51,
+                        -148.95,
+                        -149.41,
+                        -149.85,
+                        -150.27,
+                        -150.56,
+                    ],
+                ),
+            },
+            attrs={
+                "sid": "2010029S12177_test",
+            },
+        )
+        centroids = np.array(
+            [
+                [-23.8908, -149.8048],
+                [-23.8628, -149.7431],
+                [-23.7032, -149.3850],
+                [-23.7183, -149.2211],
+                [-23.5781, -149.1434],
+                [-23.5889, -148.8824],
+                [-23.2351, -149.9070],
+                [-23.2049, -149.7927],
+            ]
+        )
         time_offset = track["time"].values[3]
         areas = {
             "period": (track["time"].values[0], track["time"].values[-1]),
@@ -175,13 +207,18 @@ class TestRunner(unittest.TestCase):
             "time_mask_buffered": np.ones_like(track["time"].values, dtype=bool),
             "wind_area": (-151.0, -25.0, -147.0, -22.0),
             "landfall_area": (-150.0, -24.0, -148.0, -23.0),
-            "surge_areas": [(-150.0, -24.3, -149.0, -23.0), (-149.0, -24.0, -148.0, -22.6)],
+            "surge_areas": [
+                (-150.0, -24.3, -149.0, -23.0),
+                (-149.0, -24.0, -148.0, -22.6),
+            ],
             "centroid_mask": np.ones_like(centroids[:, 0], dtype=bool),
         }
         topo_path = _test_bathymetry_tif()
         with tempfile.TemporaryDirectory() as base_dir:
             base_dir = pathlib.Path(base_dir)
-            runner = GeoClawRunner(base_dir, track, time_offset, areas, centroids, topo_path)
+            runner = GeoClawRunner(
+                base_dir, track, time_offset, areas, centroids, topo_path
+            )
 
             # creates a new directory in the `base_dir`, with name referring to the time offset
             contents = list(base_dir.iterdir())
@@ -194,7 +231,13 @@ class TestRunner(unittest.TestCase):
             # check a selection of files (in practice, a lot more files are needed, but we don't
             # want to enforce an exact set of necessary files here):
             contents = [f.name for f in work_dir.iterdir()]
-            for i in ["Makefile", "claw.data", "geoclaw.data", "topo.data", "track.storm"]:
+            for i in [
+                "Makefile",
+                "claw.data",
+                "geoclaw.data",
+                "topo.data",
+                "track.storm",
+            ]:
                 self.assertIn(i, contents)
 
 

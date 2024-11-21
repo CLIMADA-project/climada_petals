@@ -78,7 +78,7 @@ def clawpack_info() -> Tuple[Optional[pathlib.Path], Tuple[str]]:
     return path, tuple(decorators)
 
 
-def setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) -> None:
+def setup_clawpack(version: str = CLAWPACK_VERSION, overwrite: bool = False) -> None:
     """Install the specified version of clawpack if not already present
 
     Parameters
@@ -102,13 +102,22 @@ def setup_clawpack(version : str = CLAWPACK_VERSION, overwrite: bool = False) ->
         LOGGER.info("Installing Clawpack version %s", version)
         pkg = f"git+{CLAWPACK_GIT_URL}@{version}#egg=clawpack"
         cmd = [
-            sys.executable, "-m", "pip", "install", "--src", CLAWPACK_SRC_DIR,
-            "--no-build-isolation", "-e", pkg,
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--src",
+            CLAWPACK_SRC_DIR,
+            "--no-build-isolation",
+            "-e",
+            pkg,
         ]
         try:
             subprocess.check_output(cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
-            LOGGER.warning("pip install failed with return code %d and stdout:", exc.returncode)
+            LOGGER.warning(
+                "pip install failed with return code %d and stdout:", exc.returncode
+            )
             print(exc.output.decode("utf-8"))
             raise RuntimeError(
                 "pip install failed with return code %d (see output above)."

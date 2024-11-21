@@ -40,9 +40,9 @@ from climada.hazard import Centroids
 
 
 def plot_surge_events(
-    obj : Any,
-    path : Optional[Union[pathlib.Path, str]] = None,
-    pad_deg : float = 5.5,
+    obj: Any,
+    path: Optional[Union[pathlib.Path, str]] = None,
+    pad_deg: float = 5.5,
 ) -> None:
     """Plot areas associated with a track's landfall events
 
@@ -65,16 +65,17 @@ def plot_surge_events(
     proj_data = ccrs.PlateCarree()
     proj_plot = ccrs.PlateCarree(central_longitude=mid_lon)
     aspect_ratio = 1.124 * (
-        (total_bounds[2] - total_bounds[0])
-        / (total_bounds[3] - total_bounds[1])
+        (total_bounds[2] - total_bounds[0]) / (total_bounds[3] - total_bounds[1])
     )
     fig = plt.figure(
         # the longer side is 10 inches long, the other is scaled according to the aspect ratio
-        figsize=(10, 10 / aspect_ratio) if aspect_ratio >= 1 else (aspect_ratio * 10, 10),
+        figsize=(
+            (10, 10 / aspect_ratio) if aspect_ratio >= 1 else (aspect_ratio * 10, 10)
+        ),
         dpi=100,
     )
     axes = fig.add_subplot(111, projection=proj_plot)
-    axes.spines['geo'].set_linewidth(0.5)
+    axes.spines["geo"].set_linewidth(0.5)
     axes.set_extent(
         (total_bounds[0], total_bounds[2], total_bounds[1], total_bounds[3]),
         crs=proj_data,
@@ -87,14 +88,14 @@ def plot_surge_events(
     grid.yformatter = LATITUDE_FORMATTER
 
     # plot coastlines
-    axes.add_feature(cfeature.OCEAN.with_scale('50m'), linewidth=0.1)
+    axes.add_feature(cfeature.OCEAN.with_scale("50m"), linewidth=0.1)
 
     # plot TC track with masks
     axes.plot(
         obj.track["lon"],
         obj.track["lat"],
         transform=proj_data,
-        color='k',
+        color="k",
         linewidth=0.5,
     )
     for mask in obj.time_mask_buffered:
@@ -102,14 +103,14 @@ def plot_surge_events(
             obj.track["lon"][mask],
             obj.track["lat"][mask],
             transform=proj_data,
-            color='k',
+            color="k",
             linewidth=1.5,
         )
 
     # plot rectangular areas
     linestep = max(0.5, 1 - 0.1 * obj.nevents)
     linew = 1 + linestep * obj.nevents
-    color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     for i_event, mask in enumerate(obj.time_mask):
         axes.plot(
             obj.track["lon"][mask],
@@ -125,8 +126,11 @@ def plot_surge_events(
         ] + obj.surge_areas[i_event]
         for bounds in areas:
             _plot_bounds(
-                axes, bounds, transform=proj_data,
-                color=color_cycle[i_event], linewidth=linew,
+                axes,
+                bounds,
+                transform=proj_data,
+                color=color_cycle[i_event],
+                linewidth=linew,
             )
 
     # plot track data points
@@ -138,8 +142,10 @@ def plot_surge_events(
     )
 
     # adjust and output to file or screen
-    fig.subplots_adjust(left=0.01, bottom=0.03, right=0.99, top=0.99, wspace=0, hspace=0)
-    if path is None or not hasattr(__main__, '__file__'):
+    fig.subplots_adjust(
+        left=0.01, bottom=0.03, right=0.99, top=0.99, wspace=0, hspace=0
+    )
+    if path is None or not hasattr(__main__, "__file__"):
         plt.show()
     if path is not None:
         canvas = FigureCanvasAgg(fig)
@@ -148,10 +154,10 @@ def plot_surge_events(
 
 
 def plot_dems(
-    dems : List,
-    track : Optional[xr.Dataset] = None,
-    centroids : Optional[Centroids] = None,
-    path : Optional[Union[pathlib.Path, str]] = None,
+    dems: List,
+    track: Optional[xr.Dataset] = None,
+    centroids: Optional[Centroids] = None,
+    path: Optional[Union[pathlib.Path, str]] = None,
 ) -> None:
     """Plot given DEMs as rasters to one worldmap
 
@@ -168,12 +174,12 @@ def plot_dems(
         If given, save plot in this location. Default: None
     """
     # adjust properties of the colorbar (ignored by cartopy axes)
-    matplotlib.rc('axes', linewidth=0.5)
-    matplotlib.rc('font', size=7, family='serif')
-    matplotlib.rc('xtick', top=True, direction='out')
-    matplotlib.rc('xtick.major', size=2.5, width=0.5)
-    matplotlib.rc('ytick', right=True, direction='out')
-    matplotlib.rc('ytick.major', size=2.5, width=0.5)
+    matplotlib.rc("axes", linewidth=0.5)
+    matplotlib.rc("font", size=7, family="serif")
+    matplotlib.rc("xtick", top=True, direction="out")
+    matplotlib.rc("xtick.major", size=2.5, width=0.5)
+    matplotlib.rc("ytick", right=True, direction="out")
+    matplotlib.rc("ytick.major", size=2.5, width=0.5)
 
     total_bounds = (
         min(bounds[0] for bounds, _ in dems),
@@ -182,17 +188,23 @@ def plot_dems(
         max(bounds[3] for bounds, _ in dems),
     )
     mid_lon = 0.5 * (total_bounds[0] + total_bounds[2])
-    aspect_ratio = 1.124 * ((total_bounds[2] - total_bounds[0])
-                            / (total_bounds[3] - total_bounds[1]))
+    aspect_ratio = 1.124 * (
+        (total_bounds[2] - total_bounds[0]) / (total_bounds[3] - total_bounds[1])
+    )
     fig = plt.figure(
-        figsize=(10, 10 / aspect_ratio) if aspect_ratio >= 1 else (aspect_ratio * 10, 10),
-        dpi=100)
+        figsize=(
+            (10, 10 / aspect_ratio) if aspect_ratio >= 1 else (aspect_ratio * 10, 10)
+        ),
+        dpi=100,
+    )
     proj_data = ccrs.PlateCarree()
     proj_ax = ccrs.PlateCarree(central_longitude=mid_lon)
     axes = fig.add_subplot(111, projection=proj_ax)
-    axes.spines['geo'].set_linewidth(0.5)
+    axes.spines["geo"].set_linewidth(0.5)
     axes.set_extent(
-        (total_bounds[0], total_bounds[2], total_bounds[1], total_bounds[3]), crs=proj_data)
+        (total_bounds[0], total_bounds[2], total_bounds[1], total_bounds[3]),
+        crs=proj_data,
+    )
 
     # add axes tick labels
     grid = axes.gridlines(draw_labels=True, alpha=0.2, linewidth=0)
@@ -203,16 +215,28 @@ def plot_dems(
     for bounds, heights in dems:
         # a bug (?) in cartopy breaks imshow with a transform different from `proj_ax`, so we
         # manually shift the central longitude in the `extent` attribute
-        axes.imshow(heights, origin='lower', transform=proj_ax, cmap=cmap, norm=cnorm,
-                    extent=(bounds[0] - mid_lon, bounds[2] - mid_lon, bounds[1], bounds[3]))
-        _plot_bounds(axes, bounds, transform=proj_data, color='k', linewidth=0.5)
-    axes.coastlines(resolution='10m', linewidth=0.5)
+        axes.imshow(
+            heights,
+            origin="lower",
+            transform=proj_ax,
+            cmap=cmap,
+            norm=cnorm,
+            extent=(bounds[0] - mid_lon, bounds[2] - mid_lon, bounds[1], bounds[3]),
+        )
+        _plot_bounds(axes, bounds, transform=proj_data, color="k", linewidth=0.5)
+    axes.coastlines(resolution="10m", linewidth=0.5)
     if track is not None:
-        axes.plot(track["lon"], track["lat"], transform=proj_data, color='k', linewidth=0.5)
+        axes.plot(
+            track["lon"], track["lat"], transform=proj_data, color="k", linewidth=0.5
+        )
     if centroids is not None:
-        axes.scatter(centroids[:, 1], centroids[:, 0], transform=proj_data, s=0.1, alpha=0.5)
-    fig.subplots_adjust(left=0.02, bottom=0.03, right=0.89, top=0.99, wspace=0, hspace=0)
-    if path is None or not hasattr(__main__, '__file__'):
+        axes.scatter(
+            centroids[:, 1], centroids[:, 0], transform=proj_data, s=0.1, alpha=0.5
+        )
+    fig.subplots_adjust(
+        left=0.02, bottom=0.03, right=0.89, top=0.99, wspace=0, hspace=0
+    )
+    if path is None or not hasattr(__main__, "__file__"):
         plt.show()
     if path is not None:
         canvas = FigureCanvasAgg(fig)
@@ -221,7 +245,7 @@ def plot_dems(
 
 
 def _colormap_coastal_dem(
-    axes : Optional[maxes.Axes] = None,
+    axes: Optional[maxes.Axes] = None,
 ) -> Tuple[mcolors.Colormap, mcolors.Normalize]:
     """Return colormap and normalization for coastal areas of DEMs
 
@@ -250,12 +274,21 @@ def _colormap_coastal_dem(
         (117, 84, 0),
     ]
     cmap_terrain = mcolors.LinearSegmentedColormap.from_list(
-        "coastal_dem", [tuple(c / 255 for c in rgb) for rgb in cmap_terrain])
-    cnorm_coastal_dem = LinearSegmentedNormalize([-8000, -1000, -10, -5, 0, 5, 10, 100, 1000])
+        "coastal_dem", [tuple(c / 255 for c in rgb) for rgb in cmap_terrain]
+    )
+    cnorm_coastal_dem = LinearSegmentedNormalize(
+        [-8000, -1000, -10, -5, 0, 5, 10, 100, 1000]
+    )
     if axes:
-        cbar_ax = inset_axes(axes, width="5%", height="100%",
-                             loc='lower left', bbox_to_anchor=(1.02, 0., 0.5, 1),
-                             bbox_transform=axes.transAxes, borderpad=0)
+        cbar_ax = inset_axes(
+            axes,
+            width="5%",
+            height="100%",
+            loc="lower left",
+            bbox_to_anchor=(1.02, 0.0, 0.5, 1),
+            bbox_transform=axes.transAxes,
+            borderpad=0,
+        )
         cbar = plt.colorbar(mcolormaps.ScalarMappable(cmap=cmap_terrain), cax=cbar_ax)
         cbar.set_ticks(cnorm_coastal_dem.values)
         cbar.set_ticklabels(cnorm_coastal_dem.vthresh)
@@ -265,7 +298,7 @@ def _colormap_coastal_dem(
 class LinearSegmentedNormalize(mcolors.Normalize):
     """Piecewise linear color normalization."""
 
-    def __init__(self, vthresh : List[float]):
+    def __init__(self, vthresh: List[float]):
         """Initialize normalization
 
         Parameters
@@ -277,11 +310,13 @@ class LinearSegmentedNormalize(mcolors.Normalize):
         self.values = np.linspace(0, 1, len(self.vthresh))
         mcolors.Normalize.__init__(self, vmin=vthresh[0], vmax=vthresh[-1], clip=False)
 
-    def __call__(self, value : float, clip : Any = None) -> np.ndarray:
+    def __call__(self, value: float, clip: Any = None) -> np.ndarray:
         return np.ma.masked_array(np.interp(value, self.vthresh, self.values))
 
 
-def _plot_bounds(axes : maxes.Axes, bounds : Tuple[float, float, float, float], **kwargs) -> None:
+def _plot_bounds(
+    axes: maxes.Axes, bounds: Tuple[float, float, float, float], **kwargs
+) -> None:
     """Plot given bounds as rectangular boundary lines
 
     Parameters
