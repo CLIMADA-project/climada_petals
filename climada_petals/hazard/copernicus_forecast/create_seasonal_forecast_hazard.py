@@ -22,43 +22,47 @@ from climada_petals.hazard.copernicus_forecast.index_definitions import IndexSpe
 from climada_petals.hazard.copernicus_forecast.path_manager import PathManager
 
 
-
 # set path to store data
 DATA_OUT = CONFIG.hazard.copernicus.seasonal_forecasts.dir()
 LOGGER = logging.getLogger(__name__)
 
-def overwriting(function):
-    """Decorator to manage overwriting functionality."""
-    def wrapper(self, *args, **kwargs):
-        return function(self, *args, **kwargs)
-    return wrapper
 
-
-
-
-    
 class SeasonalForecast:
-    def __init__(self, index_metric, year_list, month_list, area_selection, overwrite, format, originating_centre, system, max_lead_month, data_out=None):
+    def __init__(
+        self,
+        index_metric,
+        year_list,
+        month_list,
+        area_selection,
+        format,
+        originating_centre,
+        system,
+        max_lead_month,
+        data_out=None,
+    ):
         """
         Initialize the SeasonalForecast instance with user-defined parameters for index calculation.
         """
         self.index_metric = index_metric
         self.year_list = year_list
-        self.month_list = month_list
+        self.month_list = [f"{month:02d}" for month in month_list]
         self.area_selection = area_selection  # Store user input for reference
-        self.bounds = self._get_bounds_for_area_selection(area_selection)  # Convert user input to bounds
-        self.overwrite = overwrite
+        self.bounds = self._get_bounds_for_area_selection(
+            area_selection
+        )  # Convert user input to bounds
+        self.area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
         self.format = format
         self.originating_centre = originating_centre
         self.system = system
         self.max_lead_month = max_lead_month
-        #self.data_out = Path(data_out) if data_out else DATA_OUT
-        self.path_manager = PathManager(data_out or DATA_OUT) 
 
-        
-        logging.basicConfig(format="%(asctime)s | %(levelname)s : %(message)s", level=logging.INFO)
-        self.logger = logging.getLogger()
+        # initialze path handling
         self.data_out = Path(data_out) if data_out else DATA_OUT
+        self.path_manager = PathManager(self.data_out)
+
+        # Get index specifications
+        index_spec = IndexSpecEnum.get_info(self.index_metric)
+        self.variables = index_spec.variables
 
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
@@ -70,7 +74,7 @@ class SeasonalForecast:
             else:
                 raise ValueError(
                     f"Invalid string for area_selection: '{area_selection}'. Expected 'global' or a list of ISO codes."
-                )  
+                )
 
         # Handle bounding box selection
         elif isinstance(area_selection, list):
@@ -86,10 +90,10 @@ class SeasonalForecast:
                     west -= lon_margin
                     return [north, west, south, east]
                 except ValueError:
-                    self.logger.error(
+                    LOGGER.error(
                         f"Invalid area selection bounds provided: {area_selection}. "
                         "Expected a list of four numerical values [north, west, south, east]."
-                    )  
+                    )
                     raise
 
             # Handle list of country ISO codes
@@ -98,9 +102,9 @@ class SeasonalForecast:
                 geo = get_country_geometries(iso).to_crs(epsg=4326)
                 bounds = geo.total_bounds
                 if np.any(np.isnan(bounds)):
-                    self.logger.warning(
+                    LOGGER.warning(
                         f"ISO code '{iso}' not recognized. This region will not be included."
-                    )  
+                    )
                     continue
 
                 min_lon, min_lat, max_lon, max_lat = bounds
@@ -124,87 +128,37 @@ class SeasonalForecast:
                 "Expected 'global', a list of ISO codes, or [north, west, south, east]."
             )
 
+    ##########  Download and process ##########
 
-    def _calc_min_max_lead(self, year, month, leadtime_months=1):
-        """Calculate min and max lead time."""
-        total_timesteps = 0
-        for m in range(month, month + leadtime_months):
-            adjusted_year, adjusted_month = year, m
-            if m > 12:
-                adjusted_year += 1
-                adjusted_month = m - 12
-    
-            num_days_month = calendar.monthrange(adjusted_year, adjusted_month)[1]
-            total_timesteps += num_days_month * 24
-    
-        max_lead = total_timesteps + 6
-        return 0, max_lead
-
-
-    def _is_data_present(self, file, vars):
-        """Check if data file with required variables is present."""
-        file = Path(file) if isinstance(file, str) else file
-        vars_short = [IndexSpecEnum[var].value.short_name for var in vars if var in IndexSpecEnum.__members__]
-        if not file.parent.exists():
-            return None
-        
-        # Match file with expected variable names
-        rest = re.search(r"(area.*)", str(file)).group(0)
-        for filename in file.parent.iterdir():
-            match = re.search(rf'.*{".*".join(vars_short)}.*{rest}', filename.name)
-            if match:
-                return file.parent / match.group(0)
-        return None
-        
-##########  Download and process ##########
-    
-    def download(self):
+    def download(self, overwrite=False):
         """Download data for specified years and months."""
-        output_files = []
+        output_files = {}
+
         for year in self.year_list:
             for month in self.month_list:
-                # Generate area string based on bounds
-                area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
                 # Construct output file name
                 output_file_name = self.path_manager.get_download_path(
-                    self.originating_centre, year, month, self.index_metric, area_str, self.format
+                    self.originating_centre,
+                    year,
+                    month,
+                    self.index_metric,
+                    self.area_str,
+                    self.format,
                 )
-                if not output_file_name.exists() or self.overwrite:
-                    self._download_data(year, month, output_file_name, area_str)
-                output_files.append(output_file_name)
-        return output_files
 
-    @overwriting
-    def _download_data(self, year, month, output_file_name, area_str):
-        """Download seasonal forecast data for a specific year and month."""
-        try:
-            # Get index specifications
-            index_spec = IndexSpecEnum.get_info(self.index_metric)
-            variables = index_spec.variables
-    
-            # Calculate lead times
-            min_lead, max_lead = self._calc_min_max_lead(year, month, self.max_lead_month)
-            leadtimes = list(range(min_lead, max_lead, 6))
-    
-            # Prepare download parameters
-            download_params = {
-                "format": self.format,
-                "originating_centre": self.originating_centre,
-                "area": self.bounds,
-                "system": self.system,
-                "variable": variables,
-                "month": f"{month:02d}",
-                "year": year,
-                "day": "01",
-                "leadtime_hour": leadtimes,
-            }
-    
-            # Perform download
-            download_data("seasonal-original-single-levels", download_params, output_file_name, overwrite=self.overwrite)
-            self.logger.info(f"Downloaded data saved to {output_file_name}")
-        except Exception as e:
-            self.logger.error(f"Error downloading data for {year}-{month}: {e}")
-            raise
+                output_files[(year, month)] = _download_data(
+                    output_file_name,
+                    overwrite,
+                    self.variables,
+                    year,
+                    month,
+                    self.format,
+                    self.originating_centre,
+                    self.system,
+                    self.bounds,
+                    self.max_lead_month,
+                )
+        return output_files
 
     def process(self):
         """
@@ -215,21 +169,24 @@ class SeasonalForecast:
             for month in self.month_list:
                 # Include area_str in the file naming
                 area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-    
+
                 # Locate input file names
                 input_file_name = self.path_manager.get_download_path(
-                    self.originating_centre, year, month, self.index_metric, area_str, self.format
+                    self.originating_centre,
+                    year,
+                    month,
+                    self.index_metric,
+                    area_str,
+                    self.format,
                 )
-    
+
                 # Call _process_data for daily NetCDF file creation
                 daily_file = self._process_data(input_file_name, year, month, area_str)
-    
+
                 # Add the processed file path to the dictionary
                 processed_files[(year, month)] = daily_file
         return processed_files
 
-
-    
     def _process_data(self, input_file_name, year, month, area_str):
         """
         Process a single input file into the desired daily NetCDF format.
@@ -238,77 +195,79 @@ class SeasonalForecast:
             # Get index specifications and the list of variables
             index_spec = IndexSpecEnum.get_info(self.index_metric)
             variables = [index_spec.short_name for var in index_spec.variables]
-    
+
             # Determine the daily output file path
             daily_file = self.path_manager.get_daily_processed_path(
-                self.originating_centre, year, month, self.index_metric, area_str, format="nc"
+                self.originating_centre,
+                year,
+                month,
+                self.index_metric,
+                area_str,
+                format="nc",
             )
-    
+
             # Process and save the data
             if not daily_file.exists() or self.overwrite:
                 try:
-                    with xr.open_dataset(input_file_name, engine="cfgrib" if self.format == "grib" else None) as ds:
+                    with xr.open_dataset(
+                        input_file_name,
+                        engine="cfgrib" if self.format == "grib" else None,
+                    ) as ds:
                         # Coarsen the data
                         ds_mean = ds.coarsen(step=4, boundary="trim").mean()
                         ds_max = ds.coarsen(step=4, boundary="trim").max()
                         ds_min = ds.coarsen(step=4, boundary="trim").min()
-    
+
                     # Create a new dataset combining mean, max, and min values
                     combined_ds = xr.Dataset()
                     for var in variables:
                         combined_ds[f"{var}_mean"] = ds_mean[var]
                         combined_ds[f"{var}_max"] = ds_max[var]
                         combined_ds[f"{var}_min"] = ds_min[var]
-    
+
                     # Save the combined dataset to NetCDF
                     combined_ds.to_netcdf(str(daily_file))
-                    self.logger.info(f"Daily file saved to {daily_file}")
-    
+                    LOGGER.info(f"Daily file saved to {daily_file}")
+
                 except FileNotFoundError:
-                    self.logger.error(f"Input file {input_file_name} does not exist, processing failed.")
+                    LOGGER.error(
+                        f"Input file {input_file_name} does not exist, processing failed."
+                    )
                     raise
                 except Exception as e:
-                    self.logger.error(f"Error during processing for {input_file_name}: {e}")
+                    LOGGER.error(f"Error during processing for {input_file_name}: {e}")
                     raise
             else:
-                self.logger.info(f"Daily file {daily_file} already exists.")
+                LOGGER.info(f"Daily file {daily_file} already exists.")
             return daily_file
         except Exception as e:
-            self.logger.error(f"Failed to process {input_file_name}: {e}")
+            LOGGER.error(f"Failed to process {input_file_name}: {e}")
             raise
-
-
-
-
 
     def download_and_process_data(self):
         """
         Download and process climate forecast data based on the area selection.
         """
-        self.logger.info(f"Using bounds: {self.bounds} derived from area selection: {self.area_selection}")
-    
+        LOGGER.info(
+            f"Using bounds: {self.bounds} derived from area selection: {self.area_selection}"
+        )
+
         # Call high-level methods for downloading and processing
         downloaded_files = self.download()  # Handles iteration and calls _download_data
-        self.logger.info(f"Downloaded files: {downloaded_files}")
-    
+        LOGGER.info(f"Downloaded files: {downloaded_files}")
+
         processed_files = self.process()  # Handles iteration and calls _process_data
-        self.logger.info(f"Processed files: {processed_files}")
+        LOGGER.info(f"Processed files: {processed_files}")
 
-
-
-
-##########  Calculate index ##########
-
+    ##########  Calculate index ##########
 
     def calculate_index(self, threshold=27, min_duration=3, max_gap=0, tr_threshold=20):
-        """
-    
-        """
+        """ """
         index_outputs = {}
-    
+
         for year in self.year_list:
             for month in self.month_list:
-                self.logger.info(f"Processing index {self.index_metric} for {year}-{month:02d}.")
+                LOGGER.info(f"Processing index {self.index_metric} for {year}-{month}.")
                 try:
                     # Call _process_index to perform calculations for the given year and month
                     outputs = self._process_index(
@@ -321,51 +280,84 @@ class SeasonalForecast:
                     )
                     index_outputs[(year, month)] = outputs
                 except Exception as e:
-                    self.logger.error(f"Error processing index {self.index_metric} for {year}-{month:02d}: {e}")
-    
+                    LOGGER.error(
+                        f"Error processing index {self.index_metric} for {year}-{month}: {e}"
+                    )
+
         return index_outputs
 
-    def _process_index(self, year, month, threshold=27, min_duration=3, max_gap=0, tr_threshold=20):
-        """
-
-        """
+    def _process_index(
+        self, year, month, threshold=27, min_duration=3, max_gap=0, tr_threshold=20
+    ):
+        """ """
         try:
             area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-    
+
             # Determine input file path
             if self.index_metric in ["TX30", "TR", "HW"]:
                 input_file_name = self.path_manager.get_download_path(
-                    self.originating_centre, year, month, self.index_metric, area_str, format="grib"
+                    self.originating_centre,
+                    year,
+                    month,
+                    self.index_metric,
+                    area_str,
+                    format="grib",
                 )
             else:
                 input_file_name = self.path_manager.get_daily_processed_path(
-                    self.originating_centre, year, month, self.index_metric, area_str, format="nc"
+                    self.originating_centre,
+                    year,
+                    month,
+                    self.index_metric,
+                    area_str,
+                    format="nc",
                 )
-    
+
             # Define output paths
             daily_output_path = self.path_manager.get_daily_index_path(
-                self.originating_centre, year, month, self.index_metric, area_str, format="nc"
+                self.originating_centre,
+                year,
+                month,
+                self.index_metric,
+                area_str,
+                format="nc",
             )
             monthly_output_path = self.path_manager.get_monthly_index_path(
-                self.originating_centre, year, month, self.index_metric, area_str, format="nc"
+                self.originating_centre,
+                year,
+                month,
+                self.index_metric,
+                area_str,
+                format="nc",
             )
             stats_output_path = self.path_manager.get_stats_index_path(
-                self.originating_centre, year, month, self.index_metric, area_str, format="nc"
+                self.originating_centre,
+                year,
+                month,
+                self.index_metric,
+                area_str,
+                format="nc",
             )
-    
+
             # Ensure output directories exist
             for path in [daily_output_path, monthly_output_path, stats_output_path]:
                 path.parent.mkdir(parents=True, exist_ok=True)
-    
+
             # Skip calculation if outputs already exist and overwrite is not enabled
-            if monthly_output_path.exists() and stats_output_path.exists() and not self.overwrite:
-                self.logger.info(f"Index files already exist for {year}-{month:02d}, skipping calculation.")
+            if (
+                monthly_output_path.exists()
+                and stats_output_path.exists()
+                and not self.overwrite
+            ):
+                LOGGER.info(
+                    f"Index files already exist for {year}-{month}, skipping calculation."
+                )
                 return {
                     "daily": daily_output_path,
                     "monthly": monthly_output_path,
                     "stats": stats_output_path,
                 }
-    
+
             # Define index-specific parameters
             kwargs = {}
             if self.index_metric == "TR":
@@ -374,28 +366,42 @@ class SeasonalForecast:
                 kwargs["threshold"] = threshold
                 kwargs["min_duration"] = min_duration
                 kwargs["max_gap"] = max_gap
-    
+
             # Perform calculation
-            if self.index_metric in ["HIS", "HIA", "Tmean", "Tmax", "Tmin", "HUM", "RH", "AT", "WBGT"]:
-                ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_heat_indices_metrics(
-                    input_file_name, self.index_metric
+            if self.index_metric in [
+                "HIS",
+                "HIA",
+                "Tmean",
+                "Tmax",
+                "Tmin",
+                "HUM",
+                "RH",
+                "AT",
+                "WBGT",
+            ]:
+                ds_daily, ds_monthly, ds_stats = (
+                    seasonal_statistics.calculate_heat_indices_metrics(
+                        input_file_name, self.index_metric
+                    )
                 )
             elif self.index_metric == "TR":
                 ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tr_days(
                     input_file_name, self.index_metric, **kwargs
                 )
             elif self.index_metric == "TX30":
-                ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tx30_days(
-                    input_file_name, self.index_metric
+                ds_daily, ds_monthly, ds_stats = (
+                    seasonal_statistics.calculate_tx30_days(
+                        input_file_name, self.index_metric
+                    )
                 )
             elif self.index_metric == "HW":
                 ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_hw_days(
                     input_file_name, self.index_metric, **kwargs
                 )
             else:
-                self.logger.error(f"Index {self.index_metric} is not implemented.")
+                LOGGER.error(f"Index {self.index_metric} is not implemented.")
                 return None
-    
+
             # Save outputs
             if ds_daily is not None:
                 ds_daily.to_netcdf(daily_output_path)
@@ -403,61 +409,74 @@ class SeasonalForecast:
                 ds_monthly.to_netcdf(monthly_output_path)
             if ds_stats is not None:
                 ds_stats.to_netcdf(stats_output_path)
-    
+
             # Log success
-            self.logger.info(f"Saved daily index to {daily_output_path}")
-            self.logger.info(f"Saved monthly index to {monthly_output_path}")
-            self.logger.info(f"Saved stats index to {stats_output_path}")
-    
+            LOGGER.info(f"Saved daily index to {daily_output_path}")
+            LOGGER.info(f"Saved monthly index to {monthly_output_path}")
+            LOGGER.info(f"Saved stats index to {stats_output_path}")
+
             return {
                 "daily": daily_output_path,
                 "monthly": monthly_output_path,
                 "stats": stats_output_path,
             }
         except Exception as e:
-            self.logger.error(f"Failed to calculate index {self.index_metric} for {year}-{month:02d}: {e}")
+            LOGGER.error(
+                f"Failed to calculate index {self.index_metric} for {year}-{month}: {e}"
+            )
             raise
 
-
-
-##########  Calculate hazard and plot a sample ##########
-
+    ##########  Calculate hazard and plot a sample ##########
 
     def save_index_to_hazard(self):
-        """
- 
-        """
+        """ """
         hazard_outputs = {}
-    
+
         for year in self.year_list:
             for month in self.month_list:
-                self.logger.info(f"Creating hazard for index {self.index_metric} for {year}-{month:02d}.")
-    
+                LOGGER.info(
+                    f"Creating hazard for index {self.index_metric} for {year}-{month}."
+                )
+
                 # Define the area string
                 area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-    
+
                 # Get the input index file and the hazard output file paths
                 index_file = self.path_manager.get_monthly_index_path(
-                    self.originating_centre, year, month, self.index_metric, area_str, format="nc"
+                    self.originating_centre,
+                    year,
+                    month,
+                    self.index_metric,
+                    area_str,
+                    format="nc",
                 )
                 hazard_file = self.path_manager.get_hazard_path(
-                    self.originating_centre, year, month, self.index_metric, area_str, format="hdf5"
+                    self.originating_centre,
+                    year,
+                    month,
+                    self.index_metric,
+                    area_str,
+                    format="hdf5",
                 )
-    
+
                 hazard_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
                 # Skip if hazard file exists and overwrite is not enabled
                 if hazard_file.exists() and not self.overwrite:
-                    self.logger.info(f"Hazard file {hazard_file} already exists, skipping creation.")
+                    LOGGER.info(
+                        f"Hazard file {hazard_file} already exists, skipping creation."
+                    )
                     hazard_outputs[(year, month)] = hazard_file
                     continue
-    
+
                 try:
                     # Convert index file to hazard
-                    hazard_outputs[(year, month)] = self._convert_to_hazard(index_file, hazard_file)
+                    hazard_outputs[(year, month)] = self._convert_to_hazard(
+                        index_file, hazard_file
+                    )
                 except Exception as e:
-                    self.logger.error(f"Failed to create hazard for {year}-{month:02d}: {e}")
-    
+                    LOGGER.error(f"Failed to create hazard for {year}-{month}: {e}")
+
         return hazard_outputs
 
     def _convert_to_hazard(self, index_file, hazard_file):
@@ -479,12 +498,14 @@ class SeasonalForecast:
 
                 # Determine intensity unit based on the index metric
                 intensity_unit = (
-                    "%" if self.index_metric == "RH"
-                    else "days" if self.index_metric in ["TR", "TX30", "HW"]
-                    else "°C"
+                    "%"
+                    if self.index_metric == "RH"
+                    else "days" if self.index_metric in ["TR", "TX30", "HW"] else "°C"
                 )
                 hazard_type = self.index_metric
-                intensity_variable = self.index_metric  # Match exact variable name in dataset
+                intensity_variable = (
+                    self.index_metric
+                )  # Match exact variable name in dataset
 
                 # Ensure the intensity variable exists in the dataset
                 if intensity_variable not in ds.variables:
@@ -521,60 +542,146 @@ class SeasonalForecast:
                 # Validate and save the Hazard object
                 hazard.check()
                 hazard.write_hdf5(str(hazard_file))
-                self.logger.info(f"Hazard file saved to {hazard_file}")
+                LOGGER.info(f"Hazard file saved to {hazard_file}")
                 return hazard_file
 
         except Exception as e:
-            self.logger.error(f"Failed to convert {index_file} to hazard: {e}")
+            LOGGER.error(f"Failed to convert {index_file} to hazard: {e}")
             raise
 
     def plot_hazard(self):
-        """
-        
-        """
+        """ """
         try:
             # Loop through the years and months to access all hazard files
             for year in self.year_list:
                 for month in self.month_list:
                     # Generate area string based on bounds
                     area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-    
+
                     # Get the hazard file path using the PathManager
                     hazard_file = self.path_manager.get_hazard_path(
-                        self.originating_centre, year, month, self.index_metric, area_str, format="hdf5"
+                        self.originating_centre,
+                        year,
+                        month,
+                        self.index_metric,
+                        area_str,
+                        format="hdf5",
                     )
-    
+
                     # Check if the file exists
                     if not hazard_file.exists():
-                        self.logger.warning(f"Hazard file {hazard_file} not found. Skipping.")
+                        LOGGER.warning(
+                            f"Hazard file {hazard_file} not found. Skipping."
+                        )
                         continue
-    
+
                     # Load the hazard data
                     hazard = Hazard.from_hdf5(hazard_file)
-    
+
                     # Determine the intensity unit dynamically
                     intensity_unit = (
-                        "%" if self.index_metric == "RH"
-                        else "days" if self.index_metric in ["TR", "TX30", "HW"]
-                        else "°C"
+                        "%"
+                        if self.index_metric == "RH"
+                        else (
+                            "days"
+                            if self.index_metric in ["TR", "TX30", "HW"]
+                            else "°C"
+                        )
                     )
-    
+
                     # Check if the hazard object contains intensity data
                     if not hasattr(hazard, "intensity") or hazard.intensity is None:
-                        self.logger.warning(f"Hazard file {hazard_file} does not contain valid intensity data. Skipping.")
+                        LOGGER.warning(
+                            f"Hazard file {hazard_file} does not contain valid intensity data. Skipping."
+                        )
                         continue
-    
+
                     # Plot the hazard intensity
-                    self.logger.info(f"Plotting hazard data from {hazard_file} with intensity unit '{intensity_unit}'.")
+                    LOGGER.info(
+                        f"Plotting hazard data from {hazard_file} with intensity unit '{intensity_unit}'."
+                    )
                     hazard.plot_intensity(1, smooth=False)
-                    plt.title(f"Hazard Visualization: {hazard_file.stem} ({intensity_unit})")
+                    plt.title(
+                        f"Hazard Visualization: {hazard_file.stem} ({intensity_unit})"
+                    )
                     plt.show()
-    
+
         except Exception as e:
-            self.logger.error(f"Error while plotting hazard data: {e}")
+            LOGGER.error(f"Error while plotting hazard data: {e}")
             raise
 
 
+def handle_overwriting(function):
+    """Decorator to manage overwriting functionality."""
+
+    def wrapper(output_file_name, overwrite, *args, **kwargs):
+        # if data exists and we do not want to overwrite
+        if not overwrite and output_file_name.exists():
+            LOGGER.info(f"{output_file_name} already exists.")
+            return output_file_name
+
+        return function(output_file_name, overwrite, *args, **kwargs)
+
+    return wrapper
 
 
-        
+@handle_overwriting
+def _download_data(
+    output_file_name,
+    overwrite,
+    variables,
+    year,
+    month,
+    format,
+    originating_centre,
+    system,
+    bounds,
+    max_lead_month,
+):
+    """Download seasonal forecast data for a specific year and month."""
+    try:
+
+        # Calculate lead times
+        min_lead, max_lead = _calc_min_max_lead(year, month, max_lead_month)
+        leadtimes = list(range(min_lead, max_lead, 6))
+
+        # Prepare download parameters
+        download_params = {
+            "format": format,
+            "originating_centre": originating_centre,
+            "area": bounds,
+            "system": system,
+            "variable": variables,
+            "month": month,
+            "year": year,
+            "day": "01",
+            "leadtime_hour": leadtimes,
+        }
+
+        # Perform download
+        download_data(
+            "seasonal-original-single-levels",
+            download_params,
+            output_file_name,
+            overwrite=True,
+        )
+        LOGGER.info(f"Downloaded data saved to {output_file_name}")
+    except Exception as e:
+        LOGGER.error(f"Error downloading data for {year}-{month}: {e}")
+        raise
+
+
+def _calc_min_max_lead(year, month, leadtime_months=1):
+    """Calculate min and max lead time."""
+    total_timesteps = 0
+    for m in range(int(month), int(month) + leadtime_months):
+        adjusted_year, adjusted_month = year, m
+        if m > 12:
+            adjusted_year += 1
+            adjusted_month = m - 12
+
+        num_days_month = calendar.monthrange(adjusted_year, adjusted_month)[1]
+        total_timesteps += num_days_month * 24
+
+    max_lead = total_timesteps + 6
+    return 0, max_lead
