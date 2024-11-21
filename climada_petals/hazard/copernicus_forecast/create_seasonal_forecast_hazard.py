@@ -265,7 +265,7 @@ class SeasonalForecast:
 
     ##########  Calculate hazard and plot a sample ##########
 
-    def save_index_to_hazard(self):
+    def save_index_to_hazard(self, overwrite=False):
         """ """
         hazard_outputs = {}
 
@@ -275,177 +275,34 @@ class SeasonalForecast:
                     f"Creating hazard for index {self.index_metric} for {year}-{month}."
                 )
 
-                # Define the area string
-                area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-
                 # Get the input index file and the hazard output file paths
-                index_file = self.path_manager.get_monthly_index_path(
+                input_file_name = self.path_manager.get_monthly_index_path(
                     self.originating_centre,
                     year,
                     month,
                     self.index_metric,
-                    area_str,
-                    format="nc",
+                    self.area_str
                 )
-                hazard_file = self.path_manager.get_hazard_path(
+                output_file_name = self.path_manager.get_hazard_path(
                     self.originating_centre,
                     year,
                     month,
                     self.index_metric,
-                    area_str,
-                    format="hdf5",
+                    self.area_str
                 )
-
-                hazard_file.parent.mkdir(parents=True, exist_ok=True)
-
-                # Skip if hazard file exists and overwrite is not enabled
-                if hazard_file.exists() and not self.overwrite:
-                    LOGGER.info(
-                        f"Hazard file {hazard_file} already exists, skipping creation."
-                    )
-                    hazard_outputs[(year, month)] = hazard_file
-                    continue
 
                 try:
                     # Convert index file to hazard
-                    hazard_outputs[(year, month)] = self._convert_to_hazard(
-                        index_file, hazard_file
+                    hazard_outputs[(year, month)] = _convert_to_hazard(
+                        output_file_name,
+                        overwrite,
+                        input_file_name,
+                        self.index_metric
                     )
                 except Exception as e:
                     LOGGER.error(f"Failed to create hazard for {year}-{month}: {e}")
 
         return hazard_outputs
-
-    def _convert_to_hazard(self, index_file, hazard_file):
-        """
-        Convert an index file to a Hazard object and save it...
-        """
-        try:
-            with xr.open_dataset(str(index_file)) as ds:
-                # Update the 'step' dimension to include formatted date strings
-                ds["step"] = xr.DataArray(
-                    [f"{date}-01" for date in ds["step"].values],
-                    dims=["step"],
-                )
-                ds["step"] = pd.to_datetime(ds["step"].values)
-
-                # Get the ensemble members
-                ensemble_members = ds["number"].values
-                hazards = []
-
-                # Determine intensity unit based on the index metric
-                intensity_unit = (
-                    "%"
-                    if self.index_metric == "RH"
-                    else "days" if self.index_metric in ["TR", "TX30", "HW"] else "°C"
-                )
-                hazard_type = self.index_metric
-                intensity_variable = (
-                    self.index_metric
-                )  # Match exact variable name in dataset
-
-                # Ensure the intensity variable exists in the dataset
-                if intensity_variable not in ds.variables:
-                    raise KeyError(
-                        f"No variable named '{intensity_variable}' in the dataset. "
-                        f"Available variables: {list(ds.variables)}"
-                    )
-
-                # Iterate through ensemble members and create Hazard objects
-                for i, member in enumerate(ensemble_members):
-                    ds_subset = ds.sel(number=member)
-                    hazard = Hazard.from_xarray_raster(
-                        data=ds_subset,
-                        hazard_type=hazard_type,
-                        intensity_unit=intensity_unit,
-                        intensity=intensity_variable,
-                        coordinate_vars={
-                            "event": "step",
-                            "longitude": "longitude",
-                            "latitude": "latitude",
-                        },
-                    )
-
-                    # Set event names for the ensemble member
-                    if i == 0:
-                        number_lead_times = len(hazard.event_name)
-                    hazard.event_name = [f"member{member}"] * number_lead_times
-
-                    hazards.append(hazard)
-
-                # Concatenate all hazards into one
-                hazard = Hazard.concat(hazards)
-
-                # Validate and save the Hazard object
-                hazard.check()
-                hazard.write_hdf5(str(hazard_file))
-                LOGGER.info(f"Hazard file saved to {hazard_file}")
-                return hazard_file
-
-        except Exception as e:
-            LOGGER.error(f"Failed to convert {index_file} to hazard: {e}")
-            raise
-
-    def plot_hazard(self):
-        """ """
-        try:
-            # Loop through the years and months to access all hazard files
-            for year in self.year_list:
-                for month in self.month_list:
-                    # Generate area string based on bounds
-                    area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-
-                    # Get the hazard file path using the PathManager
-                    hazard_file = self.path_manager.get_hazard_path(
-                        self.originating_centre,
-                        year,
-                        month,
-                        self.index_metric,
-                        area_str,
-                        format="hdf5",
-                    )
-
-                    # Check if the file exists
-                    if not hazard_file.exists():
-                        LOGGER.warning(
-                            f"Hazard file {hazard_file} not found. Skipping."
-                        )
-                        continue
-
-                    # Load the hazard data
-                    hazard = Hazard.from_hdf5(hazard_file)
-
-                    # Determine the intensity unit dynamically
-                    intensity_unit = (
-                        "%"
-                        if self.index_metric == "RH"
-                        else (
-                            "days"
-                            if self.index_metric in ["TR", "TX30", "HW"]
-                            else "°C"
-                        )
-                    )
-
-                    # Check if the hazard object contains intensity data
-                    if not hasattr(hazard, "intensity") or hazard.intensity is None:
-                        LOGGER.warning(
-                            f"Hazard file {hazard_file} does not contain valid intensity data. Skipping."
-                        )
-                        continue
-
-                    # Plot the hazard intensity
-                    LOGGER.info(
-                        f"Plotting hazard data from {hazard_file} with intensity unit '{intensity_unit}'."
-                    )
-                    hazard.plot_intensity(1, smooth=False)
-                    plt.title(
-                        f"Hazard Visualization: {hazard_file.stem} ({intensity_unit})"
-                    )
-                    plt.show()
-
-        except Exception as e:
-            LOGGER.error(f"Error while plotting hazard data: {e}")
-            raise
 
 
 def handle_overwriting(function):
@@ -635,6 +492,79 @@ def _calculate_index(
         "monthly": monthly_output_path,
         "stats": stats_output_path,
     }
+
+@handle_overwriting
+def _convert_to_hazard(output_file_name, 
+                       overwrite,
+                       input_file_name,
+                       index_metric):
+    """
+    Convert an index file to a Hazard object and save it...
+    """
+    try:
+        with xr.open_dataset(str(input_file_name)) as ds:
+            # Update the 'step' dimension to include formatted date strings
+            ds["step"] = xr.DataArray(
+                [f"{date}-01" for date in ds["step"].values],
+                dims=["step"],
+            )
+            ds["step"] = pd.to_datetime(ds["step"].values)
+
+            # Get the ensemble members
+            ensemble_members = ds["number"].values
+            hazards = []
+
+            # Determine intensity unit based on the index metric
+            intensity_unit = (
+                "%"
+                if index_metric == "RH"
+                else "days" if index_metric in ["TR", "TX30", "HW"] else "°C"
+            )
+            hazard_type = index_metric
+            intensity_variable = (
+                index_metric
+            )  # Match exact variable name in dataset
+
+            # Ensure the intensity variable exists in the dataset
+            if intensity_variable not in ds.variables:
+                raise KeyError(
+                    f"No variable named '{intensity_variable}' in the dataset. "
+                    f"Available variables: {list(ds.variables)}"
+                )
+
+            # Iterate through ensemble members and create Hazard objects
+            for i, member in enumerate(ensemble_members):
+                ds_subset = ds.sel(number=member)
+                hazard = Hazard.from_xarray_raster(
+                    data=ds_subset,
+                    hazard_type=hazard_type,
+                    intensity_unit=intensity_unit,
+                    intensity=intensity_variable,
+                    coordinate_vars={
+                        "event": "step",
+                        "longitude": "longitude",
+                        "latitude": "latitude",
+                    },
+                )
+
+                # Set event names for the ensemble member
+                if i == 0:
+                    number_lead_times = len(hazard.event_name)
+                hazard.event_name = [f"member{member}"] * number_lead_times
+
+                hazards.append(hazard)
+
+            # Concatenate all hazards into one
+            hazard = Hazard.concat(hazards)
+
+            # Validate and save the Hazard object
+            hazard.check()
+            hazard.write_hdf5(str(output_file_name))
+            return output_file_name
+
+    except Exception as e:
+        LOGGER.error(f"Failed to convert {input_file_name} to hazard: {e}")
+        raise
 
 def _calc_min_max_lead(year, month, leadtime_months=1):
     """Calculate min and max lead time."""
