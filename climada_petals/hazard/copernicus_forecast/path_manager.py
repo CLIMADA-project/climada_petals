@@ -43,18 +43,18 @@ class PathManager:
 
     # iNCIDES paths
     def get_daily_index_path(
-        self, originating_centre, year, month, index_metric, area_str, format="nc"
+        self, originating_centre, year, month, index_metric, area_str
     ):
         """
         Path for daily NetCDF index data.
         Example: indices/dwd/WBGT/2024/06/daily_WBGT_dwd_area4_56_45_16_202406.nc
         """
         sub_dir = f"indices/{originating_centre}/{index_metric}/{year}/{month}"
-        file_name = f"daily_{index_metric}_{originating_centre}_{area_str}_{year}{month}.{format}"
+        file_name = f"daily_{index_metric}_{originating_centre}_{area_str}_{year}{month}.nc"
         return self.construct_path(sub_dir, file_name)
 
     def get_monthly_index_path(
-        self, originating_centre, year, month, index_metric, area_str, format="nc"
+        self, originating_centre, year, month, index_metric, area_str
     ):
         """
         Path for monthly NetCDF index data.
@@ -62,30 +62,37 @@ class PathManager:
         """
         sub_dir = f"indices/{originating_centre}/{index_metric}/{year}/{month}"
         file_name = (
-            f"{index_metric}_{originating_centre}_{area_str}_{year}{month}.{format}"
+            f"{index_metric}_{originating_centre}_{area_str}_{year}{month}.nc"
         )
         return self.construct_path(sub_dir, file_name)
 
     def get_stats_index_path(
-        self, originating_centre, year, month, index_metric, area_str, format="nc"
+        self, originating_centre, year, month, index_metric, area_str
     ):
         """
         Path for statistics NetCDF index data.
         Example: indices/dwd/WBGT/2024/06/stats/stats_WBGT_dwd_area4_56_45_16_202406.nc
         """
         sub_dir = f"indices/{originating_centre}/{index_metric}/{year}/{month}/stats"
-        file_name = f"stats_{index_metric}_{originating_centre}_{area_str}_{year}{month}.{format}"
+        file_name = f"stats_{index_metric}_{originating_centre}_{area_str}_{year}{month}.nc"
         return self.construct_path(sub_dir, file_name)
+    
+    def get_index_paths(self, originating_centre, year, month, index_metric, area_str):
+        return {
+            "daily": self.get_daily_index_path(originating_centre, year, month, index_metric, area_str),
+            "monthly": self.get_monthly_index_path(originating_centre, year, month, index_metric, area_str),
+            "stats": self.get_stats_index_path(originating_centre, year, month, index_metric, area_str)
+        }
 
     # hazard path
 
     def get_hazard_path(
-        self, originating_centre, year, month, index_metric, area_str, format="hdf5"
+        self, originating_centre, year, month, index_metric, area_str
     ):
         """
         Path for hazard HDF5 output data.
         Example: hazard/dwd/HW/2002/07/hazard_HW_dwd_area4_49_33_20_200207.hdf5
         """
         sub_dir = f"hazard/{originating_centre}/{index_metric}/{year}/{month}"
-        file_name = f"hazard_{index_metric}_{originating_centre}_{area_str}_{year}{month}.{format}"
+        file_name = f"hazard_{index_metric}_{originating_centre}_{area_str}_{year}{month}.hdf5"
         return self.construct_path(sub_dir, file_name)

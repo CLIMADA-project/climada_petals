@@ -1,7 +1,7 @@
 import logging
 import calendar
 import re
-from pathlib import Path
+from pathlib import Path, PosixPath
 import datetime as dt
 import requests
 
@@ -206,22 +206,52 @@ class SeasonalForecast:
 
     ##########  Calculate index ##########
 
-    def calculate_index(self, threshold=27, min_duration=3, max_gap=0, tr_threshold=20):
+    def calculate_index(self, overwrite=False, threshold=27, min_duration=3, max_gap=0, tr_threshold=20):
         """ """
         index_outputs = {}
 
         for year in self.year_list:
             for month in self.month_list:
                 LOGGER.info(f"Processing index {self.index_metric} for {year}-{month}.")
+                
+                if self.index_metric in ["TX30", "TR", "HW"]:
+                    input_file_name = self.path_manager.get_download_path(
+                        self.originating_centre,
+                        year,
+                        month,
+                        self.index_metric,
+                        self.area_str,
+                        "grib",
+                    )
+                else:
+                    input_file_name = self.path_manager.get_daily_processed_path(
+                        self.originating_centre,
+                        year,
+                        month,
+                        self.index_metric,
+                        self.area_str,
+                        format="nc",
+                    )
+                
+                output_file_names = self.path_manager.get_index_paths(
+                    self.originating_centre,
+                        year,
+                        month,
+                        self.index_metric,
+                        self.area_str
+                )
+
                 try:
                     # Call _process_index to perform calculations for the given year and month
-                    outputs = self._process_index(
-                        year=year,
-                        month=month,
-                        threshold=threshold,
-                        min_duration=min_duration,
-                        max_gap=max_gap,
-                        tr_threshold=tr_threshold,
+                    outputs = _calculate_index(
+                        output_file_names,
+                        overwrite,
+                        input_file_name, 
+                        self.index_metric,
+                        threshold=27,
+                        min_duration=3,
+                        max_gap=0, 
+                        tr_threshold=20
                     )
                     index_outputs[(year, month)] = outputs
                 except Exception as e:
@@ -231,145 +261,7 @@ class SeasonalForecast:
 
         return index_outputs
 
-    def _process_index(
-        self, year, month, threshold=27, min_duration=3, max_gap=0, tr_threshold=20
-    ):
-        """ """
-        try:
-            area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-
-            # Determine input file path
-            if self.index_metric in ["TX30", "TR", "HW"]:
-                input_file_name = self.path_manager.get_download_path(
-                    self.originating_centre,
-                    year,
-                    month,
-                    self.index_metric,
-                    area_str,
-                    format="grib",
-                )
-            else:
-                input_file_name = self.path_manager.get_daily_processed_path(
-                    self.originating_centre,
-                    year,
-                    month,
-                    self.index_metric,
-                    area_str,
-                    format="nc",
-                )
-
-            # Define output paths
-            daily_output_path = self.path_manager.get_daily_index_path(
-                self.originating_centre,
-                year,
-                month,
-                self.index_metric,
-                area_str,
-                format="nc",
-            )
-            monthly_output_path = self.path_manager.get_monthly_index_path(
-                self.originating_centre,
-                year,
-                month,
-                self.index_metric,
-                area_str,
-                format="nc",
-            )
-            stats_output_path = self.path_manager.get_stats_index_path(
-                self.originating_centre,
-                year,
-                month,
-                self.index_metric,
-                area_str,
-                format="nc",
-            )
-
-            # Ensure output directories exist
-            for path in [daily_output_path, monthly_output_path, stats_output_path]:
-                path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Skip calculation if outputs already exist and overwrite is not enabled
-            if (
-                monthly_output_path.exists()
-                and stats_output_path.exists()
-                and not self.overwrite
-            ):
-                LOGGER.info(
-                    f"Index files already exist for {year}-{month}, skipping calculation."
-                )
-                return {
-                    "daily": daily_output_path,
-                    "monthly": monthly_output_path,
-                    "stats": stats_output_path,
-                }
-
-            # Define index-specific parameters
-            kwargs = {}
-            if self.index_metric == "TR":
-                kwargs["tr_threshold"] = tr_threshold
-            elif self.index_metric == "HW":
-                kwargs["threshold"] = threshold
-                kwargs["min_duration"] = min_duration
-                kwargs["max_gap"] = max_gap
-
-            # Perform calculation
-            if self.index_metric in [
-                "HIS",
-                "HIA",
-                "Tmean",
-                "Tmax",
-                "Tmin",
-                "HUM",
-                "RH",
-                "AT",
-                "WBGT",
-            ]:
-                ds_daily, ds_monthly, ds_stats = (
-                    seasonal_statistics.calculate_heat_indices_metrics(
-                        input_file_name, self.index_metric
-                    )
-                )
-            elif self.index_metric == "TR":
-                ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tr_days(
-                    input_file_name, self.index_metric, **kwargs
-                )
-            elif self.index_metric == "TX30":
-                ds_daily, ds_monthly, ds_stats = (
-                    seasonal_statistics.calculate_tx30_days(
-                        input_file_name, self.index_metric
-                    )
-                )
-            elif self.index_metric == "HW":
-                ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_hw_days(
-                    input_file_name, self.index_metric, **kwargs
-                )
-            else:
-                LOGGER.error(f"Index {self.index_metric} is not implemented.")
-                return None
-
-            # Save outputs
-            if ds_daily is not None:
-                ds_daily.to_netcdf(daily_output_path)
-            if ds_monthly is not None:
-                ds_monthly.to_netcdf(monthly_output_path)
-            if ds_stats is not None:
-                ds_stats.to_netcdf(stats_output_path)
-
-            # Log success
-            LOGGER.info(f"Saved daily index to {daily_output_path}")
-            LOGGER.info(f"Saved monthly index to {monthly_output_path}")
-            LOGGER.info(f"Saved stats index to {stats_output_path}")
-
-            return {
-                "daily": daily_output_path,
-                "monthly": monthly_output_path,
-                "stats": stats_output_path,
-            }
-        except Exception as e:
-            LOGGER.error(
-                f"Failed to calculate index {self.index_metric} for {year}-{month}: {e}"
-            )
-            raise
+    
 
     ##########  Calculate hazard and plot a sample ##########
 
@@ -561,13 +453,19 @@ def handle_overwriting(function):
 
     def wrapper(output_file_name, overwrite, *args, **kwargs):
         # if data exists and we do not want to overwrite
-        if not overwrite and output_file_name.exists():
-            LOGGER.info(f"{output_file_name} already exists.")
-            return output_file_name
+        if isinstance(output_file_name, PosixPath):
+            if not overwrite and output_file_name.exists():
+                LOGGER.info(f"{output_file_name} already exists.")
+                return output_file_name
+        elif isinstance(output_file_name, dict):
+            if not overwrite:
+                LOGGER.info(f"A file of {[str(path) for path in output_file_name.values()]} already exists.")
+                return output_file_name
 
         return function(output_file_name, overwrite, *args, **kwargs)
 
     return wrapper
+
 
 
 @handle_overwriting
@@ -658,6 +556,85 @@ def _process_data(output_file_name,
         LOGGER.error(f"Error during processing for {input_file_name}: {e}")
         raise
 
+@handle_overwriting
+def _calculate_index(
+    output_file_names,
+    overwrite,
+    input_file_name, 
+    index_metric,
+    threshold=27,
+    min_duration=3,
+    max_gap=0, 
+    tr_threshold=20
+):
+    """ """
+    # Define output paths
+    daily_output_path = output_file_names["daily"]
+    monthly_output_path = output_file_names["monthly"]
+    stats_output_path = output_file_names["stats"]
+
+    # Define index-specific parameters
+    kwargs = {}
+    if index_metric == "TR":
+        kwargs["tr_threshold"] = tr_threshold
+    elif index_metric == "HW":
+        kwargs["threshold"] = threshold
+        kwargs["min_duration"] = min_duration
+        kwargs["max_gap"] = max_gap
+
+    # Perform calculation
+    if index_metric in [
+        "HIS",
+        "HIA",
+        "Tmean",
+        "Tmax",
+        "Tmin",
+        "HUM",
+        "RH",
+        "AT",
+        "WBGT",
+    ]:
+        ds_daily, ds_monthly, ds_stats = (
+            seasonal_statistics.calculate_heat_indices_metrics(
+                input_file_name, index_metric
+            )
+        )
+    elif index_metric == "TR":
+        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tr_days(
+            input_file_name, index_metric, **kwargs
+        )
+    elif index_metric == "TX30":
+        ds_daily, ds_monthly, ds_stats = (
+            seasonal_statistics.calculate_tx30_days(
+                input_file_name, index_metric
+            )
+        )
+    elif index_metric == "HW":
+        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_hw_days(
+            input_file_name, index_metric, **kwargs
+        )
+    else:
+        LOGGER.error(f"Index {index_metric} is not implemented.")
+        return None
+
+    # Save outputs
+    if ds_daily is not None:
+        ds_daily.to_netcdf(daily_output_path)
+    if ds_monthly is not None:
+        ds_monthly.to_netcdf(monthly_output_path)
+    if ds_stats is not None:
+        ds_stats.to_netcdf(stats_output_path)
+
+    # Log success
+    LOGGER.info(f"Saved daily index to {daily_output_path}")
+    LOGGER.info(f"Saved monthly index to {monthly_output_path}")
+    LOGGER.info(f"Saved stats index to {stats_output_path}")
+
+    return {
+        "daily": daily_output_path,
+        "monthly": monthly_output_path,
+        "stats": stats_output_path,
+    }
 
 def _calc_min_max_lead(year, month, leadtime_months=1):
     """Calculate min and max lead time."""
