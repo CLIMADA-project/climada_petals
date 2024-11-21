@@ -119,6 +119,8 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
 
         LOGGER.info(f"File successfully downloaded to {filename}.")
 
+        return filename
+
     except Exception as e:
         # user key is wrong
         if "401 Client Error" in str(e):

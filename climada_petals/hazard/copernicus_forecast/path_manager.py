@@ -31,14 +31,14 @@ class PathManager:
         return self.construct_path(sub_dir, file_name)
 
     def get_daily_processed_path(
-        self, originating_centre, year, month, index_metric, area_str, format="nc"
+        self, originating_centre, year, month, index_metric, area_str
     ):
         """
         Path for processed daily netcdf data.
         Example: input_data/netcdf/daily/dwd/2002/07/dwd_t2m_area4_49_33_20_200207.nc
         """
         sub_dir = f"input_data/netcdf/daily/{originating_centre}/{year}/{month}"
-        file_name = f"{originating_centre}_{index_metric.lower()}_{area_str}_{year}{month}.{format}"
+        file_name = f"{originating_centre}_{index_metric.lower()}_{area_str}_{year}{month}.nc"
         return self.construct_path(sub_dir, file_name)
 
     # iNCIDES paths

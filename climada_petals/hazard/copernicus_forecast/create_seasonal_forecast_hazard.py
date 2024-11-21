@@ -18,7 +18,7 @@ from climada import CONFIG
 
 import climada_petals.hazard.copernicus_forecast.seasonal_statistics as seasonal_statistics
 from climada_petals.hazard.copernicus_forecast.downloader import download_data
-from climada_petals.hazard.copernicus_forecast.index_definitions import IndexSpecEnum
+from climada_petals.hazard.copernicus_forecast.index_definitions import IndexSpecEnum, get_short_name_from_variable
 from climada_petals.hazard.copernicus_forecast.path_manager import PathManager
 
 
@@ -63,6 +63,7 @@ class SeasonalForecast:
         # Get index specifications
         index_spec = IndexSpecEnum.get_info(self.index_metric)
         self.variables = index_spec.variables
+        self.variables_short = [get_short_name_from_variable(var) for var in self.variables]
 
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
@@ -130,7 +131,7 @@ class SeasonalForecast:
 
     ##########  Download and process ##########
 
-    def download(self, overwrite=False):
+    def _download(self, overwrite=False):
         """Download data for specified years and months."""
         output_files = {}
 
@@ -160,104 +161,48 @@ class SeasonalForecast:
                 )
         return output_files
 
-    def process(self):
+    def _process(self, overwrite=False):
         """
         Process downloaded data into daily NetCDF format and return processed file paths.
         """
         processed_files = {}
         for year in self.year_list:
             for month in self.month_list:
-                # Include area_str in the file naming
-                area_str = f"area{int(self.bounds[1])}_{int(self.bounds[0])}_{int(self.bounds[2])}_{int(self.bounds[3])}"
-
-                # Locate input file names
+                # Locate input and output file names
                 input_file_name = self.path_manager.get_download_path(
                     self.originating_centre,
                     year,
                     month,
                     self.index_metric,
-                    area_str,
+                    self.area_str,
                     self.format,
                 )
 
-                # Call _process_data for daily NetCDF file creation
-                daily_file = self._process_data(input_file_name, year, month, area_str)
+                output_file_name = self.path_manager.get_daily_processed_path(
+                    self.originating_centre,
+                    year,
+                    month,
+                    self.index_metric,
+                    self.area_str
+                )
 
-                # Add the processed file path to the dictionary
-                processed_files[(year, month)] = daily_file
+                # Call _process_data for daily NetCDF file creation
+                processed_files[(year, month)] = _process_data(output_file_name, overwrite, input_file_name, self.variables_short, self.format)
+
         return processed_files
 
-    def _process_data(self, input_file_name, year, month, area_str):
-        """
-        Process a single input file into the desired daily NetCDF format.
-        """
-        try:
-            # Get index specifications and the list of variables
-            index_spec = IndexSpecEnum.get_info(self.index_metric)
-            variables = [index_spec.short_name for var in index_spec.variables]
 
-            # Determine the daily output file path
-            daily_file = self.path_manager.get_daily_processed_path(
-                self.originating_centre,
-                year,
-                month,
-                self.index_metric,
-                area_str,
-                format="nc",
-            )
-
-            # Process and save the data
-            if not daily_file.exists() or self.overwrite:
-                try:
-                    with xr.open_dataset(
-                        input_file_name,
-                        engine="cfgrib" if self.format == "grib" else None,
-                    ) as ds:
-                        # Coarsen the data
-                        ds_mean = ds.coarsen(step=4, boundary="trim").mean()
-                        ds_max = ds.coarsen(step=4, boundary="trim").max()
-                        ds_min = ds.coarsen(step=4, boundary="trim").min()
-
-                    # Create a new dataset combining mean, max, and min values
-                    combined_ds = xr.Dataset()
-                    for var in variables:
-                        combined_ds[f"{var}_mean"] = ds_mean[var]
-                        combined_ds[f"{var}_max"] = ds_max[var]
-                        combined_ds[f"{var}_min"] = ds_min[var]
-
-                    # Save the combined dataset to NetCDF
-                    combined_ds.to_netcdf(str(daily_file))
-                    LOGGER.info(f"Daily file saved to {daily_file}")
-
-                except FileNotFoundError:
-                    LOGGER.error(
-                        f"Input file {input_file_name} does not exist, processing failed."
-                    )
-                    raise
-                except Exception as e:
-                    LOGGER.error(f"Error during processing for {input_file_name}: {e}")
-                    raise
-            else:
-                LOGGER.info(f"Daily file {daily_file} already exists.")
-            return daily_file
-        except Exception as e:
-            LOGGER.error(f"Failed to process {input_file_name}: {e}")
-            raise
-
-    def download_and_process_data(self):
+    def download_and_process_data(self, overwrite=False):
         """
         Download and process climate forecast data based on the area selection.
         """
-        LOGGER.info(
-            f"Using bounds: {self.bounds} derived from area selection: {self.area_selection}"
-        )
 
         # Call high-level methods for downloading and processing
-        downloaded_files = self.download()  # Handles iteration and calls _download_data
-        LOGGER.info(f"Downloaded files: {downloaded_files}")
+        created_files = {}
+        created_files["downloaded_data"] = self._download(overwrite=overwrite)  # Handles iteration and calls _download_data
 
-        processed_files = self.process()  # Handles iteration and calls _process_data
-        LOGGER.info(f"Processed files: {processed_files}")
+        created_files["processed_data"] = self._process(overwrite=overwrite)  # Handles iteration and calls _process_data
+        return created_files
 
     ##########  Calculate index ##########
 
@@ -659,15 +604,58 @@ def _download_data(
         }
 
         # Perform download
-        download_data(
+        output_file_name = download_data(
             "seasonal-original-single-levels",
             download_params,
             output_file_name,
             overwrite=True,
         )
-        LOGGER.info(f"Downloaded data saved to {output_file_name}")
+        return output_file_name
+
     except Exception as e:
         LOGGER.error(f"Error downloading data for {year}-{month}: {e}")
+        raise
+
+@handle_overwriting
+def _process_data(output_file_name,
+                  overwrite,
+                  input_file_name,
+                  variables,
+                  format
+                  ):
+    """
+    Process a single input file into the desired daily NetCDF format.
+    """
+    try:
+        with xr.open_dataset(
+            input_file_name,
+            engine="cfgrib" if format == "grib" else None,
+        ) as ds:
+            # Coarsen the data
+            ds_mean = ds.coarsen(step=4, boundary="trim").mean()
+            ds_max = ds.coarsen(step=4, boundary="trim").max()
+            ds_min = ds.coarsen(step=4, boundary="trim").min()
+
+        # Create a new dataset combining mean, max, and min values
+        combined_ds = xr.Dataset()
+        for var in variables:
+            combined_ds[f"{var}_mean"] = ds_mean[var]
+            combined_ds[f"{var}_max"] = ds_max[var]
+            combined_ds[f"{var}_min"] = ds_min[var]
+
+        # Save the combined dataset to NetCDF
+        combined_ds.to_netcdf(str(output_file_name))
+        LOGGER.info(f"Daily file saved to {output_file_name}")
+
+        return output_file_name
+
+    except FileNotFoundError:
+        LOGGER.error(
+            f"Input file {input_file_name} does not exist, processing failed."
+        )
+        raise
+    except Exception as e:
+        LOGGER.error(f"Error during processing for {input_file_name}: {e}")
         raise
 
 
