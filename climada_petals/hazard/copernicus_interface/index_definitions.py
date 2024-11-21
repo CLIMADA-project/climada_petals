@@ -208,12 +208,12 @@ class IndexSpecEnum(Enum):
 
 
 def get_short_name_from_variable(variable):
-    
-    if variable=="2m_temperature":
+
+    if variable == "2m_temperature":
         return "t2m"
-    elif variable=="2m_dewpoint_temperature":
+    elif variable == "2m_dewpoint_temperature":
         return "d2m"
-    elif variable=="10m_u_component_of_wind":
+    elif variable == "10m_u_component_of_wind":
         return "10u"
-    elif variable=="10m_v_component_of_wind":
+    elif variable == "10m_v_component_of_wind":
         return "10v"
