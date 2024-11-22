@@ -80,7 +80,7 @@ class TestHazardInit(unittest.TestCase):
         topo_path = _test_bathymetry_tif()
 
         # first run, with automatic centroids
-        centroids = tracks.generate_centroids(res_deg=30 / (60 * 60), buffer_deg=5.5)
+        centroids = tracks.generate_centroids(res_deg=0.1, buffer_deg=5.5)
         haz = TCSurgeGeoClaw.from_tc_tracks(tracks, centroids, topo_path)
         self.assertIsInstance(haz, TCSurgeGeoClaw)
         self.assertEqual(haz.intensity.shape[0], 2)
