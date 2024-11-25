@@ -10,6 +10,9 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 import cdsapi
+from datetime import date
+from dateutil.relativedelta import relativedelta
+
 
 from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
@@ -30,21 +33,42 @@ LOGGER = logging.getLogger(__name__)
 
 # ----- Utility Functions -----
 def _calculate_leadtimes(year, month, leadtime_months=1):
-    month = int(month)
-    total_hours = 0
-    leadtimes = [0]
-    for m in range(month, month + leadtime_months):
-        adjusted_year, adjusted_month = year, m
-        if m > 12:
-            adjusted_year += 1
-            adjusted_month = m - 12
+    """
+    Calculate lead times at 6-hour intervals over a specified number of months.
 
-        num_days_month = calendar.monthrange(adjusted_year, adjusted_month)[1]
-        total_hours += num_days_month * 24
+    Args:
+        year (int): Starting year.
+        month (int): Starting month (1-12).
+        leadtime_months (int): Number of months to calculate lead times for.
 
-        # Append leadtimes at intervals of 6 hours
-        leadtimes.extend(range(leadtimes[-1] + 6, total_hours + 6, 6))
-    return leadtimes
+    Returns:
+        list[int]: Lead times in hours, starting from 0, in 6-hour intervals.
+    """
+    try:
+        # Validate inputs
+        if not (1 <= month <= 12):
+            raise ValueError("Month must be in the range 1-12.")
+        if leadtime_months < 1:
+            raise ValueError("Leadtime months must be a positive integer.")
+
+        # Define the starting date
+        day = date(day=1, month=month, year=year)
+
+        # Calculate total hours for the given leadtime_months
+        max_lead = (day + relativedelta(months=leadtime_months) - day).days * 24
+
+        # Generate lead times at 6-hour intervals
+        leadtimes = [i for i in range(0, max_lead + 6, 6)]
+
+        LOGGER.debug(
+            f"Calculated lead times for {year}-{month} over {leadtime_months} months: {leadtimes}"
+        )
+        return leadtimes
+
+    except Exception as e:
+        LOGGER.error(f"Error in calculating lead times for {year}-{month}: {e}")
+        raise
+
 
 
 def handle_overwriting(function):
