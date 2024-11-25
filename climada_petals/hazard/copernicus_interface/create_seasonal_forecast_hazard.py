@@ -28,6 +28,97 @@ DATA_OUT = CONFIG.hazard.copernicus.seasonal_forecasts.dir()
 LOGGER = logging.getLogger(__name__)
 
 
+# ----- Utility Functions -----
+def _calculate_leadtimes(year, month, leadtime_months=1):
+    month = int(month)
+    total_hours = 0
+    leadtimes = [0]
+    for m in range(month, month + leadtime_months):
+        adjusted_year, adjusted_month = year, m
+        if m > 12:
+            adjusted_year += 1
+            adjusted_month = m - 12
+
+        num_days_month = calendar.monthrange(adjusted_year, adjusted_month)[1]
+        total_hours += num_days_month * 24
+
+        # Append leadtimes at intervals of 6 hours
+        leadtimes.extend(range(leadtimes[-1] + 6, total_hours + 6, 6))
+    return leadtimes
+
+
+def handle_overwriting(function):
+    """Decorator to manage overwriting functionality."""
+
+    def wrapper(output_file_name, overwrite, *args, **kwargs):
+        # if data exists and we do not want to overwrite
+        if isinstance(output_file_name, PosixPath):
+            if not overwrite and output_file_name.exists():
+                LOGGER.info(f"{output_file_name} already exists.")
+                return output_file_name
+        elif isinstance(output_file_name, dict):
+            if not overwrite and any(
+                [path.exists() for path in output_file_name.values()]
+            ):
+                LOGGER.info(
+                    f"A file of {[str(path) for path in output_file_name.values()]} already exists."
+                )
+                return output_file_name
+
+        return function(output_file_name, overwrite, *args, **kwargs)
+
+    return wrapper
+
+
+
+class PathManager:
+    """Centralized path management for input, processed, and hazard data."""
+
+    def __init__(self, base_dir):
+        self.base_dir = Path(base_dir)
+
+    def construct_path(self, sub_dir, file_name):
+        """Constructs a full path from a sub-directory and file name."""
+        Path(self.base_dir / sub_dir).mkdir(parents=True, exist_ok=True)
+        return self.base_dir / sub_dir / file_name
+
+    def get_download_path(
+        self, originating_centre, year, month, index_metric, area_str, format
+    ):
+        """
+        Path for downloaded grib data.
+        """
+        sub_dir = f"{originating_centre}/{year}/{month}/downloaded_data/{format}"
+        file_name = f"{index_metric.lower()}_{area_str}.{format}"
+        return self.construct_path(sub_dir, file_name)
+
+    def get_daily_processed_path(
+        self, originating_centre, year, month, index_metric, area_str
+    ):
+        """
+        Path for processed daily netcdf data.
+        """
+        sub_dir = f"{originating_centre}/{year}/{month}/processed_daily_data"
+        file_name = f"{index_metric.lower()}_{area_str}.nc"
+        return self.construct_path(sub_dir, file_name)
+
+    def get_index_paths(self, originating_centre, year, month, index_metric, area_str):
+        sub_dir = f"{originating_centre}/{year}/{month}/indeces/{index_metric}"
+        return {
+            timeframe: self.construct_path(sub_dir, f"{timeframe}_{area_str}.nc")
+            for timeframe in ["daily", "monthly", "stats"]
+        }
+
+    def get_hazard_path(self, originating_centre, year, month, index_metric, area_str):
+        """
+        Path for hazard HDF5 output data.
+        """
+        sub_dir = f"{originating_centre}/{year}/{month}/hazard/{index_metric}"
+        file_name = f"{area_str}.hdf5"
+        return self.construct_path(sub_dir, file_name)
+
+
+# ----- Main Class -----
 class SeasonalForecast:
     def __init__(
         self,
@@ -277,7 +368,7 @@ class SeasonalForecast:
 
         return index_outputs
 
-    ##########  Calculate hazard and plot a sample ##########
+    ##########  Calculate hazard  ##########
 
     def save_index_to_hazard(self, overwrite=False):
         """ """
@@ -316,78 +407,7 @@ class SeasonalForecast:
         return hazard_outputs
 
 
-class PathManager:
-    """Centralized path management for input, processed, and hazard data."""
-
-    def __init__(self, base_dir):
-        self.base_dir = Path(base_dir)
-
-    def construct_path(self, sub_dir, file_name):
-        """Constructs a full path from a sub-directory and file name."""
-        Path(self.base_dir / sub_dir).mkdir(parents=True, exist_ok=True)
-        return self.base_dir / sub_dir / file_name
-
-    def get_download_path(
-        self, originating_centre, year, month, index_metric, area_str, format
-    ):
-        """
-        Path for downloaded grib data.
-        Example: input_data/dwd/grib/2002/07/HW_dwd_area4_49_33_20_200207.grib
-        """
-        sub_dir = f"{originating_centre}/{year}/{month}/downloaded_data/{format}"
-        file_name = f"{index_metric.lower()}_{area_str}.{format}"
-        return self.construct_path(sub_dir, file_name)
-
-    def get_daily_processed_path(
-        self, originating_centre, year, month, index_metric, area_str
-    ):
-        """
-        Path for processed daily netcdf data.
-        Example: input_data/netcdf/daily/dwd/2002/07/dwd_t2m_area4_49_33_20_200207.nc
-        """
-        sub_dir = f"{originating_centre}/{year}/{month}/processed_daily_data"
-        file_name = f"{index_metric.lower()}_{area_str}.nc"
-        return self.construct_path(sub_dir, file_name)
-
-    def get_index_paths(self, originating_centre, year, month, index_metric, area_str):
-        sub_dir = f"{originating_centre}/{year}/{month}/indeces/{index_metric}"
-        return {
-            timeframe: self.construct_path(sub_dir, f"{timeframe}_{area_str}.nc")
-            for timeframe in ["daily", "monthly", "stats"]
-        }
-
-    def get_hazard_path(self, originating_centre, year, month, index_metric, area_str):
-        """
-        Path for hazard HDF5 output data.
-        Example: hazard/dwd/HW/2002/07/hazard_HW_dwd_area4_49_33_20_200207.hdf5
-        """
-        sub_dir = f"{originating_centre}/{year}/{month}/hazard/{index_metric}"
-        file_name = f"{area_str}.hdf5"
-        return self.construct_path(sub_dir, file_name)
-
-
-def handle_overwriting(function):
-    """Decorator to manage overwriting functionality."""
-
-    def wrapper(output_file_name, overwrite, *args, **kwargs):
-        # if data exists and we do not want to overwrite
-        if isinstance(output_file_name, PosixPath):
-            if not overwrite and output_file_name.exists():
-                LOGGER.info(f"{output_file_name} already exists.")
-                return output_file_name
-        elif isinstance(output_file_name, dict):
-            if not overwrite and any(
-                [path.exists() for path in output_file_name.values()]
-            ):
-                LOGGER.info(
-                    f"A file of {[str(path) for path in output_file_name.values()]} already exists."
-                )
-                return output_file_name
-
-        return function(output_file_name, overwrite, *args, **kwargs)
-
-    return wrapper
-
+# ----- Decorated Functions -----
 
 @handle_overwriting
 def _download_data(
@@ -618,23 +638,3 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
     except Exception as e:
         LOGGER.error(f"Failed to convert {input_file_name} to hazard: {e}")
         raise
-
-
-def _calculate_leadtimes(year, month, leadtime_months=1):  
-    month = int(month)
-    total_hours = 0  
-    leadtimes = [0]  
-    for m in range(month, month + leadtime_months):  
-        adjusted_year, adjusted_month = year, m  
-        if m > 12:  
-            adjusted_year += 1  
-            adjusted_month = m - 12  
-
-        num_days_month = calendar.monthrange(adjusted_year, adjusted_month)[
-            1
-        ]  
-        total_hours += num_days_month * 24  
-
-        # Append leadtimes at intervals of 6 hours  
-        leadtimes.extend(range(leadtimes[-1] + 6, total_hours + 6, 6))  
-    return leadtimes  
