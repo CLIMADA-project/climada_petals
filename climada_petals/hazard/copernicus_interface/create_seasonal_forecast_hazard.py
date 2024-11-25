@@ -103,7 +103,7 @@ class PathManager:
         return self.construct_path(sub_dir, file_name)
 
     def get_index_paths(self, originating_centre, year, month, index_metric, area_str):
-        sub_dir = f"{originating_centre}/{year}/{month}/indeces/{index_metric}"
+        sub_dir = f"{originating_centre}/{year}/{month}/indices/{index_metric}"
         return {
             timeframe: self.construct_path(sub_dir, f"{timeframe}_{area_str}.nc")
             for timeframe in ["daily", "monthly", "stats"]
