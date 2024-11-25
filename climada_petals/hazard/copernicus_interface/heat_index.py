@@ -428,18 +428,12 @@ def calculate_hw(
         List of tuples representing start and end indices of detected heatwaves. Each tuple indicates the beginning and ending day of a heatwave period.
     """
 
-    # Create a binary array: 1 for temperatures > threshold, 0 for ≤ threshold
-    # Initialize array to store heatwave days, filled with 0s
     hw_days = np.zeros(len(temperatures), dtype=int)
-
-    # Create a binary array: 1 for temperatures > threshold, 0 for ≤ threshold
     binary_array = np.where(temperatures >= threshold, 1, 0)
-
     events = []
     prev_continous_ones = 0
 
-    for i in range(len(binary_array)):
-        value = binary_array[i]
+    for i, value in enumerate(binary_array):
         if value == 0:
             prev_continous_ones = 0
         elif value == 1:
@@ -456,7 +450,6 @@ def calculate_hw(
             if prev_continous_ones >= min_duration:
                 events[-1] = (events[-1][0], i)
 
-    # Mark the identified heatwave periods in the hw_days array
     for start, end in events:
         hw_days[start : end + 1] = 1
 
