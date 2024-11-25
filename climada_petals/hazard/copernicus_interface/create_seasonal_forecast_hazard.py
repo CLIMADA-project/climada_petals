@@ -140,6 +140,7 @@ class SeasonalForecast:
 
         for year in self.year_list:
             for month in self.month_list:
+                month_int = int(month)
                 # Construct output file name
                 output_file_name = self.path_manager.get_download_path(
                     self.originating_centre,
@@ -155,7 +156,7 @@ class SeasonalForecast:
                     overwrite,
                     self.variables,
                     year,
-                    month,
+                    month_int,
                     self.format,
                     self.originating_centre,
                     self.system,
@@ -171,6 +172,7 @@ class SeasonalForecast:
         processed_files = {}
         for year in self.year_list:
             for month in self.month_list:
+
                 # Locate input and output file names
                 input_file_name = self.path_manager.get_download_path(
                     self.originating_centre,
@@ -404,8 +406,10 @@ def _download_data(
     try:
 
         # Calculate lead times
-        min_lead, max_lead = _calc_min_max_lead(year, month, max_lead_month)
-        leadtimes = list(range(min_lead, max_lead, 6))
+        # min_lead, max_lead = _calc_min_max_lead(year, month, max_lead_month)
+        # leadtimes = list(range(min_lead, max_lead, 6))
+        # leadtimes = self._calculate_leadtimes(year, month, self.max_lead_month)
+        leadtimes = _calculate_leadtimes(year, month, max_lead_month)
 
         # Prepare download parameters
         download_params = {
@@ -616,17 +620,21 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
         raise
 
 
-def _calc_min_max_lead(year, month, leadtime_months=1):
-    """Calculate min and max lead time."""
-    total_timesteps = 0
-    for m in range(int(month), int(month) + leadtime_months):
-        adjusted_year, adjusted_month = year, m
-        if m > 12:
-            adjusted_year += 1
-            adjusted_month = m - 12
+def _calculate_leadtimes(year, month, leadtime_months=1):  
+    month = int(month)
+    total_hours = 0  
+    leadtimes = [0]  
+    for m in range(month, month + leadtime_months):  
+        adjusted_year, adjusted_month = year, m  
+        if m > 12:  
+            adjusted_year += 1  
+            adjusted_month = m - 12  
 
-        num_days_month = calendar.monthrange(adjusted_year, adjusted_month)[1]
-        total_timesteps += num_days_month * 24
+        num_days_month = calendar.monthrange(adjusted_year, adjusted_month)[
+            1
+        ]  
+        total_hours += num_days_month * 24  
 
-    max_lead = total_timesteps + 6
-    return 0, max_lead
+        # Append leadtimes at intervals of 6 hours  
+        leadtimes.extend(range(leadtimes[-1] + 6, total_hours + 6, 6))  
+    return leadtimes  
