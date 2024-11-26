@@ -22,6 +22,8 @@ import pandas as pd
 import geopandas as gpd
 import pyproj
 from tqdm import tqdm
+import timeit
+
 import scipy
 
 from climada_petals.engine.networks.nw_base import Network, Graph
@@ -513,27 +515,37 @@ def _calc_friction(edge_geoms, friction_surf):
 # Propagation functions
 # =============================================================================
 
-def _propagate_check_fail(self, source, target, thresh_func):
+def propagate_check_fail(graph, source, target, thresh_func):
     """
     propagate capacities from source vertices to target vertices
     on the subgraph via the adjacency matrix.
     check whether capacity enough.
     fail target if not.
     """
-    v_seq = self.graph.vs.select(ci_type_in=[source, target])
-    subgraph = self.graph.induced_subgraph(v_seq)
+    v_seq = graph.graph.vs.select(ci_type_in=[source, target])
+    subgraph = graph.graph.induced_subgraph(v_seq)
+
+    #take vertices seq from subgraph and do operation on it to be sure that order is the same
+    v_seq_sub = subgraph.vs.select(ci_type_in=[source, target])
+
+    #keep track of original ids
+    subgraph_graph_vsdict = _get_subgraph2graph_vsdict(graph.graph, subgraph)
+    #subgraph_graph_vsdict = _get_subgraph2graph_vsdict_old(graph, v_seq)
+    v_seq_orig_id = [subgraph_graph_vsdict[v_id] for v_id in v_seq_sub.indices]
+
     try:
         adj_sub = subgraph.get_adjacency_sparse()
     except TypeError:
         # treats case where empty adjacency matrix!
         adj_sub = scipy.sparse.csr_matrix(subgraph.get_adjacency().data)
+
     # Hadamard product func_tot (*) capacity
     func_capa = np.multiply(v_seq['func_tot'],
                             v_seq[f'capacity_{source}_{target}'])
     # propagate capacities down from source --> target along adj
     capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
-    # functionality thesholds for recieved capacity
 
+    # functionality thesholds for recieved capacity
     func_thresh = np.array([thresh_func if vx['ci_type'] == target
                             else 0 for vx in v_seq])
 
@@ -546,11 +558,13 @@ def _propagate_check_fail(self, source, target, thresh_func):
     # This further assumes that any operation on a VertexSeq equally modifies its graph.
     # Both should be the case, but the igraph doc is always a bit ambiguous
     if target == 'people':
-        v_seq[f'actual_supply_{source}_{target}'] = capa_suff
+        graph.graph.vs[v_seq_orig_id][f'actual_supply_{source}_{target}'] = capa_suff
     else:
         func_tot = np.minimum(capa_suff, v_seq['func_tot'])
-        v_seq['func_tot'] = func_tot
+        #v_seq['func_tot'] = func_tot
+        graph.graph.vs[v_seq_orig_id]['func_tot'] = func_tot
 
+    return graph
 
 def cascade(graph, df_dependencies, p_source='power_plant',
             p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
@@ -578,7 +592,7 @@ def cascade(graph, df_dependencies, p_source='power_plant',
     LOGGER.info('Ended functional state update.' +
                 ' Proceeding to end-user update.')
     if (cycles > 1) or initial:
-        _update_enduser_dependencies(
+        update_enduser_dependencies(
             df_dependencies, preselect, friction_surf, dur_thresh)
 
 
@@ -648,49 +662,50 @@ def _update_functional_dependencies(self, df_dependencies):
         self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
 
-def _update_enduser_dependencies(self, df_dependencies, preselect,
+def update_enduser_dependencies(graph, df_dependencies, preselect,
                                  friction_surf, dur_thresh):
 
     for __, row in df_dependencies[
             df_dependencies['type_I'] == 'enduser'].iterrows():
 
+        dependency_name = f'dependency_{row.source}_{row.target}'
+
         if row.access_cnstr:
             LOGGER.info(
                 f'Re-calculating paths from {row.source} to {row.target}')
             if (row.source == 'road'):  # separate checking algorithm for road access
-                self.graph.delete_edges(
+                graph.graph.delete_edges(
                     ci_type=f'dependency_{row.source}_{row.target}')
-                self.link_vertices_edgecond(row.source, row.target,
-                                            link_name=f'dependency_{row.source}_{row.target}',
+                graph = link_vertices_edgecond(graph, row.source, row.target,
+                                            link_name=dependency_name,
                                             edge_type='road')
             elif row.single_link:  # those need to be re-checked on their fixed s-t
 
-                self.recheck_access(row.source, row.target, via_ci='road',
+                graph = recheck_access(graph, row.source, row.target, via_ci='road',
                                     friction_surf=friction_surf, dist_thresh=row.thresh_dist,
                                     dur_thresh=dur_thresh, criterion='distance',
-                                    link_name=f'dependency_{row.source}_{row.target}',
+                                    link_name=dependency_name,
                                     bidir=False)
 
             else:
                 # the re-checking takes much longer than checking completely
                 # from scratch, hence check from scratch.
                 starttime = timeit.default_timer()
-                self.graph.delete_edges(
+                graph.graph.delete_edges(
                     ci_type=f'dependency_{row.source}_{row.target}')
-                self.link_vertices_friction_surf(row.source, row.target, friction_surf,
-                                                 link_name=f'dependency_{row.source}_{row.target}',
+                graph = link_vertices_friction_surf(graph, row.source, row.target, friction_surf,
+                                                 link_name=dependency_name,
                                                  dist_thresh=dur_thresh*83.33,
                                                  k=5, dur_thresh=dur_thresh)
                 print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
                 ) - starttime)
                 starttime = timeit.default_timer()
-                self.link_vertices_shortest_paths(row.source, row.target, via_ci='road',
-                                                  dist_thresh=row.thresh_dist, criterion='distance',
-                                                  link_name=f'dependency_{row.source}_{row.target}',
-                                                  bidir=False, preselect=preselect)
+                graph = link_vertices_shortest_paths(graph, {'ci_type': row.source}, {'ci_type': row.target},
+                                             via_attrs={'ci_type': 'road'}, link_attrs={'ci_type': dependency_name},
+                                                  dist_thresh=row.thresh_dist, criterion='distance', bidir=False)
                 print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
                 ) - starttime)
-        self._propagate_check_fail(row.source, row.target, row.thresh_func)
+        graph = propagate_check_fail(graph, row.source, row.target, row.thresh_func)
 
 
 
