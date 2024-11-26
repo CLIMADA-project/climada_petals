@@ -694,7 +694,7 @@ def _update_enduser_dependencies(self, df_dependencies, preselect,
 
 
 
-def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
+def recheck_access(graph, source_ci, target_ci, via_ci, friction_surf,
                    dist_thresh, dur_thresh, criterion='distance',
                    link_name=None, bidir=False):
     """
@@ -703,10 +703,10 @@ def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
     Those with dysfunctional sources don't need to be checked, since
     dysfunctionality will anyways propagate to target later.
     """
-    es_check = self.graph.es.select(
+    es_check = graph.graph.es.select(
         ci_type=f'dependency_{source_ci}_{target_ci}')
 
-    bools_check = [self.graph.vs[edge.source]['func_tot'] > 0
+    bools_check = [graph.graph.vs[edge.source]['func_tot'] > 0
                    for edge in es_check]
 
     es_check = [edge for edge, bool_check in zip(es_check, bools_check)
@@ -718,17 +718,20 @@ def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
         v_ids_target = [edge.target for edge in es_check]
         v_ids_source = [edge.source for edge in es_check]
         v_ids_via = [vs.index for vs in
-                     self.graph.vs.select(ci_type=f'{via_ci}')]
+                     graph.graph.vs.select(ci_type=f'{via_ci}')]
 
         # first check friction
-        friction = self._calc_friction(edge_geoms, friction_surf)
+        friction = _calc_friction(edge_geoms, friction_surf)
         bool_keep = friction < dur_thresh
 
         # then check shortest paths
-        v_seq = self.graph.vs(list(np.unique([*v_ids_target, *v_ids_source,
+        v_seq = graph.graph.vs(list(np.unique([*v_ids_target, *v_ids_source,
                                               *v_ids_via])))
-        subgraph = self.graph.induced_subgraph(v_seq)
-        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
+
+        subgraph = graph.graph.induced_subgraph(v_seq)
+        #subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
+        subgraph_graph_vsdict = _get_subgraph2graph_vsdict(graph.graph, subgraph)
+
         graph_subgraph_vsdict = {v: k for k,
                                  v in subgraph_graph_vsdict.items()}
         subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
@@ -747,10 +750,10 @@ def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
                 if dist[0][0] < dist_thresh:
                     bool_keep[ix] = True
                     es_check[ix]['distance'] = dist[0][0]
-        self.graph.delete_edges([edge.index for edge, bool_f in
+        graph.graph.delete_edges([edge.index for edge, bool_f in
                                  zip(es_check, bool_keep)
                                  if not bool_f])
-
+    return graph
 
 def powercap_from_clusters(self, p_source, p_sink, demand_ci, source_var,
                            demand_var):
