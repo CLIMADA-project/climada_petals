@@ -241,6 +241,35 @@ def link_vertices_shortest_paths(graph, source_attrs, target_attrs, via_attrs,
 
     return graph
 
+def link_vertices_friction_surf(graph, source_ci, target_ci, friction_surf,
+                                    link_name=None, dist_thresh=None,
+                                    bidir=False, k=5, dur_thresh=None):
+
+        gdf_vs = graph.graph.get_vertex_dataframe()
+        gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) &
+                               (gdf_vs.func_tot==1)]
+        del gdf_vs
+
+        if not (gdf_vs_source.empty or gdf_vs_target.empty):
+            v_ids_source, v_ids_target = _select_closest_k(
+                gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
+
+            edge_geoms = make_edge_geometries(
+                graph.graph.vs[v_ids_source]['geometry'],
+                graph.graph.vs[v_ids_target]['geometry'])
+
+            friction = _calc_friction(edge_geoms, friction_surf)
+            v_ids_source = np.array(v_ids_source)[friction<dur_thresh]
+            v_ids_target = np.array(v_ids_target)[friction<dur_thresh]
+
+            if not link_name:
+                link_name = f'dependency_{source_ci}_{target_ci}'
+
+            _edges_from_vlists(
+                graph, list(v_ids_source), list(v_ids_target), {'ci_type': link_name})
+        return graph
+
 
 # =============================================================================
 # Helper funcs for making links
