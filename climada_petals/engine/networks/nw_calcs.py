@@ -19,6 +19,7 @@ import logging
 import igraph as ig
 import numpy as np
 import pandas as pd
+import geopandas as gpd
 import pyproj
 from tqdm import tqdm
 import scipy
@@ -27,6 +28,11 @@ from climada_petals.engine.networks.nw_base import Network, Graph
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
                                                      _ckdnearest,
                                                      _preselect_destinations)
+
+from climada.entity.exposures.base import Exposures
+from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
+from climada.engine import ImpactCalc
+from climada.util import lines_polys_handler as u_lp
 from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
@@ -431,6 +437,47 @@ def _get_subgraph2graph_vsdict(graph, subgraph):
     df_conc = pd.concat([df_subg, df_g], axis=1)
 
     return dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g']))
+
+def _calc_friction(edge_geoms, friction_surf):
+
+        # define mapping as impact function.
+        impf_fric = ImpactFunc()
+        impf_fric.id = 1
+        impf_fric.haz_type = ''
+        impf_fric.name = 'friction surface mapping'
+        impf_fric.intensity_unit = 'min/m'
+        impf_fric.intensity = np.linspace(friction_surf.intensity.data.min(),
+                                          friction_surf.intensity.data.max(),
+                                          num=500)
+        impf_fric.mdd = np.linspace(friction_surf.intensity.data.min(),
+                                    friction_surf.intensity.data.max(),
+                                    num=500)
+        impf_fric.paa = np.sort(np.linspace(1, 1, num=500))
+        impf_fric.check()
+        impf_set = ImpactFuncSet()
+        impf_set.append(impf_fric)
+
+        # perform impact calc for mapping.
+        exp_links = Exposures(gpd.GeoDataFrame({'geometry': edge_geoms}))
+        exp_links.gdf['impf_'] = 1
+        #exp_links.gdf["geometry_orig"] = exp_links.gdf.geometry
+
+        # step-by-step to avoid 0 duration sections
+        exp_pnt = u_lp.exp_geom_to_pnt(
+            exp_links, res=100, to_meters=True,
+            disagg_met=u_lp.DisaggMethod.FIX, disagg_val=100)
+
+        impact_pnt = ImpactCalc(exp_pnt, impf_set, friction_surf).impact(save_mat=True)
+        if impact_pnt.imp_mat.size < len(exp_pnt.gdf):
+            imp_arry = np.array(impact_pnt.imp_mat.todense()).flatten()
+            imp_arry[imp_arry==0] = \
+                exp_pnt.gdf.value[imp_arry==0]*friction_surf.intensity.data.min()
+            impact_pnt.imp_mat = scipy.sparse.csr_matrix(imp_arry)
+
+        friction = u_lp.impact_pnt_agg(
+            impact_pnt, exp_pnt.gdf, u_lp.AggMethod.SUM)
+
+        return friction.eai_exp
 
 
 # =============================================================================
