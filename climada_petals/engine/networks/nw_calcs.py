@@ -216,13 +216,15 @@ def link_vertices_shortest_paths(graph, source_attrs, target_attrs, via_attrs,
     else:
         ix_source, ix_target = np.where(path_dists < dist_thresh)
 
-    # re-map sources to original graph
-    v_ids_source = [subgraph_graph_vsdict[v_id_source] for v_id_source
-                    in df_vs_source.index.values[list(ix_source)]]
-
-    # re-map targets to original graph
-    v_ids_target = [subgraph_graph_vsdict[v_id_target] for v_id_target
-                    in df_vs_target.index.values[list(ix_target)]]
+    ## re-map sources to original graph
+    v_ids_source = df_vs_source.index.values[list(ix_source)]
+    #v_ids_source = [subgraph_graph_vsdict[v_id_source] for v_id_source
+    #                in df_vs_source.index.values[list(ix_source)]]
+#
+    ## re-map targets to original graph
+    v_ids_target = df_vs_target.index.values[list(ix_target)]
+    #v_ids_target = [subgraph_graph_vsdict[v_id_target] for v_id_target
+    #                in df_vs_target.index.values[list(ix_target)]]
 
     link_attrs['distance'] = path_dists[(ix_source, ix_target)]
 
