@@ -15,15 +15,21 @@ You should have received a copy of the GNU General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
-Climate Index Definitions and Explanations Module
+Climate Index Definitions and Variable Handling Module
 
-This module, `index_definitions.py`, defines the specifications and explanations for various indices
-used within the CLIMADA seasonal forecast workflow. It centralises necessary parameters, descriptions, and filenames
-for each climate index, ensuring consistent use across climate risk assessment workflows based on seasonal forecasts.
+This module, `index_definitions.py`, defines and organizes the specifications, explanations, and variable mappings
+for various climate indices used within the CLIMADA seasonal forecast workflow. It centralizes key parameters,
+descriptions, filenames, and variable handling, ensuring consistent and extensible use across climate risk
+assessment workflows based on seasonal forecasts.
 
-The provided definitions facilitate index-based analysis for indices such as Mean Temperature (Tmean), Tropical Nights (TR),
-and Heat Wave (HW). Structured for extensibility and usability, the module supports automated index configuration,
-standardised documentation, and file naming conventions across the seasonal forecast pipeline.
+Key features include:
+- Index Definitions: The `IndexSpec` dataclass defines attributes for each climate index, such as units,
+  standard and short names, full descriptions, required variables, and file naming conventions.
+- Enumerated Indices: The `IndexSpecEnum` organizes supported climate indices, such as Mean Temperature (Tmean),
+  Tropical Nights (TR), and Heat Wave (HW), each mapped to an `IndexSpec` instance for easy retrieval.
+- Variable-to-Short-Name Mapping: The `get_short_name_from_variable` function provides a centralized mechanism
+  for mapping variable names (e.g., "2m_temperature") to their corresponding short names (e.g., "t2m"), ensuring
+  consistency in variable handling.
 
 Attributes
 ----------
@@ -37,20 +43,28 @@ IndexSpecEnum : Enum
 Functions
 ---------
 get_info(index_name)
-    Retrieves the complete specifications of a specified climate index, such as required input variables
-    and naming conventions.
+    Retrieves the complete specifications of a specified climate index, including its attributes and required variables.
+get_short_name_from_variable(variable)
+    Maps a variable's standard name (e.g., "2m_temperature") to its short name (e.g., "t2m").
 
 Example Usage
 -------------
->>> from index_definitions import IndexSpecEnum
+>>> from index_definitions import IndexSpecEnum, get_short_name_from_variable
 >>> index_info = IndexSpecEnum.get_info("TR")
 >>> print(index_info.explanation)
+Tropical Nights: Counts nights with minimum temperatures above a certain threshold. Default threshold is 20°C.
 >>> print(index_info.variables)
+['2m_temperature']
+
+>>> short_name = get_short_name_from_variable("2m_temperature")
+>>> print(short_name)
+t2m
 
 Notes
 -----
 This module relies on the `xarray`, `pandas`, and `logging` libraries for array manipulation, datetime handling,
-and error and information logging.
+and error and information logging. It supports both index-based and variable-based workflows, allowing flexibility
+in how indices and variables are processed and managed.
 """
 
 from enum import Enum
@@ -208,6 +222,32 @@ class IndexSpecEnum(Enum):
 
 
 def get_short_name_from_variable(variable):
+    """
+    Retrieve the short name for a given variableon an index based on its standard name.
+
+    Parameters
+    ----------
+    variable : str
+        The standard name of the climate variable (e.g., "2m_temperature", "10m_u_component_of_wind").
+
+    Returns
+    -------
+    str
+        The short name corresponding to the specified climate variable (e.g., "t2m" for "2m_temperature").
+        Returns None if the variable is not recognized.
+
+    Notes
+    -----
+    This function maps specific variable names to their short names, which are used across
+    climate index definitions. These mappings are independent of the indices themselves
+    but provide consistent naming conventions for variable processing and file management.
+    
+    Examples
+    --------
+    get_short_name_from_variable("2m_temperature")'t2m'
+    get_short_name_from_variable("10m_u_component_of_wind")'10u'
+    get_short_name_from_variable("unknown_variable")None
+    """
 
     if variable == "2m_temperature":
         return "t2m"

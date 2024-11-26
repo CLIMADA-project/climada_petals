@@ -509,3 +509,4 @@ def index_explanations(index_metric):
         index_metric,
         {"error": "Unknown index", "valid_indices": list(index_explanations.keys())},
     )
+

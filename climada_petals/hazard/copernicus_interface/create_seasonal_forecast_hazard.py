@@ -20,6 +20,7 @@ from climada.util.coordinates import get_country_geometries
 from climada import CONFIG
 
 import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
+from climada_petals.hazard.copernicus_interface.seasonal_statistics import index_explanations
 from climada_petals.hazard.copernicus_interface.downloader import download_data
 from climada_petals.hazard.copernicus_interface.index_definitions import (
     IndexSpecEnum,
@@ -183,6 +184,31 @@ class SeasonalForecast:
             get_short_name_from_variable(var) for var in self.variables
         ]
 
+    def explain_index(self, index_metric=None):
+        """
+        Retrieve and print details about the selected climate index.
+
+        Parameters
+        ----------
+        index_metric : str, optional
+            The climate index to explain. If None, uses the instance's index_metric.
+
+        Returns
+        -------
+        dict
+            Explanation and input data required for the index.
+        """
+        index_metric = index_metric or self.index_metric
+        explanation = index_explanations(index_metric)
+
+        if "error" in explanation:
+            print(f"Error: {explanation['error']}")
+            print(f"Supported indices: {', '.join(explanation['valid_indices'])}")
+        else:
+            print(f"Explanation for {index_metric}: {explanation['explanation']}")
+            print(f"Required variables: {', '.join(explanation['input_data'])}")
+
+    
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
         """Determine geographic bounds based on area selection, including global or country ISO codes."""
