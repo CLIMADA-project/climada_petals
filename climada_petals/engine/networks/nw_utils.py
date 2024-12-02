@@ -139,7 +139,7 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999.):
 
 def service_dict():
     return {'power': 'actual_supply_power_line_people',
-            'healthcare': 'actual_supply_health_people',
+            'healthcare': 'actual_supply_healthcare_people',
             'education': 'actual_supply_education_people',
             'telecom': 'actual_supply_celltower_people',
             'mobility': 'actual_supply_road_people',
