@@ -27,6 +27,7 @@ import shapely.vectorized
 from shapely.geometry import Polygon
 
 from climada.hazard import Centroids
+from climada.util.constants import NATEARTH_CENTROIDS
 import climada.util.coordinates as u_coord
 import climada_petals.hazard.emulator.const as const
 
@@ -102,8 +103,8 @@ class HazRegion():
         centroids : climada.hazard.Centroids object
         """
         if latlon is None:
-            centroids = Centroids.from_base_grid(res_as=res_as)
-            centroids.set_meta_to_lat_lon()
+            # default centroids: Natural Earth data at given resolution
+            centroids = Centroids.from_hdf5(NATEARTH_CENTROIDS[res_as])
         else:
             centroids = Centroids.from_lat_lon(*latlon)
         msk = shapely.vectorized.contains(self.shape, centroids.lon, centroids.lat)

@@ -13,7 +13,7 @@ with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
 setup(
     name='climada_petals',
 
-    version='4.0.3-dev',
+    version='5.0.1-dev',
 
     description='CLIMADA Extensions in Python',
 
@@ -28,7 +28,7 @@ setup(
 
     classifiers=[
         'Development Status :: 4 - Beta',
-        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3',
         'Topic :: Scientific/Engineering :: Atmospheric Science',
         'Topic :: Scientific/Engineering :: GIS',
         'Topic :: Scientific/Engineering :: Mathematics',
@@ -37,10 +37,15 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
-        'climada>=4.0',
-        'scikit-image',
+        'boario',
+        'climada>=5.0',
+        'cdsapi',
+        'osm-flex',
         "pymrio",
-        'osm-flex>=1.1.1',
+        'rioxarray',
+        'ruamel.yaml',
+        'scikit-image',
+        'xesmf',
     ],
 
     packages=find_namespace_packages(include=['climada_petals*']),

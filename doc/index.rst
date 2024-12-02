@@ -58,6 +58,13 @@ Jump right in:
 
 
 .. toctree::
+   :caption: Documentation
+   :maxdepth: 1
+
+   glofas_rf
+   
+
+.. toctree::
    :caption: API Reference
    :hidden:
 
@@ -87,3 +94,4 @@ Jump right in:
    Changelog <misc/CHANGELOG>
    List of Authors <misc/AUTHORS>
    Contribution Guide <https://climada-python.readthedocs.io/en/latest/misc/CONTRIBUTING.html>
+   Citation Guide <https://climada-python.readthedocs.io/en/latest/misc/citation.html>

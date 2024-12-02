@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
 mamba env remove -n petals_env
-mamba create -n petals_env python=3.9
+mamba create -n petals_env python=3.11
 mamba env update -n petals_env -f ~/jobs/climada_install_env/workspace/requirements/env_climada.yml
 mamba env update -n petals_env -f requirements/env_climada.yml
 
