@@ -245,7 +245,7 @@ def get_short_name_from_variable(variable):
     Examples
     --------
     get_short_name_from_variable("2m_temperature")'t2m'
-    get_short_name_from_variable("10m_u_component_of_wind")'10u'
+    get_short_name_from_variable("10m_u_component_of_wind")'u10'
     get_short_name_from_variable("unknown_variable")None
     """
 
@@ -254,6 +254,6 @@ def get_short_name_from_variable(variable):
     elif variable == "2m_dewpoint_temperature":
         return "d2m"
     elif variable == "10m_u_component_of_wind":
-        return "10u"
+        return "u10"
     elif variable == "10m_v_component_of_wind":
-        return "10v"
+        return "v10"

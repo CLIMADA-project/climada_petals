@@ -11,8 +11,6 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import cdsapi
 from datetime import date
-from dateutil.relativedelta import relativedelta
-
 
 from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
@@ -33,47 +31,143 @@ LOGGER = logging.getLogger(__name__)
 
 
 # ----- Utility Functions -----
-def _calculate_leadtimes(year, month, leadtime_months=1):
+# Utility function for month name to number conversion (if not already defined)
+def month_name_to_number(month_name):
     """
-    Calculate lead times at 6-hour intervals over a specified number of months.
+    Convert a month name or numeric string to its corresponding month number.
 
-    Args:
-        year (int): Starting year.
-        month (int): Starting month (1-12).
-        leadtime_months (int): Number of months to calculate lead times for.
+    Parameters
+    ----------
+    month_name : str
+        Name of the month (e.g., 'March' or 'Mar') or a numeric string (e.g., '3').
 
-    Returns:
-        list[int]: Lead times in hours, starting from 0, in 6-hour intervals.
+    Returns
+    -------
+    int
+        The month number (1-12) corresponding to the given name or string.
+
+    Raises
+    ------
+    ValueError
+        If the input is neither a valid month name nor a number within the range 1-12.
+    """
+    # If already a valid integer or numeric string, convert directly
+    if isinstance(month_name, int) or month_name.isdigit():
+        month_num = int(month_name)
+        if 1 <= month_num <= 12:
+            return month_num
+    
+    try:
+        # Full month name
+        return list(calendar.month_name).index(month_name.capitalize())
+    except ValueError:
+        try:
+            # Abbreviated month name
+            return list(calendar.month_abbr).index(month_name.capitalize())
+        except ValueError:
+            raise ValueError(f"Invalid month name or number: {month_name}")
+        
+
+def calculate_leadtimes(year, initiation_month, lead_time_months):
+    """
+    Calculate lead times in hours for forecast initiation and lead months.
+
+    Parameters
+    ----------
+    year : int
+        The starting year for the forecast.
+    initiation_month : int or str
+        The initiation month for the forecast.
+    lead_time_months : list
+        A list of forecast lead months, either as integers or strings.
+
+    Returns
+    -------
+    list[int]
+        A sorted list of lead times in hours, with each step being 6 hours.
+
+    Raises
+    ------
+    ValueError
+        If initiation month or lead time months are invalid.
+    Exception
+        For general errors during lead time calculation.
     """
     try:
-        # Validate inputs
-        if not (1 <= month <= 12):
-            raise ValueError("Month must be in the range 1-12.")
-        if leadtime_months < 1:
-            raise ValueError("Leadtime months must be a positive integer.")
+        # Convert initiation month to numeric if it is a string
+        if isinstance(initiation_month, str):
+            initiation_month = month_name_to_number(initiation_month)
 
-        # Define the starting date
-        day = date(day=1, month=month, year=year)
+        # Convert lead time months to numeric
+        lead_time_months = [
+            month_name_to_number(month) if isinstance(month, str) else month
+            for month in lead_time_months
+        ]
 
-        # Calculate total hours for the given leadtime_months
-        max_lead = (day + relativedelta(months=leadtime_months) - day).days * 24
+        # Validate initiation month
+        if not (1 <= initiation_month <= 12):
+            raise ValueError("Initiation month must be in the range 1-12.")
 
-        # Generate lead times at 6-hour intervals
-        leadtimes = [i for i in range(0, max_lead + 6, 6)]
+        # Validate lead time months
+        if not lead_time_months:
+            raise ValueError("At least one lead time month must be specified.")
+
+        # Reference starting date for initiation
+        initiation_date = date(year, initiation_month, 1)
+
+        # Include initiation month in lead time calculation
+        all_months = [initiation_month] + lead_time_months
+
+        # Calculate lead times
+        leadtimes = []
+        for i, forecast_month in enumerate(all_months):
+            # Adjust the year for months crossing into the next year
+            forecast_year = year
+            if forecast_month < initiation_month and i > 0:
+                forecast_year += 1
+
+            # Calculate the start of the forecast month
+            forecast_date = date(forecast_year, forecast_month, 1)
+
+            # Calculate difference in hours between initiation and forecast month
+            time_diff = forecast_date - initiation_date
+            start_hour = time_diff.days * 24
+            leadtimes.extend(range(start_hour, start_hour + 24 * 31, 6))  # Full month in 6-hour steps
+
+        # Remove duplicates and sort
+        leadtimes = sorted(set(leadtimes))
 
         LOGGER.debug(
-            f"Calculated lead times for {year}-{month} over {leadtime_months} months: {leadtimes}"
+            f"Calculated lead times for year {year}, initiation month {initiation_month}, "
+            f"forecast months {lead_time_months}: {leadtimes}"
         )
+
         return leadtimes
 
     except Exception as e:
-        LOGGER.error(f"Error in calculating lead times for {year}-{month}: {e}")
+        LOGGER.error(f"Error in calculating lead times for year {year} and initiation month {initiation_month}: {e}")
         raise
 
 
-
 def handle_overwriting(function):
-    """Decorator to manage overwriting functionality."""
+    """
+    Decorator to manage file overwriting during processing.
+
+    Parameters
+    ----------
+    function : callable
+        The function to decorate.
+
+    Returns
+    -------
+    callable
+        The wrapped function, which checks file existence before executing.
+
+    Notes
+    -----
+    If the file already exists and overwriting is not allowed, the existing file path
+    is returned directly without calling the wrapped function.
+    """
 
     def wrapper(output_file_name, overwrite, *args, **kwargs):
         # if data exists and we do not want to overwrite
@@ -85,7 +179,7 @@ def handle_overwriting(function):
             if not overwrite and any(
                 [path.exists() for path in output_file_name.values()]
             ):
-                LOGGER.info(
+                LOGGER.debug(
                     f"A file of {[str(path) for path in output_file_name.values()]} already exists."
                 )
                 return output_file_name
@@ -95,7 +189,6 @@ def handle_overwriting(function):
     return wrapper
 
 
-
 class PathManager:
     """Centralized path management for input, processed, and hazard data."""
 
@@ -103,66 +196,207 @@ class PathManager:
         self.base_dir = Path(base_dir)
 
     def construct_path(self, sub_dir, file_name):
-        """Constructs a full path from a sub-directory and file name."""
+        """
+        Construct a full file path from a sub-directory and file name.
+
+        Parameters
+        ----------
+        sub_dir : str
+            Sub-directory relative to the base directory.
+        file_name : str
+            File name to append to the sub-directory.
+
+        Returns
+        -------
+        Path
+            Full path to the file.
+        """
         Path(self.base_dir / sub_dir).mkdir(parents=True, exist_ok=True)
         return self.base_dir / sub_dir / file_name
 
-    def get_download_path(
-        self, originating_centre, year, month, index_metric, area_str, format
-    ):
+    def get_download_path(self, originating_centre, year, initiation_month, index_metric, area_str, format):
+        """        
+        Get the file path for downloaded data.
+
+        Parameters
+        ----------
+        originating_centre : str
+            The data source (e.g., 'dwd').
+        year : int
+            The forecast year.
+        initiation_month : int
+            The initiation month.
+        index_metric : str
+            Climate index (e.g., 'HW').
+        area_str : str
+            Area identifier string.
+        format : str
+            File format ('grib' or 'netcdf').
+
+        Returns
+        -------
+        Path
+            Path to the downloaded data file.
         """
-        Path for downloaded grib data.
-        """
-        sub_dir = f"{originating_centre}/{year}/{month}/downloaded_data/{format}"
+        initiation_month_str = str(initiation_month).zfill(2)
+        sub_dir = f"{originating_centre}/{year}/{initiation_month_str}/downloaded_data/{format}"
         file_name = f"{index_metric.lower()}_{area_str}.{format}"
         return self.construct_path(sub_dir, file_name)
 
-    def get_daily_processed_path(
-        self, originating_centre, year, month, index_metric, area_str
-    ):
+    def get_daily_processed_path(self, originating_centre, year, initiation_month, index_metric, area_str):
+        """        
+        Get the file path for daily processed data.
+
+        Parameters
+        ----------
+        originating_centre : str
+            The data source (e.g., 'dwd').
+        year : int
+            The forecast year.
+        initiation_month : int
+            The initiation month.
+        index_metric : str
+            Climate index (e.g., 'HW').
+        area_str : str
+            Area identifier string.
+
+        Returns
+        -------
+        Path
+            Path to the daily processed file.
         """
-        Path for processed daily netcdf data.
-        """
-        sub_dir = f"{originating_centre}/{year}/{month}/processed_daily_data"
-        file_name = f"{index_metric.lower()}_{area_str}.nc"
+        # Update the sub-directory to use initiation_month
+        sub_dir = f"{originating_centre}/{year}/{str(initiation_month).zfill(2)}/processed_data"
+        file_name = f"{index_metric.lower()}_{area_str}_daily.nc"
         return self.construct_path(sub_dir, file_name)
 
     def get_index_paths(self, originating_centre, year, month, index_metric, area_str):
-        sub_dir = f"{originating_centre}/{year}/{month}/indices/{index_metric}"
+        """        
+        Get file paths for daily, monthly, and stats index files.
+
+        Parameters
+        ----------
+        originating_centre : str
+            The data source (e.g., 'dwd').
+        year : int
+            The forecast year.
+        month : int
+            The month for the index file.
+        index_metric : str
+            Climate index (e.g., 'HW').
+        area_str : str
+            Area identifier string.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys ['daily', 'monthly', 'stats'] and corresponding file paths.
+        """
+        month_str = str(month).zfill(2)
+        sub_dir = f"{originating_centre}/{year}/{month_str}/indices/{index_metric}"
         return {
             timeframe: self.construct_path(sub_dir, f"{timeframe}_{area_str}.nc")
             for timeframe in ["daily", "monthly", "stats"]
         }
-
+    
     def get_hazard_path(self, originating_centre, year, month, index_metric, area_str):
-        """
-        Path for hazard HDF5 output data.
-        """
-        sub_dir = f"{originating_centre}/{year}/{month}/hazard/{index_metric}"
+        """        
+        Get the file path for a Hazard HDF5 file.
+
+        Parameters
+        ----------
+        originating_centre : str
+            The data source (e.g., 'dwd').
+        year : int
+            The forecast year.
+        month : int
+            The month for the hazard file.
+        index_metric : str
+            Climate index (e.g., 'HW').
+        area_str : str
+            Area identifier string.
+
+        Returns
+        -------
+        Path
+            Path to the Hazard HDF5 file."""
+        month_str = str(month).zfill(2)
+        sub_dir = f"{originating_centre}/{year}/{month_str}/hazard/{index_metric}"
         file_name = f"{area_str}.hdf5"
         return self.construct_path(sub_dir, file_name)
 
 
+
 # ----- Main Class -----
 class SeasonalForecast:
+    """
+        Class for managing the download, processing, and analysis of seasonal climate forecast data.
+    """
     def __init__(
         self,
         index_metric,
         year_list,
-        month_list,
+        lead_time_months,
+        initiation_month,
         area_selection,
         format,
         originating_centre,
         system,
-        max_lead_month,
         data_out=None,
     ):
         """
         Initialize the SeasonalForecast instance with user-defined parameters for index calculation.
+
+        Parameters
+        ----------
+        index_metric : str
+            Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
+        year_list : list[int]
+            Years for which data should be downloaded and processed.
+        lead_time_months : list[str]
+            Lead time months (e.g., ["June", "July", "August"]).
+        initiation_month : list[str]
+            Initiation months for the forecasts (e.g., ["March", "April"]).
+        area_selection : list or str
+            Geographic area for the analysis (e.g., "global", ["DEU"], or [north, west, south, east]).
+        format : str
+            Data format ('grib' or 'netcdf').
+        originating_centre : str
+            Data source (e.g., "dwd").
+        system : str
+            Model configuration (e.g., "21").
+        data_out : Path, optional
+            Directory for storing data. Defaults to a pre-configured directory.
         """
+        # Ensure initiation_month is a list
+        if not isinstance(initiation_month, list):
+            initiation_month = [initiation_month]
+        
+        # Convert initiation months to numbers and format as two-digit strings
+        processed_initiation_months = []
+        for month in initiation_month:
+            # If month is a string, convert to number
+            if isinstance(month, str):
+                month = month_name_to_number(month)
+            
+            # Ensure month is a two-digit string
+            processed_initiation_months.append(f"{month:02d}")
+   
         self.index_metric = index_metric
         self.year_list = year_list
-        self.month_list = [f"{month:02d}" for month in month_list]
+
+        # Process lead time months
+        processed_lead_time_months = []
+        for month in lead_time_months:
+            # If month is a string, convert to number
+            if isinstance(month, str):
+                month = month_name_to_number(month)
+            
+            # Ensure month is a two-digit string
+            processed_lead_time_months.append(f"{month:02d}")
+        
+        self.lead_time_months = processed_lead_time_months
+        self.initiation_month = processed_initiation_months
         self.area_selection = area_selection  # Store user input for reference
         self.bounds = self._get_bounds_for_area_selection(
             area_selection
@@ -171,8 +405,7 @@ class SeasonalForecast:
         self.format = format
         self.originating_centre = originating_centre
         self.system = system
-        self.max_lead_month = max_lead_month
-
+       
         # initialze path handling
         self.data_out = Path(data_out) if data_out else DATA_OUT
         self.path_manager = PathManager(self.data_out)
@@ -276,76 +509,109 @@ class SeasonalForecast:
     ##########  Download and process ##########
 
     def _download(self, overwrite=False):
-        """Download data for specified years and months."""
-        output_files = {}
+        """
+        Download data for specified years and initiation months.
 
+        Parameters
+        ----------
+        overwrite : bool
+            Whether to overwrite existing downloaded files.
+
+        Returns
+        -------
+        dict
+            Paths to the downloaded files, indexed by (year, initiation_month).
+        """
+        output_files = {}
         for year in self.year_list:
-            for month in self.month_list:
-                month_int = int(month)
-                # Construct output file name
+            for initiation_month in self.initiation_month:
+                # Download for each lead time month
                 output_file_name = self.path_manager.get_download_path(
                     self.originating_centre,
                     year,
-                    month,
+                    initiation_month,
                     self.index_metric,
                     self.area_str,
                     self.format,
                 )
-
-                output_files[(year, month)] = _download_data(
+                
+                output_files[(year, initiation_month)] = _download_data(
                     output_file_name,
                     overwrite,
                     self.variables,
                     year,
-                    month_int,
+                    initiation_month,
                     self.format,
                     self.originating_centre,
                     self.system,
                     self.bounds,
-                    self.max_lead_month,
+                    self.lead_time_months,  # Pass lead time months directly
                 )
+        
         return output_files
 
     def _process(self, overwrite=False):
         """
-        Process downloaded data into daily NetCDF format and return processed file paths.
+        Process the downloaded data into daily NetCDF format.
+
+        Parameters
+        ----------
+        overwrite : bool
+            Whether to overwrite existing processed files.
+
+        Returns
+        -------
+        dict
+            Paths to the processed files, indexed by (year, initiation_month, month).
         """
         processed_files = {}
         for year in self.year_list:
-            for month in self.month_list:
-
-                # Locate input and output file names
+            for initiation_month in self.initiation_month:
+                # Locate input file name
                 input_file_name = self.path_manager.get_download_path(
                     self.originating_centre,
                     year,
-                    month,
+                    initiation_month,
                     self.index_metric,
                     self.area_str,
                     self.format,
                 )
-
+                
+                # Generate output file name 
                 output_file_name = self.path_manager.get_daily_processed_path(
                     self.originating_centre,
                     year,
-                    month,
+                    initiation_month,
                     self.index_metric,
                     self.area_str,
                 )
-
-                # Call _process_data for daily NetCDF file creation
-                processed_files[(year, month)] = _process_data(
-                    output_file_name,
-                    overwrite,
-                    input_file_name,
-                    self.variables_short,
-                    self.format,
-                )
-
+                
+                # Process each lead time month
+                for month in self.lead_time_months:
+                    processed_files[(year, initiation_month, month)] = _process_data(
+                        output_file_name,
+                        overwrite,
+                        input_file_name,
+                        self.variables_short,
+                        self.format,
+                    )
+        
         return processed_files
+
 
     def download_and_process_data(self, overwrite=False):
         """
-        Download and process climate forecast data based on the area selection.
+        Download and process climate forecast data.
+
+        Parameters
+        ----------
+        overwrite : bool
+            Whether to overwrite existing files.
+
+        Returns
+        -------
+        dict
+            A dictionary containing paths to downloaded and processed data.
         """
 
         # Call high-level methods for downloading and processing
@@ -364,95 +630,170 @@ class SeasonalForecast:
     def calculate_index(
         self, overwrite=False, threshold=27, min_duration=3, max_gap=0, tr_threshold=20
     ):
-        """ """
+        """
+        Calculate the specified climate index based on the downloaded data.
+
+        Parameters
+        ----------
+        overwrite : bool
+            Whether to overwrite existing files.
+        threshold : float
+            Threshold value for the index.
+        min_duration : int
+            Minimum duration for consecutive conditions (specific to certain indices).
+        max_gap : int
+            Maximum allowable gap between conditions (specific to certain indices).
+        tr_threshold : float
+            Threshold for tropical nights.
+
+        Returns
+        -------
+        dict
+            Outputs for each processed year and month, indexed by (year, month).
+        """
         index_outputs = {}
 
+        # Iterate over each year and initiation month
         for year in self.year_list:
-            for month in self.month_list:
-                LOGGER.info(f"Processing index {self.index_metric} for {year}-{month}.")
-
-                if self.index_metric in ["TX30", "TR", "HW"]:
-                    input_file_name = self.path_manager.get_download_path(
-                        self.originating_centre,
-                        year,
-                        month,
-                        self.index_metric,
-                        self.area_str,
-                        "grib",
-                    )
-                else:
-                    input_file_name = self.path_manager.get_daily_processed_path(
-                        self.originating_centre,
-                        year,
-                        month,
-                        self.index_metric,
-                        self.area_str,
-                        format="nc",
-                    )
-
-                output_file_names = self.path_manager.get_index_paths(
-                    self.originating_centre,
-                    year,
-                    month,
-                    self.index_metric,
-                    self.area_str,
+            for initiation_month in self.initiation_month:
+                LOGGER.info(
+                    f"Processing index {self.index_metric} for year {year}, initiation month {initiation_month}."
                 )
 
-                try:
-                    # Call _process_index to perform calculations for the given year and month
-                    outputs = _calculate_index(
-                        output_file_names,
-                        overwrite,
-                        input_file_name,
+                # Convert initiation month to integer
+                initiation_month_int = int(initiation_month)
+                lead_time_months = [int(month) for month in self.lead_time_months]
+                all_months = [initiation_month_int] + lead_time_months  # Include initiation month
+
+                for month in all_months:
+                    # Adjust year for forecast months that fall in the next calendar year
+                    process_year = year
+                    if month < initiation_month_int and month in lead_time_months:
+                        process_year += 1
+
+                    # Use initiation month folder for forecast months
+                    output_month = initiation_month if month in lead_time_months else f"{month:02d}"
+
+                    # Determine the input file based on index type
+                    if self.index_metric in ["TX30", "TR", "HW"]:  # Metrics using GRIB
+                        input_file_name = self.path_manager.get_download_path(
+                            self.originating_centre,
+                            year,  # Year is initiation year
+                            initiation_month,  # Initiation month folder
+                            self.index_metric,
+                            self.area_str,
+                            "grib",
+                        )
+                    else:  # Metrics using processed NC files
+                        input_file_name = self.path_manager.get_daily_processed_path(
+                            self.originating_centre,
+                            year,  
+                            initiation_month,  
+                            self.index_metric,
+                            self.area_str,
+                        )
+
+                    # Generate paths for index outputs 
+                    output_file_names = self.path_manager.get_index_paths(
+                        self.originating_centre,
+                        year,  
+                        output_month,  #
                         self.index_metric,
-                        threshold=27,
-                        min_duration=3,
-                        max_gap=0,
-                        tr_threshold=20,
+                        self.area_str,
                     )
-                    index_outputs[(year, month)] = outputs
-                except Exception as e:
-                    LOGGER.error(
-                        f"Error processing index {self.index_metric} for {year}-{month}: {e}"
-                    )
+
+                    # Process the index and handle exceptions
+                    try:
+                        outputs = _calculate_index(
+                            output_file_names,
+                            overwrite,
+                            input_file_name,
+                            self.index_metric,
+                            threshold=threshold,
+                            min_duration=min_duration,
+                            max_gap=max_gap,
+                            tr_threshold=tr_threshold,
+                        )
+                        index_outputs[(process_year, month)] = outputs
+
+                    except FileNotFoundError:
+                        LOGGER.warning(
+                            f"File not found for {process_year}-{month:02d}. Skipping..."
+                        )
+                    except Exception as e:
+                        LOGGER.error(
+                            f"Error processing index {self.index_metric} for {process_year}-{month}: {e}"
+                        )
 
         return index_outputs
 
     ##########  Calculate hazard  ##########
 
     def save_index_to_hazard(self, overwrite=False):
-        """ """
+        """
+        Convert the calculated index to a Hazard object and save it as HDF5.
+
+        Parameters
+        ----------
+        overwrite : bool
+            Whether to overwrite existing files.
+
+        Returns
+        -------
+        dict
+            Paths to the saved Hazard files, indexed by (year, month).
+        """
         hazard_outputs = {}
 
         for year in self.year_list:
-            for month in self.month_list:
+            for initiation_month in self.initiation_month:
                 LOGGER.info(
-                    f"Creating hazard for index {self.index_metric} for {year}-{month}."
+                    f"Creating hazard for index {self.index_metric} for year {year}, initiation month {initiation_month}."
                 )
 
-                # Get the input index file and the hazard output file paths
-                input_file_name = self.path_manager.get_index_paths(
-                    self.originating_centre,
-                    year,
-                    month,
-                    self.index_metric,
-                    self.area_str,
-                )["monthly"]
-                output_file_name = self.path_manager.get_hazard_path(
-                    self.originating_centre,
-                    year,
-                    month,
-                    self.index_metric,
-                    self.area_str,
-                )
+                # Convert initiation month to integer
+                initiation_month_int = int(initiation_month)
+                lead_time_months = [int(month) for month in self.lead_time_months]
+                all_months = [initiation_month_int] + lead_time_months  # Include initiation month
 
-                try:
-                    # Convert index file to hazard
-                    hazard_outputs[(year, month)] = _convert_to_hazard(
-                        output_file_name, overwrite, input_file_name, self.index_metric
+                for month in all_months:
+                    # Adjust year for forecast months crossing into the next year
+                    process_year = year
+                    if month < initiation_month_int and month in lead_time_months:
+                        process_year += 1
+
+                    # Use initiation month folder for forecast months
+                    output_month = initiation_month if month in lead_time_months else f"{month:02d}"
+
+                    # Get input index file paths and hazard output file paths
+                    input_file_name = self.path_manager.get_index_paths(
+                        self.originating_centre,
+                        year,  
+                        output_month,
+                        self.index_metric,
+                        self.area_str,
+                    )["monthly"]
+                    output_file_name = self.path_manager.get_hazard_path(
+                        self.originating_centre,
+                        year,  
+                        output_month,
+                        self.index_metric,
+                        self.area_str,
                     )
-                except Exception as e:
-                    LOGGER.error(f"Failed to create hazard for {year}-{month}: {e}")
+
+                    try:
+                        # Convert index file to Hazard
+                        hazard_outputs[(process_year, month)] = _convert_to_hazard(
+                            output_file_name, overwrite, input_file_name, self.index_metric
+                        )
+                    except FileNotFoundError:
+                        LOGGER.warning(
+                            f"Monthly index file not found for {process_year}-{month:02d}. Skipping..."
+                        )
+                    except Exception as e:
+                        LOGGER.error(
+                            f"Failed to create hazard for {process_year}-{month:02d}: {e}"
+                        )
 
         return hazard_outputs
 
@@ -465,22 +806,52 @@ def _download_data(
     overwrite,
     variables,
     year,
-    month,
+    initiation_month,
     format,
     originating_centre,
     system,
     bounds,
-    max_lead_month,
+    lead_time_months,
 ):
-    """Download seasonal forecast data for a specific year and month."""
+    """
+    Download seasonal forecast data for a specific year and initiation month.
+
+    Parameters
+    ----------
+    output_file_name : Path
+        Path to save the downloaded data.
+    overwrite : bool
+        Whether to overwrite existing files.
+    variables : list[str]
+        List of variables to download.
+    year : int
+        The year for which data is being downloaded.
+    initiation_month : int
+        The month when the forecast is initiated.
+    format : str
+        File format for the downloaded data, either 'grib' or 'netcdf'.
+    originating_centre : str
+        The data source, e.g., 'dwd' for German Weather Service.
+    system : str
+        The specific forecast model or system version.
+    bounds : list[float]
+        Geographical bounds [north, west, south, east] for the data.
+    lead_time_months : list[int]
+        List of forecast months relative to the initiation month.
+
+    Returns
+    -------
+    Path
+        Path to the downloaded data file.
+    """
     try:
-
-        # Calculate lead times
-        # min_lead, max_lead = _calc_min_max_lead(year, month, max_lead_month)
-        # leadtimes = list(range(min_lead, max_lead, 6))
-        # leadtimes = self._calculate_leadtimes(year, month, self.max_lead_month)
-        leadtimes = _calculate_leadtimes(year, month, max_lead_month)
-
+        # Calculate lead times using the lead time months
+        leadtimes = calculate_leadtimes(
+            year,
+            initiation_month=initiation_month,
+            lead_time_months=lead_time_months
+        )
+        
         # Prepare download parameters
         download_params = {
             "format": format,
@@ -488,30 +859,48 @@ def _download_data(
             "area": bounds,
             "system": system,
             "variable": variables,
-            "month": month,
+            "month": initiation_month,
             "year": year,
             "day": "01",
             "leadtime_hour": leadtimes,
         }
-
+        
         # Perform download
-        output_file_name = download_data(
+        downloaded_file = download_data(
             "seasonal-original-single-levels",
             download_params,
             output_file_name,
-            overwrite=True,
+            overwrite=overwrite,
         )
-        return output_file_name
-
+        
+        return downloaded_file
+    
     except Exception as e:
-        LOGGER.error(f"Error downloading data for {year}-{month}: {e}")
+        LOGGER.error(f"Error downloading data for {year}-{initiation_month}: {e}")
         raise
-
 
 @handle_overwriting
 def _process_data(output_file_name, overwrite, input_file_name, variables, format):
     """
     Process a single input file into the desired daily NetCDF format.
+
+    Parameters
+    ----------
+    output_file_name : Path
+        Path to save the processed data.
+    overwrite : bool
+        Whether to overwrite existing files.
+    input_file_name : Path
+        Path to the input file.
+    variables : list[str]
+        Variables to process in the input file.
+    format : str
+        File format of the input file ('grib' or 'netcdf').
+
+    Returns
+    -------
+    Path
+        Path to the processed data file.
     """
     try:
         with xr.open_dataset(
@@ -555,7 +944,33 @@ def _calculate_index(
     max_gap=0,
     tr_threshold=20,
 ):
-    """ """
+    """ 
+    Calculate and save climate indices based on the input data.
+
+    Parameters
+    ----------
+    output_file_names : dict
+        Dictionary containing paths for daily, monthly, and stats output files.
+    overwrite : bool
+        Whether to overwrite existing files.
+    input_file_name : Path
+        Path to the input file.
+    index_metric : str
+        Climate index to calculate (e.g., 'HW', 'TR').
+    threshold : float, optional
+        Threshold for the index calculation (specific to the index type).
+    min_duration : int, optional
+        Minimum duration for events (specific to the index type).
+    max_gap : int, optional
+        Maximum gap allowed between events (specific to the index type).
+    tr_threshold : float, optional
+        Threshold for tropical nights (specific to the 'TR' index).
+
+    Returns
+    -------
+    dict
+        Paths to the saved index files.
+    """
     # Define output paths
     daily_output_path = output_file_names["daily"]
     monthly_output_path = output_file_names["monthly"]
@@ -624,43 +1039,67 @@ def _calculate_index(
 @handle_overwriting
 def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metric):
     """
-    Convert an index file to a Hazard object and save it...
+    Convert an index file to a Hazard object and save it as HDF5.
+
+    Parameters
+    ----------
+    output_file_name : Path
+        Path to save the Hazard file.
+    overwrite : bool
+        Whether to overwrite existing files.
+    input_file_name : Path
+        Path to the input index file.
+    index_metric : str
+        Climate index metric (e.g., 'HW', 'TR').
+
+    Returns
+    -------
+    Path
+        Path to the saved Hazard file.
+
+    Raises
+    ------
+    KeyError
+        If required variables are missing in the dataset.
+    Exception
+        If the conversion process fails.
     """
     try:
         with xr.open_dataset(str(input_file_name)) as ds:
-            # Update the 'step' dimension to include formatted date strings
+            if "step" not in ds.variables:
+                raise KeyError(
+                    f"Missing 'step' variable in dataset for {input_file_name}."
+                )
+
             ds["step"] = xr.DataArray(
                 [f"{date}-01" for date in ds["step"].values],
                 dims=["step"],
             )
             ds["step"] = pd.to_datetime(ds["step"].values)
 
-            # Get the ensemble members
-            ensemble_members = ds["number"].values
+            ensemble_members = ds.get("number", [0]).values
             hazards = []
 
-            # Determine intensity unit based on the index metric
+            # Determine intensity unit and variable
             intensity_unit = (
                 "%"
                 if index_metric == "RH"
                 else "days" if index_metric in ["TR", "TX30", "HW"] else "°C"
             )
-            hazard_type = index_metric
-            intensity_variable = index_metric  # Match exact variable name in dataset
+            intensity_variable = index_metric
 
-            # Ensure the intensity variable exists in the dataset
             if intensity_variable not in ds.variables:
                 raise KeyError(
                     f"No variable named '{intensity_variable}' in the dataset. "
                     f"Available variables: {list(ds.variables)}"
                 )
 
-            # Iterate through ensemble members and create Hazard objects
-            for i, member in enumerate(ensemble_members):
-                ds_subset = ds.sel(number=member)
+            # Create Hazard objects
+            for member in ensemble_members:
+                ds_subset = ds.sel(number=member) if "number" in ds.dims else ds
                 hazard = Hazard.from_xarray_raster(
                     data=ds_subset,
-                    hazard_type=hazard_type,
+                    hazard_type=index_metric,
                     intensity_unit=intensity_unit,
                     intensity=intensity_variable,
                     coordinate_vars={
@@ -669,22 +1108,19 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
                         "latitude": "latitude",
                     },
                 )
-
-                # Set event names for the ensemble member
-                if i == 0:
-                    number_lead_times = len(hazard.event_name)
-                hazard.event_name = [f"member{member}"] * number_lead_times
-
+                hazard.event_name = [
+                    f"member{member}" for _ in range(len(hazard.event_name))
+                ]
                 hazards.append(hazard)
 
-            # Concatenate all hazards into one
             hazard = Hazard.concat(hazards)
-
-            # Validate and save the Hazard object
             hazard.check()
             hazard.write_hdf5(str(output_file_name))
-            return output_file_name
+
+        LOGGER.info(f"Hazard file saved to {output_file_name}")
+        return output_file_name
 
     except Exception as e:
         LOGGER.error(f"Failed to convert {input_file_name} to hazard: {e}")
         raise
+
