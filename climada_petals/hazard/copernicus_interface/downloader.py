@@ -33,7 +33,7 @@ Prerequisites:
    https://cds.climate.copernicus.eu/how-to-api#install-the-cds-api-client
 
 4. Dataset Terms and Conditions: After selecting the dataset to download, make 
-   sure to accept the terms and conditions on the corresponding dataset webpage 
+   sure to accept the terms and conditions on the corresponding dataset webpage (under the "download" tab)
    in the CDS portal before running the script.
 """
 
@@ -48,7 +48,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def download_data(dataset, params, filename=None, datastore_url=None, overwrite=False):
-    """Download data from Copernicus Data Stores (e.g., ds.climate.copernicus.eu,
+    """Download data from Copernicus Data Stores (e.g., cds.climate.copernicus.eu,
     ads.atmosphere.copernicus.eu and ewds.climate.copernicus.eu) using specified dataset type and parameters.
 
     Parameters
@@ -57,6 +57,8 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
         The dataset to retrieve (e.g., 'seasonal-original-single-levels', 'sis-heat-and-cold-spells').
     params : dict
         Dictionary containing the parameters for the CDS API call (e.g., variables, time range, area).
+        To see which parameters are requested for the given dataset, ckeck out  in the "download" tab
+        of the dataset, tick all required parameter choices, and copy the "request" dict in the "API request" section.
     filename : pathlib.Path or str
         Full path and filename where the downloaded data will be stored. If None, data will be saved with the filename as suggested by the data store. Defaults to None.
     datastore_url : str
@@ -64,6 +66,11 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
     overwrite : bool, optional
         If True, overwrite the file if it already exists. If False, skip downloading
         if the file is already present. The default is False.
+
+    Returns
+    ----------
+    Path
+        Path to the downloaded file if the download was successfull.
 
     Raises
     ------
@@ -146,8 +153,11 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
         elif "403 Client Error" in str(e):
             error_message = f"Required licences not accepted. Please accept here: {url}/datasets/{dataset}?tab=download"
         # parameter choice not available
-        elif "MARS returned no data" in str(e):
-            error_message = "No data available for the given parameters. This may indicate unavailable or incorrect parameter selection. Please verify the existence of the data on the Climate Data Store website."
+        elif "MARS returned no data" in str(e) or "400 Client Error" in str(e):
+            error_message = (
+                "No data available for the given parameters. This may indicate unavailable or incorrect parameter selection. Please verify the existence of the data on the Climate Data Store website. "
+                f'You can find which parameters are requested for the given dataset by indicating all required parameter choices at {url}/datasets/{dataset}?tab=download, and copy the "request" keyword in the "API request" section.'
+            )
         # general error
         else:
             error_message = f"Unexpected error downloading file {filename} (for common error sources, check out https://confluence.ecmwf.int/display/CKB/Common+Error+Messages+for+CDS+Requests). Error description: {str(e)}"
