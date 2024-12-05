@@ -57,8 +57,8 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
         The dataset to retrieve (e.g., 'seasonal-original-single-levels', 'sis-heat-and-cold-spells').
     params : dict
         Dictionary containing the parameters for the CDS API call (e.g., variables, time range, area).
-        To see which parameters are requested for the given dataset, ckeck out  in the "download" tab
-        of the dataset, tick all required parameter choices, and copy the "request" dict in the "API request" section.
+        To see which parameters are requested for the given dataset, go to the copernicus website of the dataset in the "download" tab,
+        tick all required parameter choices. You find the params dicts as "request" dict in the "API request" section.
     filename : pathlib.Path or str
         Full path and filename where the downloaded data will be stored. If None, data will be saved with the filename as suggested by the data store. Defaults to None.
     datastore_url : str
@@ -98,11 +98,6 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
         if not datastore_url.endswith("/api"):
             raise ValueError("The given datastore_url must end with /api.")
         url = datastore_url.removesuffix("/api")
-    LOGGER.warning(
-        "Please ensure you have reviewed and accepted the terms and conditions "
-        "for the use of this dataset. Access the terms here: "
-        f"{url}/datasets/{dataset}?tab=download"
-    )
 
     # Check if file exists and skip download if overwrite is False
     if filename:
@@ -156,7 +151,7 @@ def download_data(dataset, params, filename=None, datastore_url=None, overwrite=
         elif "MARS returned no data" in str(e) or "400 Client Error" in str(e):
             error_message = (
                 "No data available for the given parameters. This may indicate unavailable or incorrect parameter selection. Please verify the existence of the data on the Climate Data Store website. "
-                f'You can find which parameters are requested for the given dataset by indicating all required parameter choices at {url}/datasets/{dataset}?tab=download, and copy the "request" keyword in the "API request" section.'
+                f'You can find which parameters are requested for the given dataset by indicating all required parameter choices at {url}/datasets/{dataset}?tab=download. The required params dict given in the "request" keyword in the "API request" section.'
             )
         # general error
         else:
