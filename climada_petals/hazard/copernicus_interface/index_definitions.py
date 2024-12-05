@@ -74,111 +74,75 @@ from dataclasses import dataclass
 @dataclass
 class IndexSpec:
     unit: str
-    standard_name: str
-    short_name: str
     full_name: str
-    filename_lead: str
     explanation: str
     variables: list
 
 
 class IndexSpecEnum(Enum):
     HIA = IndexSpec(
-        unit="K",
-        standard_name="air_temperature",
-        short_name="t2m",
-        full_name="2m_temperature",
-        filename_lead="2m_temps",
+        unit="C",
+        full_name="Heat Index Adjusted",
         explanation="Heat Index Adjusted: This indicator measures apparent temperature, considering both air temperature and humidity, providing a more accurate perception of how hot it feels.",
         variables=["2m_temperature", "2m_dewpoint_temperature"],
     )
     HIS = IndexSpec(
-        unit="K",
-        standard_name="dew_point_temperature",
-        short_name="d2m",
-        full_name="2m_dewpoint_temperature",
-        filename_lead="2m_temps",
+        unit="C",
+        full_name="Heat Index Simplified",
         explanation="Heat Index Simplified: A simpler version focusing on a quick estimate of perceived heat.",
         variables=["2m_temperature", "2m_dewpoint_temperature"],
     )
     Tmean = IndexSpec(
-        unit="K",
-        standard_name="air_temperature",
-        short_name="t2m",
-        full_name="2m_temperature",
-        filename_lead="2m_temps",
+        unit="C",
+        full_name="Mean Temperature",
         explanation="Mean Temperature: Calculates the average temperature over a specified period.",
         variables=["2m_temperature"],
     )
     Tmin = IndexSpec(
-        unit="K",
-        standard_name="air_temperature",
-        short_name="t2m",
-        full_name="2m_temperature",
-        filename_lead="2m_temps",
+        unit="C",
+        full_name="Minimum Temperature",
         explanation="Minimum Temperature: Tracks the lowest temperature recorded over a specified period.",
         variables=["2m_temperature"],
     )
     Tmax = IndexSpec(
-        unit="K",
-        standard_name="air_temperature",
-        short_name="t2m",
-        full_name="2m_temperature",
-        filename_lead="2m_temps",
+        unit="C",
+        full_name="Maximum Temperature",
         explanation="Maximum Temperature: Tracks the highest temperature recorded over a specified period.",
         variables=["2m_temperature"],
     )
     HW = IndexSpec(
-        unit="K",
-        standard_name="air_temperature",
-        short_name="t2m",
-        full_name="2m_temperature",
-        filename_lead="2m_temps",
+        unit="Days",
+        full_name="Heat Wave",
         explanation="Heat Wave: Identifies heat waves as periods with temperatures above a threshold.",
         variables=["2m_temperature"],
     )
     TR = IndexSpec(
-        unit="K",
-        standard_name="air_temperature",
-        short_name="t2m",
-        full_name="2m_temperature",
-        filename_lead="2m_temps",
+        unit="Days",
+        full_name="Tropical Nights",
         explanation="Tropical Nights: Counts nights with minimum temperatures above a certain threshold. Default threshold is 20°C.",
         variables=["2m_temperature"],
     )
     TX30 = IndexSpec(
-        unit="K",
-        standard_name="air_temperature",
-        short_name="t2m",
-        full_name="2m_temperature",
-        filename_lead="2m_temps",
+        unit="Days",
+        full_name="Hot Days (TX30)",
         explanation="Hot Days (TX30): Counts days with maximum temperature exceeding 30°C.",
         variables=["2m_temperature"],
     )
     RH = IndexSpec(
         unit="%",
-        standard_name="relative_humidity",
-        short_name="rh",
-        full_name="relative_humidity",
-        filename_lead="2m_temps",
+        full_name="Relative Humidity",
         explanation="Relative Humidity: Measures humidity as a percentage.",
         variables=["2m_temperature", "2m_dewpoint_temperature"],
     )
     HUM = IndexSpec(
         unit="C",
-        standard_name="humidex",
-        short_name="hum",
-        full_name="humidex",
-        filename_lead="2m_temps",
+        full_name="Humidex",
         explanation="Humidex: Perceived temperature combining temperature and humidity.",
         variables=["2m_temperature", "2m_dewpoint_temperature"],
     )
     AT = IndexSpec(
         unit="C",
-        standard_name="apparent_temperature",
-        short_name="at",
-        full_name="apparent_temperature",
-        filename_lead="2m_temps",
+        full_name="Apparent Temperature",
         explanation="Apparent Temperature: Perceived temperature considering wind and humidity.",
         variables=[
             "2m_temperature",
@@ -189,10 +153,7 @@ class IndexSpecEnum(Enum):
     )
     WBGT = IndexSpec(
         unit="C",
-        standard_name="wet_bulb_globe_temperature",
-        short_name="wbgt",
-        full_name="wet_bulb_globe_temperature",
-        filename_lead="2m_temps",
+        full_name="Wet Bulb Globe Temperature",
         explanation="Wet Bulb Globe Temperature (Simple): Heat stress index combining temperature and humidity.",
         variables=["2m_temperature", "2m_dewpoint_temperature"],
     )
@@ -241,7 +202,7 @@ def get_short_name_from_variable(variable):
     This function maps specific variable names to their short names, which are used across
     climate index definitions. These mappings are independent of the indices themselves
     but provide consistent naming conventions for variable processing and file management.
-    
+
     Examples
     --------
     get_short_name_from_variable("2m_temperature")'t2m'
