@@ -27,7 +27,7 @@ from scipy import sparse
 import xarray as xr
 
 from climada.hazard import Centroids, TCTracks
-from climada.hazard.TCTracks import IBTRACS_FILE
+from climada.hazard.tc_tracks import IBTRACS_FILE
 from climada_petals.hazard.tc_rainfield import (
     TCRain,
     compute_rain,
