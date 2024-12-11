@@ -11,6 +11,9 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import cdsapi
 from datetime import date
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 from climada.hazard import Hazard
 from climada.util.constants import SYSTEM_DIR
@@ -796,6 +799,108 @@ class SeasonalForecast:
                         )
 
         return hazard_outputs
+    
+
+
+    def forecast_skills(self):
+        """
+        Access and plot forecast skill data for the handler's parameters, filtered by the selected area.
+
+        Raises
+        ------
+        ValueError
+            If the originating_centre is not "dwd".
+        ValueError
+            If the index_metric is not "Tmax".
+
+        Returns
+        -------
+        None
+            Generates plots for forecast skill metrics based on the handler's parameters and the selected area.
+        """
+        # Check if the originating_centre is "dwd"
+        if self.originating_centre.lower() != "dwd":
+            raise ValueError(
+                "Forecast skill metrics are only available for the 'dwd' provider. "
+                f"Current provider: {self.originating_centre}"
+            )
+
+        # Check if the index_metric is "Tmax"
+        if self.index_metric.lower() != "tmax":
+            raise ValueError(
+                "Forecast skills are only available for the 'Tmax' index. "
+                f"Current index: {self.index_metric}"
+            )
+
+        # Define the file path pattern for forecast skill data (change for Zenodo when ready)
+        base_path = Path("/Users/daraya/Downloads")
+        file_name_pattern = "tasmaxMSESS_subyr_gcfs21_shc{month}-climatology_r1i1p1_1990-2019.nc"
+
+        # Get bounds for the selected area
+        bounds = self._get_bounds_for_area_selection(self.area_selection)
+        if not bounds:
+            raise ValueError(f"No bounds found for area selection: {self.area_selection}")
+
+        # Iterate over initiation months and access the corresponding file
+        for month in self.initiation_month:
+            # Convert the numeric month to a two-digit string for the file name
+            month_str = f"{int(month):02d}"
+
+            # Construct the file name and path
+            file_path = base_path / file_name_pattern.format(month=month_str)
+
+            if not file_path.exists():
+                print(f"Skill data file for month {month_str} not found: {file_path}")
+                continue
+
+            # Load the data using xarray
+            try:
+                with xr.open_dataset(file_path) as ds:
+                    # Subset the dataset by area bounds
+                    north, west, south, east = bounds
+                    subset_ds = ds.sel(
+                        lon=slice(west, east),
+                        lat=slice(north, south)
+                    )
+
+                    # Plot each variable
+                    variables = ["tasmax_fc_mse", "tasmax_ref_mse", "tasmax_msess", "tasmax_msessSig"]
+                    for var in variables:
+                        if var in subset_ds:
+                            plt.figure(figsize=(10, 8))
+                            ax = plt.axes(projection=ccrs.PlateCarree())
+
+                            # Adjust color scale to improve clarity
+                            vmin = subset_ds[var].quantile(0.05).item()
+                            vmax = subset_ds[var].quantile(0.95).item()
+
+                            im = subset_ds[var].isel(time=0).plot(
+                                ax=ax,
+                                cmap="coolwarm",
+                                vmin=vmin,
+                                vmax=vmax,
+                                add_colorbar=False
+                            )
+
+                            cbar = plt.colorbar(im, ax=ax, orientation="vertical", pad=0.1, shrink=0.7)
+                            cbar.set_label(var, fontsize=10)
+
+                            ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
+                            ax.add_feature(cfeature.BORDERS, linestyle=':')
+                            ax.add_feature(cfeature.COASTLINE)
+                            ax.add_feature(cfeature.LAND, edgecolor='black', alpha=0.3)
+                            ax.gridlines(draw_labels=True, crs=ccrs.PlateCarree())
+
+                            plt.title(f"{var} for month {month_str}, area {self.area_selection}")
+                            plt.show()
+                        else:
+                            print(f"Variable {var} not found in dataset for month {month_str}.")
+
+            except Exception as e:
+                print(f"Failed to load or process data for month {month_str}: {e}")
+
+
+
 
 
 # ----- Decorated Functions -----
@@ -944,7 +1049,7 @@ def _calculate_index(
     max_gap=0,
     tr_threshold=20,
 ):
-    """ 
+    """
     Calculate and save climate indices based on the input data.
 
     Parameters
@@ -1123,4 +1228,3 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
     except Exception as e:
         LOGGER.error(f"Failed to convert {input_file_name} to hazard: {e}")
         raise
-
