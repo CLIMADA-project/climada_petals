@@ -23,8 +23,6 @@ import xarray as xr
 import pandas as pd
 import logging
 
-from climada_petals.hazard.copernicus_interface.index_definitions import IndexSpecEnum
-
 import climada_petals.hazard.copernicus_interface.heat_index as heat_index
 
 LOGGER = logging.getLogger(__name__)

@@ -1,22 +1,17 @@
 import logging
 import calendar
-import re
 from pathlib import Path, PosixPath
-import datetime as dt
-import requests
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
-import cdsapi
 from datetime import date
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 from climada.hazard import Hazard
-from climada.util.constants import SYSTEM_DIR
 from climada.util.coordinates import get_country_geometries
 from climada import CONFIG
 
