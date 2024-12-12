@@ -130,7 +130,8 @@ def calculate_heat_indices_metrics(input_file_name, index_metric, tr_threshold=2
     da_index.coords["forecast_month"] = monthly_periods_from_valid_times(daily_ds)
 
     # compute monthly means
-    ds_monthly = calculate_monthly_means(da_index, index_metric)
+    method = "sum" if index_metric in ["TR", "TX30", "HW"] else "mean"
+    ds_monthly = calculate_monthly_dataset(da_index, index_metric, method)
 
     # calculate ensemble statistics across members
     ds_stats = calculate_statistics_from_index(ds_monthly[f"{index_metric}"])
@@ -157,7 +158,7 @@ def monthly_periods_from_valid_times(ds):
     return xr.DataArray(list(step_to_month.values()), coords=[ds.step], dims=["step"])
 
 
-def calculate_monthly_means(da_index, index_metric):
+def calculate_monthly_dataset(da_index, index_metric, method):
     """Calculate monthly means from daily data
 
     Parameters
@@ -166,16 +167,23 @@ def calculate_monthly_means(da_index, index_metric):
         Dataset containing daily data
     index_metric : str
         index to be computed
+    method : str
+        method to combine daily data to monthly data. Available are "mean" and "sum".
 
     Returns
     -------
     xr.DataSet
         Dataset of monthly averages
     """
-    monthly_means = da_index.groupby("forecast_month").mean(dim="step")
-    monthly_means = monthly_means.rename(index_metric)
-    monthly_means = monthly_means.rename({"forecast_month": "step"})
-    ds_monthly = xr.Dataset({f"{index_metric}": monthly_means})
+    if method == "mean":
+        monthly = da_index.groupby("forecast_month").mean(dim="step")
+    elif method == "sum":
+        monthly = da_index.groupby("forecast_month").sum(dim="step")
+    else:
+        raise ValueError(f"Unknown method {method} to compute monthly data. Please use 'mean' or 'sum'.")
+    monthly = monthly.rename(index_metric)
+    monthly = monthly.rename({"forecast_month": "step"})
+    ds_monthly = xr.Dataset({f"{index_metric}": monthly})
 
     # Ensure 'number' dimension starts from 1 instead of 0
     ds_monthly = ds_monthly.assign_coords(number=ds_monthly.number)
