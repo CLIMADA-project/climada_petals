@@ -21,7 +21,9 @@ from climada.util.coordinates import get_country_geometries
 from climada import CONFIG
 
 import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
-from climada_petals.hazard.copernicus_interface.seasonal_statistics import index_explanations
+from climada_petals.hazard.copernicus_interface.seasonal_statistics import (
+    index_explanations,
+)
 from climada_petals.hazard.copernicus_interface.downloader import download_data
 from climada_petals.hazard.copernicus_interface.index_definitions import (
     IndexSpecEnum,
@@ -59,7 +61,7 @@ def month_name_to_number(month_name):
         month_num = int(month_name)
         if 1 <= month_num <= 12:
             return month_num
-    
+
     try:
         # Full month name
         return list(calendar.month_name).index(month_name.capitalize())
@@ -69,7 +71,7 @@ def month_name_to_number(month_name):
             return list(calendar.month_abbr).index(month_name.capitalize())
         except ValueError:
             raise ValueError(f"Invalid month name or number: {month_name}")
-        
+
 
 def calculate_leadtimes(year, initiation_month, lead_time_months):
     """
@@ -135,7 +137,9 @@ def calculate_leadtimes(year, initiation_month, lead_time_months):
             # Calculate difference in hours between initiation and forecast month
             time_diff = forecast_date - initiation_date
             start_hour = time_diff.days * 24
-            leadtimes.extend(range(start_hour, start_hour + 24 * 31, 6))  # Full month in 6-hour steps
+            leadtimes.extend(
+                range(start_hour, start_hour + 24 * 31, 6)
+            )  # Full month in 6-hour steps
 
         # Remove duplicates and sort
         leadtimes = sorted(set(leadtimes))
@@ -148,7 +152,9 @@ def calculate_leadtimes(year, initiation_month, lead_time_months):
         return leadtimes
 
     except Exception as e:
-        LOGGER.error(f"Error in calculating lead times for year {year} and initiation month {initiation_month}: {e}")
+        LOGGER.error(
+            f"Error in calculating lead times for year {year} and initiation month {initiation_month}: {e}"
+        )
         raise
 
 
@@ -217,8 +223,10 @@ class PathManager:
         Path(self.base_dir / sub_dir).mkdir(parents=True, exist_ok=True)
         return self.base_dir / sub_dir / file_name
 
-    def get_download_path(self, originating_centre, year, initiation_month, index_metric, area_str, format):
-        """        
+    def get_download_path(
+        self, originating_centre, year, initiation_month, index_metric, area_str, format
+    ):
+        """
         Get the file path for downloaded data.
 
         Parameters
@@ -246,8 +254,10 @@ class PathManager:
         file_name = f"{index_metric.lower()}_{area_str}.{format}"
         return self.construct_path(sub_dir, file_name)
 
-    def get_daily_processed_path(self, originating_centre, year, initiation_month, index_metric, area_str):
-        """        
+    def get_daily_processed_path(
+        self, originating_centre, year, initiation_month, index_metric, area_str
+    ):
+        """
         Get the file path for daily processed data.
 
         Parameters
@@ -274,7 +284,7 @@ class PathManager:
         return self.construct_path(sub_dir, file_name)
 
     def get_index_paths(self, originating_centre, year, month, index_metric, area_str):
-        """        
+        """
         Get file paths for daily, monthly, and stats index files.
 
         Parameters
@@ -301,9 +311,9 @@ class PathManager:
             timeframe: self.construct_path(sub_dir, f"{timeframe}_{area_str}.nc")
             for timeframe in ["daily", "monthly", "stats"]
         }
-    
+
     def get_hazard_path(self, originating_centre, year, month, index_metric, area_str):
-        """        
+        """
         Get the file path for a Hazard HDF5 file.
 
         Parameters
@@ -329,12 +339,12 @@ class PathManager:
         return self.construct_path(sub_dir, file_name)
 
 
-
 # ----- Main Class -----
 class SeasonalForecast:
     """
-        Class for managing the download, processing, and analysis of seasonal climate forecast data.
+    Class for managing the download, processing, and analysis of seasonal climate forecast data.
     """
+
     def __init__(
         self,
         index_metric,
@@ -374,17 +384,17 @@ class SeasonalForecast:
         # Ensure initiation_month is a list
         if not isinstance(initiation_month, list):
             initiation_month = [initiation_month]
-        
+
         # Convert initiation months to numbers and format as two-digit strings
         processed_initiation_months = []
         for month in initiation_month:
             # If month is a string, convert to number
             if isinstance(month, str):
                 month = month_name_to_number(month)
-            
+
             # Ensure month is a two-digit string
             processed_initiation_months.append(f"{month:02d}")
-   
+
         self.index_metric = index_metric
         self.year_list = year_list
 
@@ -394,10 +404,10 @@ class SeasonalForecast:
             # If month is a string, convert to number
             if isinstance(month, str):
                 month = month_name_to_number(month)
-            
+
             # Ensure month is a two-digit string
             processed_lead_time_months.append(f"{month:02d}")
-        
+
         self.lead_time_months = processed_lead_time_months
         self.initiation_month = processed_initiation_months
         self.area_selection = area_selection  # Store user input for reference
@@ -408,7 +418,7 @@ class SeasonalForecast:
         self.format = format
         self.originating_centre = originating_centre
         self.system = system
-       
+
         # initialze path handling
         self.data_out = Path(data_out) if data_out else DATA_OUT
         self.path_manager = PathManager(self.data_out)
@@ -444,7 +454,6 @@ class SeasonalForecast:
             print(f"Explanation for {index_metric}: {explanation['explanation']}")
             print(f"Required variables: {', '.join(explanation['input_data'])}")
 
-    
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
         """Determine geographic bounds based on area selection, including global or country ISO codes."""
@@ -537,7 +546,7 @@ class SeasonalForecast:
                     self.area_str,
                     self.format,
                 )
-                
+
                 output_files[(year, initiation_month)] = _download_data(
                     output_file_name,
                     overwrite,
@@ -550,7 +559,7 @@ class SeasonalForecast:
                     self.bounds,
                     self.lead_time_months,  # Pass lead time months directly
                 )
-        
+
         return output_files
 
     def _process(self, overwrite=False):
@@ -579,8 +588,8 @@ class SeasonalForecast:
                     self.area_str,
                     self.format,
                 )
-                
-                # Generate output file name 
+
+                # Generate output file name
                 output_file_name = self.path_manager.get_daily_processed_path(
                     self.originating_centre,
                     year,
@@ -588,7 +597,7 @@ class SeasonalForecast:
                     self.index_metric,
                     self.area_str,
                 )
-                
+
                 # Process each lead time month
                 for month in self.lead_time_months:
                     processed_files[(year, initiation_month, month)] = _process_data(
@@ -598,9 +607,8 @@ class SeasonalForecast:
                         self.variables_short,
                         self.format,
                     )
-        
-        return processed_files
 
+        return processed_files
 
     def download_and_process_data(self, overwrite=False):
         """
@@ -666,7 +674,9 @@ class SeasonalForecast:
                 # Convert initiation month to integer
                 initiation_month_int = int(initiation_month)
                 lead_time_months = [int(month) for month in self.lead_time_months]
-                all_months = [initiation_month_int] + lead_time_months  # Include initiation month
+                all_months = [
+                    initiation_month_int
+                ] + lead_time_months  # Include initiation month
 
                 for month in all_months:
                     # Adjust year for forecast months that fall in the next calendar year
@@ -675,7 +685,11 @@ class SeasonalForecast:
                         process_year += 1
 
                     # Use initiation month folder for forecast months
-                    output_month = initiation_month if month in lead_time_months else f"{month:02d}"
+                    output_month = (
+                        initiation_month
+                        if month in lead_time_months
+                        else f"{month:02d}"
+                    )
 
                     # Determine the input file based on index type
                     if self.index_metric in ["TX30", "TR", "HW"]:  # Metrics using GRIB
@@ -690,16 +704,16 @@ class SeasonalForecast:
                     else:  # Metrics using processed NC files
                         input_file_name = self.path_manager.get_daily_processed_path(
                             self.originating_centre,
-                            year,  
-                            initiation_month,  
+                            year,
+                            initiation_month,
                             self.index_metric,
                             self.area_str,
                         )
 
-                    # Generate paths for index outputs 
+                    # Generate paths for index outputs
                     output_file_names = self.path_manager.get_index_paths(
                         self.originating_centre,
-                        year,  
+                        year,
                         output_month,  #
                         self.index_metric,
                         self.area_str,
@@ -727,6 +741,7 @@ class SeasonalForecast:
                         LOGGER.error(
                             f"Error processing index {self.index_metric} for {process_year}-{month}: {e}"
                         )
+                        raise e
 
         return index_outputs
 
@@ -757,7 +772,9 @@ class SeasonalForecast:
                 # Convert initiation month to integer
                 initiation_month_int = int(initiation_month)
                 lead_time_months = [int(month) for month in self.lead_time_months]
-                all_months = [initiation_month_int] + lead_time_months  # Include initiation month
+                all_months = [
+                    initiation_month_int
+                ] + lead_time_months  # Include initiation month
 
                 for month in all_months:
                     # Adjust year for forecast months crossing into the next year
@@ -766,19 +783,23 @@ class SeasonalForecast:
                         process_year += 1
 
                     # Use initiation month folder for forecast months
-                    output_month = initiation_month if month in lead_time_months else f"{month:02d}"
+                    output_month = (
+                        initiation_month
+                        if month in lead_time_months
+                        else f"{month:02d}"
+                    )
 
                     # Get input index file paths and hazard output file paths
                     input_file_name = self.path_manager.get_index_paths(
                         self.originating_centre,
-                        year,  
+                        year,
                         output_month,
                         self.index_metric,
                         self.area_str,
                     )["monthly"]
                     output_file_name = self.path_manager.get_hazard_path(
                         self.originating_centre,
-                        year,  
+                        year,
                         output_month,
                         self.index_metric,
                         self.area_str,
@@ -787,7 +808,10 @@ class SeasonalForecast:
                     try:
                         # Convert index file to Hazard
                         hazard_outputs[(process_year, month)] = _convert_to_hazard(
-                            output_file_name, overwrite, input_file_name, self.index_metric
+                            output_file_name,
+                            overwrite,
+                            input_file_name,
+                            self.index_metric,
                         )
                     except FileNotFoundError:
                         LOGGER.warning(
@@ -799,8 +823,6 @@ class SeasonalForecast:
                         )
 
         return hazard_outputs
-    
-
 
     def forecast_skills(self):
         """
@@ -834,12 +856,16 @@ class SeasonalForecast:
 
         # Define the file path pattern for forecast skill data (change for Zenodo when ready)
         base_path = Path("/Users/daraya/Downloads")
-        file_name_pattern = "tasmaxMSESS_subyr_gcfs21_shc{month}-climatology_r1i1p1_1990-2019.nc"
+        file_name_pattern = (
+            "tasmaxMSESS_subyr_gcfs21_shc{month}-climatology_r1i1p1_1990-2019.nc"
+        )
 
         # Get bounds for the selected area
         bounds = self._get_bounds_for_area_selection(self.area_selection)
         if not bounds:
-            raise ValueError(f"No bounds found for area selection: {self.area_selection}")
+            raise ValueError(
+                f"No bounds found for area selection: {self.area_selection}"
+            )
 
         # Iterate over initiation months and access the corresponding file
         for month in self.initiation_month:
@@ -858,13 +884,15 @@ class SeasonalForecast:
                 with xr.open_dataset(file_path) as ds:
                     # Subset the dataset by area bounds
                     north, west, south, east = bounds
-                    subset_ds = ds.sel(
-                        lon=slice(west, east),
-                        lat=slice(north, south)
-                    )
+                    subset_ds = ds.sel(lon=slice(west, east), lat=slice(north, south))
 
                     # Plot each variable
-                    variables = ["tasmax_fc_mse", "tasmax_ref_mse", "tasmax_msess", "tasmax_msessSig"]
+                    variables = [
+                        "tasmax_fc_mse",
+                        "tasmax_ref_mse",
+                        "tasmax_msess",
+                        "tasmax_msessSig",
+                    ]
                     for var in variables:
                         if var in subset_ds:
                             plt.figure(figsize=(10, 8))
@@ -874,36 +902,46 @@ class SeasonalForecast:
                             vmin = subset_ds[var].quantile(0.05).item()
                             vmax = subset_ds[var].quantile(0.95).item()
 
-                            im = subset_ds[var].isel(time=0).plot(
-                                ax=ax,
-                                cmap="coolwarm",
-                                vmin=vmin,
-                                vmax=vmax,
-                                add_colorbar=False
+                            im = (
+                                subset_ds[var]
+                                .isel(time=0)
+                                .plot(
+                                    ax=ax,
+                                    cmap="coolwarm",
+                                    vmin=vmin,
+                                    vmax=vmax,
+                                    add_colorbar=False,
+                                )
                             )
 
-                            cbar = plt.colorbar(im, ax=ax, orientation="vertical", pad=0.1, shrink=0.7)
+                            cbar = plt.colorbar(
+                                im, ax=ax, orientation="vertical", pad=0.1, shrink=0.7
+                            )
                             cbar.set_label(var, fontsize=10)
 
-                            ax.set_extent([west, east, south, north], crs=ccrs.PlateCarree())
-                            ax.add_feature(cfeature.BORDERS, linestyle=':')
+                            ax.set_extent(
+                                [west, east, south, north], crs=ccrs.PlateCarree()
+                            )
+                            ax.add_feature(cfeature.BORDERS, linestyle=":")
                             ax.add_feature(cfeature.COASTLINE)
-                            ax.add_feature(cfeature.LAND, edgecolor='black', alpha=0.3)
+                            ax.add_feature(cfeature.LAND, edgecolor="black", alpha=0.3)
                             ax.gridlines(draw_labels=True, crs=ccrs.PlateCarree())
 
-                            plt.title(f"{var} for month {month_str}, area {self.area_selection}")
+                            plt.title(
+                                f"{var} for month {month_str}, area {self.area_selection}"
+                            )
                             plt.show()
                         else:
-                            print(f"Variable {var} not found in dataset for month {month_str}.")
+                            print(
+                                f"Variable {var} not found in dataset for month {month_str}."
+                            )
 
             except Exception as e:
                 print(f"Failed to load or process data for month {month_str}: {e}")
 
 
-
-
-
 # ----- Decorated Functions -----
+
 
 @handle_overwriting
 def _download_data(
@@ -952,11 +990,9 @@ def _download_data(
     try:
         # Calculate lead times using the lead time months
         leadtimes = calculate_leadtimes(
-            year,
-            initiation_month=initiation_month,
-            lead_time_months=lead_time_months
+            year, initiation_month=initiation_month, lead_time_months=lead_time_months
         )
-        
+
         # Prepare download parameters
         download_params = {
             "format": format,
@@ -969,7 +1005,7 @@ def _download_data(
             "day": "01",
             "leadtime_hour": leadtimes,
         }
-        
+
         # Perform download
         downloaded_file = download_data(
             "seasonal-original-single-levels",
@@ -977,12 +1013,13 @@ def _download_data(
             output_file_name,
             overwrite=overwrite,
         )
-        
+
         return downloaded_file
-    
+
     except Exception as e:
         LOGGER.error(f"Error downloading data for {year}-{initiation_month}: {e}")
         raise
+
 
 @handle_overwriting
 def _process_data(output_file_name, overwrite, input_file_name, variables, format):
@@ -1101,19 +1138,13 @@ def _calculate_index(
         "RH",
         "AT",
         "WBGT",
+        "TR",
+        "TX30",
     ]:
         ds_daily, ds_monthly, ds_stats = (
             seasonal_statistics.calculate_heat_indices_metrics(
-                input_file_name, index_metric
+                input_file_name, index_metric, tr_threshold=tr_threshold
             )
-        )
-    elif index_metric == "TR":
-        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tr_days(
-            input_file_name, index_metric, **kwargs
-        )
-    elif index_metric == "TX30":
-        ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_tx30_days(
-            input_file_name, index_metric
         )
     elif index_metric == "HW":
         ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_hw_days(

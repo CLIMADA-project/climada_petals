@@ -25,22 +25,12 @@ import logging
 
 from climada_petals.hazard.copernicus_interface.index_definitions import IndexSpecEnum
 
-from climada_petals.hazard.copernicus_interface.heat_index import (
-    calculate_heat_index,
-    calculate_relative_humidity,
-    calculate_humidex,
-    calculate_wind_speed,
-    calculate_apparent_temperature,
-    calculate_wbgt_simple,
-    calculate_tx30,
-    calculate_tr,
-    calculate_hw,
-)
+import climada_petals.hazard.copernicus_interface.heat_index as heat_index
 
 LOGGER = logging.getLogger(__name__)
 
 
-def calculate_heat_indices_metrics(input_file_name, index_metric):
+def calculate_heat_indices_metrics(input_file_name, index_metric, tr_threshold=20):
     """
     Calculates heat indices or temperature metrics based on the provided input file and index type.
 
@@ -59,6 +49,8 @@ def calculate_heat_indices_metrics(input_file_name, index_metric):
         - "HUM" : Humidex
         - "AT"  : Apparent Temperature
         - "WBGT": Wet Bulb Globe Temperature (Simple)
+    tr_threshold : (float, int)
+        Threshold to use when computing tropical nights index. Dedaults to 20.
 
     Returns
     -------
@@ -75,8 +67,11 @@ def calculate_heat_indices_metrics(input_file_name, index_metric):
     FileNotFoundError
         If the specified input file does not exist.
     """
+
+    engine = "cfgrib" if index_metric in ["TR", "TX30", "HW"] else "netcdf4"
+
     try:
-        with xr.open_dataset(input_file_name) as daily_ds:
+        with xr.open_dataset(input_file_name, engine=engine) as daily_ds:
             # Handling various indices
             if index_metric == "Tmean":
                 da_index = daily_ds["t2m_mean"] - 273.15  # Kelvin to Celsius
@@ -87,52 +82,98 @@ def calculate_heat_indices_metrics(input_file_name, index_metric):
             elif index_metric == "Tmin":
                 da_index = daily_ds["t2m_min"].resample(step="1D").min() - 273.15
                 da_index.attrs["units"] = "degC"
-            elif index_metric == "HIS":
-                da_index = calculate_heat_index(
-                    daily_ds["t2m_mean"], daily_ds["d2m_mean"], "HIS"
-                )
-            elif index_metric == "HIA":
-                da_index = calculate_heat_index(
-                    daily_ds["t2m_mean"], daily_ds["d2m_mean"], "HIA"
+            elif index_metric in ["HIS", "HIA"]:
+                da_index = heat_index.calculate_heat_index(
+                    daily_ds["t2m_mean"], daily_ds["d2m_mean"], index_metric
                 )
             elif index_metric == "RH":
-                da_index = calculate_relative_humidity(
+                da_index = heat_index.calculate_relative_humidity(
                     daily_ds["t2m_mean"], daily_ds["d2m_mean"]
                 )
             elif index_metric == "HUM":
-                da_index = calculate_humidex(daily_ds["t2m_mean"], daily_ds["d2m_mean"])
+                da_index = heat_index.calculate_humidex(
+                    daily_ds["t2m_mean"], daily_ds["d2m_mean"]
+                )
             elif index_metric == "AT":
                 u10 = daily_ds.get("u10_max", daily_ds.get("10m_u_component_of_wind"))
                 v10 = daily_ds.get("v10_max", daily_ds.get("10m_v_component_of_wind"))
                 if u10 is None or v10 is None:
                     raise KeyError("Wind component variables not found in the dataset.")
-                wind_speed = calculate_wind_speed(u10, v10)
-                da_index = calculate_apparent_temperature(
+                da_index = heat_index.calculate_apparent_temperature(
                     daily_ds["t2m_mean"], u10, v10, daily_ds["d2m_mean"]
                 )
             elif index_metric == "WBGT":
-                da_index = calculate_wbgt_simple(
+                da_index = heat_index.calculate_wbgt_simple(
                     daily_ds["t2m_mean"], daily_ds["d2m_mean"]
                 )
+            elif index_metric == "TR":
+                daily_ds["t2m"] = daily_ds["t2m"] - 273.15
+                daily_min_temp = daily_ds["t2m"].resample(step="1D").min()
+                da_index = heat_index.calculate_tr(
+                    daily_min_temp, tr_threshold=tr_threshold
+                )
+            elif index_metric == "TX30":
+                daily_ds["t2m"] = daily_ds["t2m"] - 273.15
+                daily_max_temp = daily_ds["t2m"].resample(step="1D").max()
+                da_index = heat_index.calculate_tx30(daily_max_temp)
+            # to be added
+            # elif index_metric == "HW":
             else:
                 raise ValueError(f"Unsupported index: {index_metric}")
 
             ds_combined = xr.Dataset({index_metric: da_index})
 
-    except FileNotFoundError:
-        LOGGER.error(f"Data file {input_file_name} does not exist.")
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"File not found: {e.filename}")
+    except Exception as e:
+        raise e
 
-    # Calculate statistics
-    valid_times = pd.to_datetime(daily_ds.valid_time.values)
+    # add monthly period label
+    da_index.coords["forecast_month"] = monthly_periods_from_valid_times(daily_ds)
+
+    # compute monthly means
+    ds_monthly = calculate_monthly_means(da_index, index_metric)
+
+    # calculate ensemble statistics across members
+    ds_stats = calculate_statistics_from_index(ds_monthly[f"{index_metric}"])
+
+    return ds_combined, ds_monthly, ds_stats
+
+
+def monthly_periods_from_valid_times(ds):
+    """Create monthly labels from valid times of a dataframe
+
+    Parameters
+    ----------
+    ds : xr.DataSet
+        Dataset of daily values
+
+    Returns
+    -------
+    xr.DataArray
+        DataArray with monthly labels
+    """
+    valid_times = pd.to_datetime(ds.valid_time.values)
     forecast_months_str = valid_times.to_period("M").astype(str)
-    step_to_month = dict(zip(daily_ds.step.values, forecast_months_str))
-    forecast_month_da = xr.DataArray(
-        list(step_to_month.values()), coords=[daily_ds.step], dims=["step"]
-    )
+    step_to_month = dict(zip(ds.step.values, forecast_months_str))
+    return xr.DataArray(list(step_to_month.values()), coords=[ds.step], dims=["step"])
 
-    da_index.coords["forecast_month"] = forecast_month_da
 
-    # Calculate monthly means
+def calculate_monthly_means(da_index, index_metric):
+    """Calculate monthly means from daily data
+
+    Parameters
+    ----------
+    da_index : xr.Dataset
+        Dataset containing daily data
+    index_metric : str
+        index to be computed
+
+    Returns
+    -------
+    xr.DataSet
+        Dataset of monthly averages
+    """
     monthly_means = da_index.groupby("forecast_month").mean(dim="step")
     monthly_means = monthly_means.rename(index_metric)
     monthly_means = monthly_means.rename({"forecast_month": "step"})
@@ -141,130 +182,7 @@ def calculate_heat_indices_metrics(input_file_name, index_metric):
     # Ensure 'number' dimension starts from 1 instead of 0
     ds_monthly = ds_monthly.assign_coords(number=ds_monthly.number)
 
-    # calculate ensemble statistics across members
-    ds_stats = calculate_statistics_from_index(monthly_means)
-
-    return ds_combined, ds_monthly, ds_stats
-
-
-def calculate_tr_days(grib_file_path, index_metric, tr_threshold=20):
-    """
-    Calculates and saves the tropical nights index, defined as the number of nights where the minimum temperature remains at or above a threshold.
-    The default is 20°C.
-
-    Parameters
-    ----------
-    grib_file_path : str
-        Path to the input GRIB data file containing temperature data. The file should be structured to include 2-meter temperature values (`t2m`).
-    index_metric : str
-        The climate index being processed. This should specify the name for the tropical nights index, such as "TR" (Tropical Nights).
-
-    Returns
-    -------
-    tuple
-        A tuple containing:
-        - `None` : No daily index is returned for this calculation.
-        - `xarray.Dataset` : The monthly count of tropical nights, stored as an `xarray.Dataset` with the index values and relevant metadata.
-        - `xarray.Dataset` : Statistics calculated across the monthly tropical nights index values, representing ensemble statistics.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the specified input GRIB file does not exist.
-    Exception
-        For any other errors encountered during the data processing.
-    """
-    try:
-        # Open the seasonal forecast data
-        with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
-            t2m_celsius = ds["t2m"] - 273.15
-            daily_min_temp = t2m_celsius.resample(step="1D").min()
-
-            # Convert valid_time to monthly periods for grouping
-            valid_times = pd.to_datetime(ds.valid_time.values)
-            forecast_months_str = valid_times.to_period("M").astype(str)
-            step_to_month = dict(zip(ds.step.values, forecast_months_str))
-            forecast_month_da = xr.DataArray(
-                list(step_to_month.values()), coords=[ds.step], dims=["step"]
-            )
-        daily_min_temp.coords["forecast_month"] = forecast_month_da
-
-        # Use the generic TR calculation with a configurable threshold
-        tropical_nights = calculate_tr(daily_min_temp, tr_threshold=tr_threshold)
-
-        # Count tropical nights by month
-        tropical_nights_count = tropical_nights.groupby("forecast_month").sum(
-            dim="step"
-        )
-        tropical_nights_count = tropical_nights_count.rename(index_metric)
-        tropical_nights_count = tropical_nights_count.rename({"forecast_month": "step"})
-
-        # Calculate ensemble statistics, if relevant
-        ds_stats = calculate_statistics_from_index(tropical_nights_count)
-        return None, tropical_nights_count, ds_stats
-
-    except FileNotFoundError as e:
-        print(f"File not found: {e.filename}")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-    # **Updated: Return `(None, None, None)` to avoid unpacking error**
-    return None, None, None
-
-
-def calculate_tx30_days(grib_file_path, index_metric):
-    """
-    Calculate TX30 index for seasonal forecast data, specifically counting the number of days with Tmax > 30°C.
-
-    Parameters
-    ----------
-    grib_file_path : str
-        Path to the GRIB file containing temperature data.
-    index_metric : str
-        Name of the TX30 index, typically "TX30".
-
-    Returns
-    -------
-    tuple
-        - None: No daily index is returned.
-        - xarray.Dataset: Monthly count of TX30 days.
-        - xarray.Dataset: Ensemble statistics of the TX30 index.
-    """
-    try:
-        # Open the seasonal forecast data
-        with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
-            t2m_celsius = ds["t2m"] - 273.15
-            daily_max_temp = t2m_celsius.resample(
-                step="1D"
-            ).max()  # Ensure daily max temp is calculated
-
-            # Convert valid_time to monthly periods for grouping
-            valid_times = pd.to_datetime(ds.valid_time.values)
-            forecast_months_str = valid_times.to_period("M").astype(str)
-            step_to_month = dict(zip(ds.step.values, forecast_months_str))
-            forecast_month_da = xr.DataArray(
-                list(step_to_month.values()), coords=[ds.step], dims=["step"]
-            )
-        daily_max_temp.coords["forecast_month"] = forecast_month_da
-
-        # Use the generic TX30 calculation
-        tx30_days = calculate_tx30(daily_max_temp)
-
-        # Count TX30 days by month
-        tx30_days_count = tx30_days.groupby("forecast_month").sum(dim="step")
-        tx30_days_count = tx30_days_count.rename(index_metric)
-        tx30_days_count = tx30_days_count.rename({"forecast_month": "step"})
-
-        # Calculate ensemble statistics, if relevant
-        ds_stats = calculate_statistics_from_index(tx30_days_count)
-
-        return None, tx30_days_count, ds_stats
-
-    except FileNotFoundError as e:
-        print(f"File not found: {e.filename}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    return ds_monthly
 
 
 def calculate_hw_days(
@@ -328,7 +246,7 @@ def calculate_hw_days(
                         temp_series = daily_mean_temp.isel(
                             number=member, latitude=lat, longitude=lon
                         ).values
-                        hw_event_days = calculate_hw(
+                        hw_event_days = heat_index.calculate_hw(
                             temp_series, threshold, min_duration, max_gap
                         )
                         hw_days.loc[
@@ -349,11 +267,8 @@ def calculate_hw_days(
 
             return None, hw_days_count, ds_stats
 
-    except FileNotFoundError as e:
-        print(f"File not found: {e.filename}")
     except Exception as e:
-        print(f"An error occurred: {e}")
-        return None, None, None
+        raise e
 
 
 def calculate_statistics_from_index(dataarray):
@@ -509,4 +424,3 @@ def index_explanations(index_metric):
         index_metric,
         {"error": "Unknown index", "valid_indices": list(index_explanations.keys())},
     )
-
