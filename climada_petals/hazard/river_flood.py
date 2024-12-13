@@ -235,22 +235,22 @@ class RiverFlood(Hazard):
             if ISINatIDGrid:
 
                 dest_centroids = RiverFlood._select_exact_area(countries, reg)[0]
-                meta_centroids = copy.copy(dest_centroids)
-                meta_centroids.set_lat_lon_to_meta()
+                centroids_meta = dest_centroids.get_meta()
 
                 haz = cls.from_raster(files_intensity=[dph_path],
                                       files_fraction=[frc_path], band=bands.tolist(),
-                                      transform=meta_centroids.meta['transform'],
-                                      width=meta_centroids.meta['width'],
-                                      height=meta_centroids.meta['height'],
+                                      transform=centroids_meta['transform'],
+                                      width=centroids_meta['width'],
+                                      height=centroids_meta['height'],
                                       resampling=Resampling.nearest)
-                x_i = ((dest_centroids.lon - haz.centroids.meta['transform'][2]) /
-                       haz.centroids.meta['transform'][0]).astype(int)
-                y_i = ((dest_centroids.lat - haz.centroids.meta['transform'][5]) /
-                       haz.centroids.meta['transform'][4]).astype(int)
+                haz_centroids_meta = haz.centroids.get_meta()
+                x_i = ((dest_centroids.lon - haz_centroids_meta['transform'][2]) /
+                       haz_centroids_meta['transform'][0]).astype(int)
+                y_i = ((dest_centroids.lat - haz_centroids_meta['transform'][5]) /
+                       haz_centroids_meta['transform'][4]).astype(int)
 
-                fraction = haz.fraction[:, y_i * haz.centroids.meta['width'] + x_i]
-                intensity = haz.intensity[:, y_i * haz.centroids.meta['width'] + x_i]
+                fraction = haz.fraction[:, y_i * haz_centroids_meta['width'] + x_i]
+                intensity = haz.intensity[:, y_i * haz_centroids_meta['width'] + x_i]
 
                 haz.centroids = dest_centroids
                 haz.intensity = sp.sparse.csr_matrix(intensity)
@@ -264,14 +264,12 @@ class RiverFlood(Hazard):
                                           files_fraction=[frc_path],
                                           band=bands.tolist(),
                                           geometry=cntry_geom.geoms)
-                    # self.centroids.set_meta_to_lat_lon()
                 else:
                     cntry_geom = u_coord.get_land_geometry(countries)
                     haz = cls.from_raster(files_intensity=[dph_path],
                                           files_fraction=[frc_path],
                                           band=bands.tolist(),
                                           geometry=cntry_geom.geoms)
-                    # self.centroids.set_meta_to_lat_lon()
 
         elif shape:
             shapes = gpd.read_file(shape)
@@ -293,7 +291,6 @@ class RiverFlood(Hazard):
             haz = cls.from_raster(files_intensity=[dph_path],
                                   files_fraction=[frc_path],
                                   band=bands.tolist())
-            # self.centroids.set_meta_to_lat_lon()
 
         else:  # use given centroids
             # if centroids.meta or grid_is_regular(centroids)[0]:
@@ -304,8 +301,6 @@ class RiverFlood(Hazard):
             #      (transform)
             #      reprojection change resampling"""
             # else:
-            if centroids.meta:
-                centroids.set_meta_to_lat_lon()
             metafrc, fraction = u_coord.read_raster(frc_path, band=bands.tolist())
             metaint, intensity = u_coord.read_raster(dph_path, band=bands.tolist())
             x_i = ((centroids.lon - metafrc['transform'][2]) /
@@ -419,7 +414,7 @@ class RiverFlood(Hazard):
         MemoryError
         """
         self.centroids.set_area_pixel()
-        area_centr = self.centroids.area_pixel
+        area_centr = self.centroids.get_area_pixel()
         event_years = np.array([dt.date.fromordinal(self.date[i]).year
                                 for i in range(len(self.date))])
         years = np.unique(event_years)
