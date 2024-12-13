@@ -143,19 +143,17 @@ def handle_overwriting(function):
     def wrapper(output_file_name, overwrite, *args, **kwargs):
         # if data exists and we do not want to overwrite
         if isinstance(output_file_name, PosixPath):
-            print("single overwrite check")
             if not overwrite and output_file_name.exists():
                 LOGGER.info(f"{output_file_name} already exists.")
-                return output_file_name
+                return None
         elif isinstance(output_file_name, dict):
-            print("multiple files overwrite check")
             if not overwrite and any(
                 [path.exists() for path in output_file_name.values()]
             ):
-                LOGGER.debug(
+                LOGGER.info(
                     f"A file of {[str(path) for path in output_file_name.values()]} already exists."
                 )
-                return output_file_name
+                return None
 
         return function(output_file_name, overwrite, *args, **kwargs)
 
@@ -388,7 +386,9 @@ class SeasonalForecast:
             f"{month_name_to_number(month):02d}" for month in initiation_month
         ]
         self.valid_period = [month_name_to_number(month) for month in valid_period]
-        self.valid_period_str = "_".join([f"{month:02d}" for month in self.valid_period])
+        self.valid_period_str = "_".join(
+            [f"{month:02d}" for month in self.valid_period]
+        )
 
         self.index_metric = index_metric
         self.year_list = year_list
@@ -517,9 +517,7 @@ class SeasonalForecast:
         output_files = {}
         for year in self.year_list:
             for month_str in self.initiation_month_str:
-                leadtimes = calculate_leadtimes(
-                    year, int(month_str), self.valid_period
-                )
+                leadtimes = calculate_leadtimes(year, int(month_str), self.valid_period)
                 # Download for each lead time month
                 output_file_name = self.path_manager.get_download_path(
                     self.originating_centre,
@@ -531,19 +529,17 @@ class SeasonalForecast:
                     self.format,
                 )
 
-                output_files[(year, month_str, self.valid_period_str)] = (
-                    _download_data(
-                        output_file_name,
-                        overwrite,
-                        self.variables,
-                        year,
-                        month_str,
-                        self.format,
-                        self.originating_centre,
-                        self.system,
-                        self.bounds,
-                        leadtimes,
-                    )
+                output_files[(year, month_str, self.valid_period_str)] = _download_data(
+                    output_file_name,
+                    overwrite,
+                    self.variables,
+                    year,
+                    month_str,
+                    self.format,
+                    self.originating_centre,
+                    self.system,
+                    self.bounds,
+                    leadtimes,
                 )
 
         return output_files
@@ -663,27 +659,6 @@ class SeasonalForecast:
                 LOGGER.info(
                     f"Processing index {self.index_metric} for year {year}, initiation month {month_str}."
                 )
-
-                # # Convert initiation month to integer
-                # initiation_month_int = int(initiation_month)
-                # lead_time_months = [int(month) for month in self.lead_time_months]
-                # all_months = [
-                #     initiation_month_int
-                # ] + lead_time_months  # Include initiation month
-
-                # for month in all_months:
-                #     # Adjust year for forecast months that fall in the next calendar year
-                #     process_year = year
-                #     if month < initiation_month_int and month in lead_time_months:
-                #         process_year += 1
-
-                #     # Use initiation month folder for forecast months
-                #     output_month = (
-                #         initiation_month
-                #         if month in lead_time_months
-                #         else f"{month:02d}"
-                #     )
-
                 # Determine the input file based on index type
                 if self.index_metric in ["TX30", "TR", "HW"]:  # Metrics using GRIB
                     input_file_name = self.path_manager.get_download_path(
@@ -727,9 +702,7 @@ class SeasonalForecast:
                         hw_max_gap=hw_max_gap,
                         hw_threshold=hw_threshold,
                     )
-                    index_outputs[(year, month_str, self.valid_period_str)] = (
-                        outputs
-                    )
+                    index_outputs[(year, month_str, self.valid_period_str)] = outputs
 
                 except FileNotFoundError:
                     LOGGER.warning(
@@ -766,27 +739,6 @@ class SeasonalForecast:
                 LOGGER.info(
                     f"Creating hazard for index {self.index_metric} for year {year}, initiation month {month_str}."
                 )
-
-                # # Convert initiation month to integer
-                # initiation_month_int = int(initiation_month)
-                # lead_time_months = [int(month) for month in self.lead_time_months]
-                # all_months = [
-                #     initiation_month_int
-                # ] + lead_time_months  # Include initiation month
-
-                # for month in all_months:
-                #     # Adjust year for forecast months crossing into the next year
-                #     process_year = year
-                #     if month < initiation_month_int and month in lead_time_months:
-                #         process_year += 1
-
-                #     # Use initiation month folder for forecast months
-                #     output_month = (
-                #         initiation_month
-                #         if month in lead_time_months
-                #         else f"{month:02d}"
-                #     )
-
                 # Get input index file paths and hazard output file paths
                 input_file_name = self.path_manager.get_index_paths(
                     self.originating_centre,
@@ -820,9 +772,7 @@ class SeasonalForecast:
                         f"Monthly index file not found for {year}-{month_str}. Skipping..."
                     )
                 except Exception as e:
-                    LOGGER.error(
-                        f"Failed to create hazard for {year}-{month_str}: {e}"
-                    )
+                    LOGGER.error(f"Failed to create hazard for {year}-{month_str}: {e}")
 
         return hazard_outputs
 
