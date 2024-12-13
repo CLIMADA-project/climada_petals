@@ -25,6 +25,7 @@ jobs:
   build-and-test:
     name: Unit Test Pipeline
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       # For publishing results
       checks: write
