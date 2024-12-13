@@ -19,6 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 File to calculate different seasonal forecast indices.
 """
 
+import numpy as np
 import xarray as xr
 import pandas as pd
 import logging
@@ -28,7 +29,14 @@ import climada_petals.hazard.copernicus_interface.heat_index as heat_index
 LOGGER = logging.getLogger(__name__)
 
 
-def calculate_heat_indices_metrics(input_file_name, index_metric, tr_threshold=20):
+def calculate_heat_indices_metrics(
+    input_file_name,
+    index_metric,
+    tr_threshold=20,
+    hw_threshold=27,
+    hw_min_duration=3,
+    hw_max_gap=0,
+):
     """
     Calculates heat indices or temperature metrics based on the provided input file and index type.
 
@@ -114,8 +122,12 @@ def calculate_heat_indices_metrics(input_file_name, index_metric, tr_threshold=2
                 daily_ds["t2m"] = daily_ds["t2m"] - 273.15
                 daily_max_temp = daily_ds["t2m"].resample(step="1D").max()
                 da_index = heat_index.calculate_tx30(daily_max_temp)
-            # to be added
-            # elif index_metric == "HW":
+            elif index_metric == "HW":
+                daily_ds["t2m"] = daily_ds["t2m"] - 273.15
+                daily_mean_temp = daily_ds["t2m"].resample(step="1D").mean()
+                da_index = heat_index.calculate_hw(
+                    daily_mean_temp, hw_threshold, hw_min_duration, hw_max_gap
+                )
             else:
                 raise ValueError(f"Unsupported index: {index_metric}")
 
@@ -130,7 +142,7 @@ def calculate_heat_indices_metrics(input_file_name, index_metric, tr_threshold=2
     da_index.coords["forecast_month"] = monthly_periods_from_valid_times(daily_ds)
 
     # compute monthly means
-    method = "sum" if index_metric in ["TR", "TX30", "HW"] else "mean"
+    method = "count" if index_metric in ["TR", "TX30", "HW"] else "mean"
     ds_monthly = calculate_monthly_dataset(da_index, index_metric, method)
 
     # calculate ensemble statistics across members
@@ -168,7 +180,7 @@ def calculate_monthly_dataset(da_index, index_metric, method):
     index_metric : str
         index to be computed
     method : str
-        method to combine daily data to monthly data. Available are "mean" and "sum".
+        method to combine daily data to monthly data. Available are "mean" and "count".
 
     Returns
     -------
@@ -177,10 +189,12 @@ def calculate_monthly_dataset(da_index, index_metric, method):
     """
     if method == "mean":
         monthly = da_index.groupby("forecast_month").mean(dim="step")
-    elif method == "sum":
+    elif method == "count":
         monthly = da_index.groupby("forecast_month").sum(dim="step")
     else:
-        raise ValueError(f"Unknown method {method} to compute monthly data. Please use 'mean' or 'sum'.")
+        raise ValueError(
+            f"Unknown method {method} to compute monthly data. Please use 'mean' or 'sum'."
+        )
     monthly = monthly.rename(index_metric)
     monthly = monthly.rename({"forecast_month": "step"})
     ds_monthly = xr.Dataset({f"{index_metric}": monthly})
@@ -189,92 +203,6 @@ def calculate_monthly_dataset(da_index, index_metric, method):
     ds_monthly = ds_monthly.assign_coords(number=ds_monthly.number)
 
     return ds_monthly
-
-
-def calculate_hw_days(
-    grib_file_path, index_metric, threshold=27, min_duration=3, max_gap=0
-):
-    """
-    Calculates and saves the heatwave days index, which is defined as the number of days in each month where
-    the daily mean temperature exceeds a specified threshold for a minimum consecutive duration. This index
-    helps to identify periods of extreme heat events.
-
-    Parameters
-    ----------
-    grib_file_path : str
-        Path to the input GRIB data file containing temperature data. The file should include 2-meter temperature values (`t2m`).
-    index_metric : str
-        The climate index being processed. This should specify the name for the heatwave days index, such as "HW" (Heatwave Days).
-    threshold : float, optional
-        Temperature threshold in Celsius that defines a heatwave day. Defaults to 27°C.
-    min_duration : int, optional
-        Minimum consecutive days required to define a heatwave event. Defaults to 3 days.
-    max_gap : int, optional
-        Maximum allowable gap (in days) within a heatwave event for it to still count as a single event. Defaults to 0, meaning no gaps are allowed.
-
-    Returns
-    -------
-    tuple
-        A tuple containing:
-        - `None` : No daily index is returned for this calculation.
-        - `xarray.Dataset` : The monthly count of heatwave days, stored as an `xarray.Dataset` with the index values and relevant metadata.
-        - `xarray.Dataset` : Statistics calculated across the monthly heatwave days index values, representing ensemble statistics.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the specified input GRIB file does not exist.
-    Exception
-        For any other errors encountered during data processing.
-    """
-    try:
-        with xr.open_dataset(grib_file_path, engine="cfgrib") as ds:
-            # Convert to Celsius and calculate daily mean temperature
-            t2m_celsius = ds["t2m"] - 273.15
-            daily_mean_temp = t2m_celsius.resample(step="1D").mean()
-
-            # Convert valid_time to monthly periods
-            valid_times = pd.to_datetime(ds.valid_time.values)
-            forecast_months_str = valid_times.to_period("M").astype(str)
-            step_to_month = dict(zip(ds.step.values, forecast_months_str))
-            forecast_month_da = xr.DataArray(
-                list(step_to_month.values()), coords=[ds.step], dims=["step"]
-            )
-            daily_mean_temp.coords["forecast_month"] = forecast_month_da
-
-            # Initialize DataArray for heatwave days
-            hw_days = xr.zeros_like(daily_mean_temp, dtype=int)
-
-            # Apply `calculate_hw` individually for each member, latitude, and longitude
-            for member in range(daily_mean_temp.sizes["number"]):
-                for lat in range(daily_mean_temp.sizes["latitude"]):
-                    for lon in range(daily_mean_temp.sizes["longitude"]):
-                        temp_series = daily_mean_temp.isel(
-                            number=member, latitude=lat, longitude=lon
-                        ).values
-                        hw_event_days = heat_index.calculate_hw(
-                            temp_series, threshold, min_duration, max_gap
-                        )
-                        hw_days.loc[
-                            dict(
-                                number=member,
-                                latitude=daily_mean_temp.latitude[lat],
-                                longitude=daily_mean_temp.longitude[lon],
-                            )
-                        ] = hw_event_days
-
-            # Count heatwave days by month
-            hw_days_count = hw_days.groupby("forecast_month").sum(dim="step")
-            hw_days_count = hw_days_count.rename(index_metric)
-            hw_days_count = hw_days_count.rename({"forecast_month": "step"})
-
-            # Placeholder for statistics calculation
-            ds_stats = calculate_statistics_from_index(hw_days_count)
-
-            return None, hw_days_count, ds_stats
-
-    except Exception as e:
-        raise e
 
 
 def calculate_statistics_from_index(dataarray):

@@ -397,7 +397,7 @@ def calculate_tx30(temperature_data, threshold=30):
     return tx30_days
 
 
-def calculate_hw(
+def calculate_hw_1D(
     temperatures: np.ndarray,
     threshold: float = 27,
     min_duration: int = 3,
@@ -454,3 +454,26 @@ def calculate_hw(
         hw_days[start : end + 1] = 1
 
     return hw_days
+
+
+def calculate_hw(
+    daily_mean_temp,
+    threshold: float = 27,
+    min_duration: int = 3,
+    max_gap: int = 0,
+    label_time_step="step",
+):
+    return xr.apply_ufunc(
+        calculate_hw_1D,
+        daily_mean_temp,
+        input_core_dims=[[label_time_step]],
+        output_core_dims=[[label_time_step]],
+        vectorize=True,
+        dask="parallelized",
+        kwargs={
+            "threshold": threshold,
+            "min_duration": min_duration,
+            "max_gap": max_gap,
+        },
+        output_dtypes=[int],
+    )
