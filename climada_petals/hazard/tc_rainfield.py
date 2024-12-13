@@ -1321,7 +1321,7 @@ def _windprofile(
         si_track = si_track.copy(deep=True)
         si_track["cp"].values[:] = 5e-5
     return compute_angular_windspeeds(
-        si_track, d_centr, mask_centr_close, model, model_kwarg=dict(cyclostrophic=cyclostrophic),
+        si_track, d_centr, mask_centr_close, model, model_kwargs=dict(cyclostrophic=cyclostrophic),
     )
 
 def _w_shear(
@@ -1527,7 +1527,7 @@ def _w_frict_stretch(
             d_centr[f"{rstep}h"] * (
                 si_track["cp"].values[:, None]
                 + (1 if rstep == "+" else -1) * (
-                    h_winds[f"r{rstep},t"] - h_winds[f"r,t"]
+                    h_winds[f"r{rstep},t"] - h_winds["r,t"]
                 ) / res_radial_m
             ) + h_winds[f"r{rstep}h,t"]
         )
@@ -1660,7 +1660,7 @@ def _qs_from_t_diff_level(
     )
 
     # solve `s_out(T_out) - s_in = 0` using the Newton-Raphson method
-    for it in range(max_iter):
+    for _ in range(max_iter):
         # compute new estimate of r_out from current estimate of T_out
         r_out[mask], drdT = _r_from_t_same_level(
             pres_out, temps_out[mask], gradient=True, **r_from_t_kwargs,
