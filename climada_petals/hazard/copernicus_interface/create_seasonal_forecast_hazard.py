@@ -160,181 +160,6 @@ def handle_overwriting(function):
     return wrapper
 
 
-class PathManager:
-    """Centralized path management for input, processed, and hazard data."""
-
-    def __init__(self, base_dir):
-        self.base_dir = Path(base_dir)
-
-    def construct_path(self, sub_dir, file_name):
-        """
-        Construct a full file path from a sub-directory and file name.
-
-        Parameters
-        ----------
-        sub_dir : str
-            Sub-directory relative to the base directory.
-        file_name : str
-            File name to append to the sub-directory.
-
-        Returns
-        -------
-        Path
-            Full path to the file.
-        """
-        Path(self.base_dir / sub_dir).mkdir(parents=True, exist_ok=True)
-        return self.base_dir / sub_dir / file_name
-
-    def get_download_path(
-        self,
-        originating_centre,
-        year,
-        initiation_month_str,
-        valid_period_str,
-        index_metric,
-        area_str,
-        format,
-    ):
-        """
-        Get the file path for downloaded data.
-
-        Parameters
-        ----------
-        originating_centre : str
-            The data source (e.g., 'dwd').
-        year : int
-            The forecast year.
-        initiation_month : str
-            The initiation month.
-        valid_period_str : str
-            Valid period (start month - end month)
-        index_metric : str
-            Climate index (e.g., 'HW').
-        area_str : str
-            Area identifier string.
-        format : str
-            File format ('grib' or 'netcdf').
-
-        Returns
-        -------
-        Path
-            Path to the downloaded data file.
-        """
-        sub_dir = f"{originating_centre}/{year}/init{initiation_month_str}/valid{valid_period_str}/downloaded_data/{format}"
-        file_name = f"{index_metric.lower()}_{area_str}.{format}"
-        return self.construct_path(sub_dir, file_name)
-
-    def get_daily_processed_path(
-        self,
-        originating_centre,
-        year,
-        initiation_month_str,
-        valid_period_str,
-        index_metric,
-        area_str,
-    ):
-        """
-        Get the file path for daily processed data.
-
-        Parameters
-        ----------
-        originating_centre : str
-            The data source (e.g., 'dwd').
-        year : int
-            The forecast year.
-        initiation_month : str
-            The initiation month.
-        valid_period_str : str
-            Valid period (start month - end month)
-        index_metric : str
-            Climate index (e.g., 'HW').
-        area_str : str
-            Area identifier string.
-
-        Returns
-        -------
-        Path
-            Path to the daily processed file.
-        """
-        # Update the sub-directory to use initiation_month
-        sub_dir = f"{originating_centre}/{year}/init{initiation_month_str}/valid{valid_period_str}/processed_data"
-        file_name = f"{index_metric.lower()}_{area_str}_daily.nc"
-        return self.construct_path(sub_dir, file_name)
-
-    def get_index_paths(
-        self,
-        originating_centre,
-        year,
-        initiation_month_str,
-        valid_period_str,
-        index_metric,
-        area_str,
-    ):
-        """
-        Get file paths for daily, monthly, and stats index files.
-
-        Parameters
-        ----------
-        originating_centre : str
-            The data source (e.g., 'dwd').
-        year : int
-            The forecast year.
-        initiation_month : str
-            The month for the index file.
-        valid_period_str : str
-            Valid period (start month - end month)
-        index_metric : str
-            Climate index (e.g., 'HW').
-        area_str : str
-            Area identifier string.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys ['daily', 'monthly', 'stats'] and corresponding file paths.
-        """
-        sub_dir = f"{originating_centre}/{year}/init{initiation_month_str}/valid{valid_period_str}/indices/{index_metric}"
-        return {
-            timeframe: self.construct_path(sub_dir, f"{timeframe}_{area_str}.nc")
-            for timeframe in ["daily", "monthly", "stats"]
-        }
-
-    def get_hazard_path(
-        self,
-        originating_centre,
-        year,
-        initiation_month_str,
-        valid_period_str,
-        index_metric,
-        area_str,
-    ):
-        """
-        Get the file path for a Hazard HDF5 file.
-
-        Parameters
-        ----------
-        originating_centre : str
-            The data source (e.g., 'dwd').
-        year : int
-            The forecast year.
-        initiation_month : str
-            The month for the hazard file.
-        valid_period_str : str
-            Valid period (start month - end month)
-        index_metric : str
-            Climate index (e.g., 'HW').
-        area_str : str
-            Area identifier string.
-
-        Returns
-        -------
-        Path
-            Path to the Hazard HDF5 file."""
-        sub_dir = f"{originating_centre}/{year}/init{initiation_month_str}/valid{valid_period_str}/hazard/{index_metric}"
-        file_name = f"{area_str}.hdf5"
-        return self.construct_path(sub_dir, file_name)
-
-
 # ----- Main Class -----
 class SeasonalForecast:
     """
@@ -401,9 +226,8 @@ class SeasonalForecast:
         self.originating_centre = originating_centre
         self.system = system
 
-        # initialze path handling
+        # initialze base directory
         self.data_out = Path(data_out) if data_out else DATA_OUT
-        self.path_manager = PathManager(self.data_out)
 
         # Get index specifications
         index_spec = IndexSpecEnum.get_info(self.index_metric)
@@ -411,6 +235,7 @@ class SeasonalForecast:
         self.variables_short = [
             get_short_name_from_variable(var) for var in self.variables
         ]
+
 
     def explain_index(self, index_metric=None):
         """
@@ -433,6 +258,74 @@ class SeasonalForecast:
         print(
             f"Required variables: {', '.join(IndexSpecEnum.get_info(index_metric).variables)}"
         )
+
+    @staticmethod
+    def get_file_path(
+        base_dir,
+        originating_centre,
+        year,
+        initiation_month_str,
+        valid_period_str,
+        data_type,
+        index_metric,
+        area_str,
+        format="",
+    ):
+        """
+        Provide general file paths for forecast pipeline.
+        """
+
+        if data_type == "downloaded_data":
+            data_type += f"/{format}"
+        elif data_type == "hazard":
+            data_type += f"/{index_metric}"
+            format = "hdf5"
+        elif data_type == "indices":
+            data_type += f"/{index_metric}"
+            format = "nc"
+        elif data_type == "processed_data":
+            format = "nc"
+        else:
+            raise ValueError(f"Unknown format {format}.")
+        
+        # prepare parent directory
+        sub_dir = f"{base_dir}/{originating_centre}/{year}/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
+        
+        if data_type.startswith("indices"):
+            return {timeframe: Path(f"{sub_dir}/{index_metric}_{area_str}_{timeframe}.{format}")
+                    for timeframe in ["daily", "monthly", "stats"]}
+        else:
+            return Path(f"{sub_dir}/{index_metric}_{area_str}.{format}")
+    
+    def get_pipeline_path(
+        self,
+        year,
+        initiation_month_str,
+        data_type
+    ):
+        """
+        Provide (and possibly create) file paths for forecast pipeline.
+        """
+
+        file_path = self.get_file_path(
+            self.data_out,
+            self.originating_centre,
+            year,
+            initiation_month_str,
+            self.valid_period_str,
+            data_type,
+            self.index_metric,
+            self.area_str,
+            self.format
+        )
+
+        # create directory if not existing
+        if data_type == "indices":
+            file_path["monthly"].parent.mkdir(parents=True, exist_ok=True)
+        else:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        return file_path
 
     @staticmethod
     def _get_bounds_for_area_selection(area_selection, margin=0.2):
@@ -518,19 +411,12 @@ class SeasonalForecast:
         for year in self.year_list:
             for month_str in self.initiation_month_str:
                 leadtimes = calculate_leadtimes(year, int(month_str), self.valid_period)
-                # Download for each lead time month
-                output_file_name = self.path_manager.get_download_path(
-                    self.originating_centre,
-                    year,
-                    month_str,
-                    self.valid_period_str,
-                    self.index_metric,
-                    self.area_str,
-                    self.format,
-                )
+
+                # Generate output file name
+                downloaded_data_path = self.get_pipeline_path(year, month_str, "downloaded_data")
 
                 output_files[(year, month_str, self.valid_period_str)] = _download_data(
-                    output_file_name,
+                    downloaded_data_path,
                     overwrite,
                     self.variables,
                     year,
@@ -562,31 +448,15 @@ class SeasonalForecast:
         for year in self.year_list:
             for month_str in self.initiation_month_str:
                 # Locate input file name
-                input_file_name = self.path_manager.get_download_path(
-                    self.originating_centre,
-                    year,
-                    month_str,
-                    self.valid_period_str,
-                    self.index_metric,
-                    self.area_str,
-                    self.format,
-                )
-
+                downloaded_data_path = self.get_pipeline_path(year, month_str, "downloaded_data")
                 # Generate output file name
-                output_file_name = self.path_manager.get_daily_processed_path(
-                    self.originating_centre,
-                    year,
-                    month_str,
-                    self.valid_period_str,
-                    self.index_metric,
-                    self.area_str,
-                )
+                processed_data_path = self.get_pipeline_path(year, month_str, "processed_data")
 
                 processed_files[(year, month_str, self.valid_period_str)] = (
                     _process_data(
-                        output_file_name,
+                        processed_data_path,
                         overwrite,
-                        input_file_name,
+                        downloaded_data_path,
                         self.variables_short,
                         self.format,
                     )
@@ -661,41 +531,19 @@ class SeasonalForecast:
                 )
                 # Determine the input file based on index type
                 if self.index_metric in ["TX30", "TR", "HW"]:  # Metrics using GRIB
-                    input_file_name = self.path_manager.get_download_path(
-                        self.originating_centre,
-                        year,  # Year is initiation year
-                        month_str,  # Initiation month folder
-                        self.valid_period_str,
-                        self.index_metric,
-                        self.area_str,
-                        "grib",
-                    )
+                    input_data_path = self.get_pipeline_path(year, month_str, "downloaded_data")
                 else:  # Metrics using processed NC files
-                    input_file_name = self.path_manager.get_daily_processed_path(
-                        self.originating_centre,
-                        year,
-                        month_str,
-                        self.valid_period_str,
-                        self.index_metric,
-                        self.area_str,
-                    )
+                    input_data_path = self.get_pipeline_path(year, month_str, "processed_data")
 
                 # Generate paths for index outputs
-                output_file_names = self.path_manager.get_index_paths(
-                    self.originating_centre,
-                    year,
-                    month_str,
-                    self.valid_period_str,
-                    self.index_metric,
-                    self.area_str,
-                )
+                index_data_paths = self.get_pipeline_path(year, month_str, "indices")
 
                 # Process the index and handle exceptions
                 try:
                     outputs = _calculate_index(
-                        output_file_names,
+                        index_data_paths,
                         overwrite,
-                        input_file_name,
+                        input_data_path,
                         self.index_metric,
                         tr_threshold=tr_threshold,
                         hw_min_duration=hw_min_duration,
@@ -740,30 +588,16 @@ class SeasonalForecast:
                     f"Creating hazard for index {self.index_metric} for year {year}, initiation month {month_str}."
                 )
                 # Get input index file paths and hazard output file paths
-                input_file_name = self.path_manager.get_index_paths(
-                    self.originating_centre,
-                    year,
-                    month_str,
-                    self.valid_period_str,
-                    self.index_metric,
-                    self.area_str,
-                )["monthly"]
-                output_file_name = self.path_manager.get_hazard_path(
-                    self.originating_centre,
-                    year,
-                    month_str,
-                    self.valid_period_str,
-                    self.index_metric,
-                    self.area_str,
-                )
+                index_data_path = self.get_pipeline_path(year, month_str, "indices")["monthly"]
+                hazard_data_path = self.get_pipeline_path(year, month_str, "hazard")
 
                 try:
                     # Convert index file to Hazard
                     hazard_outputs[(year, month_str, self.valid_period_str)] = (
                         _convert_to_hazard(
-                            output_file_name,
+                            hazard_data_path,
                             overwrite,
-                            input_file_name,
+                            index_data_path,
                             self.index_metric,
                         )
                     )
