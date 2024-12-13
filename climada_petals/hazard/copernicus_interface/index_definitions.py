@@ -202,7 +202,7 @@ def get_short_name_from_variable(variable):
     This function maps specific variable names to their short names, which are used across
     climate index definitions. These mappings are independent of the indices themselves
     but provide consistent naming conventions for variable processing and file management.
-    
+
     Examples
     --------
     get_short_name_from_variable("2m_temperature")'t2m'

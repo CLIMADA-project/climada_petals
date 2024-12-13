@@ -26,14 +26,15 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
         t2k = np.array([300.15, 303.15])  # Kelvin
         tdk = np.array([295.15, 298.15])  # Kelvin
 
-        expected = np.array([74.15727719, 74.65854214])  # Relative humidity without clipping
+        expected = np.array(
+            [74.15727719, 74.65854214]
+        )  # Relative humidity without clipping
         expected_clipped = np.clip(expected, 0, 100)
 
         result = calculate_relative_humidity_percent(t2k, tdk)
 
         # Validate results
         npt.assert_almost_equal(result, expected_clipped, decimal=2)
-
 
     def test_calculate_heat_index_simplified(self):
         """Test simplified heat index calculation."""
@@ -75,14 +76,15 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
         self.assertEqual(result.shape, t2k.shape)
         self.assertTrue(np.all(result > 0))  # WBGT should be positive
 
-    
     def test_calculate_relative_humidity(self):
         """Test calculation of relative humidity."""
         # Test inputs
-        t2_k = np.array([300.15, 303.15])  # Kelvin 
-        td_k = np.array([295.15, 298.15])  # Kelvin 
+        t2_k = np.array([300.15, 303.15])  # Kelvin
+        td_k = np.array([295.15, 298.15])  # Kelvin
 
-        expected_rh = np.array([74.15727719, 74.65854214])  # Approximate relative humidity in %
+        expected_rh = np.array(
+            [74.15727719, 74.65854214]
+        )  # Approximate relative humidity in %
 
         # Call the function
         result = calculate_relative_humidity(t2_k, td_k)
@@ -95,7 +97,7 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
         t2k = np.array([308.15, 310.15])  # Kelvin
         tdk = np.array([303.15, 305.15])  # Kelvin
         result = calculate_heat_index_adjusted(t2k, tdk)
-        self.assertEqual(result.shape, t2k.shape)  
+        self.assertEqual(result.shape, t2k.shape)
 
     def test_calculate_humidex(self):
         """Test Humidex calculation."""
@@ -127,7 +129,7 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
         min_duration = 2
         max_gap = 1
         result = calculate_hw(temperatures, threshold, min_duration, max_gap)
-        expected = np.array([0, 1, 1, 1, 1, 1, 1])  
+        expected = np.array([0, 1, 1, 1, 1, 1, 1])
         npt.assert_array_equal(result, expected)
 
     def test_calculate_tr(self):
