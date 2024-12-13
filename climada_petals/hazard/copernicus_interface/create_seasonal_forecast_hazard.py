@@ -236,6 +236,75 @@ class SeasonalForecast:
             get_short_name_from_variable(var) for var in self.variables
         ]
 
+    def check_existing_files(
+        self, index_metric, year, initiation_month, valid_period, download_format="grib"
+    ):
+
+        initiation_month_str = f"{month_name_to_number(initiation_month):02d}"
+        valid_period_str = "_".join(
+            [f"{month_name_to_number(month):02d}" for month in valid_period]
+        )
+
+        downloaded_data_path = self.get_file_path(
+            self.data_out,
+            self.originating_centre,
+            year,
+            initiation_month_str,
+            valid_period_str,
+            "downloaded_data",
+            index_metric,
+            self.area_str,
+            format=download_format,
+        )
+        processed_data_path = self.get_file_path(
+            self.data_out,
+            self.originating_centre,
+            year,
+            initiation_month_str,
+            valid_period_str,
+            "processed_data",
+            index_metric,
+            self.area_str,
+        )
+        index_data_paths = self.get_file_path(
+            self.data_out,
+            self.originating_centre,
+            year,
+            initiation_month_str,
+            valid_period_str,
+            "indices",
+            index_metric,
+            self.area_str,
+            format=download_format,
+        )
+        hazard_data_path = self.get_file_path(
+            self.data_out,
+            self.originating_centre,
+            year,
+            initiation_month_str,
+            valid_period_str,
+            "hazard",
+            index_metric,
+            self.area_str,
+            format=download_format,
+        )
+
+        if not downloaded_data_path.exists():
+            print("No downloaded data found for given time periods.")
+        else:
+            print(f"Downloaded data exist at: {downloaded_data_path}")
+        if not processed_data_path.exists():
+            print("No processed data found for given time periods.")
+        else:
+            print(f"Processed data exist at: {processed_data_path}")
+        if not any([path.exists() for path in index_data_paths.values()]):
+            print("No index data found for given time periods.")
+        else:
+            print(f"Index data exist at: {index_data_paths}")
+        if not hazard_data_path.exists():
+            print("No hazard data found for given time periods.")
+        else:
+            print(f"Hazard data exist at: {hazard_data_path}")
 
     def explain_index(self, index_metric=None):
         """
@@ -269,7 +338,7 @@ class SeasonalForecast:
         data_type,
         index_metric,
         area_str,
-        format="",
+        format="grib",
     ):
         """
         Provide general file paths for forecast pipeline.
@@ -287,22 +356,21 @@ class SeasonalForecast:
             format = "nc"
         else:
             raise ValueError(f"Unknown format {format}.")
-        
+
         # prepare parent directory
         sub_dir = f"{base_dir}/{originating_centre}/{year}/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
-        
+
         if data_type.startswith("indices"):
-            return {timeframe: Path(f"{sub_dir}/{index_metric}_{area_str}_{timeframe}.{format}")
-                    for timeframe in ["daily", "monthly", "stats"]}
+            return {
+                timeframe: Path(
+                    f"{sub_dir}/{index_metric}_{area_str}_{timeframe}.{format}"
+                )
+                for timeframe in ["daily", "monthly", "stats"]
+            }
         else:
             return Path(f"{sub_dir}/{index_metric}_{area_str}.{format}")
-    
-    def get_pipeline_path(
-        self,
-        year,
-        initiation_month_str,
-        data_type
-    ):
+
+    def get_pipeline_path(self, year, initiation_month_str, data_type):
         """
         Provide (and possibly create) file paths for forecast pipeline.
         """
@@ -316,7 +384,7 @@ class SeasonalForecast:
             data_type,
             self.index_metric,
             self.area_str,
-            self.format
+            self.format,
         )
 
         # create directory if not existing
@@ -413,7 +481,9 @@ class SeasonalForecast:
                 leadtimes = calculate_leadtimes(year, int(month_str), self.valid_period)
 
                 # Generate output file name
-                downloaded_data_path = self.get_pipeline_path(year, month_str, "downloaded_data")
+                downloaded_data_path = self.get_pipeline_path(
+                    year, month_str, "downloaded_data"
+                )
 
                 output_files[(year, month_str, self.valid_period_str)] = _download_data(
                     downloaded_data_path,
@@ -448,9 +518,13 @@ class SeasonalForecast:
         for year in self.year_list:
             for month_str in self.initiation_month_str:
                 # Locate input file name
-                downloaded_data_path = self.get_pipeline_path(year, month_str, "downloaded_data")
+                downloaded_data_path = self.get_pipeline_path(
+                    year, month_str, "downloaded_data"
+                )
                 # Generate output file name
-                processed_data_path = self.get_pipeline_path(year, month_str, "processed_data")
+                processed_data_path = self.get_pipeline_path(
+                    year, month_str, "processed_data"
+                )
 
                 processed_files[(year, month_str, self.valid_period_str)] = (
                     _process_data(
@@ -531,9 +605,13 @@ class SeasonalForecast:
                 )
                 # Determine the input file based on index type
                 if self.index_metric in ["TX30", "TR", "HW"]:  # Metrics using GRIB
-                    input_data_path = self.get_pipeline_path(year, month_str, "downloaded_data")
+                    input_data_path = self.get_pipeline_path(
+                        year, month_str, "downloaded_data"
+                    )
                 else:  # Metrics using processed NC files
-                    input_data_path = self.get_pipeline_path(year, month_str, "processed_data")
+                    input_data_path = self.get_pipeline_path(
+                        year, month_str, "processed_data"
+                    )
 
                 # Generate paths for index outputs
                 index_data_paths = self.get_pipeline_path(year, month_str, "indices")
@@ -588,7 +666,9 @@ class SeasonalForecast:
                     f"Creating hazard for index {self.index_metric} for year {year}, initiation month {month_str}."
                 )
                 # Get input index file paths and hazard output file paths
-                index_data_path = self.get_pipeline_path(year, month_str, "indices")["monthly"]
+                index_data_path = self.get_pipeline_path(year, month_str, "indices")[
+                    "monthly"
+                ]
                 hazard_data_path = self.get_pipeline_path(year, month_str, "hazard")
 
                 try:
