@@ -1321,7 +1321,7 @@ def _windprofile(
         si_track = si_track.copy(deep=True)
         si_track["cp"].values[:] = 5e-5
     return compute_angular_windspeeds(
-        si_track, d_centr, mask_centr_close, model, model_kwarg=dict(cyclostrophic=cyclostrophic),
+        si_track, d_centr, mask_centr_close, model, cyclostrophic=cyclostrophic,
     )
 
 def _w_shear(
