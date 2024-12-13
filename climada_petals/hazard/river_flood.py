@@ -170,7 +170,6 @@ class RiverFlood(Hazard):
                                        'event_name': event_names,
                                        'frequency': frequencies})
 
-        haz.centroids.set_meta_to_lat_lon()
         haz.units = 'm'
 
         return haz
