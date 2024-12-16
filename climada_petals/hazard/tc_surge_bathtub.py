@@ -449,13 +449,13 @@ def _downscale_sparse_matrix(matrix, centroids, higher_res, method="linear"):
                         method=method,
                         fill_value=0,
                     )
-                    intensities.append(
-                        sparse.csr_matrix(new_matrix, shape=(1, hr_coordinates_full[:, 0].size))
-                    )
                 except QhullError as qhullerr:
                     warnings.warn(
                         f"Scipy could not compute the Qhull for this event. Ignoring.\nThe event (TC {i+1}) had {matrix[i].size} non zero intensity centroids.\nHere is the error:\n======={qhullerr}\n======="
                     )
+                intensities.append(
+                    sparse.csr_matrix(new_matrix, shape=(1, hr_coordinates_full[:, 0].size))
+                )
         else:
             intensities.append(
                 sparse.csr_matrix([], shape=(1, hr_coordinates_full[:, 0].size))
