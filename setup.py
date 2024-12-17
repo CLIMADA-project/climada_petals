@@ -37,9 +37,8 @@ setup(
     keywords='climate adaptation',
 
     install_requires=[
-        'climada>=4.1',
         'climada>=5.0',
-        'boario @ git+https://github.com/spjuhel/BoARIO@develop',
+        'boario',
         'cdsapi',
         'osm-flex',
         "pymrio",
