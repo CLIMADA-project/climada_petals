@@ -149,7 +149,7 @@ def lexico_reindex(mriot: pymrio.IOSystem) -> pymrio.IOSystem:
     """
 
     for matrix_name in ["Z", "Y", "x", "A", "As", "G", "L"]:
-        matrix = getattr(mriot, matrix_name)
+        matrix = getattr(mriot, matrix_name, None)
         if matrix is not None:
             setattr(
                 mriot, matrix_name, matrix.reindex(sorted(matrix.index)).sort_index(axis=1)
