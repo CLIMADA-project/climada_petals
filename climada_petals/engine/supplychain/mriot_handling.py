@@ -501,7 +501,7 @@ def parse_mriot(mriot_type, downloaded_file, mriot_year, **kwargs):
             mriot.Y.sum(axis=1) < 0
         ].clip(lower=0)
         mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
-
+        mriot.A = pymrio.calc_A(mriot.Z, mriot.x)
 
     return mriot
 
