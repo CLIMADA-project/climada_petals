@@ -334,8 +334,6 @@ def distribute_reg_impact_to_sectors(
         DataFrame containing regional impact data. Columns represent regions, and index represents events.
     distributor : pd.Series
         Series used to distribute the impact across sectors. Can have a MultiIndex (region, sector) or a single index (sector).
-    inplace : bool, optional
-        If True, modifies the original `reg_impact` DataFrame. If False, returns a modified copy.
 
     Returns
     -------
@@ -380,6 +378,10 @@ def distribute_reg_impact_to_sectors(
         raise ValueError(
             f"The following sectors are missing in the distributor: {', '.join(missing_sectors)}"
         )
+
+
+    # Normalize values by regions
+    distributor = distributor.groupby(level="region").transform(lambda x: x / x.sum())
 
     # Expand regional_impact to have matching multi-level columns
     sector_count = len(multi_index.get_level_values("sector").unique())
