@@ -466,8 +466,8 @@ def _get_subgraph2graph_vsdict(graph, subgraph):
         graph_vs_indices, index=graph_orig_ids,  columns=['index_g'])
 
     df_conc = pd.concat([df_subg, df_g], axis=1)
-
-    return dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g']))
+    #dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) previous version, very slow
+    return df_conc.groupby('index_sub')['index_g'].first().to_dict()
 
 def _calc_friction(edge_geoms, friction_surf):
 
