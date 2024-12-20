@@ -18,16 +18,17 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Module preparing data for the river flood inundation model
 """
+
 from typing import Union
 from pathlib import Path
 from tempfile import TemporaryFile, TemporaryDirectory
-from urllib.parse import urlparse
 from zipfile import ZipFile
 import logging
 import shutil
 
 import xarray as xr
 import requests
+import geopandas as gpd
 
 from .transform_ops import (
     merge_flood_maps,
@@ -39,20 +40,13 @@ from .rf_glofas import DEFAULT_DATA_DIR
 
 LOGGER = logging.getLogger(__name__)
 
-JRC_FLOOD_HAZARD_MAPS = [
-    "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp10y.zip",
-    "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp20y.zip",
-    "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp50y.zip",
-    "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp100y.zip",
-    "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp200y.zip",
-    "https://cidportal.jrc.ec.europa.eu/ftp/jrc-opendata/FLOODS/GlobalMaps/floodMapGL_rp500y.zip",
-]
+JRC_FLOOD_HAZARD_MAP_URL = "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard/RP{rp}/ID{id}_{name}_RP{rp}_depth.tif"
 
-FLOPROS_DATA = \
-    "https://nhess.copernicus.org/articles/16/1049/2016/nhess-16-1049-2016-supplement.zip"
+JRC_FLOOD_HAZARD_MAP_RPS = [10, 20, 50, 75, 100, 200, 500]
 
-GUMBEL_FIT_DATA = \
-    "https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/641667/gumbel-fit.nc"
+FLOPROS_DATA = "https://nhess.copernicus.org/articles/16/1049/2016/nhess-16-1049-2016-supplement.zip"
+
+GUMBEL_FIT_DATA = "https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/641667/gumbel-fit.nc"
 
 
 def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):
@@ -90,21 +84,27 @@ def download_flood_hazard_maps(output_dir: Union[str, Path]):
     unzipping.
     """
     LOGGER.debug("Downloading flood hazard maps")
-    for url in JRC_FLOOD_HAZARD_MAPS:
-        # Set output path for the archive
-        file_name = Path(urlparse(url).path).stem
-        output_path = Path(output_dir) / file_name
+    # Load information on the tiles
+    tile_extents = gpd.read_file(
+        "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/CEMS-GLOFAS/flood_hazard/tile_extents.geojson"
+    )
+
+    for return_period in JRC_FLOOD_HAZARD_MAP_RPS:
+        # Set output path for the files
+        output_path = Path(output_dir) / f"RP{return_period}"
         output_path.mkdir(exist_ok=True)
 
-        # Download the file (streaming, because they are around 45 MB)
-        response = requests.get(url, stream=True)
-        with TemporaryFile(suffix=".zip") as file:
-            for chunk in response.iter_content(chunk_size=10 * 1024):
-                file.write(chunk)
-
-            # Unzip the file
-            with ZipFile(file) as zipfile:
-                zipfile.extractall(output_path)
+        # Download the files (streaming, because they may be tens of MB large)
+        for _, tile in tile_extents.iterrows():
+            url = JRC_FLOOD_HAZARD_MAP_URL.format(
+                rp=return_period, id=tile["id"], name=tile["name"]
+            )
+            LOGGER.debug("Downloading %s", url)
+            filename = output_path / Path(url).name
+            response = requests.get(url, stream=True)
+            with open(filename, "w") as file:
+                for chunk in response.iter_content(chunk_size=10 * 1024):
+                    file.write(chunk)
 
 
 def setup_flood_hazard_maps(flood_maps_dir: Path, output_dir=DEFAULT_DATA_DIR):
@@ -132,26 +132,42 @@ def setup_flood_hazard_maps(flood_maps_dir: Path, output_dir=DEFAULT_DATA_DIR):
         flood_maps_dir.mkdir()
         download_flood_hazard_maps(flood_maps_dir)
 
-    # Find flood maps
-    flood_maps_paths = list(Path(flood_maps_dir).glob("**/floodMapGL_rp*y.tif"))
-    flood_maps_paths_nc = [path.with_suffix(".nc") for path in flood_maps_paths]
+    # STEP 0: Rewrite tiles as NetCDFs ??
 
-    # Rewrite GeoTIFFs as NetCDFs
-    LOGGER.debug("Rewriting flood hazard maps to NetCDF files")
-    for path, path_nc in zip(flood_maps_paths, flood_maps_paths_nc):
-        if not path_nc.is_file():
-            # This uses rioxarray to open a GeoTIFF as an xarray DataArray:
-            with xr.open_dataarray(path, engine="rasterio", chunks="auto") as d_arr:
-                save_file(d_arr, path_nc, zlib=True)
+    # STEP 1: Merge all tiles for single RP into one NetCDF file
+    LOGGER.debug("Merging flood hazard map tiles into NetCDF files")
+    for return_period in JRC_FLOOD_HAZARD_MAP_RPS:
+        flood_maps_rp_dir = flood_maps_dir / f"RP{return_period}"
+        ds_rp_flood_maps = (
+            xr.open_mfdataset(
+                flood_maps_rp_dir / "*_depth.tif",
+                chunks="auto",
+                combine="by_coords",
+                engine="rasterio",
+            )
+            .drop_vars("spatial_ref", errors="ignore")
+            .squeeze("band", drop=True)
+        )
+        save_file(
+            ds_rp_flood_maps,
+            flood_maps_rp_dir / "depth.nc",
+            zlib=True,
+        )
+        ds_rp_flood_maps.close()
 
-    # Load NetCDFs and merge
+    # STEP 2: Merge all RPs into one NetCDF file
     LOGGER.debug("Merging flood hazard maps into single dataset")
     flood_maps = {
-        str(path): xr.open_dataset(path, engine="netcdf4", chunks="auto")["band_data"]
-        for path in flood_maps_paths_nc
+        return_period: xr.open_dataset(
+            flood_maps_dir / f"RP{return_period}" / "depth.nc",
+            engine="netcdf4",
+            chunks="auto",
+        )["band_data"]
+        for return_period in JRC_FLOOD_HAZARD_MAP_RPS
     }
     da_flood_maps = merge_flood_maps(flood_maps)
     save_file(da_flood_maps, output_dir / "flood-maps.nc", zlib=True)
+    da_flood_maps.close()
 
 
 def setup_gumbel_fit(
@@ -175,7 +191,7 @@ def setup_gumbel_fit(
     discharge = download_glofas_discharge(
         "historical",
         "1979",
-        "2015",
+        "2023",
         num_proc=num_downloads,
         preprocess=lambda x: x.groupby("time.year").max(),
         open_mfdataset_kw=dict(
@@ -185,16 +201,16 @@ def setup_gumbel_fit(
         ),
     )
     discharge_file = output_dir / "discharge.nc"
-    discharge.to_netcdf(discharge_file, engine="netcdf4")
+    save_file(discharge, discharge_file)
     discharge.close()
 
     # Fit Gumbel
     LOGGER.debug("Fitting Gumbel distributions to historical discharge data")
     with xr.open_dataarray(
-        discharge_file, chunks=dict(time=-1, longitude=50, latitude=50)
+        discharge_file, chunks=dict(time=-1, year=-1, longitude=50, latitude=50)
     ) as discharge:
         fit = fit_gumbel_r(discharge, min_samples=10)
-        fit.to_netcdf(output_dir / "gumbel-fit.nc", engine="netcdf4")
+        save_file(fit, output_dir / "gumbel-fit.nc", dtype="float64")
 
 
 def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
@@ -211,6 +227,8 @@ def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
 
 def setup_all(
     output_dir: Union[str, Path] = DEFAULT_DATA_DIR,
+    compute_gumbel_fit: bool = False,
+    **setup_gumbel_fit_kwargs,
 ):
     """Set up the data for river flood computations.
 
@@ -220,12 +238,15 @@ def setup_all(
        dataset.
     #. Downloading the FLOPROS flood protection database.
     #. Downloading the Gumbel distribution parameters fitted to GloFAS river discharge
-       reanalysis data from 1979 to 2015.
+       reanalysis data from 1979 to 2023.
 
     Parameters
     ----------
     output_dir : Path or str, optional
         The directory to store the datasets into.
+    compute_gumbel_fit : bool
+        If ``True``, recompute the Gumbel fits instead of downloading the data stored in
+        the ETH research collection. See :py:func:`setup_gumbel_fit`.
     """
     # Make sure the path exists
     output_dir = Path(output_dir)
@@ -235,4 +256,8 @@ def setup_all(
         flood_maps_dir=DEFAULT_DATA_DIR / "flood-maps", output_dir=output_dir
     )
     download_flopros_database(output_dir)
-    download_gumbel_fit(output_dir)
+
+    if compute_gumbel_fit:
+        setup_gumbel_fit(output_dir, **setup_gumbel_fit_kwargs)
+    else:
+        download_gumbel_fit(output_dir)

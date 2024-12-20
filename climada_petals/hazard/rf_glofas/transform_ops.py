@@ -42,7 +42,9 @@ LOGGER = logging.getLogger(__name__)
 
 def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
     """Select a lon/lat slice from 'target' using coordinates of 'source'"""
-    return target.sel({c: slice(*source[c][[0, -1]]) for c in ["longitude", "latitude"]})
+    return target.sel(
+        {c: slice(*source[c][[0, -1]]) for c in ["longitude", "latitude"]}
+    )
 
 
 def rp_comp(
@@ -148,7 +150,7 @@ def reindex(
     return target
 
 
-def merge_flood_maps(flood_maps: Mapping[str, xr.DataArray]) -> xr.DataArray:
+def merge_flood_maps(flood_maps: Mapping[int, xr.DataArray]) -> xr.DataArray:
     """Merge the flood maps GeoTIFFs into one NetCDF file
 
     Adds a "zero" flood map (all zeros)
@@ -161,21 +163,17 @@ def merge_flood_maps(flood_maps: Mapping[str, xr.DataArray]) -> xr.DataArray:
         the naming scheme ``floodMapGL_rpXXXy``, where ``XXX`` indicates the return
         period of the respective map.
     """
-    expr = re.compile(r"floodMapGL_rp(\d+)y")
-    years = [int(expr.search(name).group(1)) for name in flood_maps]
+    years = list(flood_maps.keys())
     idx = np.argsort(years)
     darrs = list(flood_maps.values())
-    darrs = [
-        darrs[i].drop_vars("spatial_ref", errors="ignore").squeeze("band", drop=True)
-        for i in idx
-    ]
+    darrs = [darrs[i] for i in idx]
 
     # Add zero flood map
-    # NOTE: Return period of 1 is the minimal value
     da_null_flood = xr.full_like(darrs[0], np.nan)
     darrs.insert(0, da_null_flood)
 
     # Concatenate and rename
+    # NOTE: Return period of 1 is the minimal value
     years = np.insert(np.array(years)[idx], 0, 1)
     da_flood_maps = xr.concat(darrs, pd.Index(years, name="return_period"))
     da_flood_maps = da_flood_maps.rename(x="longitude", y="latitude")
@@ -336,6 +334,7 @@ def download_glofas_discharge(
     dims = {dim for dim, size in arr.sizes.items() if size == 1} - {"time"}
     return arr.squeeze(dim=dims)
 
+
 def max_from_isel(
     array: xr.DataArray, dim: str, selections: List[Union[Iterable, slice]]
 ) -> xr.DataArray:
@@ -348,7 +347,7 @@ def max_from_isel(
     data = [array.isel({dim: sel}) for sel in selections]
     return xr.concat(
         [da.max(dim=dim, skipna=True) for da in data],
-        dim=pd.Index(list(range(len(selections))), name="select")
+        dim=pd.Index(list(range(len(selections))), name="select"),
         # dim=xr.concat([da[dim].max() for da in data], dim=dim)
     )
 
