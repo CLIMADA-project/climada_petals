@@ -43,37 +43,26 @@ CDS_DOWNLOAD_DIR = Path(SYSTEM_DIR, "cds-download")
 
 DEFAULT_REQUESTS = {
     "historical": {
-        "variable": "river_discharge_in_the_last_24_hours",
-        "product_type": "consolidated",
-        "system_version": "version_3_1",
-        "hydrological_model": "lisflood",
-        "format": "grib",
-        "hyear": "1979",
-        "hmonth": [
-            "january",
-            "february",
-            "march",
-            "april",
-            "may",
-            "june",
-            "july",
-            "august",
-            "september",
-            "october",
-            "november",
-            "december",
-        ],
+        "variable": ["river_discharge_in_the_last_24_hours"],
+        "product_type": ["consolidated"],
+        "system_version": ["version_4_0"],
+        "hydrological_model": ["lisflood"],
+        "data_format": "grib2",
+        "download_format": "unarchived",
+        "hyear": ["1979"],
+        "hmonth": [f"{month:02}" for month in range(1, 13)],
         "hday": [f"{day:02}" for day in range(1, 32)],
     },
     "forecast": {
-        "variable": "river_discharge_in_the_last_24_hours",
-        "product_type": "ensemble_perturbed_forecasts",
-        "system_version": "version_3_1",
-        "hydrological_model": "lisflood",
-        "format": "grib",
-        "year": "2022",
-        "month": "08",
-        "day": "01",
+        "variable": ["river_discharge_in_the_last_24_hours"],
+        "product_type": ["ensemble_perturbed_forecasts"],
+        "system_version": ["operational"],
+        "hydrological_model": ["lisflood"],
+        "data_format": "grib2",
+        "download_format": "unarchived",
+        "year": ["2022"],
+        "month": ["08"],
+        "day": ["01"],
         "leadtime_hour": (np.arange(1, 31) * 24).astype(str).tolist(),
     },
 }
@@ -133,7 +122,7 @@ def glofas_request_single(
     outfile = outpath / (
         datetime.today().strftime("%y%m%d-%H%M%S") + f"-{request_hash}"
     )
-    extension = ".grib" if request["format"] == "grib" else ".nc"
+    extension = ".grib" if request["data_format"] == "grib2" else ".nc"
     outfile = outfile.with_suffix(extension)
 
     # Check if request was issued before
@@ -262,7 +251,7 @@ def glofas_request(
 
         # List up all requests
         requests = [
-            {"hyear": str(year)} for year in list(range(year_from, year_to + 1))
+            {"hyear": [str(year)]} for year in list(range(year_from, year_to + 1))
         ]
 
     elif product == "forecast":
@@ -275,7 +264,11 @@ def glofas_request(
         # List up all requests
         dates = pd.date_range(date_from, date_to, freq="D", inclusive="both").date
         requests = [
-            {"year": str(d.year), "month": f"{d.month:02d}", "day": f"{d.day:02d}"}
+            {
+                "year": [str(d.year)],
+                "month": [f"{d.month:02d}"],
+                "day": [f"{d.day:02d}"],
+            }
             for d in dates
         ]
 

@@ -105,8 +105,8 @@ class TestGloFASRequest(unittest.TestCase):
         """Test request for a single forecast day"""
         glofas_request("forecast", "2022-01-01", None, self.tempdir.name)
         request = deepcopy(DEFAULT_REQUESTS["forecast"])
-        request["month"] = "01"
-        request["day"] = "01"
+        request["month"] = ["01"]
+        request["day"] = ["01"]
         mock_req.assert_called_once_with(
             "cems-glofas-forecast",
             [request],
@@ -126,7 +126,7 @@ class TestGloFASRequest(unittest.TestCase):
 
         # Use default grib
         request = deepcopy(DEFAULT_REQUESTS["forecast"])
-        request["format"] = "grib"
+        request["data_format"] = "grib2"
         glofas_request_single(
             "forecast",
             request,
@@ -137,7 +137,7 @@ class TestGloFASRequest(unittest.TestCase):
         self.assertEqual(call_args[2].suffix, ".grib")
 
         # Use nonsense (should be .nc then)
-        request["format"] = "foo"
+        request["data_format"] = "foo"
         glofas_request_single(
             "forecast",
             request,
@@ -160,12 +160,12 @@ class TestGloFASRequest(unittest.TestCase):
         """Test request for multiple forecast days"""
         glofas_request("forecast", "2022-12-31", "2023-01-01", self.tempdir.name)
         requests = mock_req.call_args.args[1]
-        self.assertEqual(requests[0]["year"], "2022")
-        self.assertEqual(requests[1]["year"], "2023")
-        self.assertEqual(requests[0]["month"], "12")
-        self.assertEqual(requests[1]["month"], "01")
-        self.assertEqual(requests[0]["day"], "31")
-        self.assertEqual(requests[1]["day"], "01")
+        self.assertEqual(requests[0]["year"], ["2022"])
+        self.assertEqual(requests[1]["year"], ["2023"])
+        self.assertEqual(requests[0]["month"], ["12"])
+        self.assertEqual(requests[1]["month"], ["01"])
+        self.assertEqual(requests[0]["day"], ["31"])
+        self.assertEqual(requests[1]["day"], ["01"])
         self.assertEqual(mock_req.call_args.args[2], self.tempdir.name)
 
     @mock.patch(
@@ -176,7 +176,7 @@ class TestGloFASRequest(unittest.TestCase):
         """Test request for single historical year"""
         glofas_request("historical", "2019", None, self.tempdir.name)
         request = deepcopy(DEFAULT_REQUESTS["historical"])
-        request["hyear"] = "2019"
+        request["hyear"] = ["2019"]
         mock_req.assert_called_once_with(
             "cems-glofas-historical",
             [request],
@@ -194,13 +194,10 @@ class TestGloFASRequest(unittest.TestCase):
         """Test request for multiple historical years"""
         glofas_request("historical", "2019", "2021", self.tempdir.name)
         requests = mock_req.call_args.args[1]
-        self.assertEqual(requests[0]["hyear"], "2019")
-        self.assertEqual(requests[1]["hyear"], "2020")
-        self.assertEqual(requests[2]["hyear"], "2021")
-        self.assertEqual(
-            mock_req.call_args.args[2],
-            self.tempdir.name
-        )
+        self.assertEqual(requests[0]["hyear"], ["2019"])
+        self.assertEqual(requests[1]["hyear"], ["2020"])
+        self.assertEqual(requests[2]["hyear"], ["2021"])
+        self.assertEqual(mock_req.call_args.args[2], self.tempdir.name)
 
     def test_historical_wrong_date(self):
         """Test correct error for wrong date specification"""
