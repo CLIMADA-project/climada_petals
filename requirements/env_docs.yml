@@ -5,6 +5,7 @@ channels:
 dependencies:
   - cdsapi>=0.6
   - gfortran>=13.0
+  - meson=1.4  # meson 1.5/1.6 may break geoclaw setup (at least for python 3.11)
   - meson-python=0.15
   - osm-flex>=1.1
   - overpy>=0.7
