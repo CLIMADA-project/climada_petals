@@ -72,6 +72,8 @@ CROP_NAME['ri1'] = {'input': 'rice', 'fao': 'Rice, paddy', 'print': 'Rice 1st se
 CROP_NAME['ri2'] = {'input': 'rice', 'fao': 'Rice, paddy', 'print': 'Rice 2nd season'}
 CROP_NAME['swh'] = {'input': 'temperate_cereals', 'fao': 'Wheat', 'print': 'Spring Wheat'}
 CROP_NAME['wwh'] = {'input': 'temperate_cereals', 'fao': 'Wheat', 'print': 'Winter Wheat'}
+CROP_NAME['cas'] = {'input': 'cassava', 'fao': 'Cassava, fresh', 'print': 'Cassava fresh'}
+
 
 """mapping of irrigation parameter long names"""
 IRR_NAME = {'combined': {'name': 'combined'},
@@ -99,6 +101,7 @@ KCAL_PER_TON['biomass'] = {'mai': 3.56e6,
                            'ric': 2.80e6,
                            'soy': 3.35e6,
                            'whe': 3.34e6,
+                           'cas': 3.34e6,
                            }
 """
 Version 2: conversion factors for crop dry matter as simulated by most crop models,
@@ -109,6 +112,7 @@ KCAL_PER_TON['drymatter'] = {'mai': 3.56e6 / (1-.12),
                              'ric': 2.80e6 / (1-.13),
                              'soy': 3.35e6 / (1-.09),
                              'whe': 3.34e6 / (1-.12),
+                             'cas': 3.34e6 / (1-.12),
                              }
 
 # Default folder structure for ISIMIP data:
@@ -143,7 +147,7 @@ class CropProduction(Exposures):
     Attributes
     ----------
     crop : str
-        crop typee.g., 'mai', 'ric', 'whe', 'soy'
+        crop typee.g., 'mai', 'ric', 'whe', 'soy','cas'
     """
 
     _metadata = Exposures._metadata + ['crop']
@@ -187,7 +191,7 @@ class CropProduction(Exposures):
             e.g., 'gfdl-esm2m', 'hadgem2-es', 'ipsl-cm5a-lr','miroc5'
         crop : string
             crop type
-            e.g., 'mai', 'ric', 'whe', 'soy'
+            e.g., 'mai', 'ric', 'whe', 'soy','cas'
         irr : string
             irrigation type, default: 'combined'
             f.i 'firr' (full irrigation), 'noirr' (no irrigation) or 'combined'= firr+noirr
@@ -420,7 +424,7 @@ class CropProduction(Exposures):
         Parameters
         ----------
         crop_type : str
-            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy', etc.
+            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy','cas', etc.
         layer_yield : int
             crop layer in yield input data set. Index typically starts with 1.
         layer_area : int
@@ -526,7 +530,7 @@ class CropProduction(Exposures):
         Parameters
         ----------
         crop_type : str
-            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy', etc.
+            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy','cas' etc.
         irrigation_type : str, optional
             irrigation type to be extracted, the options are:
             'all' : total crop production, i.e. irrigated + rainfed
@@ -548,8 +552,8 @@ class CropProduction(Exposures):
         filename_area = 'cultivated_area_MIRCA_GGCMI.nc4'
 
         # crop layers and variable names in default input files:
-        layers_yield = {'mai': 1, 'whe': 2, 'soy': 4, 'ric': 3}
-        layers_area = {'mai': 1, 'whe': 2, 'soy': 3, 'ric': 4}
+        layers_yield = {'mai': 1, 'whe': 2, 'soy': 4, 'ric': 3,'cas': 5}
+        layers_area = {'mai': 1, 'whe': 2, 'soy': 3, 'ric': 4,'cas': 5}
         # Note: layer numbers fo rice and soybean differ between input files.
         varnames_yield = {'noirr': 'yield.rf',
                          'firr': 'yield.ir',
@@ -601,7 +605,7 @@ class CropProduction(Exposures):
             e.g., 'gfdl-esm2m' etc.
         crop : string
             crop type
-            e.g., 'mai', 'ric', 'whe', 'soy'
+            e.g., 'mai', 'ric', 'whe', 'soy','cas'
         irr : string
             irrigation type
             f.i 'rainfed', 'irrigated' or 'combined'= rainfed+irrigated
@@ -762,7 +766,7 @@ def value_to_usd(exp_cp, input_dir=None, yearrange=None):
         The data is available for the years 1991-2018
     crop : str
         crop type
-        e.g., 'mai', 'ric', 'whe', 'soy'
+        e.g., 'mai', 'ric', 'whe', 'soy', 'cas'
 
     Returns
     -------
