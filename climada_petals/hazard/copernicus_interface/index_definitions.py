@@ -70,7 +70,6 @@ in how indices and variables are processed and managed.
 from enum import Enum
 from dataclasses import dataclass
 
-
 @dataclass
 class IndexSpec:
     unit: str
@@ -78,18 +77,17 @@ class IndexSpec:
     explanation: str
     variables: list
 
-
 class IndexSpecEnum(Enum):
     HIA = IndexSpec(
         unit="C",
         full_name="Heat Index Adjusted",
-        explanation="Heat Index Adjusted: This indicator measures apparent temperature, considering both air temperature and humidity, providing a more accurate perception of how hot it feels.",
+        explanation="Heat Index Adjusted: A refined measure of apparent temperature that accounts for both air temperature and humidity. This index improves upon the simplified heat index by incorporating empirical corrections for extreme temperature and humidity conditions, ensuring a more accurate representation of perceived heat stress. If the temperature is ≤ 26.7°C (80°F), the index returns a simplified estimate.",
         variables=["2m_temperature", "2m_dewpoint_temperature"],
     )
     HIS = IndexSpec(
         unit="C",
         full_name="Heat Index Simplified",
-        explanation="Heat Index Simplified: A simpler version focusing on a quick estimate of perceived heat.",
+        explanation="Heat Index Simplified: A quick estimate of perceived heat based on temperature and humidity, using an empirical formula designed for warm conditions (T > 20°C). If the temperature is ≤ 20°C, the heat index is set to the air temperature.",
         variables=["2m_temperature", "2m_dewpoint_temperature"],
     )
     Tmean = IndexSpec(
@@ -113,7 +111,7 @@ class IndexSpecEnum(Enum):
     HW = IndexSpec(
         unit="Days",
         full_name="Heat Wave",
-        explanation="Heat Wave: Identifies heat waves as periods with temperatures above a threshold.",
+        explanation="Heat Wave: Identifies heat waves as periods with temperatures above a threshold. Default >= 27 °C for minimum 3 consecutive days.",
         variables=["2m_temperature"],
     )
     TR = IndexSpec(
@@ -180,7 +178,6 @@ class IndexSpecEnum(Enum):
             raise ValueError(
                 f"Unknown index '{index_name}'. Available indices: {', '.join(cls.__members__.keys())}"
             )
-
 
 def get_short_name_from_variable(variable):
     """
