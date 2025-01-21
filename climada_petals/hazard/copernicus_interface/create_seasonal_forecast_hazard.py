@@ -645,6 +645,21 @@ def calculate_leadtimes(year, initiation_month, valid_period):
         If initiation month or lead time months are invalid.
     Exception
         For general errors during lead time calculation.
+
+    Notes
+    -----
+    - The function determines the correct year(s) for the valid forecast period.
+    - If the forecast extends into the next year, the valid period spans two years.
+    - Lead times are computed in hourly intervals from the initiation month to the end of the forecast period.
+
+    Example:
+    ---------
+    If the forecast is initiated in **December 2022** and the valid period is **January to February 2023**,  
+    the function will:
+    - Recognize that the forecast extends into the next year (2023).
+    - Compute lead times starting from **December 1, 2022** (0 hours) to **February 28, 2023**.
+    - Generate lead times in 6-hour intervals, covering the entire forecast period from December 2022 through February 2023.
+
     """
 
     # Convert initiation month to numeric if it is a string
