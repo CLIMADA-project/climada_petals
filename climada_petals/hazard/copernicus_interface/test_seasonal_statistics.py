@@ -11,7 +11,7 @@ from climada_petals.hazard.copernicus_interface.seasonal_statistics import (
 )
 
 """
-Test Suite for Seasonal Statistics Functions
+Test Suite for seasonal Statistics Functions
 
 This script contains unit tests for verifying the functionality and robustness 
 of the seasonal statistics functions used in climate data analysis
@@ -83,8 +83,8 @@ class TestSeasonalStatistics(unittest.TestCase):
                 "t2m_max": (("number", "step", "latitude", "longitude"), temp_data + 5),
                 "t2m_min": (("number", "step", "latitude", "longitude"), temp_data - 5),
                 "d2m_mean": (("number", "step", "latitude", "longitude"), dewpoint_data),
-                "u10_max": (("number", "step", "latitude", "longitude"), wind_u),  # Added
-                "v10_max": (("number", "step", "latitude", "longitude"), wind_v),  # Added
+                "u10_max": (("number", "step", "latitude", "longitude"), wind_u), 
+                "v10_max": (("number", "step", "latitude", "longitude"), wind_v),  
             },
             coords={
                 "step": self.steps,
@@ -159,7 +159,7 @@ class TestSeasonalStatistics(unittest.TestCase):
 
         expected_stats = [
             "ensemble_mean", "ensemble_median", "ensemble_max",
-            "ensemble_min", "ensemble_std", "ensemble_p5",  # Updated from p05 to p5
+            "ensemble_min", "ensemble_std", "ensemble_p5",  
             "ensemble_p25", "ensemble_p50", "ensemble_p75", "ensemble_p95"
         ]
         for stat in expected_stats:
