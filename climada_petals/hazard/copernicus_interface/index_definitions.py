@@ -70,12 +70,14 @@ in how indices and variables are processed and managed.
 from enum import Enum
 from dataclasses import dataclass
 
+
 @dataclass
 class IndexSpec:
     unit: str
     full_name: str
     explanation: str
     variables: list
+
 
 class IndexSpecEnum(Enum):
     HIA = IndexSpec(
@@ -178,6 +180,7 @@ class IndexSpecEnum(Enum):
             raise ValueError(
                 f"Unknown index '{index_name}'. Available indices: {', '.join(cls.__members__.keys())}"
             )
+
 
 def get_short_name_from_variable(variable):
     """

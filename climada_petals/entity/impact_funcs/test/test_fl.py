@@ -21,9 +21,51 @@ Test IFFlood class.
 
 import unittest
 import numpy as np
-
+from itertools import product
 from climada_petals.entity.impact_funcs import river_flood as fl
 
+IMPF_REGIONS = {1: 'Africa', 2: 'Asia', 3: 'Europe', 4: 'North America', 5: 'Oceania', 6: 'South America'}
+IMPF_SECTORS = {1: 'residential', 2: 'commercial', 3: 'industrial', 4: 'transport', 5: 'infrastructure',
+                6: 'agriculture'}
+
+IMPF_MDD = {
+    11: np.array([0., 0., 0.22, 0.378, 0.531, 0.636, 0.817, 0.903, 0.957, 1., 1.]),
+    21: np.array([0., 0., 0.327, 0.494, 0.617, 0.721, 0.87, 0.931, 0.984, 1., 1.]),
+    31: np.array([0., 0., 0.25, 0.4, 0.5, 0.6, 0.75, 0.85, 0.95, 1., 1.]),
+    41: np.array([0., 0.202, 0.443, 0.583, 0.683, 0.784, 0.854, 0.924, 0.959, 1., 1.]),
+    51: np.array([0., 0., 0.475, 0.640, 0.715, 0.788, 0.929, 0.967, 0.983, 1., 1.]),
+    61: np.array([0., 0., 0.491, 0.711, 0.842, 0.949, 0.984, 1., 1., 1., 1.]),
+    12: np.array([]),
+    22: np.array([0., 0., 0.377, 0.538, 0.659, 0.763, 0.883, 0.942, 0.981, 1., 1.]),
+    32: np.array([0., 0., 0.15, 0.3, 0.45, 0.55, 0.75, 0.9, 1., 1., 1.]),
+    42: np.array([0., 0.018, 0.239, 0.374, 0.466, 0.552, 0.687, 0.822, 0.908, 1., 1.]),
+    52: np.array([0., 0., 0.239, 0.481, 0.674, 0.865, 1., 1., 1., 1., 1.]),
+    62: np.array([0., 0., 0.611, 0.84 , 0.924, 0.992, 1., 1., 1., 1., 1.]),
+    13: np.array([0., 0., 0.063, 0.247, 0.403, 0.494, 0.685, 0.919, 1., 1., 1.]),
+    23: np.array([0., 0., 0.283, 0.482, 0.629, 0.717, 0.857, 0.909, 0.955, 1., 1.]),
+    33: np.array([0., 0., 0.15, 0.27, 0.4, 0.52, 0.7, 0.85, 1., 1., 1.]),
+    43: np.array([0., 0.026, 0.323, 0.511, 0.637, 0.74, 0.86, 0.937, 0.98, 1., 1.]),
+    53: np.array([]),
+    63: np.array([0., 0., 0.667, 0.889, 0.947, 1., 1., 1., 1., 1., 1.]),
+    14: np.array([]),
+    24: np.array([0., 0., 0.358, 0.572, 0.733, 0.847, 1., 1., 1., 1., 1.]),
+    34: np.array([0., 0., 0.317, 0.542, 0.702, 0.832, 1., 1., 1., 1., 1.]),
+    44: np.array([]),
+    54: np.array([]),
+    64: np.array([0., 0., 0.088, 0.175, 0.596, 0.842, 1., 1., 1., 1., 1.]),
+    15: np.array([]),
+    25: np.array([0., 0., 0.214, 0.373, 0.604, 0.71 , 0.808, 0.887, 0.969, 1., 1.]),
+    35: np.array([0., 0., 0.25, 0.42, 0.55, 0.65, 0.8, 0.9, 1., 1., 1.]),
+    45: np.array([]),
+    55: np.array([]),
+    65: np.array([]),
+    16: np.array([0., 0., 0.243, 0.472, 0.741, 0.917, 1., 1., 1., 1., 1.]),
+    26: np.array([0., 0., 0.135, 0.37 , 0.524, 0.558, 0.66, 0.834, 0.988, 1., 1.]),
+    36: np.array([0., 0., 0.3, 0.55, 0.65, 0.75, 0.85, 0.95, 1., 1., 1.]),
+    46: np.array([0., 0.019, 0.268, 0.474, 0.551, 0.602, 0.76, 0.874, 0.954, 1., 1.]),
+    56: np.array([]),
+    66: np.array([])
+}
 
 class TestIFRiverFlood(unittest.TestCase):
     """Impact function test"""
@@ -33,118 +75,44 @@ class TestIFRiverFlood(unittest.TestCase):
                         np.array(['RF'])))
         self.assertEqual(test_set.size(), 6)
 
-    def test_region_Africa(self):
+    def test_flood_imp_func_parameters(self):
+        for reg_id, sec_id in product(range(1,7), range(1,7)):
+            region, sector = IMPF_REGIONS[reg_id], IMPF_SECTORS[sec_id]
+            impf_id = int(f"{reg_id}{sec_id}")
+            impf_mdd = IMPF_MDD[impf_id]
 
-        impf_1 = fl.ImpfRiverFlood.from_region("Africa")
+            if impf_mdd.size == 0:
+                with self.assertRaises(ValueError):
+                    fl.ImpfRiverFlood.from_jrc_region_sector(region, sector)
+                continue
 
-        self.assertEqual(impf_1.continent, 'Africa')
-        self.assertEqual(impf_1.name, 'Flood Africa JRC Residential noPAA')
-        self.assertEqual(impf_1.haz_type, 'RF')
-        self.assertEqual(impf_1.id, 1)
-        self.assertEqual(impf_1.intensity_unit, 'm')
-        self.assertTrue(np.array_equal(impf_1.intensity,
-                        np.array([0., 0.5, 1., 1.5,
-                                  2., 3., 4., 5., 6., 12.])))
-        self.assertTrue(np.allclose(impf_1.mdd,
-                        np.array([0., 0.2199, 0.3782,
-                                  0.5306, 0.6356, 0.8169,
-                                  0.9034, 0.9572, 1., 1.])))
-        self.assertTrue(np.allclose(impf_1.paa,
-                        np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])))
+            impf = fl.ImpfRiverFlood.from_jrc_region_sector(region, sector)
+            self.assertEqual(impf.continent, region)
+            self.assertEqual(
+                impf.name, f'Flood {region} JRC {sector.capitalize()} noPAA'
+                )
+            self.assertEqual(impf.haz_type, 'RF')
+            self.assertEqual(impf.intensity_unit, 'm')
 
-    def test_region_Asia(self):
+            self.assertEqual(impf.id, impf_id)
+            np.testing.assert_array_almost_equal(
+                impf.intensity,
+                np.array([0., 0.05, 0.5, 1., 1.5, 2., 3., 4., 5., 6., 12.])
+                )
+            np.testing.assert_array_almost_equal(
+                impf.mdd,
+                impf_mdd
+                )
+            np.testing.assert_array_almost_equal(
+                impf.paa,
+                np.ones_like(impf.intensity)
+                )
 
-        impf_2 = fl.ImpfRiverFlood.from_region("Asia")
-
-        self.assertEqual(impf_2.continent, 'Asia')
-        self.assertEqual(impf_2.name, 'Flood Asia JRC Residential noPAA')
-        self.assertEqual(impf_2.haz_type, 'RF')
-        self.assertEqual(impf_2.id, 2)
-        self.assertEqual(impf_2.intensity_unit, 'm')
-        self.assertTrue(np.array_equal(impf_2.intensity,
-                        np.array([0., 0.5, 1., 1.5,
-                                  2., 3., 4., 5., 6., 12.])))
-        self.assertTrue(np.allclose(impf_2.mdd,
-                        np.array([0.000, 0.3266, 0.4941, 0.6166, 0.7207,
-                                  0.8695, 0.9315, 0.9836, 1.0000, 1.0000])))
-        self.assertTrue(np.allclose(impf_2.paa,
-                        np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])))
-
-    def test_region_Europe(self):
-
-        impf_3 = fl.ImpfRiverFlood.from_region("Europe")
-
-        self.assertEqual(impf_3.continent, 'Europe')
-        self.assertEqual(impf_3.name, 'Flood Europe JRC Residential noPAA')
-        self.assertEqual(impf_3.haz_type, 'RF')
-        self.assertEqual(impf_3.id, 3)
-        self.assertEqual(impf_3.intensity_unit, 'm')
-        self.assertTrue(np.array_equal(impf_3.intensity,
-                        np.array([0., 0.5, 1., 1.5,
-                                  2., 3., 4., 5., 6., 12.])))
-        self.assertTrue(np.allclose(impf_3.mdd,
-                        np.array([0.00, 0.25, 0.40, 0.50, 0.60, 0.75, 0.85,
-                                  0.95, 1.00, 1.00])))
-        self.assertTrue(np.allclose(impf_3.paa,
-                        np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])))
-
-    def test_region_NorthAmerica(self):
-
-        impf_4 = fl.ImpfRiverFlood.from_region("NorthAmerica")
-
-        self.assertEqual(impf_4.continent, 'NorthAmerica')
-        self.assertEqual(impf_4.name,
-                         'Flood North America JRC Residential noPAA')
-        self.assertEqual(impf_4.haz_type, 'RF')
-        self.assertEqual(impf_4.id, 4)
-        self.assertEqual(impf_4.intensity_unit, 'm')
-        self.assertTrue(np.array_equal(impf_4.intensity,
-                        np.array([0., 0.1, 0.5, 1., 1.5, 2., 3., 4., 5.,
-                                  6., 12.])))
-
-        self.assertTrue(np.allclose(impf_4.mdd,
-                        np.array([0.0000, 0.2018, 0.4433, 0.5828, 0.6825,
-                                  0.7840, 0.8543, 0.9237, 0.9585, 1.0000,
-                                  1.0000])))
-        self.assertTrue(np.allclose(impf_4.paa,
-                        np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])))
-
-    def test_region_Oceania(self):
-
-        impf_5 = fl.ImpfRiverFlood.from_region("Oceania")
-
-        self.assertEqual(impf_5.continent, 'Oceania')
-        self.assertEqual(impf_5.name, 'Flood Oceania JRC Residential noPAA')
-        self.assertEqual(impf_5.haz_type, 'RF')
-        self.assertEqual(impf_5.id, 5)
-        self.assertEqual(impf_5.intensity_unit, 'm')
-        self.assertTrue(np.array_equal(impf_5.intensity,
-                        np.array([0., 0.5, 1., 1.5,
-                                  2., 3., 4., 5., 6., 12.])))
-        self.assertTrue(np.allclose(impf_5.mdd,
-                        np.array([0.00, 0.48, 0.64, 0.71, 0.79, 0.93, 0.97,
-                                  0.98, 1.00, 1.00])))
-        self.assertTrue(np.allclose(impf_5.paa,
-                        np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])))
-
-    def test_region_SouthAmerica(self):
-
-        impf_6 = fl.ImpfRiverFlood.from_region("SouthAmerica")
-        self.assertEqual(impf_6.continent, 'SouthAmerica')
-        self.assertEqual(impf_6.name,
-                         'Flood South America JRC Residential noPAA')
-        self.assertEqual(impf_6.haz_type, 'RF')
-        self.assertEqual(impf_6.id, 6)
-        self.assertEqual(impf_6.intensity_unit, 'm')
-        self.assertTrue(np.array_equal(impf_6.intensity,
-                        np.array([0., 0.5, 1., 1.5,
-                                  2., 3., 4., 5., 6., 12.])))
-        self.assertTrue(np.allclose(impf_6.mdd,
-                        np.array([0.0000, 0.4908, 0.7112, 0.8420, 0.9494,
-                                  0.9836, 1.0000, 1.0000, 1.0000, 1.0000])))
-        self.assertTrue(np.allclose(impf_6.paa,
-                        np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1])))
-
+    def test_flood_imp_func_invalid_inputs(self):
+        with self.assertRaises(ValueError):
+            fl.ImpfRiverFlood.from_jrc_region_sector('unknown country', 'residential')
+        with self.assertRaises(ValueError):
+            fl.ImpfRiverFlood.from_jrc_region_sector('Africa', 'unknown sector')
 
 # Execute Tests
 if __name__ == "__main__":
