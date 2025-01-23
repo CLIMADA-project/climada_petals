@@ -15,6 +15,7 @@ from climada_petals.hazard.copernicus_interface.heat_index import (
     calculate_hw,
 )
 
+
 class TestSeasonalForecastCalculations(unittest.TestCase):
     """Unit tests for functions in the seasonal_forecast module."""
 
@@ -32,7 +33,7 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
         # Convert DataFrame to an Xarray Dataset
         self.ds = xr.Dataset(
             {key: ("time", df[key].values) for key in df.columns},
-            coords={"time": pd.date_range("2023-01-01", periods=len(df))}
+            coords={"time": pd.date_range("2023-01-01", periods=len(df))},
         )
 
         # Assign values for specific tests
@@ -42,46 +43,58 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
 
     def test_calculate_relative_humidity(self):
         result = calculate_relative_humidity(self.t2m, self.td)
-        self.expected_rh = np.array([15.93, 54.31, 74.75]) # Expected values are obtained from the thermofeel.py implementation
+        self.expected_rh = np.array(
+            [15.93, 54.31, 74.75]
+        )  # Expected values are obtained from the thermofeel.py implementation
         self.assertEqual(result.shape, self.expected_rh.shape)
         npt.assert_allclose(result, self.expected_rh, atol=1.0, rtol=0.01)
 
     def test_calculate_heat_index_simplified(self):
         result = calculate_heat_index_simplified(self.t2m, self.td)
         result_k = result + 273.15
-        expected_his = np.array([307.73, 300.68, 277.23]) # Expected values are obtained from the thermofeel.py implementation  
+        expected_his = np.array(
+            [307.73, 300.68, 277.23]
+        )  # Expected values are obtained from the thermofeel.py implementation
         self.assertEqual(result_k.shape, self.t2m.shape)
         npt.assert_allclose(result_k, expected_his, atol=1.0, rtol=0.01)
 
     def test_calculate_heat_index_adjusted(self):
         result = calculate_heat_index_adjusted(self.t2m, self.td)
         result_k = result + 273.15
-        expected_hia = np.array([307.73, 300.68, 275.65]) # Expected values are obtained from the thermofeel.py implementation
+        expected_hia = np.array(
+            [307.73, 300.68, 275.65]
+        )  # Expected values are obtained from the thermofeel.py implementation
         self.assertEqual(result_k.shape, expected_hia.shape)
         npt.assert_almost_equal(result_k, expected_hia, decimal=2)
-  
+
     def test_calculate_wbgt_simple(self):
-        result = calculate_wbgt_simple(self.t2m , self.td)
+        result = calculate_wbgt_simple(self.t2m, self.td)
         result_k = result + 273.15
-        expected_wbgt = np.array([297.04, 297.12, 276.34]) # Expected values are obtained from the thermofeel.py implementation
+        expected_wbgt = np.array(
+            [297.04, 297.12, 276.34]
+        )  # Expected values are obtained from the thermofeel.py implementation
         self.assertEqual(result_k.shape, expected_wbgt.shape)
         self.assertTrue(np.all(result_k > 0))
         npt.assert_allclose(result_k, expected_wbgt, atol=3.0, rtol=0.01)
 
     def test_calculate_humidex(self):
         result = calculate_humidex(self.t2m, self.td)
-        result_k = result + 273.15  
-        expected_humidex = np.array([309.95, 305.18, 275.08]) # Expected values are obtained from the thermofeel.py implementation
+        result_k = result + 273.15
+        expected_humidex = np.array(
+            [309.95, 305.18, 275.08]
+        )  # Expected values are obtained from the thermofeel.py implementation
         self.assertEqual(result_k.shape, expected_humidex.shape)
         npt.assert_allclose(result_k, expected_humidex, atol=3.0, rtol=0.01)
 
     def test_calculate_apparent_temperature(self):
-        wind_speed = self.va  
-        u10 = wind_speed  
-        v10 = np.zeros_like(u10)  
-        result = calculate_apparent_temperature(self.t2m, u10, v10, self.td )
+        wind_speed = self.va
+        u10 = wind_speed
+        v10 = np.zeros_like(u10)
+        result = calculate_apparent_temperature(self.t2m, u10, v10, self.td)
         result_k = result + 273.15  # Convert Celsius to Kelvin
-        expected_at = np.array([307.85, 302.30, 274.84]) # Expected values are obtained from the thermofeel.py implementation
+        expected_at = np.array(
+            [307.85, 302.30, 274.84]
+        )  # Expected values are obtained from the thermofeel.py implementation
         self.assertEqual(result_k.shape, expected_at.shape)
         npt.assert_almost_equal(result_k, expected_at, decimal=2)
 
@@ -91,7 +104,7 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
         min_duration = 2
         max_gap = 0
         result = calculate_hw(temperatures, threshold, min_duration, max_gap)
-        expected = np.array([0, 1, 1, 0, 1, 1, 1])  
+        expected = np.array([0, 1, 1, 0, 1, 1, 1])
         print("\nExpected HW  :", expected)
         print("Computed HW  :", result)
         npt.assert_array_equal(result, expected)
@@ -127,4 +140,7 @@ class TestSeasonalForecastCalculations(unittest.TestCase):
 
 # Execute Tests
 if __name__ == "__main__":
-    unittest.main()
+    TESTS = unittest.TestLoader().loadTestsFromTestCase(
+        TestSeasonalForecastCalculations
+    )
+    unittest.TextTestRunner(verbosity=2).run(TESTS)

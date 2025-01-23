@@ -41,17 +41,22 @@ LOGGER = logging.getLogger(__name__)
 # Temperature Conversions
 # ------------------------
 
+
 def kelvin_to_fahrenheit(kelvin):
     return (kelvin - 273.15) * 9 / 5 + 32
+
 
 def fahrenheit_to_kelvin(fahrenheit):
     return (fahrenheit - 32) * 5 / 9 + 273.15
 
+
 def celsius_to_kelvin(temp_c):
     return temp_c + 273.15
 
+
 def kelvin_to_celsius(temp_k):
     return temp_k - 273.15
+
 
 # ------------------------
 # Relative Humidity Calculation
@@ -88,6 +93,7 @@ def calculate_relative_humidity(t2k, tdk, as_percentage=True):
     rh = np.clip(rh, 0, 100 if as_percentage else 1)  # Begrenzung auf sinnvolle Werte
     return rh
 
+
 # ------------------------
 # Heat Index Calculations
 # ------------------------
@@ -95,12 +101,12 @@ def calculate_heat_index_simplified(t2k, tdk):
     """
     Calculates the simplified heat index (HIS) based on temperature and dewpoint temperature.
 
-    The simplified heat index formula is **only valid for temperatures above 20°C**, as the heat index is 
-    specifically designed for **warm to hot conditions** where humidity significantly influences perceived temperature. 
+    The simplified heat index formula is **only valid for temperatures above 20°C**, as the heat index is
+    specifically designed for **warm to hot conditions** where humidity significantly influences perceived temperature.
     Below 20°C, the function returns the actual air temperature instead of applying the heat index formula.
 
-    The heat index is an empirical measure that estimates the **perceived temperature** by incorporating the 
-    effects of both temperature and humidity. It is commonly used in meteorology and climate studies to assess 
+    The heat index is an empirical measure that estimates the **perceived temperature** by incorporating the
+    effects of both temperature and humidity. It is commonly used in meteorology and climate studies to assess
     heat stress.
 
     Parameters
@@ -135,7 +141,7 @@ def calculate_heat_index_simplified(t2k, tdk):
         7.2546e-4,
         3.582e-6,
     ]
-    
+
     hi = np.copy(t2_c)  # Default to air temperature
 
     # Apply heat index formula only where T > 20°C
@@ -159,9 +165,9 @@ def calculate_heat_index_adjusted(t2k, tdk):
     """
     Calculates the adjusted heat index based on temperature and dewpoint temperature.
 
-    This function refines the standard heat index calculation by incorporating adjustments 
-    for extreme values of temperature and relative humidity. The adjustments improve accuracy 
-    in conditions where the simplified formula may not be sufficient, particularly for high temperatures 
+    This function refines the standard heat index calculation by incorporating adjustments
+    for extreme values of temperature and relative humidity. The adjustments improve accuracy
+    in conditions where the simplified formula may not be sufficient, particularly for high temperatures
     (> 80°F / ~27°C) and very low or high humidity levels.
 
     Parameters
@@ -174,9 +180,9 @@ def calculate_heat_index_adjusted(t2k, tdk):
     Returns
     -------
         float or array-like
-        Adjusted heat index in degrees Celsius. This metric indicates the perceived temperature 
-        based on the combined effect of temperature and relative humidity. 
-        - If T ≤ 26.7°C (80°F), the function returns a simplified index. 
+        Adjusted heat index in degrees Celsius. This metric indicates the perceived temperature
+        based on the combined effect of temperature and relative humidity.
+        - If T ≤ 26.7°C (80°F), the function returns a simplified index.
         - If T > 26.7°C (80°F), additional corrections are applied to refine the heat index value.
 
     Acknowledgment
@@ -250,6 +256,7 @@ def calculate_heat_index_adjusted(t2k, tdk):
     hi_c = hi_k - 273.15
     return hi_c
 
+
 # ------------------------
 # Humidex Calculation
 # ------------------------
@@ -280,6 +287,7 @@ def calculate_humidex(t2_k, td_k):
     humidex = kelvin_to_celsius(humidex_k)
     return humidex
 
+
 # ------------------------
 # Wind Speed Calculation
 # ------------------------
@@ -304,6 +312,7 @@ def calculate_wind_speed(u10, v10):
     This function is based on ECMWF (European Centre for Medium-Range Weather Forecasts) documentation for wind calculations https://confluence.ecmwf.int/pages/viewpage.action?pageId=133262398
     """
     return np.sqrt(u10**2 + v10**2)
+
 
 # ------------------------
 # Apparent Temperature Calculation
@@ -340,6 +349,7 @@ def calculate_apparent_temperature(t2_k, u10, v10, d2m_k):
     at = t2_c + 0.33 * e - 0.7 * va - 4
     return at
 
+
 def calculate_nonsaturation_vapour_pressure(t2_k, rh):
     """
     Calculate Non-Saturated Vapour Pressure (hPa)
@@ -364,6 +374,7 @@ def calculate_nonsaturation_vapour_pressure(t2_k, rh):
     t2_c = kelvin_to_celsius(t2_k)
     ens = rh / 100 * 6.105 * np.exp(17.27 * t2_c / (237.7 + t2_c))
     return ens
+
 
 # ------------------------
 # Wet Bulb Globe Temperature (Simple) Calculation
@@ -394,6 +405,7 @@ def calculate_wbgt_simple(t2_k, tdk):
     e = calculate_nonsaturation_vapour_pressure(t2_k, rh)
     wbgt = 0.567 * t2_c + 0.393 * e + 3.94
     return wbgt
+
 
 # ------------------------
 # Heat Index Calculations
@@ -442,6 +454,7 @@ def calculate_heat_index(da_t2k, da_tdk, index):
     )
     return da_index
 
+
 # ------------------------
 # Tropical Nights Calculation
 # ------------------------
@@ -463,6 +476,7 @@ def calculate_tr(temperature_data, tr_threshold=20):
     """
     tropical_nights = temperature_data >= tr_threshold
     return tropical_nights
+
 
 # ------------------------
 # TX30 Calculation
@@ -486,6 +500,7 @@ def calculate_tx30(temperature_data, threshold=30):
     # Check that the input data is daily data. The caller should ensure data is resampled if needed.
     tx30_days = temperature_data > threshold
     return tx30_days
+
 
 # ------------------------
 # Heatwave Calculation
@@ -552,6 +567,7 @@ def calculate_hw_1D(
 
     return hw_days
 
+
 def calculate_hw(
     daily_mean_temp,
     threshold: float = 27,
@@ -573,4 +589,3 @@ def calculate_hw(
         },
         output_dtypes=[int],
     )
-
