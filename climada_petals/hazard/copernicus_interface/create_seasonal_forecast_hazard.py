@@ -54,8 +54,9 @@ class SeasonalForecast:
             Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
         year_list : list[int]
             Years for which data should be downloaded and processed.
-        lead_time_months : list[str]
-            Lead time months (e.g., ["June", "July", "August"]).
+        valid_period : list[str or int]
+            A list of start and end month (given as integers or strings) of the valid period. Must have
+            length two. If only one month is requested, use e.g. ["March", "March"].
         initiation_month : list[str]
             Initiation months for the forecasts (e.g., ["March", "April"]).
         bounds : list
@@ -631,9 +632,9 @@ def calculate_leadtimes(year, initiation_month, valid_period):
         The starting year for the forecast.
     initiation_month : int or str
         The initiation month for the forecast.
-    lead_time_months : list
-        A list of forecast lead months, either as integers or strings.
-
+    valid_period : List[int or str]
+        A list of start and end month (given as integers or strings) of the valid period. Must have
+        length two. If only one month is requested, use e.g. ["March", "March"].
     Returns
     -------
     list[int]
@@ -654,7 +655,7 @@ def calculate_leadtimes(year, initiation_month, valid_period):
 
     Example:
     ---------
-    If the forecast is initiated in **December 2022** and the valid period is **January to February 2023**,  
+    If the forecast is initiated in **December 2022** and the valid period is **January to February 2023**,
     the function will:
     - Recognize that the forecast extends into the next year (2023).
     - Compute lead times starting from **December 1, 2022** (0 hours) to **February 28, 2023**.
