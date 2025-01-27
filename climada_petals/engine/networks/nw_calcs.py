@@ -152,15 +152,20 @@ def link_vertices_edgecond(graph, target_attrs, edge_attrs, link_attrs,
 
     vs_target = graph.graph.vs[df_vs_target.index.values]
 
-    pot_edges = [graph.graph.incident(v_target, mode='in')
+    pot_edges_ids = [graph.graph.incident(v_target, mode='in')
                  for v_target in vs_target]
     # flatten nested list
-    pot_edges = [item for sublist in pot_edges for item in sublist]
+    pot_edges_ids = [item for sublist in pot_edges_ids for item in sublist]
 
     # select those edges which fulfill edge_attrs
-    for key, value in edge_attrs.items():
-        pot_edges = [graph.graph.es[item] for item in pot_edges
-                     if graph.graph.es[item][key] == value]
+    #for key, value in edge_attrs.items():
+    #    pot_edges = [graph.graph.es[item] for item in pot_edges_ids
+    #                 if graph.graph.es[item][key] == value]
+    pot_edges = [
+        graph.graph.es[item]
+        for item in pot_edges_ids
+        if all(graph.graph.es[item][key] == value for key, value in edge_attrs.items())
+        ]
 
     _edges_from_vlists(graph, [edge.source for edge in pot_edges],
                        [edge.target for edge in pot_edges], link_attrs)
@@ -173,7 +178,7 @@ def link_vertices_edgecond(graph, target_attrs, edge_attrs, link_attrs,
 
 def link_vertices_shortest_paths(graph, source_attrs, target_attrs, via_attrs,
                                  link_attrs, dist_thresh=10e6, criterion='distance',
-                                 single_shortest=True, bidir=False):
+                                 k=1, bidir=False):
     """
     Per target, choose single shortest path to source which is
     below dist_thresh.
@@ -217,12 +222,20 @@ def link_vertices_shortest_paths(graph, source_attrs, target_attrs, via_attrs,
     if len(path_dists) == 0:
         return graph
 
-    if single_shortest:
-        ix_source, ix_target = np.where(
-            ((path_dists == path_dists.min(axis=0)) &
-             (path_dists <= dist_thresh)))  # min dist. per target
-    else:
-        ix_source, ix_target = np.where(path_dists < dist_thresh)
+    #if single_shortest:
+    #    ix_source, ix_target = np.where(
+    #        ((path_dists == path_dists.min(axis=0)) &
+    #         (path_dists <= dist_thresh)))  # min dist. per target
+    #else:
+    #    ix_source, ix_target = np.where(path_dists < dist_thresh)
+
+    # Get the indices of the k shortest distances per target
+    sorted_indices = np.argsort(path_dists, axis=0)[:k, :]  # Indices of k smallest distances
+    valid_mask = path_dists[sorted_indices, np.arange(path_dists.shape[1])] <= dist_thresh  # Apply threshold
+
+    # Extract source and target indices
+    ix_source, ix_target = np.where(valid_mask)
+    ix_source = sorted_indices[ix_source, ix_target]  # Map to original indices
 
     ## re-map sources to original graph
     v_ids_source = df_vs_source.index.values[list(ix_source)]
@@ -249,8 +262,8 @@ def link_vertices_friction_surf(graph, source_ci, target_ci, friction_surf,
 
         gdf_vs = graph.graph.get_vertex_dataframe()
         gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) &
-                               (gdf_vs.func_tot==1)]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci)]#&
+                               #(gdf_vs.func_tot==1)]
         del gdf_vs
 
         if not (gdf_vs_source.empty or gdf_vs_target.empty):
@@ -340,6 +353,9 @@ def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
             pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
             for edge_geom in link_attrs['geometry']
         ]
+    #add orig_id to new edges
+    if 'orig_id' not in link_attrs.keys():
+        link_attrs['orig_id'] = np.max(graph.graph.es['orig_id'])+np.arange(len(pairs))
 
     graph.graph.add_edges(pairs, attributes=link_attrs)
 
@@ -467,7 +483,8 @@ def _get_subgraph2graph_vsdict(graph, subgraph):
 
     df_conc = pd.concat([df_subg, df_g], axis=1)
     #dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) previous version, very slow
-    return df_conc.groupby('index_sub')['index_g'].first().to_dict()
+    result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
+    return result
 
 def _calc_friction(edge_geoms, friction_surf):
 
@@ -568,7 +585,7 @@ def propagate_check_fail(graph, source, target, thresh_func):
 
 def cascade(graph, df_dependencies, p_source='power_plant',
             p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
-            preselect='auto', initial=False, friction_surf=None, dur_thresh=None):
+              initial=False, friction_surf=None, criterion='both'):
     """
     entire cascade wrapper for internal state update, functional dependency iterations,
     enduser dependency updates. CI-specific. Writing more generically does not
@@ -580,11 +597,11 @@ def cascade(graph, df_dependencies, p_source='power_plant',
         LOGGER.info(
             f'Updating functional states. Current delta: {delta}')
         func_states_vs, func_states_es = _funcstates_sum(graph)
-        _update_internal_dependencies(
+        graph = _update_internal_dependencies(graph,
             p_source=p_source, p_sink=p_sink, source_var=source_var, demand_var=demand_var)
 
-        _update_functional_dependencies(df_dependencies)
-        func_states_vs2, func_states_es2 = self._funcstates_sum()
+        graph = _update_functional_dependencies(graph,df_dependencies)
+        func_states_vs2, func_states_es2 = _funcstates_sum(graph)
         delta = max(abs(func_states_vs-func_states_vs2),
                     abs(func_states_es-func_states_es2))
         cycles += 1
@@ -592,8 +609,9 @@ def cascade(graph, df_dependencies, p_source='power_plant',
     LOGGER.info('Ended functional state update.' +
                 ' Proceeding to end-user update.')
     if (cycles > 1) or initial:
-        update_enduser_dependencies(
-            df_dependencies, preselect, friction_surf, dur_thresh)
+        graph = update_enduser_dependencies(graph,
+            df_dependencies, friction_surf, criterion)
+    return graph
 
 
 def _funcstates_sum(graph):
@@ -613,7 +631,7 @@ def _funcstates_sum(graph):
             sum(graph.graph.es.get_attribute_values('func_tot')))
 
 
-def _update_internal_dependencies(graph, attr_subtypes, p_source, p_sink, source_var,
+def _update_internal_dependencies(graph, p_source, p_sink, source_var,
                                   demand_var):
     """
     for ci-types with an internally networked structure (e.g. roads and
@@ -622,34 +640,35 @@ def _update_internal_dependencies(graph, attr_subtypes, p_source, p_sink, source
     """
 
     # specifically for roads: if edge is dysfunctional, render its target vertex dysfunctional
-    if {'road'}.issubset(set(self.graph.vs['ci_type'])):
+    if {'road'}.issubset(set(graph.graph.vs['ci_type'])):
         LOGGER.info('Updating roads')
-        targets_dys = [edge.target for edge in self.graph.es.select(
+        targets_dys = [edge.target for edge in graph.graph.es.select(
             ci_type='road').select(func_tot_eq=0)]
-        self.graph.vs.select(targets_dys).select(
+        graph.graph.vs.select(targets_dys).select(
             ci_type='road')['func_tot'] = 0
 
     # specifically for powerlines: check power clusters
-    if {p_source, p_sink}.issubset(set(self.graph.vs['ci_type'])):
+    if {p_source, p_sink}.issubset(set(graph.graph.vs['ci_type'])):
         LOGGER.info('Updating power clusters')
         # For another version using pandapower, see nw_utils.py
         # Since powerlines are directed in a directed graph,
         # make sure 'reverse' lines are also down
 
-        edges_dys = self.graph.es.select(ci_type='power_line'
+        edges_dys = graph.graph.es.select(ci_type='power_line'
                                          ).select(func_tot_eq=0)
         reverse_edges = [(edge.target, edge.source) for edge in edges_dys]
-        eids = self.graph.get_eids(pairs=reverse_edges, path=None,
+        eids = graph.graph.get_eids(pairs=reverse_edges, path=None,
                                    directed=True, error=True)
-        self.graph.es[eids]['func_tot'] = 0
+        graph.graph.es[eids]['func_tot'] = 0
         LOGGER.info(f"""Using updated power line algorithm: dysfunc edges before:
-              {len(edges_dys)}, after: {len(self.graph.es.select(ci_type='power_line'
+              {len(edges_dys)}, after: {len(graph.graph.es.select(ci_type='power_line'
                                          ).select(func_tot_eq=0))}""")
-        self.powercap_from_clusters(p_source=p_source, p_sink=p_sink,
+        powercap_from_clusters(p_source=p_source, p_sink=p_sink,
                                     demand_ci='people', source_var=source_var, demand_var=demand_var)
+    return graph
 
 
-def _update_functional_dependencies(self, df_dependencies):
+def _update_functional_dependencies(graph, df_dependencies):
 
     for __, row in df_dependencies[
             df_dependencies['type_I'] == 'functional'].iterrows():
@@ -659,11 +678,11 @@ def _update_functional_dependencies(self, df_dependencies):
             LOGGER.warning(
                 'Road access condition for CI-CI deps not yet implemented')
 
-        self._propagate_check_fail(row.source, row.target, row.thresh_func)
+    return propagate_check_fail(graph, row.source, row.target, row.thresh_func)
 
 
-def update_enduser_dependencies(graph, df_dependencies, preselect,
-                                 friction_surf, dur_thresh):
+def update_enduser_dependencies(graph, df_dependencies,
+                                 friction_surf, criterion='both'):
 
     for __, row in df_dependencies[
             df_dependencies['type_I'] == 'enduser'].iterrows():
@@ -676,37 +695,39 @@ def update_enduser_dependencies(graph, df_dependencies, preselect,
             if (row.source == 'road'):  # separate checking algorithm for road access
                 graph.graph.delete_edges(
                     ci_type=f'dependency_{row.source}_{row.target}')
-                graph = link_vertices_edgecond(graph, row.source, row.target,
+                graph = link_vertices_edgecond(graph, {'source':row.source, 'func_tot':1}, row.target,#,'func_tot':1
                                             link_name=dependency_name,
                                             edge_type='road')
-            elif row.single_link:  # those need to be re-checked on their fixed s-t
-
-                graph = recheck_access(graph, row.source, row.target, via_ci='road',
-                                    friction_surf=friction_surf, dist_thresh=row.thresh_dist,
-                                    dur_thresh=dur_thresh, criterion='distance',
-                                    link_name=dependency_name,
-                                    bidir=False)
+            #elif row.n_links == 1:  # those need to be re-checked on their fixed s-t
+#
+            #    graph = recheck_access(graph, row.source, row.target, via_ci='road',
+            #                        friction_surf=friction_surf, dist_thresh=row.thresh_dist,
+            #                        dur_thresh=row.thresh_dur, criterion='distance',
+            #                        link_name=dependency_name,
+            #                        bidir=False)
 
             else:
                 # the re-checking takes much longer than checking completely
                 # from scratch, hence check from scratch.
-                starttime = timeit.default_timer()
                 graph.graph.delete_edges(
                     ci_type=f'dependency_{row.source}_{row.target}')
-                graph = link_vertices_friction_surf(graph, row.source, row.target, friction_surf,
-                                                 link_name=dependency_name,
-                                                 dist_thresh=dur_thresh*83.33,
-                                                 k=5, dur_thresh=dur_thresh)
-                print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
-                ) - starttime)
-                starttime = timeit.default_timer()
-                graph = link_vertices_shortest_paths(graph, {'ci_type': row.source}, {'ci_type': row.target},
-                                             via_attrs={'ci_type': 'road'}, link_attrs={'ci_type': dependency_name},
-                                                  dist_thresh=row.thresh_dist, criterion='distance', bidir=False)
-                print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
-                ) - starttime)
+                if criterion in ["both", "duration"]:
+                    starttime = timeit.default_timer()
+                    graph = link_vertices_friction_surf(graph, row.source, row.target, friction_surf,
+                                                     link_name=dependency_name,
+                                                     dist_thresh=row.thresh_dur*83.33,
+                                                     k=row.n_links, dur_thresh=row.thresh_dur)
+                    print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
+                    ) - starttime)
+                if criterion in ["both", "distance"]:
+                    starttime = timeit.default_timer()
+                    graph = link_vertices_shortest_paths(graph, {'ci_type': row.source}, {'ci_type': row.target},#'func_tot':1
+                                                 via_attrs={'ci_type': 'road'}, link_attrs={'ci_type': dependency_name},
+                                                      dist_thresh=row.thresh_dist, criterion='distance', k=row.n_links,bidir=False)
+                    print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
+                    ) - starttime)
         graph = propagate_check_fail(graph, row.source, row.target, row.thresh_func)
-
+    return graph
 
 
 def recheck_access(graph, source_ci, target_ci, via_ci, friction_surf,
@@ -747,7 +768,7 @@ def recheck_access(graph, source_ci, target_ci, via_ci, friction_surf,
         #subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
         subgraph_graph_vsdict = _get_subgraph2graph_vsdict(graph.graph, subgraph)
 
-        graph_subgraph_vsdict = {v: k for k,
+        graph_subgraph_vsdict = {int(v): int(k) for k,
                                  v in subgraph_graph_vsdict.items()}
         subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
         wrong_edges = set(subgraph.es['ci_type']).difference(
@@ -758,7 +779,7 @@ def recheck_access(graph, source_ci, target_ci, via_ci, friction_surf,
                                                v_ids_source, v_ids_target,
                                                bool_keep)):
             if not bool_f:
-                dist = subgraph.shortest_paths(
+                dist = subgraph.distances(
                     source=graph_subgraph_vsdict[source],
                     target=graph_subgraph_vsdict[target],
                     weights='distance')
@@ -770,19 +791,19 @@ def recheck_access(graph, source_ci, target_ci, via_ci, friction_surf,
                                  if not bool_f])
     return graph
 
-def powercap_from_clusters(self, p_source, p_sink, demand_ci, source_var,
+def powercap_from_clusters(graph, p_source, p_sink, demand_ci, source_var,
                            demand_var):
 
-    capacity_vars = [var for var in self.graph.vs.attributes()
+    capacity_vars = [var for var in graph.vs.attributes()
                      if f'capacity_{p_sink}_' in var]
-    power_vs = self.graph.vs.select(
+    power_vs = graph.vs.select(
         ci_type_in=['power_line', p_source, p_sink, demand_ci])
     # make subgraph spanning all nodes, but only functional edges
     # Subgraph operations do not modify original graph.
-    power_subgraph = self.graph.induced_subgraph(power_vs)
+    power_subgraph = graph.induced_subgraph(power_vs)
     power_subgraph.delete_edges(func_tot_lt=0.1)
 
-    subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(power_vs)
+    subgraph_graph_vsdict = _get_subgraph2graph_vsdict(power_vs)
 
     for cluster in power_subgraph.clusters(mode='weak'):
 
@@ -800,6 +821,6 @@ def powercap_from_clusters(self, p_source, p_sink, demand_ci, source_var,
             sd_ratio = 1
 
         for var in capacity_vars:
-            self.graph.vs[
+            graph.vs[
                 [subgraph_graph_vsdict[sink.index] for sink in sinks]
             ].set_attribute_values(var, sd_ratio)
