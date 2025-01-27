@@ -36,7 +36,9 @@ class Test2013(unittest.TestCase):
         ent = BlackMarble()
         with self.assertLogs('climada.util.finance', level='INFO') as cm:
             ent.set_countries(country_name, 2013, res_km=1)
-        self.assertIn('GDP ESP 2013: 1.356e+12.', cm.output[0])
+        gdp_esp = 1.362e+12  # the value is being revised sporadically by the world bank,
+                             # then this test must be updated
+        self.assertIn(f'GDP ESP 2013: {gdp_esp:.3e}.', cm.output[0])
         self.assertIn('Income group ESP 2013: 4.', cm.output[1])
 
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
@@ -45,9 +47,9 @@ class Test2013(unittest.TestCase):
                       cm.output[0])
         self.assertIn("Processing country Spain.", cm.output[1])
         self.assertIn("Generating resolution of approx 1 km.", cm.output[2])
-        self.assertTrue(np.isclose(ent.value.sum(), 1.355e+12 * (4 + 1), 0.001))
+        self.assertTrue(np.isclose(ent.value.sum(), gdp_esp * (4 + 1), 0.001))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
-        ent_meta = ent.derive_raster()
+        ent_meta = ent.derive_raster()  # TODO: speed up! this line alone may take 2 minutes to run
         self.assertEqual(ent_meta['width'], 2699)
         self.assertEqual(ent_meta['height'], 1938)
         self.assertTrue(u_coord.equal_crs(ent_meta['crs'], 'epsg:4326'))

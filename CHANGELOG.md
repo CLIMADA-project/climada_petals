@@ -17,6 +17,8 @@ Added:
 ### Added
 
 - Included `boario` in the supplychain module [#81](https://github.com/CLIMADA-project/climada_petals/pull/81/)
+- Added a Copernicus download function `downloader.py` as part of the `climada.hazard.copernicus_interface` module under construction [#150](https://github.com/CLIMADA-project/climada_petals/pull/150/)
+- Update name of IBTrACS file to version 4.1 in tc_rainfield and tc_surge_bathub tests. [#152](https://github.com/CLIMADA-project/climada_petals/pull/152)
 
 ### Changed
 
