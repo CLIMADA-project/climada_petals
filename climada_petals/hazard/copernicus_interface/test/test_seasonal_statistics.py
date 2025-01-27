@@ -220,7 +220,36 @@ class TestSeasonalStatistics(unittest.TestCase):
         computed_count = ds_monthly["Tcount"].sel(step="2023-01").values
         np.testing.assert_equal(computed_count, expected_jan_count)
 
-    # ADD TEST  calculate_statistics_from_index
+    def test_calculate_statistics_from_index(self):
+        """Test calculate_statistics_from_index function with easy numbers"""
+
+        test_index_data = np.array([
+            [10., 20, 30], # first location
+            [25., 25, 25], # second location
+            [10., 10, 40], # third location
+            [-10, 0, 40] # fourth location
+        ])
+        test_index_data = xr.DataArray(
+                    np.moveaxis(test_index_data.reshape((2,2,3)), -1, 0),
+                    coords={
+                        "number": [1, 2, 3],
+                        "latitude": [0,1],
+                        "longitude": [0,1],
+                    },
+                    dims=["number", "latitude", "longitude"],
+                )
+        results = calculate_statistics_from_index(test_index_data).data_vars
+
+        np.testing.assert_almost_equal(results["ensemble_mean"].values, [[20, 25], [20, 10]])
+        np.testing.assert_almost_equal(results["ensemble_median"].values, [[20, 25], [10, 0]])
+        np.testing.assert_almost_equal(results["ensemble_max"].values, [[30, 25], [40, 40]])
+        np.testing.assert_almost_equal(results["ensemble_min"].values, [[10, 25], [10, -10]])
+        np.testing.assert_almost_equal(results["ensemble_std"].values, [[8.1649, 0], [14.1421, 21.6024]], decimal=3)
+        np.testing.assert_almost_equal(results["ensemble_p5"].values, 0.9 * np.array([[10,25],[10,-10]]) + 0.1 * np.array([[20,25],[10,0]]))
+        np.testing.assert_almost_equal(results["ensemble_p25"].values, 0.5 * np.array([[10,25],[10,-10]]) + 0.5 * np.array([[20,25],[10,0]]))
+        np.testing.assert_almost_equal(results["ensemble_p50"].values, [[20, 25], [10, 0]])
+        np.testing.assert_almost_equal(results["ensemble_p75"].values, 0.5 * np.array([[20,25],[10,0]]) + 0.5 * np.array([[30,25],[40,40]]))
+        np.testing.assert_almost_equal(results["ensemble_p95"].values, 0.1 * np.array([[20,25],[10,0]]) + 0.9 * np.array([[30,25],[40,40]]))
 
 
 # Execute Tests
