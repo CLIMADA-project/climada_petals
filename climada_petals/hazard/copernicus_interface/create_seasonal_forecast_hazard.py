@@ -692,7 +692,7 @@ def calculate_leadtimes(year, initiation_month, valid_period):
     return list(
         range(
             (valid_period_start - initiation_date).days * 24,
-            (valid_period_end - initiation_date).days * 24 + 24,
+            (valid_period_end - initiation_date).days * 24,
             6,
         )
     )
