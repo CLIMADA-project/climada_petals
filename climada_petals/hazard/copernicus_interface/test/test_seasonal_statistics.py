@@ -220,6 +220,8 @@ class TestSeasonalStatistics(unittest.TestCase):
         computed_count = ds_monthly["Tcount"].sel(step="2023-01").values
         np.testing.assert_equal(computed_count, expected_jan_count)
 
+
+    ### calculate_statistics_from_index test ###
     def test_calculate_statistics_from_index(self):
         """Test calculate_statistics_from_index function with easy numbers"""
 
