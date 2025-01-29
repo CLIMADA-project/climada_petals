@@ -12,7 +12,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from typing import List
 
-from climada.hazard import Hazard
+#from climada.hazard import Hazard
 from climada import CONFIG
 
 import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
@@ -344,15 +344,13 @@ class SeasonalForecast:
 
         # Call high-level methods for downloading and processing
         created_files = {}
-        try:
-            # 1) Attempt downloading data
-            created_files["downloaded_data"] = self._download(overwrite=overwrite)
-            # 2) Attempt processing data
-            created_files["processed_data"] = self._process(overwrite=overwrite)
-        except ValueError as e:
-            # Catch reversed valid_period or any other ValueError from calculate_leadtimes
-            print(f"Download/process aborted: {e}")
+        created_files["downloaded_data"] = self._download(
+            overwrite=overwrite
+        )  # Handles iteration and calls _download_data
 
+        created_files["processed_data"] = self._process(
+            overwrite=overwrite
+        )  # Handles iteration and calls _process_data
         return created_files
 
     ##########  Calculate index ##########
@@ -675,7 +673,7 @@ def calculate_leadtimes(year, initiation_month, valid_period):
         for month in valid_period
     ]
 
-    # We expect valid_period = [start, end]
+        # We expect valid_period = [start, end]
     start_month, end_month = valid_period
 
     # Immediately check for reversed period
@@ -684,13 +682,15 @@ def calculate_leadtimes(year, initiation_month, valid_period):
             "Reversed valid_period detected. The forecast cannot be called with "
             f"an end month ({end_month}) that is before the start month ({start_month})."
         )
-
+    
     # compute years of valid period
     valid_years = np.array([year, year])
     if initiation_month > valid_period[0]:  # forecast for next year
         valid_years += np.array([1, 1])
     if valid_period[1] < valid_period[0]:  # forecast including two different years
         valid_years[1] += 1
+
+
 
     # Reference starting date for initiation
     initiation_date = date(year, initiation_month, 1)
@@ -704,331 +704,36 @@ def calculate_leadtimes(year, initiation_month, valid_period):
     return list(
         range(
             (valid_period_start - initiation_date).days * 24,
-            (valid_period_end - initiation_date).days * 24 + 24,
+            (valid_period_end - initiation_date).days * 24 +24,
             6,
         )
     )
 
 
-def handle_overwriting(function):
-    """
-    Decorator to manage file overwriting during processing.
 
-    Parameters
-    ----------
-    function : callable
-        The function to decorate.
+# --- Print lead times for each combination ---
+from datetime import datetime, timedelta
+# Example lists for demonstration:
+year_list = [2022]
+initiation_month = ["January"]
+valid_period = [ "April", "March"]
 
-    Returns
-    -------
-    callable
-        The wrapped function, which checks file existence before executing.
+for y in year_list:
+    for init_mth in initiation_month:
+        # Get the raw hour offsets from your existing function
+        leadtimes = calculate_leadtimes(y, init_mth, valid_period)
 
-    Notes
-    -----
-    If the file already exists and overwriting is not allowed, the existing file path
-    is returned directly without calling the wrapped function.
-    """
+        # The reference date for hour=0 is the 1st day of the initiation month
+        ref_datetime = datetime(y, month_name_to_number(init_mth), 1, 0, 0)
 
-    def wrapper(output_file_name, overwrite, *args, **kwargs):
-        # if data exists and we do not want to overwrite
-        if isinstance(output_file_name, PosixPath):
-            if not overwrite and output_file_name.exists():
-                LOGGER.info(f"{output_file_name} already exists.")
-                return None
-        elif isinstance(output_file_name, dict):
-            if not overwrite and any(
-                [path.exists() for path in output_file_name.values()]
-            ):
-                LOGGER.info(
-                    f"A file of {[str(path) for path in output_file_name.values()]} already exists."
-                )
-                return None
+        print(f"Lead times for year={y}, init={init_mth}, valid={valid_period}:")
 
-        return function(output_file_name, overwrite, *args, **kwargs)
+        # 1) Print the raw hour offsets
+        print("Hour offsets:", leadtimes)
 
-    return wrapper
+        # 2) Convert each offset to a datetime
+        dt_list = [ref_datetime + timedelta(hours=offset) for offset in leadtimes]
 
-
-# ----- Decorated Functions -----
-
-
-@handle_overwriting
-def _download_data(
-    output_file_name,
-    overwrite,
-    variables,
-    year,
-    initiation_month,
-    format,
-    originating_centre,
-    system,
-    bounds_CDS_order,
-    leadtimes,
-):
-    """
-    Download seasonal forecast data for a specific year and initiation month.
-
-    Parameters
-    ----------
-    output_file_name : Path
-        Path to save the downloaded data.
-    overwrite : bool
-        Whether to overwrite existing files.
-    variables : list[str]
-        List of variables to download.
-    year : int
-        The year for which data is being downloaded.
-    initiation_month : int
-        The month when the forecast is initiated.
-    format : str
-        File format for the downloaded data, either 'grib' or 'netcdf'.
-    originating_centre : str
-        The data source, e.g., 'dwd' for German Weather Service.
-    system : str
-        The specific forecast model or system version.
-    bounds_CDS_order : list[float]
-        Geographical bounds in CDS order [north, west, south, east] for the data.
-    leadtimes : list[int]
-        List of leadtimes in hours.
-
-    Returns
-    -------
-    Path
-        Path to the downloaded data file.
-    """
-    # Prepare download parameters
-    download_params = {
-        "format": format,
-        "originating_centre": originating_centre,
-        "area": bounds_CDS_order,
-        "system": system,
-        "variable": variables,
-        "month": initiation_month,
-        "year": year,
-        "day": "01",
-        "leadtime_hour": leadtimes,
-    }
-
-    # Perform download
-    downloaded_file = download_data(
-        "seasonal-original-single-levels",
-        download_params,
-        output_file_name,
-        overwrite=overwrite,
-    )
-
-    return downloaded_file
-
-
-@handle_overwriting
-def _process_data(output_file_name, overwrite, input_file_name, variables, format):
-    """
-    Process a single input file into the desired daily NetCDF format.
-
-    Parameters
-    ----------
-    output_file_name : Path
-        Path to save the processed data.
-    overwrite : bool
-        Whether to overwrite existing files.
-    input_file_name : Path
-        Path to the input file.
-    variables : list[str]
-        Variables to process in the input file.
-    format : str
-        File format of the input file ('grib' or 'netcdf').
-
-    Returns
-    -------
-    Path
-        Path to the processed data file.
-    """
-    try:
-        with xr.open_dataset(
-            input_file_name,
-            engine="cfgrib" if format == "grib" else None,
-        ) as ds:
-            # Coarsen the data
-            ds_mean = ds.coarsen(step=4, boundary="trim").mean()
-            ds_max = ds.coarsen(step=4, boundary="trim").max()
-            ds_min = ds.coarsen(step=4, boundary="trim").min()
-
-        # Create a new dataset combining mean, max, and min values
-        combined_ds = xr.Dataset()
-        for var in variables:
-            combined_ds[f"{var}_mean"] = ds_mean[var]
-            combined_ds[f"{var}_max"] = ds_max[var]
-            combined_ds[f"{var}_min"] = ds_min[var]
-
-        # Save the combined dataset to NetCDF
-        combined_ds.to_netcdf(str(output_file_name))
-        LOGGER.info(f"Daily file saved to {output_file_name}")
-
-        return output_file_name
-
-    except FileNotFoundError:
-        LOGGER.error(f"Input file {input_file_name} does not exist, processing failed.")
-        raise
-    except Exception as e:
-        LOGGER.error(f"Error during processing for {input_file_name}: {e}")
-        raise
-
-
-@handle_overwriting
-def _calculate_index(
-    output_file_names,
-    overwrite,
-    input_file_name,
-    index_metric,
-    tr_threshold=20,
-    hw_threshold=27,
-    hw_min_duration=3,
-    hw_max_gap=0,
-):
-    """
-    Calculate and save climate indices based on the input data.
-
-    Parameters
-    ----------
-    output_file_names : dict
-        Dictionary containing paths for daily, monthly, and stats output files.
-    overwrite : bool
-        Whether to overwrite existing files.
-    input_file_name : Path
-        Path to the input file.
-    index_metric : str
-        Climate index to calculate (e.g., 'HW', 'TR').
-    threshold : float, optional
-        Threshold for the index calculation (specific to the index type).
-    min_duration : int, optional
-        Minimum duration for events (specific to the index type).
-    max_gap : int, optional
-        Maximum gap allowed between events (specific to the index type).
-    tr_threshold : float, optional
-        Threshold for tropical nights (specific to the 'TR' index).
-
-    Returns
-    -------
-    dict
-        Paths to the saved index files.
-    """
-    # Define output paths
-    daily_output_path = output_file_names["daily"]
-    monthly_output_path = output_file_names["monthly"]
-    stats_output_path = output_file_names["stats"]
-
-    ds_daily, ds_monthly, ds_stats = seasonal_statistics.calculate_heat_indices_metrics(
-        input_file_name,
-        index_metric,
-        tr_threshold=tr_threshold,
-        hw_threshold=hw_threshold,
-        hw_min_duration=hw_min_duration,
-        hw_max_gap=hw_max_gap,
-    )
-
-    # Save outputs
-    if ds_daily is not None:
-        ds_daily.to_netcdf(daily_output_path)
-        LOGGER.info(f"Saved daily index to {daily_output_path}")
-    if ds_monthly is not None:
-        ds_monthly.to_netcdf(monthly_output_path)
-        LOGGER.info(f"Saved monthly index to {monthly_output_path}")
-    if ds_stats is not None:
-        ds_stats.to_netcdf(stats_output_path)
-        LOGGER.info(f"Saved stats index to {stats_output_path}")
-
-    return {
-        "daily": daily_output_path,
-        "monthly": monthly_output_path,
-        "stats": stats_output_path,
-    }
-
-
-@handle_overwriting
-def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metric):
-    """
-    Convert an index file to a Hazard object and save it as HDF5.
-
-    Parameters
-    ----------
-    output_file_name : Path
-        Path to save the Hazard file.
-    overwrite : bool
-        Whether to overwrite existing files.
-    input_file_name : Path
-        Path to the input index file.
-    index_metric : str
-        Climate index metric (e.g., 'HW', 'TR').
-
-    Returns
-    -------
-    Path
-        Path to the saved Hazard file.
-
-    Raises
-    ------
-    KeyError
-        If required variables are missing in the dataset.
-    Exception
-        If the conversion process fails.
-    """
-    try:
-        with xr.open_dataset(str(input_file_name)) as ds:
-            if "step" not in ds.variables:
-                raise KeyError(
-                    f"Missing 'step' variable in dataset for {input_file_name}."
-                )
-
-            ds["step"] = xr.DataArray(
-                [f"{date}-01" for date in ds["step"].values],
-                dims=["step"],
-            )
-            ds["step"] = pd.to_datetime(ds["step"].values)
-
-            ensemble_members = ds.get("number", [0]).values
-            hazards = []
-
-            # Determine intensity unit and variable
-            intensity_unit = (
-                "%"
-                if index_metric == "RH"
-                else "days" if index_metric in ["TR", "TX30", "HW"] else "°C"
-            )
-            intensity_variable = index_metric
-
-            if intensity_variable not in ds.variables:
-                raise KeyError(
-                    f"No variable named '{intensity_variable}' in the dataset. "
-                    f"Available variables: {list(ds.variables)}"
-                )
-
-            # Create Hazard objects
-            for member in ensemble_members:
-                ds_subset = ds.sel(number=member) if "number" in ds.dims else ds
-                hazard = Hazard.from_xarray_raster(
-                    data=ds_subset,
-                    hazard_type=index_metric,
-                    intensity_unit=intensity_unit,
-                    intensity=intensity_variable,
-                    coordinate_vars={
-                        "event": "step",
-                        "longitude": "longitude",
-                        "latitude": "latitude",
-                    },
-                )
-                hazard.event_name = [
-                    f"member{member}" for _ in range(len(hazard.event_name))
-                ]
-                hazards.append(hazard)
-
-            hazard = Hazard.concat(hazards)
-            hazard.check()
-            hazard.write_hdf5(str(output_file_name))
-
-        LOGGER.info(f"Hazard file saved to {output_file_name}")
-        return output_file_name
-
-    except Exception as e:
-        LOGGER.error(f"Failed to convert {input_file_name} to hazard: {e}")
-        raise
+        print("Corresponding datetimes:")
+        for dt in dt_list:
+            print(dt.isoformat())
