@@ -72,6 +72,8 @@ CROP_NAME['ri1'] = {'input': 'rice', 'fao': 'Rice, paddy', 'print': 'Rice 1st se
 CROP_NAME['ri2'] = {'input': 'rice', 'fao': 'Rice, paddy', 'print': 'Rice 2nd season'}
 CROP_NAME['swh'] = {'input': 'temperate_cereals', 'fao': 'Wheat', 'print': 'Spring Wheat'}
 CROP_NAME['wwh'] = {'input': 'temperate_cereals', 'fao': 'Wheat', 'print': 'Winter Wheat'}
+CROP_NAME['cas'] = {'input': 'cassava', 'fao': 'Cassava, fresh', 'print': 'Cassava fresh'}
+
 
 """mapping of irrigation parameter long names"""
 IRR_NAME = {'combined': {'name': 'combined'},
@@ -99,6 +101,7 @@ KCAL_PER_TON['biomass'] = {'mai': 3.56e6,
                            'ric': 2.80e6,
                            'soy': 3.35e6,
                            'whe': 3.34e6,
+                           'cas': 3.34e6,
                            }
 """
 Version 2: conversion factors for crop dry matter as simulated by most crop models,
@@ -109,6 +112,7 @@ KCAL_PER_TON['drymatter'] = {'mai': 3.56e6 / (1-.12),
                              'ric': 2.80e6 / (1-.13),
                              'soy': 3.35e6 / (1-.09),
                              'whe': 3.34e6 / (1-.12),
+                             'cas': 3.34e6 / (1-.12),
                              }
 
 # Default folder structure for ISIMIP data:
@@ -143,15 +147,10 @@ class CropProduction(Exposures):
     Attributes
     ----------
     crop : str
-        crop typee.g., 'mai', 'ric', 'whe', 'soy'
+        crop typee.g., 'mai', 'ric', 'whe', 'soy','cas'
     """
 
     _metadata = Exposures._metadata + ['crop']
-
-    def __init__(self, *args, meta=None, crop=None, **kwargs):
-        super().__init__(*args, meta=meta, **kwargs)
-        meta = meta or {}
-        self.crop = Exposures._consolidate(meta, 'crop', crop)
 
     def set_from_isimip_netcdf(self, *args, **kwargs):
         """This function is deprecated, use LitPop.from_isimip_netcdf instead."""
@@ -192,7 +191,7 @@ class CropProduction(Exposures):
             e.g., 'gfdl-esm2m', 'hadgem2-es', 'ipsl-cm5a-lr','miroc5'
         crop : string
             crop type
-            e.g., 'mai', 'ric', 'whe', 'soy'
+            e.g., 'mai', 'ric', 'whe', 'soy','cas'
         irr : string
             irrigation type, default: 'combined'
             f.i 'firr' (full irrigation), 'noirr' (no irrigation) or 'combined'= firr+noirr
@@ -274,27 +273,13 @@ class CropProduction(Exposures):
 
         # The latitude and longitude are set; the region_id is determined
         lon, lat = np.meshgrid(data.lon.values, data.lat.values)
-        latitude = lat.flatten()
-        longitude = lon.flatten()
-        region_id = u_coord.get_country_code(
-            lat=latitude,
-            lon=longitude,
-            gridded=True
-        )
-        exp = cls(
-            lat = latitude,
-            lon = longitude,
-            data = dict(
-                region_id=region_id,
-            ),
-            description = "Crop production exposure from ISIMIP"
-                         f" {CROP_NAME[crop]['print']} {irr}"
-                         f" {yearrange[0]} {yearrange[-1]}",
-            value_unit = 't/y', # input unit, will be reset below if required by user
-            crop = crop,
-            ref_year = yearrange,
-        )
-        
+        exp = cls()
+        exp.gdf['latitude'] = lat.flatten()
+        exp.gdf['longitude'] = lon.flatten()
+        exp.gdf['region_id'] = u_coord.get_country_code(exp.gdf.latitude,
+                                                        exp.gdf.longitude,
+                                                        gridded=True)
+
         # The indeces of the yearrange to be extracted are determined
         time_idx = (int(yearrange[0] - yearchunk['startyear']),
                     int(yearrange[1] - yearchunk['startyear']))
@@ -329,10 +314,10 @@ class CropProduction(Exposures):
                 # if irr=='combined', both 'firr' and 'noirr' are required.
                 raise ValueError(f'Invalid hist_mean provided: {hist_mean}')
             hist_mean_dict = hist_mean
-            lat_mean = exp.latitude
+            lat_mean = exp.gdf.latitude.values
         elif isinstance(hist_mean, np.ndarray) or isinstance(hist_mean, list):
             hist_mean_dict[irr_types[0]] = np.array(hist_mean)
-            lat_mean = exp.latitude
+            lat_mean = exp.gdf.latitude.values
         elif Path(hist_mean).is_dir(): # else if hist_mean is given as path to directory
         # The adequate file from the directory (depending on crop and irrigation) is extracted
         # and the variables hist_mean, lat_mean and lon_mean are set accordingly
@@ -362,12 +347,12 @@ class CropProduction(Exposures):
             raise ValueError(f"Invalid hist_mean provided: {hist_mean}")
 
         # The bbox is cut out of the hist_mean data file if needed
-        if len(lat_mean) != len(exp.latitude):
-            idx_mean = np.zeros(len(exp.latitude), dtype=int)
-            for i in range(len(exp.latitude)):
+        if len(lat_mean) != len(exp.gdf.latitude.values):
+            idx_mean = np.zeros(len(exp.gdf.latitude.values), dtype=int)
+            for i in range(len(exp.gdf.latitude.values)):
                 idx_mean[i] = np.where(
-                    (lat_mean == exp.latitude[i])
-                    & (lon_mean == exp.longitude[i])
+                    (lat_mean == exp.gdf.latitude.values[i])
+                    & (lon_mean == exp.gdf.longitude.values[i])
                 )[0][0]
         else:
             idx_mean = np.arange(0, len(lat_mean))
@@ -381,6 +366,27 @@ class CropProduction(Exposures):
             value_tmp = np.squeeze(area_crop[irr_val]*hist_mean_dict[irr_val][idx_mean])
             value_tmp = np.nan_to_num(value_tmp) # replace NaN by 0.0
             exp.gdf['value'] += value_tmp
+        exp.description=("Crop production exposure from ISIMIP"
+                        f" {CROP_NAME[crop]['print']} {irr}"
+                        f" {yearrange[0]} {yearrange[-1]}")
+        exp.value_unit = 't/y' # input unit, will be reset below if required by user
+        exp.crop = crop
+        exp.ref_year = yearrange
+        try:
+            rows, cols, ras_trans = u_coord.pts_to_raster_meta(
+                (exp.gdf.longitude.min(), exp.gdf.latitude.min(),
+                 exp.gdf.longitude.max(), exp.gdf.latitude.max()),
+                u_coord.get_resolution(exp.gdf.longitude, exp.gdf.latitude))
+            exp.meta = {
+                'width': cols,
+                'height': rows,
+                'crs': exp.crs,
+                'transform': ras_trans,
+            }
+        except ValueError:
+            LOGGER.warning('Could not write attribute meta, because exposure'
+                           ' has only 1 data point')
+            exp.meta = {}
 
         if 'USD' in unit:
             # set_value_to_usd() is called to compute the exposure in USD/y (country specific)
@@ -418,7 +424,7 @@ class CropProduction(Exposures):
         Parameters
         ----------
         crop_type : str
-            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy', etc.
+            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy','cas', etc.
         layer_yield : int
             crop layer in yield input data set. Index typically starts with 1.
         layer_area : int
@@ -469,32 +475,36 @@ class CropProduction(Exposures):
         # The latitude and longitude are set; region_id is determined
         lon, lat = np.meshgrid(data_area.lon.values, data_area.lat.values)
 
+        exp = cls()
         # initiate coordinates and values in GeoDatFrame:
-        latitude = lat.flatten()
-        longitude = lon.flatten()
-        region_id = u_coord.get_country_code(
-            lat=latitude,
-            lon=longitude,
-            gridded=True)
-        # calc annual crop production, [t/y] = [ha] * [t/ha/y]:
-        value = np.multiply(data_area.values, data_yield.values).flatten()
-
-        exp = cls(
-            lat=latitude,
-            lon=longitude,
-            data=dict(
-                region_id=region_id,
-                value=value,
-            ),
-            crop=crop_type,
-            description=f"Annual crop production from {var_area} and {var_yield} for"
-                        f" {crop_type} from files {filename_area} and {filename_yield}",
-            value_unit = 't/y'
-        )
-
+        exp.gdf['latitude'] = lat.flatten()
+        exp.gdf['longitude'] = lon.flatten()
+        exp.gdf['region_id'] = u_coord.get_country_code(exp.gdf.latitude,
+                                                        exp.gdf.longitude, gridded=True)
         exp.gdf[INDICATOR_IMPF + DEF_HAZ_TYPE] = 1
         exp.gdf[INDICATOR_IMPF] = 1
+        # calc annual crop production, [t/y] = [ha] * [t/ha/y]:
+        exp.gdf['value'] = np.multiply(data_area.values, data_yield.values).flatten()
 
+        exp.crop = crop_type
+        exp.description=(f"Annual crop production from {var_area} and {var_yield} for"
+                         f" {exp.crop} from files {filename_area} and {filename_yield}")
+        exp.value_unit = 't/y'
+        try:
+            rows, cols, ras_trans = u_coord.pts_to_raster_meta(
+                (exp.gdf.longitude.min(), exp.gdf.latitude.min(),
+                 exp.gdf.longitude.max(), exp.gdf.latitude.max()),
+                u_coord.get_resolution(exp.gdf.longitude, exp.gdf.latitude))
+            exp.meta = {
+                'width': cols,
+                'height': rows,
+                'crs': exp.crs,
+                'transform': ras_trans,
+            }
+        except ValueError:
+            LOGGER.warning('Could not write attribute meta, because exposure'
+                           ' has only 1 data point')
+            exp.meta = {}
         return exp
 
     def set_from_spam_ray_mirca(self, *args, **kwargs):
@@ -520,7 +530,7 @@ class CropProduction(Exposures):
         Parameters
         ----------
         crop_type : str
-            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy', etc.
+            Crop type, e.g. 'mai' for maize, or 'ric', 'whe', 'soy','cas' etc.
         irrigation_type : str, optional
             irrigation type to be extracted, the options are:
             'all' : total crop production, i.e. irrigated + rainfed
@@ -542,8 +552,8 @@ class CropProduction(Exposures):
         filename_area = 'cultivated_area_MIRCA_GGCMI.nc4'
 
         # crop layers and variable names in default input files:
-        layers_yield = {'mai': 1, 'whe': 2, 'soy': 4, 'ric': 3}
-        layers_area = {'mai': 1, 'whe': 2, 'soy': 3, 'ric': 4}
+        layers_yield = {'mai': 1, 'whe': 2, 'soy': 4, 'ric': 3,'cas': 5}
+        layers_area = {'mai': 1, 'whe': 2, 'soy': 3, 'ric': 4,'cas': 5}
         # Note: layer numbers fo rice and soybean differ between input files.
         varnames_yield = {'noirr': 'yield.rf',
                          'firr': 'yield.ir',
@@ -595,7 +605,7 @@ class CropProduction(Exposures):
             e.g., 'gfdl-esm2m' etc.
         crop : string
             crop type
-            e.g., 'mai', 'ric', 'whe', 'soy'
+            e.g., 'mai', 'ric', 'whe', 'soy','cas'
         irr : string
             irrigation type
             f.i 'rainfed', 'irrigated' or 'combined'= rainfed+irrigated
@@ -756,7 +766,7 @@ def value_to_usd(exp_cp, input_dir=None, yearrange=None):
         The data is available for the years 1991-2018
     crop : str
         crop type
-        e.g., 'mai', 'ric', 'whe', 'soy'
+        e.g., 'mai', 'ric', 'whe', 'soy', 'cas'
 
     Returns
     -------
