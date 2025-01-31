@@ -608,17 +608,22 @@ def month_name_to_number(month):
         month as integer
 
     """
-    if isinstance(month, int):  # Already a number
+    if isinstance(month, int): # Already a number
         if 1 <= month <= 12:
             return month
         else:
             raise ValueError("Month number must be between 1 and 12.")
-    elif isinstance(month, str):
-        month = month.capitalize()  # Ensure consistent capitalization
+    if isinstance(month, str):
+        if not month.strip():
+            # e.g. "" or "   "
+            raise ValueError("Month cannot be empty.")
+        month = month.capitalize() # Ensure consistent capitalization
+
         if month in calendar.month_name:
-            return list(calendar.month_name).index(month)
+            return list(calendar.month_name).index(month)  # e.g., 'March' -> 3
         elif month in calendar.month_abbr:
-            return list(calendar.month_abbr).index(month)
+            return list(calendar.month_abbr).index(month)  # e.g., 'Mar' -> 3
+
     raise ValueError(f"Invalid month input: {month}")
 
 
