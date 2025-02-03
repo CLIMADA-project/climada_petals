@@ -91,7 +91,6 @@ class TestRiverFlood(unittest.TestCase):
             _, call_kwargs = mock_from_raster.call_args
             files_intensity = [f.name for f in call_kwargs["files_intensity"]]
             self.assertCountEqual(expected_files, files_intensity)
-            print(files_intensity)
 
             self.assertIs(result_haz, mock_hazard_instance)
 
