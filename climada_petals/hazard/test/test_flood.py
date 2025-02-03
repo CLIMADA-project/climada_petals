@@ -19,51 +19,81 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test flood module.
 """
 import unittest
+from pathlib import Path
+from unittest.mock import patch, MagicMock, call
+import tempfile
 import numpy as np
+from climada.hazard import Hazard
 from climada.hazard.centroids import Centroids
 from climada_petals.hazard.river_flood import RiverFlood
 from climada_petals.util.constants import HAZ_DEMO_FLDDPH, HAZ_DEMO_FLDFRC
 from climada_petals.hazard.river_flood import AQUEDUCT_SOURCE_LINK
-import requests
 
-SCENARIOS = ['historical', 'rcp4p5', 'rcp8p5']
-TARGET_YEARS = ['1980', '2030', '2050', '2080']
-RETURN_PERIODS = ['0002', '0005', '0010', '0025',
-                  '0050', '0100', '0250', '0500', '1000']
-GCMS = ['WATCH', 'NorESM1-M', 'GFDL-ESM2M', 'HadGEM2-ES',
-        'IPSL-CM5A-LR', 'MIROC-ESM-CHEM']
 
 class TestRiverFlood(unittest.TestCase):
     """Test for reading flood event from file"""
 
-    def test_aqueduct_files_exist(self):
+    @patch("climada_petals.hazard.river_flood.u_fh.download_file")
+    @patch.object(Hazard, "from_raster")
+    def test_from_aqueduct_tif(self, mock_from_raster, mock_download_file):
 
-        file_names = [
-            f'inunriver_{scenario}_{gcm.zfill(14)}_{target_year}_rp{rp.zfill(5)}.tif'
-                for scenario in SCENARIOS
-                for target_year in TARGET_YEARS
-                for rp in RETURN_PERIODS
-                for gcm in GCMS
+        scenario = "45"
+        target_year = 2050
+        return_periods = [50, 100]
+        gcm = "GFDL-ESM2M"
 
-                # You can't have:
-                # - year 1980 with scenario different than historical
-                # - scenario historical and year different than 1980
-                # - scenario historical, and gcm different than WATCH
-                # - gcm WATCH, and scenario different than historical
+        with tempfile.TemporaryDirectory() as temp_dir:
 
-                if not (((target_year == '1980') & (scenario != 'historical')) |
-                        ((target_year != '1980') & (scenario == 'historical')) |
-                        ((scenario == 'historical') & (gcm != 'WATCH')) |
-                        ((scenario != 'historical') & (gcm == 'WATCH')))
-                ]
+            temp_path = Path(temp_dir)
 
-        test_files_pos = np.random.choice(range(len(file_names)),
-                                          size=10,
-                                          replace=False)
-        for i in test_files_pos:
-            file_path = "".join([AQUEDUCT_SOURCE_LINK, file_names[i]])
-            request_code = requests.get(file_path).status_code
-            self.assertTrue(request_code == 200)
+            mock_hazard_instance = MagicMock()
+            mock_from_raster.return_value = mock_hazard_instance
+
+            def download_side_effect(url, download_dir):
+
+                filename = url.split("/")[-1]
+                path = download_dir / filename
+                path.touch()  # create an empty file
+
+                return path
+
+            mock_download_file.side_effect = download_side_effect
+
+            result_haz = RiverFlood.from_aqueduct_tif(
+                scenario=scenario,
+                target_year=target_year,
+                gcm=gcm,
+                return_periods=return_periods,
+                dwd_dir=temp_path,
+            )
+
+            # Check the calls to u_fh.download_file
+            expected_files = [
+                "inunriver_rcp4p5_0000GFDL-ESM2M_2050_rp00100.tif",
+                "inunriver_rcp4p5_0000GFDL-ESM2M_2050_rp00050.tif",
+            ]
+
+            expected_urls = [
+                AQUEDUCT_SOURCE_LINK + filename for filename in expected_files
+            ]
+
+            expected_call_args_list = [
+                call(url, download_dir=temp_path) for url in expected_urls
+            ]
+
+            # Order of calls does not matter.
+            call_args_list = mock_download_file.call_args_list
+            self.assertCountEqual(call_args_list, expected_call_args_list)
+
+            # Check the calls to from_raster.
+            mock_from_raster.assert_called_once()
+
+            _, call_kwargs = mock_from_raster.call_args
+            files_intensity = [f.name for f in call_kwargs["files_intensity"]]
+            self.assertCountEqual(expected_files, files_intensity)
+            print(files_intensity)
+
+            self.assertIs(result_haz, mock_hazard_instance)
 
     def test_wrong_iso3_fail(self):
 

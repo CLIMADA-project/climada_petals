@@ -23,7 +23,6 @@ __all__ = ['RiverFlood']
 
 import logging
 import datetime as dt
-import copy
 from pathlib import Path
 
 from typing import Iterable, Union, Optional
@@ -87,7 +86,7 @@ class RiverFlood(Hazard):
     @classmethod
     def from_aqueduct_tif(cls,
                           scenario: str,
-                          target_year : str,
+                          target_year: str,
                           gcm: str,
                           return_periods: Union[int, Iterable[int]]=None,
                           countries: Optional[Union[str, Iterable[str]]]=None,
