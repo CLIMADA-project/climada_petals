@@ -160,7 +160,7 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
         self.test_dir_process = Path("./test_data_process")
         self.test_dir_process.mkdir(exist_ok=True)
 
-        self.input_file_process = self.test_dir_process / "test_sample_grib.grib"
+        self.input_file_process = self.test_dir_process / "test_sample.nc" # note that this could also be a grib test file
         self.output_file_process = self.test_dir_process / "test_output.nc"
 
         # Define fixed grid dimensions
