@@ -89,9 +89,12 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
             calculate_leadtimes(2023, "InvalidMonth", ["January", "February"])
 
 
-
-    ##Unit tests for the convert_to_hazard function##
     def setUp(self):
+
+        ###############################################
+        ## setup files for hazard generation testing ##
+        ###############################################
+
         self.test_dir = Path("./test_data_hazard")
         self.test_dir.mkdir(exist_ok=True)
 
@@ -108,8 +111,8 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
             [
                 [
                     [[-5, 0, 5], [10, 15, 20], [25, 30, 35]],  # First month
-                    [[-4, 1, 6], [11, 16, 21], [26, 31, 36]],
-                ],  # Second month
+                    [[-4, 1, 6], [11, 16, 21], [26, 31, 36]],  # Second month
+                ],
                 [
                     [[-6, -1, 4], [9, 14, 19], [24, 29, 34]],
                     [[-3, 2, 7], [12, 17, 22], [27, 32, 37]],
@@ -132,19 +135,6 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
         # Convert manual data to proper shape (5 members, 2 steps, 3 lat, 3 lon)
         data = np.array(manual_temps)
 
-        # Create an xarray Dataset
-        ds = xr.Dataset(
-            data_vars=dict(
-                Tmax=(["number", "step", "latitude", "longitude"], data),
-            ),
-            coords=dict(
-                number=("number", np.arange(n_members)),  # 0 to 4
-                step=("step", step_vals),  # '2018-02', '2018-03'
-                latitude=("latitude", lat_vals),
-                longitude=("longitude", lon_vals),
-            ),
-        )
-
         ds = xr.Dataset(
             data_vars=dict(
                 Tmax=(
@@ -162,6 +152,62 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
 
         # Save dataset to NetCDF
         ds.to_netcdf(self.input_file)
+
+        ###############################################
+        #### setup files for process data testing #####
+        ###############################################
+
+        self.test_dir_process = Path("./test_data_process")
+        self.test_dir_process.mkdir(exist_ok=True)
+
+        self.input_file_process = self.test_dir_process / "test_sample_grib.grib"
+        self.output_file_process = self.test_dir_process / "test_output.nc"
+
+        # Define fixed grid dimensions
+        n_members = 2  # 2 ensemble members
+        step_vals = np.array(
+            [
+                "2025-01-01T00:00",
+                "2025-01-01T06:00",
+                "2025-01-01T12:00",
+                "2025-01-01T18:00",
+                "2025-01-02T00:00",
+                "2025-01-02T06:00",
+                "2025-01-02T12:00",
+                "2025-01-02T18:00",
+            ],
+            dtype="datetime64[ns]",
+        )  # 2 days, 4 steps per day
+
+        lat_vals = np.array([46.5])  # 1 latitude point
+        lon_vals = np.array([12.3])  # 1 longitude point
+
+        # Fixed temperature values (in Celsius)
+        fixed_temps = np.array(
+            [
+                [[[-5 + step]] for step in range(len(step_vals))],  # Member 1
+                [[[-4 + step * 0.5]] for step in range(len(step_vals))],  # Member 2
+            ]
+        )
+
+        # Create an xarray Dataset
+        ds_p = xr.Dataset(
+            data_vars={
+                "t2m": (
+                    ["number", "step", "latitude", "longitude"],
+                    fixed_temps,
+                )  # Temperature in Celsius
+            },
+            coords={
+                "number": np.arange(n_members),
+                "step": step_vals,
+                "latitude": lat_vals,
+                "longitude": lon_vals,
+            },
+        )
+
+        # Save dataset
+        ds_p.to_netcdf(self.input_file_process)
 
     def test_convert_to_hazard(self):
         index_metric = "Tmax"
@@ -270,91 +316,22 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
             computed_intensity_values, expected_intensity_values, atol=1e-3
         ), f"Expected intensity {expected_intensity_values}, but got {computed_intensity_values}"
 
-    def tearDown(self):
-        """Clean up test files."""
-        if self.input_file.exists():
-            os.remove(self.input_file)
-        if self.output_file.exists():
-            os.remove(self.output_file)
-        if self.test_dir.exists():
-            os.rmdir(self.test_dir)
-
-
-
-    ## Unit tests for the _process_data function ##
-    ## To avoid dataset conflicts, a separate setUp_process_data is provided here. 
-    ## This ensures test isolation, as each test requires unique data preparation. ##
-
-    def setUp_process_data(self):
-        """Create mock GRIB-like input data for testing."""
-        self.test_dir = Path("./test_data_process")
-        self.test_dir.mkdir(exist_ok=True)
-
-        self.input_file = self.test_dir / "test_sample_grib.grib"
-        self.output_file = self.test_dir / "test_output.nc"
-
-        # Define fixed grid dimensions
-        n_members = 2  # 2 ensemble members
-        step_vals = np.array(
-            [
-                "2025-01-01T00:00",
-                "2025-01-01T06:00",
-                "2025-01-01T12:00",
-                "2025-01-01T18:00",
-                "2025-01-02T00:00",
-                "2025-01-02T06:00",
-                "2025-01-02T12:00",
-                "2025-01-02T18:00",
-            ],
-            dtype="datetime64[ns]",
-        )  # 2 days, 4 steps per day
-
-        lat_vals = np.array([46.5])  # 1 latitude point
-        lon_vals = np.array([12.3])  # 1 longitude point
-
-        # Fixed temperature values (in Celsius)
-        fixed_temps = np.array(
-            [
-                [[[-5 + step]] for step in range(len(step_vals))],  # Member 1
-                [[[-4 + step * 0.5]] for step in range(len(step_vals))],  # Member 2
-            ]
-        )
-
-        # Create an xarray Dataset
-        ds_p = xr.Dataset(
-            data_vars={
-                "t2m": (
-                    ["number", "step", "latitude", "longitude"],
-                    fixed_temps,
-                )  # Temperature in Celsius
-            },
-            coords={
-                "number": np.arange(n_members),
-                "step": step_vals,
-                "latitude": lat_vals,
-                "longitude": lon_vals,
-            },
-        )
-
-        # Save dataset
-        ds_p.to_netcdf(self.input_file)
-
     def test_process_data(self):
         """Test processing of the input file and verify calculations."""
-        self.setUp_process_data()
+        self.setUp()
         _process_data(
-            output_file_name=self.output_file,
+            output_file_name=self.output_file_process,
             overwrite=True,
-            input_file_name=self.input_file,
+            input_file_name=self.input_file_process,
             variables=["t2m"],
             format="netcdf",
         )
 
         # Verify the output file exists
-        self.assertTrue(self.output_file.exists(), "Processed file was not created.")
+        self.assertTrue(self.output_file_process.exists(), "Processed file was not created.")
 
         # Read processed file and check values
-        ds_out = xr.open_dataset(self.output_file)
+        ds_out = xr.open_dataset(self.output_file_process)
 
         # Expected statistics
         expected_min = np.array(
@@ -390,17 +367,24 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
         )
 
         ds_out.close()
-        # Clean up after the test
-        self.tearDown_process_data()
 
-    def tearDown_process_data(self):
-        """Clean up test files and directories."""
+    def tearDown(self):
+        """Clean up test files."""
+        # clean up hazard test files
         if self.input_file.exists():
-            self.input_file.unlink()
+            os.remove(self.input_file)
         if self.output_file.exists():
-            self.output_file.unlink()
+            os.remove(self.output_file)
         if self.test_dir.exists():
-            self.test_dir.rmdir()
+            os.rmdir(self.test_dir)
+
+        # clean up process test files
+        if self.input_file_process.exists():
+            self.input_file_process.unlink()
+        if self.output_file_process.exists():
+            self.output_file_process.unlink()
+        if self.test_dir_process.exists():
+            self.test_dir_process.rmdir()
 
 
 # Execute Tests
