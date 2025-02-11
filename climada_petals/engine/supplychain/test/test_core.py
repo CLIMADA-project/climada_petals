@@ -241,7 +241,7 @@ def test_directshock__init__missmatched(mismatched_assets, mock_mriot):
     ):
         DirectShocksSet._init_with_mriot(
             mriot=mock_mriot,
-            exposed_assets=exposure_assets,
+            exposure_assets=exposure_assets,
             impacted_assets=impacted_assets,
             event_dates=event_dates,
             shock_name="Test_Shock",
@@ -329,7 +329,7 @@ def test_init_with_mriot_valid(mock_mriot, sample_assets):
     # Call the _init_with_mriot method
     shock = DirectShocksSet._init_with_mriot(
         mriot=mock_mriot,
-        exposed_assets=exposure_assets,
+        exposure_assets=exposure_assets,
         impacted_assets=impacted_assets,
         event_dates=event_dates,
         shock_name="Test_Shock",
@@ -358,7 +358,7 @@ def test_init_with_mriot_empty(mock_empty_mriot, sample_assets):
     with pytest.raises(ValueError):
         shock = DirectShocksSet._init_with_mriot(
             mriot=mock_empty_mriot,
-            exposed_assets=exposure_assets,
+            exposure_assets=exposure_assets,
             impacted_assets=impacted_assets,
             event_dates=event_dates,
             shock_name="Empty_Shock",
@@ -373,7 +373,7 @@ def test_init_with_mriot_missing_attributes(mock_mriot_missing_attrs, sample_ass
     with pytest.raises(AttributeError):
         DirectShocksSet._init_with_mriot(
             mriot=mock_mriot_missing_attrs,
-            exposed_assets=exposure_assets,
+            exposure_assets=exposure_assets,
             impacted_assets=impacted_assets,
             event_dates=event_dates,
             shock_name="Incomplete_Shock",
@@ -384,7 +384,7 @@ def test_relative_impact_correct_calculation(sample_assets, mock_mriot):
     exposure_assets, impacted_assets, event_dates = sample_assets
     shock = DirectShocksSet._init_with_mriot(
         mriot=mock_mriot,
-        exposed_assets=exposure_assets,
+        exposure_assets=exposure_assets,
         impacted_assets=impacted_assets,
         event_dates=event_dates,
         shock_name="Test_Shock",
@@ -405,7 +405,7 @@ def test_relative_impact_edge_cases(edge_case_assets, mock_mriot):
     exposure_assets, impacted_assets, event_dates = edge_case_assets
     shock = DirectShocksSet._init_with_mriot(
         mriot=mock_mriot,
-        exposed_assets=exposure_assets,
+        exposure_assets=exposure_assets,
         impacted_assets=impacted_assets,
         event_dates=event_dates,
         shock_name="Test_Shock",
@@ -431,7 +431,7 @@ def test_relative_impact_mismatched_indices(mismatched_assets, mock_mriot):
     ):
         shock = DirectShocksSet._init_with_mriot(
             mriot=mock_mriot,
-            exposed_assets=exposure_assets,
+            exposure_assets=exposure_assets,
             impacted_assets=impacted_assets,
             event_dates=event_dates,
             shock_name="Test_Shock",

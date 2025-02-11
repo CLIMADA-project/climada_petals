@@ -167,7 +167,7 @@ class DirectShocksSet:
     def _init_with_mriot(
         cls,
         mriot: pymrio.IOSystem,
-        exposed_assets: pd.Series,
+        exposure_assets: pd.Series,
         impacted_assets: pd.DataFrame,
         event_dates: np.ndarray,
         shock_name: str,
@@ -177,19 +177,12 @@ class DirectShocksSet:
             mriot.name,
             mriot.get_sectors(),
             mriot.get_regions(),
-            exposed_assets,
+            exposure_assets,
             impacted_assets,
             event_dates,
             mriot.monetary_factor,
             shock_name,
         )
-
-    @property
-    def relative_impact(self) -> pd.DataFrame:
-        """The ratio of impacted assets over total assets (0. if total assets are 0.)."""
-        return (self.impacted_assets / self.exposure_assets).fillna(0.0).replace(
-            [np.inf, -np.inf], 0
-        ) * (self.exposure_assets > 0)
 
     @classmethod
     def from_exp_and_imp(
@@ -392,6 +385,32 @@ class DirectShocksSet:
             A Series containing the impacted assets with non-zero values.
         """
         return self.exposure_assets.loc[self.exposure_assets.ne(0)]
+
+    @property
+    def relative_impact(self) -> pd.DataFrame:
+        """The ratio of impacted assets over total assets (0. if total assets are 0.)."""
+        return (self.impacted_assets / self.exposure_assets).fillna(0.0).replace(
+            [np.inf, -np.inf], 0
+        ) * (self.exposure_assets > 0)
+
+    @property
+    def relative_impact_not_null(self) -> pd.DataFrame:
+        """
+        Get a subset of the `relative_impact` DataFrame containing only non-null values.
+
+        This property filters the `relative_impact` DataFrame to include only rows and
+        columns where at least one non-zero impact exists.
+
+        Returns
+        -------
+        pandas.DataFrame
+            A DataFrame containing the impacted assets with non-zero values.
+        """
+        return self.relative_impact.loc[
+            self.relative_impact.ne(0).any(axis=1),
+            self.relative_impact.ne(0).any(axis=0),
+        ]
+
 
     @staticmethod
     def _check_mriot_name(mriot_names: Sequence[str]) -> bool:

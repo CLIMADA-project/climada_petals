@@ -23,5 +23,6 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 from .core import DirectShocksSet, IndirectCostModel, StaticIOModel, BoARIOModel # noqa: E402 (ignore import order PEP8 rule because we have to define the logger before importing any other sub-modules)
+from .mriot_handling import get_mriot # noqa: E402
 
-__all__ = ["DirectShocksSet","IndirectCostModel", "StaticIOModel", "BoARIOModel"]
+__all__ = ["DirectShocksSet","IndirectCostModel", "StaticIOModel", "BoARIOModel", "get_mriot"]
