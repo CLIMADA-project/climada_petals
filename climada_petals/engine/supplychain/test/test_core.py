@@ -480,13 +480,13 @@ def test_from_exp_and_imp(
 
     # Call the method
     DirectShocksSet.from_exp_and_imp(
-        mock_mriot,
-        mock_exposure,
-        mock_impact,
-        shock_name,
-        affected_sectors,
-        impact_distribution,
-        exp_value_col,
+        mriot=mock_mriot,
+        exposure=mock_exposure,
+        impact=mock_impact,
+        affected_sectors=affected_sectors,
+        impact_distribution=impact_distribution,
+        shock_name=shock_name,
+        exp_value_col=exp_value_col,
     )
 
     # Assertions
@@ -500,13 +500,13 @@ def test_from_exp_and_imp(
         value_col=exp_value_col,
     )
     mock_from_assets_and_imp.assert_called_once_with(
-        mock_mriot,
-        mock_exposure_assets,
-        mock_impact,
-        shock_name,
-        affected_sectors,
-        impact_distribution,
-        False
+        mriot=mock_mriot,
+        exposure_assets=mock_exposure_assets,
+        impact=mock_impact,
+        shock_name=shock_name,
+        affected_sectors=affected_sectors,
+        impact_distribution=impact_distribution,
+        custom_mriot=False
     )
 
 
@@ -1197,7 +1197,7 @@ class TestStaticIOModel(TestCase):
                 names=["event_id", "region", "sector", "method", "metric"],
             ),
         ).reset_index()
-        ret = model.calc_indirect_impacts()
+        ret = model.calc_indirect_impacts(event_ids=None)
         pd.testing.assert_frame_equal(ret, expected)
 
 

@@ -158,7 +158,9 @@ class DirectShocksSet:
         self.impacted_assets = _thin_to_wide(
             impacted_assets, self.event_ids, self.mriot_industries
         )
-        self.impacted_assets = self.impacted_assets.reindex(sorted(self.impacted_assets.columns), axis=1)
+        self.impacted_assets = self.impacted_assets.reindex(
+            sorted(self.impacted_assets.columns), axis=1
+        )
         self.event_dates = pd.Series(event_dates, index=self.event_ids)
 
     @classmethod
@@ -185,9 +187,9 @@ class DirectShocksSet:
     @property
     def relative_impact(self) -> pd.DataFrame:
         """The ratio of impacted assets over total assets (0. if total assets are 0.)."""
-        return (self.impacted_assets / self.exposure_assets).fillna(0.0).replace([np.inf, -np.inf], 0) * (
-            self.exposure_assets > 0
-        )
+        return (self.impacted_assets / self.exposure_assets).fillna(0.0).replace(
+            [np.inf, -np.inf], 0
+        ) * (self.exposure_assets > 0)
 
     @classmethod
     def from_exp_and_imp(
@@ -197,9 +199,9 @@ class DirectShocksSet:
         impact: Impact,
         affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
         impact_distribution: dict[str, float] | pd.Series | None,
-        shock_name: str|None = None,
+        shock_name: str | None = None,
         exp_value_col: str = "value",
-        custom_mriot:bool = False,
+        custom_mriot: bool = False,
     ):
         """Build a DirectShocksSet from MRIOT, Exposure and Impact objects.
 
@@ -242,18 +244,20 @@ class DirectShocksSet:
 
         """
         mriot = lexico_reindex(mriot)
-        exp = translate_exp_to_regions(exposure, mriot_name=mriot.name, custom_mriot=custom_mriot)
+        exp = translate_exp_to_regions(
+            exposure, mriot_name=mriot.name, custom_mriot=custom_mriot
+        )
         exposure_assets = translate_exp_to_sectors(
             exp, affected_sectors=affected_sectors, mriot=mriot, value_col=exp_value_col
         )
         return cls.from_assets_and_imp(
-            mriot,
-            exposure_assets,
-            impact,
-            shock_name,
-            affected_sectors,
-            impact_distribution,
-            custom_mriot
+            mriot=mriot,
+            exposure_assets=exposure_assets,
+            impact=impact,
+            shock_name=shock_name,
+            affected_sectors=affected_sectors,
+            impact_distribution=impact_distribution,
+            custom_mriot=custom_mriot,
         )
 
     @classmethod
@@ -262,10 +266,10 @@ class DirectShocksSet:
         mriot: pymrio.IOSystem,
         exposure_assets: pd.Series,
         impact: Impact,
-        shock_name: str,
+        shock_name: str | None,
         affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
         impact_distribution: dict[str, float] | pd.Series | None,
-        custom_mriot:bool = False
+        custom_mriot: bool = False,
     ):
         """Build a DirectShocksSetfrom an MRIOT, assets Series, and Impact objects.
 
@@ -280,7 +284,7 @@ class DirectShocksSet:
             A pandas `Series` with (region,sector) as index and assets value.
         impact : Impact
             The Impact object to derive the impact on assets from.
-        shock_name : str
+        shock_name : str or None
             An optional name to identify the object.
         affected_sectors : Iterable[str] | dict[str, float] | pd.Series | Literal["all"]
             The sectors of the MRIOT that are impacted. If given as a
@@ -306,7 +310,9 @@ class DirectShocksSet:
         # get regional impact in MRIOT format
         impacted_assets = impact.impact_at_reg()
         impacted_assets = impacted_assets.loc[:, (impacted_assets != 0).any()]
-        impacted_assets = translate_imp_to_regions(impacted_assets, mriot, custom_mriot=custom_mriot)
+        impacted_assets = translate_imp_to_regions(
+            impacted_assets, mriot, custom_mriot=custom_mriot
+        )
 
         # Setup distribution toward sectors
         if isinstance(affected_sectors, str) and affected_sectors == "all":
@@ -314,11 +320,10 @@ class DirectShocksSet:
 
         if impact_distribution is None:
             # Default uses production distribution across sectors, region.
-            impact_distribution = (
-                mriot.x.loc[
-                    pd.IndexSlice[impacted_assets.columns, affected_sectors], mriot.x.columns[0]
-                ]
-            )
+            impact_distribution = mriot.x.loc[
+                pd.IndexSlice[impacted_assets.columns, affected_sectors],
+                mriot.x.columns[0],
+            ]
 
         if isinstance(impact_distribution, dict):
             impact_distribution = pd.Series(impact_distribution)
@@ -334,7 +339,11 @@ class DirectShocksSet:
         impacted_assets.rename_axis(index="event_id", inplace=True)
         # Call constructor
         return cls._init_with_mriot(
-            mriot, exposure_assets, impacted_assets, event_dates, shock_name
+            mriot=mriot,
+            exposure_assets=exposure_assets,
+            impacted_assets=impacted_assets,
+            event_dates=event_dates,
+            shock_name=shock_name,
         )
 
     @property
@@ -432,9 +441,9 @@ class DirectShocksSet:
             axis=1,
         ).fillna(0)
         merged_imp_assets = merged_imp_assets.groupby(merged_imp_assets.index).sum()
-        merged_imp_assets = merged_imp_assets.groupby(
-            merged_imp_assets.columns, axis=1
-        ).sum()
+        merged_imp_assets = (
+            merged_imp_assets.T.groupby(merged_imp_assets.columns).sum().T
+        )
         return merged_imp_assets
 
     @classmethod
@@ -786,7 +795,8 @@ class StaticIOModel(IndirectCostModel):
             return pd.DataFrame()
 
     def calc_indirect_impacts(
-            self, event_ids: list[int] | pd.Index | Literal["with_impact"] | None = "with_impact"
+        self,
+        event_ids: list[int] | pd.Index | Literal["with_impact"] | None = "with_impact",
     ) -> pd.DataFrame | None:
         """
         Calculates detailed indirect impacts using both Leontief and Ghosh models.
@@ -857,7 +867,7 @@ class StaticIOModel(IndirectCostModel):
             create_df_metrics(
                 event_ids,
                 "leontief",
-                self.mriot.x.iloc[:,0],
+                self.mriot.x.iloc[:, 0],
                 self.direct_shocks.impacted_assets,
             )
         )
@@ -865,7 +875,7 @@ class StaticIOModel(IndirectCostModel):
             create_df_metrics(
                 event_ids,
                 "ghosh",
-                self.mriot.x.iloc[:,0],
+                self.mriot.x.iloc[:, 0],
                 self.direct_shocks.impacted_assets,
             )
         )
@@ -1015,10 +1025,9 @@ class BoARIOModel(IndirectCostModel):
                 else:
                     skipped.append(event_id)
 
-
             LOGGER.warning(
-                        f"Impact for following events was too small to have an effect, skipping them for efficiency: {skipped}"
-                    )
+                f"Impact for following events was too small to have an effect, skipping them for efficiency: {skipped}"
+            )
 
         else:
             self.direct_shocks = None

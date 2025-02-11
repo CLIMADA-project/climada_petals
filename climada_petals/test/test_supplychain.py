@@ -113,10 +113,10 @@ def mock_impact(mock_exp):
 
 def test_direct_shock_no_impact_distrib(mock_mriot_miller, mock_exp, mock_impact):
     direct_shocks = DirectShocksSet.from_exp_and_imp(
-        mock_mriot_miller,
-        mock_exp,
-        mock_impact,
-        "Test Shock",
+        mriot=mock_mriot_miller,
+        exposure=mock_exp,
+        impact=mock_impact,
+        shock_name="Test Shock",
         affected_sectors="all",
         impact_distribution=None,
         custom_mriot=True,
@@ -211,10 +211,10 @@ def test_direct_shock_no_impact_distrib(mock_mriot_miller, mock_exp, mock_impact
 
 def test_direct_shock_with_impact_distrib(mock_mriot_miller, mock_exp, mock_impact):
     direct_shocks = DirectShocksSet.from_exp_and_imp(
-        mock_mriot_miller,
-        mock_exp,
-        mock_impact,
-        "Test Shock",
+        mriot=mock_mriot_miller,
+        exposure=mock_exp,
+        impact=mock_impact,
+        shock_name="Test Shock",
         affected_sectors="all",
         impact_distribution=mock_mriot_miller.x["gross production"],
         custom_mriot=True,
