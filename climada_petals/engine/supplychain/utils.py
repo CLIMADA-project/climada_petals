@@ -23,16 +23,20 @@ import copy
 from typing import Iterable, Literal, overload
 import pandas as pd
 import numpy as np
-
 import pymrio
 import country_converter as coco
 
 from climada.entity import Exposures
+from climada_petals.engine.supplychain.mriot_handling import (
+    VA_NAME,
+    check_sectors_in_mriot,
+    _get_coco_MRIOT_name,
+)
 
-from climada_petals.engine.supplychain.mriot_handling import VA_NAME, check_sectors_in_mriot, _get_coco_MRIOT_name
 
-
-def calc_va(Z: pd.DataFrame | np.ndarray, x: pd.DataFrame | np.ndarray) -> pd.DataFrame | np.ndarray:
+def calc_va(
+    Z: pd.DataFrame | np.ndarray, x: pd.DataFrame | np.ndarray
+) -> pd.DataFrame | np.ndarray:
     """Calculate value added (v) from Z and x
 
     value added = industry output (x) - inter-industry inputs (sum_rows(Z))
@@ -63,7 +67,9 @@ def calc_va(Z: pd.DataFrame | np.ndarray, x: pd.DataFrame | np.ndarray) -> pd.Da
     return value_added
 
 
-def calc_B(Z: pd.DataFrame | np.ndarray, x: pd.DataFrame | np.ndarray) -> pd.DataFrame | np.ndarray:
+def calc_B(
+    Z: pd.DataFrame | np.ndarray, x: pd.DataFrame | np.ndarray
+) -> pd.DataFrame | np.ndarray:
     """Calculate the B matrix (allocation coefficients matrix)
     from Z matrix and x vector
 
@@ -123,12 +129,16 @@ def calc_G(B: pd.DataFrame | np.ndarray) -> pd.DataFrame | np.ndarray:
     """
     id_matrix = np.eye(B.shape[0])
     if isinstance(B, pd.DataFrame):
-        return pd.DataFrame(np.linalg.inv(id_matrix - B), index=B.index, columns=B.columns)
+        return pd.DataFrame(
+            np.linalg.inv(id_matrix - B), index=B.index, columns=B.columns
+        )
     else:
         return np.linalg.inv(id_matrix - B)  # G = inverse matrix of (I - B)
 
 
-def calc_x_from_G(G : pd.DataFrame | np.ndarray, va : pd.DataFrame | pd.Series | np.ndarray) -> pd.DataFrame | np.ndarray:
+def calc_x_from_G(
+    G: pd.DataFrame | np.ndarray, va: pd.DataFrame | pd.Series | np.ndarray
+) -> pd.DataFrame | np.ndarray:
     """Calculate the industry output x from a v vector and G matrix
 
     x = G . va
@@ -165,9 +175,10 @@ def calc_x_from_G(G : pd.DataFrame | np.ndarray, va : pd.DataFrame | pd.Series |
 def translate_exp_to_regions(
     exp: Exposures,
     mriot_name: str,
+    custom_mriot: bool = False,
 ) -> Exposures:
     """
-    Creates a region column within the GeoDataFrame of the Exposures object which matches region
+    Creates a region column within the GeoDataFrame of the Exposures object which matches regions
     of an MRIOT. Also compute the share of total mriot region value per centroid.
 
     Parameters
@@ -177,19 +188,17 @@ def translate_exp_to_regions(
     mriot_type : str
         Type of the MRIOT to convert region_id to. Currently available are:
         ["WIOD"]
-    copy : bool, optional
-        If True returns a modified copy of the Exposures object instead of modifying in place.
 
     Returns
     -------
-    None or Exposures
-        Modify inplace and returns None by default, or a modified copy if `return_copy=True`.
+    Exposures
+        A modified copy.
     """
     exp = copy.deepcopy(exp)
     cc = coco.CountryConverter()
     # Find region names
     exp.gdf["region"] = cc.pandas_convert(
-        series=exp.gdf["region_id"], to=_get_coco_MRIOT_name(mriot_name) #type: ignore
+        series=exp.gdf["region_id"], to=_get_coco_MRIOT_name(mriot_name, custom_mriot)  # type: ignore
     ).str.upper()
 
     # compute distribution per region
@@ -211,6 +220,7 @@ def translate_exp_to_sectors(
     By default the function distribute the exposure value to the sectors according to the production ratios
     of the affected sectors (Their relative share of the gross output (in the MRIOT) of all affected sectors).
     The ratios can also be provided directly using a dict or a Series, and are applied as is.
+    The value is also scaled to match the monetary factor of the MRIOT (i.e., divided by).
 
     Parameters
     ----------
@@ -218,8 +228,8 @@ def translate_exp_to_sectors(
         An instance of the `Exposures` class containing geospatial exposure data for a group of sectors.
         The Exposures GeoDataFrame has to contain a `region` column with regions present in the MRIOTs. Such an Exposures object can be built with :py:func:`translate_exp_to_regions`
     affected_sectors : Iterable[str] | dict[str, float] | pd.Series | Literal["all"]
-        Sectors affected by the event. Can be either:
-        - A list of sector names (str) if sectors distribution at each point is to be proportional
+        Sectors affected by the event. It can either be:
+        - A list or pd.Index of sector names (as str) if sectors distribution at each point is to be proportional
         to their production share in the MRIOT.
         - "all", in which case all sectors of the MRIOT are considered affected.
         - A dictionary/Series where keys/index are sector names (str) and values are predefined shares of the relative
@@ -234,15 +244,16 @@ def translate_exp_to_sectors(
 
     """
     if "region" not in exp.gdf.columns:
-        exp = translate_exp_to_regions(exp, mriot_name=mriot.name) # type: ignore
+        exp = translate_exp_to_regions(exp, mriot_name=mriot.name)  # type: ignore
     if isinstance(affected_sectors, str) and affected_sectors == "all":
-        affected_sectors = list(mriot.get_sectors()) # type: ignore
+        affected_sectors = list(mriot.get_sectors())  # type: ignore
 
-    if isinstance(affected_sectors, list):
+    if isinstance(affected_sectors, (list, pd.Index)):
         # logger.info("Calculating production ratios using MRIOT data for the provided sectors.")
         check_sectors_in_mriot(affected_sectors, mriot)
-        prod_ratio = mriot.x.loc[ # type: ignore
-            pd.IndexSlice[exp.gdf["region"].unique(), affected_sectors], "indout"
+        prod_ratio = mriot.x.loc[  # type: ignore
+            pd.IndexSlice[exp.gdf["region"].unique(), affected_sectors],
+            mriot.x.columns[0],
         ]
         prod_ratio = prod_ratio.groupby("region").transform(lambda x: x / x.sum())
     elif isinstance(affected_sectors, (dict, pd.Series)):
@@ -260,7 +271,9 @@ def translate_exp_to_sectors(
         )
 
     if (prod_ratio.groupby("region").sum().round(6) != 1.0).any():
-        raise ValueError(f"The distribution share do not sum to 1. for all regions. Sum = {prod_ratio.groupby('region').sum()}")
+        raise ValueError(
+            f"The distribution share do not sum to 1. for all regions. Sum = {prod_ratio.groupby('region').sum()}"
+        )
     exposed_assets = exp.gdf.groupby("region")[value_col].sum() * prod_ratio
     exposed_assets /= mriot.monetary_factor
     return exposed_assets
@@ -269,6 +282,7 @@ def translate_exp_to_sectors(
 def translate_imp_to_regions(
     reg_impact: pd.DataFrame,
     mriot: pymrio.IOSystem,
+    custom_mriot: bool = False,
 ) -> pd.DataFrame:
     """
     Translate regional impact data to MRIOT regions.
@@ -276,16 +290,18 @@ def translate_imp_to_regions(
     Parameters
     ----------
     reg_impact : pd.DataFrame
-        DataFrame with regional impact data. Index should represent event IDs, and columns should represent ISO3 regions.
+        DataFrame with regional impact data. Index should represent event IDs,
+        and columns should represent ISO3 regions.
     mriot_type : str
         The target MRIOT region type for conversion (e.g., 'ISO3', 'ISO2').
-    inplace : bool, optional
-        If True, modifies the original `reg_impact` DataFrame. If False, returns a modified copy.
+    custom_mriot : bool, default False
+        If True, consider the given MRIOT as custom (MRIOT regions require to be in ISO3 format).
 
     Returns
     -------
     pd.DataFrame
-        A DataFrame with event IDs as index and MRIOT regions as columns, with summed impact values if multiple regions map to the same MRIOT region.
+        A DataFrame with event IDs as index and MRIOT regions as columns, with summed impact
+        values if multiple regions map to the same MRIOT region.
 
     Raises
     ------
@@ -311,7 +327,7 @@ def translate_imp_to_regions(
         ignore_index=False, var_name="region", value_name="value"
     )
     reg_impact["region_mriot"] = cc.pandas_convert(
-        reg_impact["region"], to=_get_coco_MRIOT_name(mriot.name)
+        reg_impact["region"], to=_get_coco_MRIOT_name(mriot.name, custom_mriot)
     ).str.upper()
     ret = reg_impact.set_index("region_mriot", append=True)["value"]
 
@@ -331,9 +347,11 @@ def distribute_reg_impact_to_sectors(
     Parameters
     ----------
     reg_impact : pd.DataFrame
-        DataFrame containing regional impact data. Columns represent regions, and index represents events.
+        DataFrame containing regional impact data.
+        Columns represent regions, and index represents events.
     distributor : pd.Series
-        Series used to distribute the impact across sectors. Can have a MultiIndex (region, sector) or a single index (sector).
+        Series used to distribute the impact across sectors.
+        Can have a MultiIndex (region, sector) or a single index (sector).
 
     Returns
     -------
@@ -343,9 +361,7 @@ def distribute_reg_impact_to_sectors(
     Raises
     ------
     ValueError
-        If the distributor's index is neither a MultiIndex nor a single index of sectors.
-    ValueError
-        If any sectors in `distributor` are not represented in the reg_impact DataFrame.
+        If any region or sector in `distributor` are not represented in the reg_impact DataFrame.
     """
 
     # Input validation
@@ -355,14 +371,12 @@ def distribute_reg_impact_to_sectors(
     if not isinstance(distributor, pd.Series):
         raise ValueError("`distributor` must be a pandas Series.")
 
-    if not isinstance(distributor.index, pd.MultiIndex) and not isinstance(
-        distributor.index, pd.Index
-    ):
-        raise ValueError("`distributor` index must be a pandas MultiIndex or Index.")
-
     # Create a MultiIndex for the resulting columns (region, sector)
     if isinstance(distributor.index, pd.MultiIndex):
-        multi_index = distributor.index
+        multi_index = pd.MultiIndex.from_product(
+            [reg_impact.columns, distributor.index.get_level_values("sector").unique()],
+            names=["region", "sector"],
+        )
     else:
         multi_index = pd.MultiIndex.from_product(
             [reg_impact.columns, distributor.index], names=["region", "sector"]
@@ -370,19 +384,26 @@ def distribute_reg_impact_to_sectors(
 
     if not isinstance(distributor.index, pd.MultiIndex):
         distributor = distributor.reindex(multi_index.get_level_values("sector"))
+        distributor.index = multi_index
 
-    missing_sectors = set(distributor.index.get_level_values("sector")) - set(
-        multi_index.get_level_values("sector")
+    missing_regions = set(multi_index.get_level_values("region")) - set(
+        distributor.index.get_level_values("region")
+    )
+    if missing_regions:
+        raise ValueError(
+            f"The following regions are missing in the distributor: {', '.join(missing_regions)}"
+        )
+
+    missing_sectors = set(multi_index.get_level_values("sector")) - set(
+        distributor.index.get_level_values("sector")
     )
     if missing_sectors:
         raise ValueError(
-            f"The following sectors are missing in the distributor: {', '.join(missing_sectors)}"
+            f"The following regions are missing in the distributor: {', '.join(missing_sectors)}"
         )
-
 
     # Normalize values by regions
     distributor = distributor.groupby(level="region").transform(lambda x: x / x.sum())
-
     # Expand regional_impact to have matching multi-level columns
     sector_count = len(multi_index.get_level_values("sector").unique())
     reg_impact_exp = reg_impact.loc[
@@ -393,6 +414,7 @@ def distribute_reg_impact_to_sectors(
 
     # Multiply element-wise
     return reg_impact_exp.mul(distributor.values, level="sector")
+
 
 @overload
 def _thin_to_wide(

@@ -16,7 +16,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Define the SupplyChain class.
+Define the main supply chain classes: DirectShocksSet and models classes.
 """
 
 from __future__ import (
@@ -24,12 +24,9 @@ from __future__ import (
 )
 from abc import (
     ABC,
-    abstractmethod,
 )
 
 from climada_petals.engine.supplychain.mriot_handling import lexico_reindex
-
-# Replace by `from typing import Self` when python 3.11+ is the min required version.
 
 __all__ = ["DirectShocksSet", "IndirectCostModel", "BoARIOModel"]
 
@@ -58,7 +55,6 @@ from climada_petals.engine.supplychain.utils import (
     _thin_to_wide,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
@@ -68,12 +64,13 @@ VA_NAME = "value added"
 """Index name for value added"""
 
 SIMULATION_LENGTH_BUFFER = 365
+"""Default buffer for BoARIO simulation length (in days)"""
 
 
 class DirectShocksSet:
-    """DirectShocksSetclass.
+    """DirectShocksSet class
 
-    The DirectShocksSetclass provides methods for 'translating' an Impact and Exposure into
+    The DirectShocksSet class provides methods for 'translating' Impact and Exposure objects into
     economic shocks, corresponding to a specific MRIOT table, from which indirect economic
     costs can be computed.
 
@@ -82,53 +79,45 @@ class DirectShocksSet:
 
     mriot_name: str
             The name of the MRIOT defining the typology of assets.
-
-    mriot_sectors: list[str]
+    mriot_sectors: pd.Index
             The list of possible sectors.
-
-    mriot_regions: list[str]
+    mriot_regions: pd.Index
             The list of possible regions.
-
     name: str, default "unnamed"
-            A name to identify the object.
-
+            A name to identify the object. For convenience only.
+    monetary_factor: int
+            The monetary factor of the correponding MRIOT.
     exposure_assets: pd.Series
-            Exposure translated in the region/sector typology of the MRIOT. The index of the Series is a subset
-            of the possible (region, sector).
-
+            Exposure translated in the region/sector typology of the MRIOT. The index of the Series
+            are the possible (region, sector).
     impacted_assets: pd.DataFrame
-            Impact translated in the region/sector typology of the MRIOT. The columns index of the DataFrame is a subset
-            of the possible (region, sector), and the row index correspond to event_ids of the Impact.
-
-    event_dates: np.array
-            Array of the dates of the events, as ordinals.
+            Impact translated in the region/sector typology of the MRIOT. The columns index are the possible (region, sector),
+            and the row index correspond to event_ids of the Impact.
+    event_dates: pd.Series
+            Series of the dates of the events, as ordinals, with event ids as index.
 
     """
 
     def __init__(
         self,
         mriot_name: str,
-        mriot_sectors: list[str],
-        mriot_regions: list[str],
+        mriot_sectors: pd.Index,
+        mriot_regions: pd.Index,
         exposure_assets: pd.Series,
         impacted_assets: pd.DataFrame,
         event_dates: np.ndarray,
         monetary_factor: int,
         shock_name: str = "unnamed",
     ) -> None:
+        # Sanity checks
+        if not isinstance(exposure_assets, pd.Series):
+            raise ValueError("Exposure assets must be a pandas Series")
+
         self.mriot_sectors = mriot_sectors
         self.mriot_regions = mriot_regions
         self.mriot_industries = pd.MultiIndex.from_product(
             [self.mriot_regions, self.mriot_sectors], names=["region", "sector"]
         )
-        self.event_ids = impacted_assets.index
-        self.mriot_name = mriot_name
-        self.monetary_factor = monetary_factor
-        self.name = shock_name
-
-        # Sanity checks
-        if not isinstance(exposure_assets, pd.Series):
-            raise ValueError("Exposure assets must be a pandas Series")
 
         if not (
             not_present := exposure_assets.index.difference(self.mriot_industries)
@@ -147,6 +136,7 @@ class DirectShocksSet:
                 f"Impacted assets columns do not match MRIOT industries.\nNot matching: {not_present}"
             )
 
+        self.event_ids = impacted_assets.index
         if not event_dates.size == self.event_ids.size:
             raise ValueError(
                 f"Number of events mismatch between dates ({event_dates.size} events) and impacted assets ({self.event_ids.size} events)"
@@ -158,6 +148,10 @@ class DirectShocksSet:
             warnings.warn(
                 f"Some impacted assets do not have a corresponding exposure value ({not_present}). The impact will not be considered."
             )
+
+        self.mriot_name = mriot_name
+        self.monetary_factor = monetary_factor
+        self.name = shock_name
 
         self.exposure_assets = _thin_to_wide(exposure_assets, self.mriot_industries)
         self.exposure_assets.sort_index(inplace=True)
@@ -176,6 +170,7 @@ class DirectShocksSet:
         event_dates: np.ndarray,
         shock_name: str,
     ):
+        mriot = lexico_reindex(mriot)
         return cls(
             mriot.name,
             mriot.get_sectors(),
@@ -188,9 +183,9 @@ class DirectShocksSet:
         )
 
     @property
-    def relative_impact(self):
+    def relative_impact(self) -> pd.DataFrame:
         """The ratio of impacted assets over total assets (0. if total assets are 0.)."""
-        return (self.impacted_assets / self.exposure_assets).fillna(0.0) * (
+        return (self.impacted_assets / self.exposure_assets).fillna(0.0).replace([np.inf, -np.inf], 0) * (
             self.exposure_assets > 0
         )
 
@@ -200,14 +195,15 @@ class DirectShocksSet:
         mriot: pymrio.IOSystem,
         exposure: Exposures,
         impact: Impact,
-        shock_name: str,
         affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
         impact_distribution: dict[str, float] | pd.Series | None,
+        shock_name: str|None = None,
         exp_value_col: str = "value",
+        custom_mriot:bool = False,
     ):
-        """Build a DirectShocksSetfrom an MRIOT, Exposure and Impact objects.
+        """Build a DirectShocksSet from MRIOT, Exposure and Impact objects.
 
-        This method translates both the given Exposure and Impact objects to the MRIOT typology.
+        This method translates both the given Exposure and Impact objects to the MRIOT typology.pd.Series
         First, it aggregates exposure values by `region_id` and then maps them to the
         regions of the given mriot. Assets are then distributed to the
         different sectors specified by `affected_sectors`.
@@ -220,6 +216,68 @@ class DirectShocksSet:
             The MRIOT to use for the typology of region and sectors.
         exposure : Exposures
             The Exposures object to use to derive total assets from.
+        impact : Impact
+            The Impact object to derive the impact on assets from.
+        shock_name : str | None
+            An optional name to identify the object, defaults to "unnamed".
+        affected_sectors : Iterable[str] | dict[str, float] | pd.Series | Literal["all"]
+            The sectors of the MRIOT that are impacted. If given as a
+            collection of string, or `"all"`, then the total assets of the
+            region are distributed proportionally to each sectors gross output.
+            A dictionary `sector:share` can also be passed to specify which
+            share of the total regional assets should be distributed to each
+            sector.
+        impact_distribution : dict[str, float] | pd.Series, optional
+            This argument specify how the impact per region should be
+            distributed to the impacted sectors. Using `None` will distribute
+            proportionally to each sectors gross output in the MRIOT. A
+            dictionary in the form `sector:share` or similarly a `Series` can
+            be used to specify a custom distribution.
+        exp_value_col : str
+            The name of the column of the Exposure data representing the value
+            of assets in each centroids.
+        custom_mriot : bool
+            Whether to consider the MRIOT as a custom one (skips name checking), defaults to False.
+            Note that its regions has to be ISO3 countries name for it to work.
+
+        """
+        mriot = lexico_reindex(mriot)
+        exp = translate_exp_to_regions(exposure, mriot_name=mriot.name, custom_mriot=custom_mriot)
+        exposure_assets = translate_exp_to_sectors(
+            exp, affected_sectors=affected_sectors, mriot=mriot, value_col=exp_value_col
+        )
+        return cls.from_assets_and_imp(
+            mriot,
+            exposure_assets,
+            impact,
+            shock_name,
+            affected_sectors,
+            impact_distribution,
+            custom_mriot
+        )
+
+    @classmethod
+    def from_assets_and_imp(
+        cls,
+        mriot: pymrio.IOSystem,
+        exposure_assets: pd.Series,
+        impact: Impact,
+        shock_name: str,
+        affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
+        impact_distribution: dict[str, float] | pd.Series | None,
+        custom_mriot:bool = False
+    ):
+        """Build a DirectShocksSetfrom an MRIOT, assets Series, and Impact objects.
+
+        This method translates the given Impact object to the MRIOT typology
+        (see :py:meth:`from_exp_and_imp`).
+
+        Parameters
+        ----------
+        mriot : pymrio.IOSystem
+            The MRIOT to use for the typology of region and sectors.
+        exposure_assets : pd.Series
+            A pandas `Series` with (region,sector) as index and assets value.
         impact : Impact
             The Impact object to derive the impact on assets from.
         shock_name : str
@@ -237,74 +295,18 @@ class DirectShocksSet:
             proportionally to each sectors gross output in the MRIOT. A
             dictionary in the form `sector:share` or similarly a `Series` can
             be used to specify a custom distribution.
-        exp_value_col : str
-            The name of the column of the Exposure data representing the value
-            of assets in each centroids.
+        custom_mriot : bool
+            Whether to consider the MRIOT as a custom one (skips name checking), defaults to False.
+            Note that its regions has to be ISO3 countries name for it to work.
 
         """
-        exp = translate_exp_to_regions(exposure, mriot_name=mriot.name)
-        exposure_assets = translate_exp_to_sectors(
-            exp, affected_sectors=affected_sectors, mriot=mriot, value_col=exp_value_col
-        )
-        return cls.from_assets_and_imp(
-            mriot,
-            exposure_assets,
-            impact,
-            shock_name,
-            affected_sectors,
-            impact_distribution,
-        )
-
-    @classmethod
-    def from_assets_and_imp(
-        cls,
-        mriot: pymrio.IOSystem,
-        exposure_assets: pd.Series,
-        impact: Impact,
-        shock_name: str,
-        affected_sectors: Iterable[str] | dict[str, float] | pd.Series | Literal["all"],
-        impact_distribution: dict[str, float] | pd.Series | None,
-    ):
-        """Build a DirectShocksSetfrom an MRIOT, assets Series, and Impact objects.
-
-        This method translates the given Impact object to the MRIOT typology
-        (see :py:meth:`from_exp_and_imp`).
-
-        Parameters
-        ----------
-        mriot : pymrio.IOSystem
-            The MRIOT to use for the typology of region and sectors.
-        exposure_assets : pd.Series
-            A pandas `Series` with (region,sector) as index and assets value.
-        impact : Impact
-            The Impact object to derive the impact on assets from.
-        shock_name : str
-            An optional name to identify the object.
-        affected_sectors : Iterable[str] | dict[str, float] | Literal["all"]
-            The sectors of the MRIOT that are impacted. If given as a
-            collection of string, or `"all"`, then the total assets of the
-            region are distributed proportionally to each sectors gross output.
-            A dictionnary `sector:share` can also be passed to specify which
-            share of the total regional assets should be distributed to each
-            sector.
-        impact_distribution : dict[str, float] | pd.Series, optional
-            This argument specify how the impact per region should be
-            distributed to the impacted sectors. Using `None` will distribute
-            proportionally to each sectors gross output in the MRIOT. A
-            dictionnary in the form `sector:share` or similarly a `Series` can
-            be used to specify a custom distribution.
-        exp_value_col : str
-            The name of the column of the Exposure data representing the value
-            of assets in each centroids.
-
-        """
-
+        mriot = lexico_reindex(mriot)
         event_dates = impact.date
 
         # get regional impact in MRIOT format
         impacted_assets = impact.impact_at_reg()
         impacted_assets = impacted_assets.loc[:, (impacted_assets != 0).any()]
-        impacted_assets = translate_imp_to_regions(impacted_assets, mriot)
+        impacted_assets = translate_imp_to_regions(impacted_assets, mriot, custom_mriot=custom_mriot)
 
         # Setup distribution toward sectors
         if isinstance(affected_sectors, str) and affected_sectors == "all":
@@ -314,10 +316,8 @@ class DirectShocksSet:
             # Default uses production distribution across sectors, region.
             impact_distribution = (
                 mriot.x.loc[
-                    pd.IndexSlice[impacted_assets.columns, affected_sectors], "indout"
+                    pd.IndexSlice[impacted_assets.columns, affected_sectors], mriot.x.columns[0]
                 ]
-                .groupby(level=0)
-                .transform(lambda x: x / x.sum())
             )
 
         if isinstance(impact_distribution, dict):
@@ -325,6 +325,8 @@ class DirectShocksSet:
 
         if not isinstance(impact_distribution, pd.Series):
             raise ValueError(f"Impact_distribution could not be converted to a Series")
+
+        impact_distribution = impact_distribution.sort_index()
 
         impacted_assets = distribute_reg_impact_to_sectors(
             impacted_assets, impact_distribution
@@ -423,7 +425,6 @@ class DirectShocksSet:
     @staticmethod
     def _merge_imp_assets(imp_assets: Sequence[pd.DataFrame]):
         """Merges impacted assets together (summing impacts on same industries)."""
-        # Note that merging shocks on same sector is not possible.
         merged_imp_assets = pd.concat(
             imp_assets,
             join="outer",
@@ -572,15 +573,11 @@ class IndirectCostModel(ABC):
     direct_shocks : DirectShocksSet or None, optional
         The direct shocks to apply to the model. If provided, the model will
         initialize with these shocks. Default is None.
-    conversion_factor : float, optional
-        A factor used to convert the monetary values in the model. Default is 1.0.
 
     Attributes
     ----------
     mriot : pymrio.IOSystem
         The Multi-Regional Input-Output System used in the model.
-    conversion_factor : float
-        An optional conversion factor for monetary values.
     direct_shocks : DirectShocksSet or None
         The direct shocks applied to the model. None if no shocks have been applied.
 
@@ -590,11 +587,9 @@ class IndirectCostModel(ABC):
         self,
         mriot: pymrio.IOSystem,
         direct_shocks: DirectShocksSet | None = None,
-        conversion_factor: float = 1.0,
     ) -> None:
         self.mriot = mriot
-        self.conversion_factor = conversion_factor
-        self.direct_shock = None
+        self.direct_shocks = None
         if direct_shocks is not None:
             self.shock_model_with(direct_shocks)
 
@@ -642,17 +637,15 @@ class StaticIOModel(IndirectCostModel):
     """
     Static Input-Output Model for analyzing indirect economic impacts.
 
-    Extends the IndirectCostModel by providing methods to calculate
+    Extends and makes concrete the IndirectCostModel abstract class by providing methods to calculate
     degraded economic metrics and indirect impacts using Leontief and Ghosh models.
 
     Parameters
     ----------
     mriot : pymrio.IOSystem
         The Multi-Regional Input-Output System used in the model.
-    direct_shock : DirectShocksSet or None, optional
+    direct_shocks : DirectShocksSet or None, optional
         The direct shocks to apply to the model. Default is None.
-    conversion_factor : float, optional
-        A factor used to convert the monetary values in the model. Default is 1.0.
 
     Attributes
     ----------
@@ -660,22 +653,19 @@ class StaticIOModel(IndirectCostModel):
         The Multi-Regional Input-Output System used in the model.
     direct_shocks : DirectShocksSet or None
         The direct shocks applied to the model. None if no shocks have been applied.
-    conversion_factor : float
-        The conversion factor for monetary values.
     """
 
     def __init__(
         self,
         mriot: pymrio.IOSystem,
-        direct_shock: DirectShocksSet | None = None,
-        conversion_factor: float = 1,
+        direct_shocks: DirectShocksSet | None = None,
     ) -> None:
-        super().__init__(mriot, direct_shock, conversion_factor)
+        super().__init__(mriot, direct_shocks)
 
     @property
     def value_added(self) -> pd.Series:
         """
-        Calculate the value added from the MRIOT.
+        Calculates and returns the value added from the MRIOT.
 
         Returns
         -------
@@ -687,7 +677,8 @@ class StaticIOModel(IndirectCostModel):
     @property
     def final_demand(self) -> pd.Series:
         """
-        Retrieve the final demand from the MRIOT.
+        Retrieves the (total) final demand addressed to
+        each sectors from the MRIOT.
 
         Returns
         -------
@@ -697,9 +688,10 @@ class StaticIOModel(IndirectCostModel):
         return self.mriot.Y.sum(1)
 
     @property
-    def degraded_value_added(self) -> pd.Series:
+    def degraded_value_added(self) -> pd.DataFrame | pd.Series:
         """
-        Calculate the degraded value added considering direct shocks.
+        Calculates and returns the degraded value added considering
+        the direct shocks.
 
         Returns
         -------
@@ -713,9 +705,10 @@ class StaticIOModel(IndirectCostModel):
             return self.value_added
 
     @property
-    def degraded_final_demand(self) -> pd.Series:
+    def degraded_final_demand(self) -> pd.DataFrame | pd.Series:
         """
-        Calculate the degraded final demand considering direct shocks.
+        Calculates and returns the degraded final demand considering
+        the direct shocks.
 
         Returns
         -------
@@ -734,7 +727,7 @@ class StaticIOModel(IndirectCostModel):
         self, event_ids: list[int] | pd.Index | None = None
     ) -> pd.DataFrame:
         """
-        Compute indirect impacts using the Leontief model.
+        Computes indirect impacts using the Leontief model.
 
         Parameters
         ----------
@@ -754,7 +747,7 @@ class StaticIOModel(IndirectCostModel):
                     pymrio.calc_x_from_L(
                         self.mriot.L, self.degraded_final_demand.loc[event_id]
                     )
-                )["indout"]
+                )[self.mriot.x.columns[0]]
                 for event_id in event_ids
             ]
             return pd.DataFrame(res_leontief, index=event_ids)
@@ -766,7 +759,7 @@ class StaticIOModel(IndirectCostModel):
 
     def calc_ghosh(self, event_ids: list[int] | pd.Index | None = None) -> pd.DataFrame:
         """
-        Compute indirect impacts using the Ghosh model.
+        Computes indirect impacts using the Ghosh model.
 
         Parameters
         ----------
@@ -793,24 +786,27 @@ class StaticIOModel(IndirectCostModel):
             return pd.DataFrame()
 
     def calc_indirect_impacts(
-        self, event_ids: list[int] | pd.Index | None = None
+            self, event_ids: list[int] | pd.Index | Literal["with_impact"] | None = "with_impact"
     ) -> pd.DataFrame | None:
         """
-        Calculate detailed indirect impacts using both Leontief and Ghosh models.
+        Calculates detailed indirect impacts using both Leontief and Ghosh models.
 
         Parameters
         ----------
-        event_ids : list[int] or pd.Index or None, optional
-            A list of event IDs to calculate impacts for. If None, all events are used.
+        event_ids : "with_impact" or list[int] or pd.Index or None, default "with_impact"
+            A list of event IDs to calculate impacts for. Only events with non null impacts by default. If None, all events are used.
 
         Returns
         -------
         pd.DataFrame or None
             A DataFrame containing indirect impacts with various metrics and methods,
-            or None if no shocks are defined.
+            or None if no shocks are defined for the model.
         """
 
         def create_df_metrics(event_ids, method, indout, abs_shock):
+            if event_ids == "with_impact":
+                event_ids = self.direct_shocks.event_ids_with_impact
+
             if method == "leontief":
                 df = self.calc_leontief(event_ids)
             elif method == "ghosh":
@@ -820,6 +816,7 @@ class StaticIOModel(IndirectCostModel):
 
             if event_ids is not None:
                 abs_shock = abs_shock.loc[event_ids]
+
             # Create absolute production change dataframe
             df_abs = df.melt(ignore_index=False)
             df_abs["metric"] = "absolute production change"
@@ -855,11 +852,12 @@ class StaticIOModel(IndirectCostModel):
         if self.direct_shocks is None:
             LOGGER.warning("The model has no shock defined, returning None.")
             return None
+
         df_leontief_rel, df_leontief_abs, df_leontief_shock, df_leontief_sec_shock = (
             create_df_metrics(
                 event_ids,
                 "leontief",
-                self.mriot.x["indout"],
+                self.mriot.x.iloc[:,0],
                 self.direct_shocks.impacted_assets,
             )
         )
@@ -867,7 +865,7 @@ class StaticIOModel(IndirectCostModel):
             create_df_metrics(
                 event_ids,
                 "ghosh",
-                self.mriot.x["indout"],
+                self.mriot.x.iloc[:,0],
                 self.direct_shocks.impacted_assets,
             )
         )
@@ -898,7 +896,8 @@ class BoARIOModel(IndirectCostModel):
     """
     BoARIO Model for simulating the economic impacts of shocks using the ARIO model.
 
-    Extends the IndirectCostModel by integrating the ARIOPsiModel and Simulation classes
+    Extends and makes concrete the IndirectCostModel abstract class
+    by integrating the ARIOPsiModel and Simulation classes
     to simulate the effects of direct shocks over time, with customizable event parameters.
 
     Parameters
@@ -925,6 +924,11 @@ class BoARIOModel(IndirectCostModel):
         The simulation object used to run the model.
     direct_shocks : DirectShocksSet or None
         The direct shocks applied to the model.
+
+    Notes
+    -----
+    We highly recommend users to go through `BoARIO's documentation <https://spjuhel.github.io/BoARIO>`
+
     """
 
     def __init__(
@@ -936,7 +940,6 @@ class BoARIOModel(IndirectCostModel):
         event_kwargs: Dict[str, Any] | None = None,
     ) -> None:
         self.mriot = mriot
-        self.conversion_factor = 1.0
 
         # Set the different parameters from defaults and user given.
         default_event_params = {"recovery_tau": 180, "rebuild_tau": 180}
@@ -962,7 +965,6 @@ class BoARIOModel(IndirectCostModel):
             **sim_params,
         )
 
-        #
         self.shock_model_with(direct_shocks, event_kwargs=event_params)
 
     def shock_model_with(
@@ -985,12 +987,14 @@ class BoARIOModel(IndirectCostModel):
             - "merge": Merge shocks by summing their impacts.
         event_kwargs : dict, optional
             A dictionary of event-specific parameters to be passed to event creation.
+            See BoARIO documentation on `Events <https://spjuhel.github.io/BoARIO/tutorials/boario-events.html>`
         """
         default_boario_event_params = {"recovery_tau": 180, "rebuild_tau": 180}
         event_params = {**default_boario_event_params, **(event_kwargs or {})}
         if direct_shocks is not None:
             super().shock_model_with(direct_shocks, combine_mode)
         if self.direct_shocks is not None:
+            skipped = []
             for date, event_id in zip(
                 self.direct_shocks.event_dates, self.direct_shocks.event_ids
             ):
@@ -1009,9 +1013,13 @@ class BoARIOModel(IndirectCostModel):
                     )
                     self.sim.add_event(ev)
                 else:
-                    LOGGER.info(
-                        f"Impact for event {event_id} is too small to have an effect, skipping it for efficiency."
+                    skipped.append(event_id)
+
+
+            LOGGER.warning(
+                        f"Impact for following events was too small to have an effect, skipping them for efficiency: {skipped}"
                     )
+
         else:
             self.direct_shocks = None
 

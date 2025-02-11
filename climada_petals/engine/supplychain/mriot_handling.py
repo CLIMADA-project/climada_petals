@@ -20,28 +20,26 @@ MRIOT handler (download, parsing, IO).
 """
 
 from collections.abc import Iterable
-from typing import cast
+import copy
+from typing import cast, Literal
 import warnings
 import numpy as np
 import pathlib
-from climada_petals.engine.supplychain import LOGGER
 import pymrio
 import pandas as pd
 import zipfile
+import re
 
 from climada import CONFIG
 from climada.util import files_handler as u_fh
-import re
-
+from climada_petals.engine.supplychain import LOGGER
 
 MRIOT_DIRECTORY = CONFIG.engine.supplychain.local_data.mriot.dir()
 """Directory where Multi-Regional Input-Output Tables (MRIOT) are downloaded."""
 
-MRIOT_TYPE_REGEX = (
-    r"(?P<mrio_type>OECD23|EXIOBASE3|EORA26|WIOD16)"
- )
+MRIOT_TYPE_REGEX = r"(?P<mrio_type>OECD23|EXIOBASE3|EORA26|WIOD16)"
 MRIOT_YEAR_REGEX = r"(?P<mrio_year>\d{4})"
-MRIOT_FULLNAME_REGEX = re.compile("{}-{}".format(MRIOT_TYPE_REGEX,MRIOT_YEAR_REGEX))
+MRIOT_FULLNAME_REGEX = re.compile("{}-{}".format(MRIOT_TYPE_REGEX, MRIOT_YEAR_REGEX))
 
 MRIOT_DEFAULT_FILENAME = {
     "EXIOBASE3": lambda year: f"IOT_{year}_ixi.zip",
@@ -57,11 +55,19 @@ MRIOT_MONETARY_FACTOR = {
     "EUREGIO": 1000000,
 }
 
+MRIOT_BASENAME = {
+    "EXIOBASE3": "exiobase3_ixi",
+    "EORA26": "eora26",
+    "WIOD16": "wiod_v2016",
+    "OECD23": "icio_v2023",
+}
+
+
 MRIOT_COUNTRY_CONVERTER_CORR = {
-    "EXIOBASE3" : "EXIO3",
-    "WIOD16" : "WIOD",
-    "EORA26" : "Eora",
-    "OECD23" : "ISO3"
+    "EXIOBASE3": "EXIO3",
+    "WIOD16": "WIOD",
+    "EORA26": "Eora",
+    "OECD23": "ISO3",
 }
 
 WIOD_FILE_LINK = CONFIG.engine.supplychain.resources.wiod16.str()
@@ -86,51 +92,54 @@ _ATTR_LIST = [
     "__basic__",
 ]
 
-ICIO23_sectors_mapping = {'A01_02': 'Agriculture, hunting, forestry',
- 'A03': 'Fishing and aquaculture',
- 'B05_06': 'Mining and quarrying, energy producing products',
- 'B07_08': 'Mining and quarrying, non-energy producing products',
- 'B09': 'Mining support service activities',
- 'C10T12': 'Food products, beverages and tobacco',
- 'C13T15': 'Textiles, textile products, leather and footwear',
- 'C16': 'Wood and products of wood and cork',
- 'C17_18': 'Paper products and printing',
- 'C19': 'Coke and refined petroleum products',
- 'C20': 'Chemical and chemical products',
- 'C21': 'Pharmaceuticals, medicinal chemical and botanical products',
- 'C22': 'Rubber and plastics products',
- 'C23': 'Other non-metallic mineral products',
- 'C24': 'Basic metals',
- 'C25': 'Fabricated metal products',
- 'C26': 'Computer, electronic and optical equipment',
- 'C27': 'Electrical equipment',
- 'C28': 'Machinery and equipment, nec ',
- 'C29': 'Motor vehicles, trailers and semi-trailers',
- 'C30': 'Other transport equipment',
- 'C31T33': 'Manufacturing nec; repair and installation of machinery and equipment',
- 'D': 'Electricity, gas, steam and air conditioning supply',
- 'E': 'Water supply; sewerage, waste management and remediation activities',
- 'F': 'Construction',
- 'G': 'Wholesale and retail trade; repair of motor vehicles',
- 'H49': 'Land transport and transport via pipelines',
- 'H50': 'Water transport',
- 'H51': 'Air transport',
- 'H52': 'Warehousing and support activities for transportation',
- 'H53': 'Postal and courier activities',
- 'I': 'Accommodation and food service activities',
- 'J58T60': 'Publishing, audiovisual and broadcasting activities',
- 'J61': 'Telecommunications',
- 'J62_63': 'IT and other information services',
- 'K': 'Financial and insurance activities',
- 'L': 'Real estate activities',
- 'M': 'Professional, scientific and technical activities',
- 'N': 'Administrative and support services',
- 'O': 'Public administration and defence; compulsory social security',
- 'P': 'Education',
- 'Q': 'Human health and social work activities',
- 'R': 'Arts, entertainment and recreation',
- 'S': 'Other service activities',
- 'T': 'Activities of households as employers; undifferentiated goods- and services-producing activities of households for own use'}
+ICIO23_sectors_mapping = {
+    "A01_02": "Agriculture, hunting, forestry",
+    "A03": "Fishing and aquaculture",
+    "B05_06": "Mining and quarrying, energy producing products",
+    "B07_08": "Mining and quarrying, non-energy producing products",
+    "B09": "Mining support service activities",
+    "C10T12": "Food products, beverages and tobacco",
+    "C13T15": "Textiles, textile products, leather and footwear",
+    "C16": "Wood and products of wood and cork",
+    "C17_18": "Paper products and printing",
+    "C19": "Coke and refined petroleum products",
+    "C20": "Chemical and chemical products",
+    "C21": "Pharmaceuticals, medicinal chemical and botanical products",
+    "C22": "Rubber and plastics products",
+    "C23": "Other non-metallic mineral products",
+    "C24": "Basic metals",
+    "C25": "Fabricated metal products",
+    "C26": "Computer, electronic and optical equipment",
+    "C27": "Electrical equipment",
+    "C28": "Machinery and equipment, nec ",
+    "C29": "Motor vehicles, trailers and semi-trailers",
+    "C30": "Other transport equipment",
+    "C31T33": "Manufacturing nec; repair and installation of machinery and equipment",
+    "D": "Electricity, gas, steam and air conditioning supply",
+    "E": "Water supply; sewerage, waste management and remediation activities",
+    "F": "Construction",
+    "G": "Wholesale and retail trade; repair of motor vehicles",
+    "H49": "Land transport and transport via pipelines",
+    "H50": "Water transport",
+    "H51": "Air transport",
+    "H52": "Warehousing and support activities for transportation",
+    "H53": "Postal and courier activities",
+    "I": "Accommodation and food service activities",
+    "J58T60": "Publishing, audiovisual and broadcasting activities",
+    "J61": "Telecommunications",
+    "J62_63": "IT and other information services",
+    "K": "Financial and insurance activities",
+    "L": "Real estate activities",
+    "M": "Professional, scientific and technical activities",
+    "N": "Administrative and support services",
+    "O": "Public administration and defence; compulsory social security",
+    "P": "Education",
+    "Q": "Human health and social work activities",
+    "R": "Arts, entertainment and recreation",
+    "S": "Other service activities",
+    "T": "Activities of households as employers; undifferentiated goods- and services-producing activities of households for own use",
+}
+
 
 def lexico_reindex(mriot: pymrio.IOSystem) -> pymrio.IOSystem:
     """Re-index IOSystem lexicographically.
@@ -145,20 +154,56 @@ def lexico_reindex(mriot: pymrio.IOSystem) -> pymrio.IOSystem:
     Returns
     -------
     pymrio.IOSystem
-        The sorted IOSystem.
+        A sorted copy of the IOSystem.
+    """
+    mriot = copy.deepcopy(mriot)
+    if getattr("mriot", "_sorted", None):
+        return mriot
+    else:
+        for matrix_name in ["Z", "Y", "x", "A", "As", "G", "L"]:
+            matrix = getattr(mriot, matrix_name, None)
+            if matrix is not None:
+                setattr(
+                    mriot,
+                    matrix_name,
+                    matrix.reindex(sorted(matrix.index)).sort_index(axis=1),
+                )
+        mriot._sorted = True
+        return mriot
+
+
+def build_exio3_from_zip(
+    mrio_zip: str | pathlib.Path,
+    remove_attributes: bool = True,
+    aggregate_ROW: bool = True,
+) -> pymrio.IOSystem:
+    """Creates an EXIOBASE3 IOSystem from a zip file.
+
+    This function mainly relies on `pymrio.parse_exiobase3()`. Optionaly and by
+    default, it also removes attributes that can be memory expensive and not
+    used within Climada context, and aggregates the EXIOBASE3 world regions to
+    one unique ROW region.
+    It also:
+    - adds several new attributes to the object such as `monetary_factor` and `year` for internal mechanics
+    - sorts the indexes of the MRIOT.
+    - computes missing parts or the MRIOT
+
+    Parameters
+    ----------
+    mrio_zip : str | pathlib.Path
+        The path to the EXIOBASE3 zip file.
+    remove_attributes : bool, default True.
+        Whether to remove unnecessary attribute which can be memory expensive.
+    aggregate_ROW : bool, default True.
+        Whether to aggregate `["WA", "WE", "WF", "WL", "WM"]` to `"ROW"`.
+
+    Returns
+    -------
+    pymrio.IOSystem
+        An IOSystem corresponding to the EXIOBASE3 MRIOT.
+
     """
 
-    for matrix_name in ["Z", "Y", "x", "A", "As", "G", "L"]:
-        matrix = getattr(mriot, matrix_name, None)
-        if matrix is not None:
-            setattr(
-                mriot, matrix_name, matrix.reindex(sorted(matrix.index)).sort_index(axis=1)
-            )
-
-    return mriot
-
-
-def build_exio3_from_zip(mrio_zip: str, remove_attributes=True, aggregate_ROW=True):
     mrio_path = pathlib.Path(mrio_zip)
     mrio_pym = pymrio.parse_exiobase3(path=mrio_path)
     mrio_pym = cast(pymrio.IOSystem, mrio_pym)  # Just for the LSP
@@ -170,8 +215,6 @@ def build_exio3_from_zip(mrio_zip: str, remove_attributes=True, aggregate_ROW=Tr
             if at not in attr:
                 delattr(mrio_pym, at)
         LOGGER.info("Done")
-
-    mrio_pym.meta.change_meta("name", "EXIOBASE3")
 
     if aggregate_ROW:
         LOGGER.info("Aggregating the different ROWs regions together")
@@ -198,14 +241,14 @@ def build_exio3_from_zip(mrio_zip: str, remove_attributes=True, aggregate_ROW=Tr
     LOGGER.info("Done")
 
     setattr(mrio_pym, "monetary_factor", MRIOT_MONETARY_FACTOR["EXIOBASE3"])
-    setattr(mrio_pym, "basename", "exiobase3_ixi")
+    setattr(mrio_pym, "basename", MRIOT_BASENAME["EXIOBASE3"])
     setattr(mrio_pym, "year", mrio_pym.meta.description[-4:])
     setattr(mrio_pym, "sectors_agg", "full_sectors")
     setattr(mrio_pym, "regions_agg", "full_regions")
     # Also put it in meta for saving
     mrio_pym.meta.change_meta("monetary_factor", MRIOT_MONETARY_FACTOR["EXIOBASE3"])
     mrio_pym.meta.change_meta("year", mrio_pym.meta.description[-4:])
-    mrio_pym.meta.change_meta("basename", "exiobase3_ixi")
+    mrio_pym.meta.change_meta("basename", MRIOT_BASENAME["EXIOBASE3"])
     mrio_pym.meta.change_meta("sectors_agg", "full_sectors")
     mrio_pym.meta.change_meta("regions_agg", "full_regions")
     return mrio_pym
@@ -213,10 +256,39 @@ def build_exio3_from_zip(mrio_zip: str, remove_attributes=True, aggregate_ROW=Tr
 
 def build_eora_from_zip(
     mrio_zip: str,
-    reexport_treatment=False,
-    inv_treatment=True,
-    remove_attributes=True,
-):
+    reexport_treatment: bool = False,
+    inv_treatment: bool = True,
+    remove_attributes: bool = True,
+) -> pymrio.IOSystem:
+    """Creates an EORA26 IOSystem from a zip file.
+
+    This function mainly relies on `pymrio.parse_eora26()`. Optionaly and by
+    default, it also removes attributes that can be memory expensive and not
+    used within Climada context. It also allows to apply some "fixes" to the EORA26 table,
+    such as merging the "reexport" sector or removing possible negative final demands.
+    Further, it also:
+    - adds several new attributes to the object such as `monetary_factor` and `year` for internal mechanics
+    - sorts the indexes of the MRIOT.
+    - computes missing parts or the MRIOT
+
+    Parameters
+    ----------
+
+    mrio_zip : str
+        The path to the eora26 zip file.
+    reexport_treatment : bool, default False
+        Whether to merge reexport sector with the "other" sector.
+    inv_treatment : bool, default True
+        Whether to clip negative final demand to 0 (due to Change in inventories).
+    remove_attributes : bool, default True
+        Whether to remove unnecessary attribute which can be memory expensive.
+    Returns
+    -------
+    pymrio.IOSystem
+        An IOSystem corresponding to the EORA26 MRIOT.
+
+    """
+
     mrio_path = pathlib.Path(mrio_zip)
     mrio_pym = pymrio.parse_eora26(path=mrio_path)
     LOGGER.info("Removing unnecessary IOSystem attributes")
@@ -229,7 +301,7 @@ def build_eora_from_zip(
     LOGGER.info("Done")
 
     setattr(mrio_pym, "monetary_factor", MRIOT_MONETARY_FACTOR["EORA26"])
-    setattr(mrio_pym, "basename", "eora26")
+    setattr(mrio_pym, "basename", MRIOT_BASENAME["EORA26"])
     setattr(mrio_pym, "year", re.search(MRIOT_YEAR_REGEX, mrio_path.name)["mrio_year"])
     setattr(mrio_pym, "sectors_agg", "full_sectors")
     setattr(mrio_pym, "regions_agg", "full_regions")
@@ -238,7 +310,7 @@ def build_eora_from_zip(
     mrio_pym.meta.change_meta(
         "year", re.search(MRIOT_YEAR_REGEX, mrio_path.name)["mrio_year"]
     )
-    mrio_pym.meta.change_meta("basename", "eora26")
+    mrio_pym.meta.change_meta("basename", MRIOT_BASENAME["EORA26"])
     mrio_pym.meta.change_meta("sectors_agg", "full_sectors")
     mrio_pym.meta.change_meta("regions_agg", "full_regions")
 
@@ -259,12 +331,12 @@ def build_eora_from_zip(
         else:
             raise AttributeError("Y attribute is not set")
 
-    LOGGER.info("Re-indexing lexicographicaly")
-    mrio_pym = lexico_reindex(mrio_pym)
-    LOGGER.info("Done")
-
     LOGGER.info("Computing the missing IO components")
     mrio_pym.calc_all()
+    LOGGER.info("Done")
+
+    LOGGER.info("Re-indexing lexicographicaly")
+    mrio_pym = lexico_reindex(mrio_pym)
     LOGGER.info("Done")
 
     return mrio_pym
@@ -272,7 +344,11 @@ def build_eora_from_zip(
 
 def build_oecd_from_csv(
     mrio_csv: str, year: int | None = None, remove_attributes: bool = True
-):
+) -> pymrio.IOSystem:
+    """This parsing function is put on hold while https://github.com/IndEcol/pymrio/issues/157 is not addressed"""
+    raise ValueError(
+        "Waiting for https://github.com/IndEcol/pymrio/issues/157 to be addressed"
+    )
     mrio_path = pathlib.Path(mrio_csv)
     mrio_pym = pymrio.parse_oecd(path=mrio_path, year=year)
     LOGGER.info("Removing unnecessary IOSystem attributes")
@@ -284,7 +360,7 @@ def build_oecd_from_csv(
                 delattr(mrio_pym, at)
     LOGGER.info("Done")
     setattr(mrio_pym, "monetary_factor", MRIOT_MONETARY_FACTOR["OECD23"])
-    setattr(mrio_pym, "basename", "icio_v2023")
+    setattr(mrio_pym, "basename", MRIOT_BASENAME["OECD23"])
     setattr(mrio_pym, "year", re.search(MRIOT_YEAR_REGEX, mrio_path.name)["mrio_year"])
     setattr(mrio_pym, "sectors_agg", "full_sectors")
     setattr(mrio_pym, "regions_agg", "full_regions")
@@ -293,7 +369,7 @@ def build_oecd_from_csv(
     mrio_pym.meta.change_meta(
         "year", re.search(MRIOT_YEAR_REGEX, mrio_path.name)["mrio_year"]
     )
-    mrio_pym.meta.change_meta("basename", "icio_v2023")
+    mrio_pym.meta.change_meta("basename", MRIOT_BASENAME["OECD23"])
     mrio_pym.meta.change_meta("sectors_agg", "full_sectors")
     mrio_pym.meta.change_meta("regions_agg", "full_regions")
 
@@ -310,6 +386,18 @@ def build_oecd_from_csv(
 
 
 def parse_wiod_v2016(mrio_xlsb: str):
+    """Parse the WIOD 2016 Multi-Regional Input-Output Table from an Excel binary file.
+
+    Parameters
+    ----------
+    mrio_xlsb : str
+        The path to the Excel binary file containing the WIOD 2016 data.
+
+    Returns
+    -------
+    pymrio.IOSystem
+        An IOSystem object corresponding to the parsed WIOD 2016 data.
+    """
     mrio_path = pathlib.Path(mrio_xlsb)
     mriot_df = pd.read_excel(mrio_xlsb, engine="pyxlsb")
     Z, Y, x = parse_mriot_from_df(
@@ -331,7 +419,7 @@ def parse_wiod_v2016(mrio_xlsb: str):
     )
 
     setattr(mrio_pym, "monetary_factor", MRIOT_MONETARY_FACTOR["WIOD16"])
-    setattr(mrio_pym, "basename", "wiod_v2016")
+    setattr(mrio_pym, "basename", MRIOT_BASENAME["WIOD16"])
     setattr(mrio_pym, "year", re.search(MRIOT_YEAR_REGEX, mrio_path.name)["mrio_year"])
     setattr(mrio_pym, "sectors_agg", "full_sectors")
     setattr(mrio_pym, "regions_agg", "full_regions")
@@ -340,13 +428,14 @@ def parse_wiod_v2016(mrio_xlsb: str):
     mrio_pym.meta.change_meta(
         "year", re.search(MRIOT_YEAR_REGEX, mrio_path.name)["mrio_year"]
     )
-    mrio_pym.meta.change_meta("basename", "wiod_v2016")
+    mrio_pym.meta.change_meta("basename", MRIOT_BASENAME["WIOD16"])
     mrio_pym.meta.change_meta("sectors_agg", "full_sectors")
     mrio_pym.meta.change_meta("regions_agg", "full_regions")
 
     LOGGER.info("Computing the missing IO components")
     mrio_pym.calc_all()
     LOGGER.info("Done")
+
     LOGGER.info("Re-indexing lexicographicaly")
     mrio_pym = lexico_reindex(mrio_pym)
     LOGGER.info("Done")
@@ -354,7 +443,12 @@ def parse_wiod_v2016(mrio_xlsb: str):
 
 
 def parse_mriot_from_df(
-    mriot_df, col_iso3, col_sectors, rows_data, cols_data, row_fd_cats=None
+    mriot_df: pd.DataFrame,
+    col_iso3: int,
+    col_sectors: int,
+    rows_data: tuple[int, int],
+    cols_data: tuple[int, int],
+    row_fd_cats: int | None = None,
 ):
     """Build multi-index dataframes of the transaction matrix, final demand and total
        production from a Multi-Regional Input-Output Table dataframe.
@@ -362,9 +456,9 @@ def parse_mriot_from_df(
     Parameters
     ----------
     mriot_df : pandas.DataFrame
-        The Multi-Regional Input-Output Table
+        The Multi-Regional Input-Output Table as a DataFrame
     col_iso3 : int
-        Column's position of regions' iso names
+        Column's position of regions' ISO3 names
     col_sectors : int
         Column's position of sectors' names
     rows_data : (int, int)
@@ -380,6 +474,12 @@ def parse_mriot_from_df(
     row_fd_cats : int
         Integer index of the row containing the
         final demand categories.
+
+    Returns
+    -------
+    (Z, Y, x): tuple[pd.DataFrame,pd.DataFrame,pd.DataFrame]
+        Tuple of 3 Dataframe, respectively containing the intermediate demand matrix Z,
+        the final demand matrix Y and the gross output x.
     """
 
     start_row, end_row = rows_data
@@ -413,15 +513,22 @@ def parse_mriot_from_df(
     return Z, Y, x
 
 
-def download_mriot(mriot_type, mriot_year, download_dir):
+def download_mriot(
+    mriot_type: Literal["EXIOBASE3"] | Literal["WIOD16"] | Literal["OECD23"],
+    mriot_year: int,
+    download_dir: pathlib.Path,
+):
     """Download EXIOBASE3, WIOD16 or OECD23 Multi-Regional Input Output Tables
     for specific years.
 
     Parameters
     ----------
     mriot_type : str
+        The type of MRIOT to download.
     mriot_year : int
+        The specific year to download. Must be available with the specified type.
     download_dir : pathlib.PosixPath
+        Where to download the files.
 
     Notes
     -----
@@ -449,19 +556,38 @@ def download_mriot(mriot_type, mriot_year, download_dir):
             zip_ref.extractall(download_dir)
 
     elif mriot_type == "OECD23":
-        years_groups = ["1995-2000", "2001-2005", "2006-2010", "2011-2015", "2016-2020"]
-        year_group = years_groups[int(np.floor((mriot_year - 1995) / 5))-1]
+
+        # years_groups = ["1995-2000", "2001-2005", "2006-2010", "2011-2015", "2016-2020"]
+        if mriot_year <= 2000:
+            year_group = "1995-2000"
+        elif mriot_year <= 2020:
+            year_group = f"{2001 + (mriot_year - 2001) // 5 * 5}-{2001 + (mriot_year - 2001) // 5 * 5 + 4}"
+        else:
+            raise ValueError(f"{mriot_year} is not a valid OECD23 ICIO mriot year.")
+
+        _fix_oecd_download_problem(download_dir)
 
         pymrio.download_oecd(storage_folder=download_dir, years=year_group)
 
 
-def parse_mriot(mriot_type, downloaded_file, mriot_year, **kwargs):
+def parse_mriot(
+    mriot_type: str, downloaded_file: pathlib.Path, mriot_year: int, **kwargs
+) -> pymrio.IOSystem:
     """Parse EXIOBASE3, WIOD16 or OECD23 MRIOT for specific years
 
     Parameters
     ----------
     mriot_type : str
+        The type of MRIOT to parse.
     downloaded_file : pathlib.PosixPath
+        The path to the files to parse.
+    year: int
+        The year of the MRIOT to parse.
+
+    Returns
+    -------
+    pymrio.IOSystem
+        An IOSystem representing the MRIOT.
 
     Notes
     -----
@@ -470,7 +596,8 @@ def parse_mriot(mriot_type, downloaded_file, mriot_year, **kwargs):
     related pymrio functions were broken at the time of implementation
     of this function.
 
-    Some metadata is rewrote or added to the objects for consistency in usage (name, monetary factor, year).
+    Some metadata is rewrote or added to the objects for consistency
+    in usage, internals (name, monetary factor, year).
     """
 
     if mriot_type == "EXIOBASE3":
@@ -506,9 +633,45 @@ def parse_mriot(mriot_type, downloaded_file, mriot_year, **kwargs):
     return mriot
 
 
-def get_mriot(mriot_type, mriot_year, redownload=False, save=True):
-    # if data were parsed and saved: load them
+def get_mriot(
+    mriot_type: str, mriot_year: int, redownload: bool = False, save: bool = True
+):
+    """Retrieves and optionally saves the Multi-Regional Input-Output Table (MRIOT)
+    for a specified type and year. It handles downloading, parsing, and managing
+    the directory structure for MRIOT files.
+
+    Files are stored in the climada data folder, within a "MRIOT" folder by default.
+
+    Parameters
+    ----------
+    mriot_type : str
+        The type of MRIOT to retrieve (e.g., "OECD23").
+    mriot_year : int
+        The specific year of the MRIOT to retrieve.
+    redownload : bool, optional
+        Indicates whether to force redownload (and parsing) of the data (default is False).
+    save : bool, optional
+        Indicates whether to save the processed MRIOT data (default is True).
+
+    Returns
+    -------
+    pymrio.IOSystem
+        The loaded or newly parsed MRIOT represented as an IOSystem.
+
+    Notes
+    -----
+    The function manages both the downloading of the MRIOT data and the parsing
+    of the data into an appropriate format. If the data for the specified year and
+    type is already available, it will load the existing data unless redownload
+    is set to True. If the data must be parsed, it can optionally be saved
+    to the designated location.
+    """
     downloads_dir = MRIOT_DIRECTORY / mriot_type / "downloads"
+
+    if mriot_type == "OECD23":
+        year_group = f"{2001 + (mriot_year - 2001) // 5 * 5}-{2001 + (mriot_year - 2001) // 5 * 5 + 4}"
+        downloads_dir = downloads_dir / year_group
+
     downloaded_file = downloads_dir / MRIOT_DEFAULT_FILENAME[mriot_type](mriot_year)
     # parsed data directory
     parsed_data_dir = MRIOT_DIRECTORY / mriot_type / str(mriot_year)
@@ -568,9 +731,24 @@ def check_sectors_in_mriot(sectors: Iterable[str], mriot: pymrio.IOSystem) -> No
             f"The following sectors are missing in the MRIOT data: {missing_sectors}"
         )
 
-def _get_coco_MRIOT_name(mriot_name):
+
+def _get_coco_MRIOT_name(mriot_name, is_custom=False):
+    if is_custom:
+        return "ISO3"
+
     match = MRIOT_FULLNAME_REGEX.match(mriot_name)
     if not match:
-        raise ValueError(f"Input string '{mriot_name}' is not in the correct format '<MRIOT-name>_<year>' or not recognized.")
+        raise ValueError(
+            f"Input string '{mriot_name}' is not in the correct format '<MRIOT-name>_<year>' or not recognized."
+        )
+
     mriot_type = match.group("mrio_type")
     return MRIOT_COUNTRY_CONVERTER_CORR[mriot_type]
+
+
+def _fix_oecd_download_problem(download_dir):
+    """Quick fix for https://github.com/IndEcol/pymrio/issues/156"""
+    if download_dir.exists():
+        for fil in download_dir.iterdir():
+            fil.unlink()
+        download_dir.rmdir()
