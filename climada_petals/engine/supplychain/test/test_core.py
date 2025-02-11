@@ -670,11 +670,11 @@ def test_from_assets_and_imp(
     # with the return from distribute_reg_impact_to_sectors
     # and the correct arguments.
     mock_init_with_mriot.assert_called_once_with(
-        mock_mriot,
-        mock_exposure_assets,
-        sector_distributed_impact_case1,
-        mock_impact.date,
-        shock_name,
+        mriot=mock_mriot,
+        exposure_assets=mock_exposure_assets,
+        impacted_assets=sector_distributed_impact_case1,
+        event_dates=mock_impact.date,
+        shock_name=shock_name,
     )
 
     # Case 2
