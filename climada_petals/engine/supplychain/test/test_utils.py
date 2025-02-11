@@ -34,8 +34,10 @@ from climada_petals.engine.supplychain.utils import (
     VA_NAME,
     calc_x_from_G,
     check_sectors_in_mriot,
+    distribute_reg_impact_to_sectors,
     translate_exp_to_regions,
     translate_exp_to_sectors,
+    translate_imp_to_regions,
 )
 
 
@@ -405,7 +407,7 @@ class TestUtils(unittest.TestCase):
         )
 
         # Call the function to translate exposures to regions
-        translated_exp = translate_exp_to_regions(mock_exp, "WIOD")
+        translated_exp = translate_exp_to_regions(mock_exp, "WIOD16-2010")
 
         # Check that the region field has been added and converted correctly
         expected_regions = ["USA", "ROW"]  # Based on region_id [840, 608]
@@ -446,7 +448,7 @@ class TestUtils(unittest.TestCase):
         mock_exp = MagicMock()
 
         # Check that an invalid mriot_type raises an appropriate exception
-        with self.assertRaises(TypeError):
+        with self.assertRaises(ValueError):
             translate_exp_to_regions(mock_exp, "INVALID_MRIOT_TYPE")
 
     def test_translate_exp_to_regions(self):
@@ -455,7 +457,7 @@ class TestUtils(unittest.TestCase):
                 {"region_id": [840, 840, 608, 608], "value": [80, 20, 120, 80]}
             )
         )
-        translated_exp = translate_exp_to_regions(mock_exp, "WIOD")
+        translated_exp = translate_exp_to_regions(mock_exp, "WIOD16-2010")
         region_groups = translated_exp.gdf.groupby("region")
         for _, group in region_groups:
             total_ratio = group["value_ratio"].sum()
@@ -483,7 +485,8 @@ class TestUtils(unittest.TestCase):
                     "column_names": [None],
                 },
                 orient="tight",
-            )
+            ),
+            monetary_factor = 1.
         )
 
         mock_mriot.get_sectors.return_value = pd.Index(["Sector A", "Sector B"])
@@ -514,7 +517,8 @@ class TestUtils(unittest.TestCase):
                     "column_names": [None],
                 },
                 orient="tight",
-            )
+            ),
+            monetary_factor=1.
         )
 
         mock_mriot.get_sectors.return_value = pd.Index(["Sector A", "Sector B"])
@@ -553,7 +557,8 @@ class TestUtils(unittest.TestCase):
                     "column_names": [None],
                 },
                 orient="tight",
-            )
+            ),
+            monetary_factor=1.
         )
 
         mock_mriot.get_sectors.return_value = pd.Index(["Sector A", "Sector B"])
@@ -588,7 +593,8 @@ class TestUtils(unittest.TestCase):
                     "column_names": [None],
                 },
                 orient="tight",
-            )
+            ),
+            monetary_factor=1.
         )
 
         mock_mriot.get_sectors.return_value = pd.Index(["Sector A", "Sector B"])
@@ -638,9 +644,90 @@ class TestUtils(unittest.TestCase):
         with self.assertRaises(ValueError):
             translate_exp_to_sectors(mock_translated_exp, affected_sectors, mock_mriot)
 
-    def test_get_mriot_type(self):
+
+    def test_translate_imp_to_region_wrongtype(self):
+        mock_mriot = MagicMock()
+        with self.assertRaises(ValueError):
+            translate_imp_to_regions("wrongtype", mriot=mock_mriot)
+
+    def test_translate_imp_to_region_wrong_region(self):
+        mock_mriot = MagicMock()
+        reg_impact = pd.DataFrame([[100,20,3]],index=[1], columns=["FRA","USA", "WRONG"])
+        with self.assertRaises(ValueError):
+            translate_imp_to_regions(reg_impact=reg_impact, mriot=mock_mriot)
+
+    def test_translate_imp_to_region(self):
+        mock_mriot = Mock(
+            monetary_factor=10.,
+        )
+        mock_mriot.name = "EXIOBASE3-2010"
+        reg_impact = pd.DataFrame([[100,20]],index=[1], columns=["FRA","USA"])
+        ret = translate_imp_to_regions(reg_impact=reg_impact, mriot=mock_mriot)
+
+        expected = pd.DataFrame(
+            [[10.,2.]],
+            index=pd.Index([1],name="event_id"),
+            columns=pd.Index(["FR","US"],name="region_mriot")
+        )
+        pd.testing.assert_frame_equal(expected, ret)
+
+    def test_distribute_reg_impact_to_sectors_wrongtype(self):
+        reg_impact = pd.DataFrame(
+            [[10.,2.]],
+            index=pd.Index([1],name="event_id"),
+            columns=pd.Index(["FR","US"],name="region_mriot")
+        )
+
+        distributor = pd.Series([0.4,0.6], index=pd.Index(["sec1","sec2"], name="sector"))
+
+        with self.assertRaises(ValueError):
+            distribute_reg_impact_to_sectors("wrongtype", "wrongtype")
+
+        with self.assertRaises(ValueError):
+            distribute_reg_impact_to_sectors(reg_impact, "wrongtype")
+
+        with self.assertRaises(ValueError):
+            distribute_reg_impact_to_sectors("wrongtype", distributor)
+
+    def test_distribute_reg_impact_to_sectors_index(self):
+        reg_impact = pd.DataFrame(
+            [[10.,2.]],
+            index=pd.Index([1],name="event_id"),
+            columns=pd.Index(["FR","US"],name="region_mriot")
+        )
+
+        distributor = pd.Series([4,6], index=pd.Index(["sec1","sec2"], name="sector"))
+        ret = distribute_reg_impact_to_sectors(reg_impact, distributor)
+
+        expected = pd.DataFrame( [[4.,6.,0.8,1.2]],
+            index=pd.Index([1],name="event_id"),
+            columns=pd.MultiIndex.from_tuples([( "FR","sec1" ),( "FR","sec2" ),( "US", "sec1" ), ( "US", "sec2")],names=[ "region","sector" ])
+        )
+        pd.testing.assert_frame_equal(ret, expected)
+
+    def test_distribute_reg_impact_to_sectors_multiindex_missing_regions(self):
+        reg_impact = pd.DataFrame(
+            [[10.,2.]],
+            index=pd.Index([1],name="event_id"),
+            columns=pd.Index(["FR","US"],name="region_mriot")
+        )
+
+        distributor = pd.Series([4,6], index=pd.MultiIndex.from_tuples([( "FR","sec1" ),( "FR","sec2" )],names=[ "region","sector" ]))
+        with self.assertRaises(ValueError):
+            ret = distribute_reg_impact_to_sectors(reg_impact, distributor)
 
 
-if __name__ == "__main__":
-    TESTS = unittest.TestLoader().loadTestsFromTestCase(TestUtils)
-    unittest.TextTestRunner(verbosity=2).run(TESTS)
+    def test_distribute_reg_impact_to_sectors_multiindex(self):
+        reg_impact = pd.DataFrame(
+            [[10.,2.]],
+            index=pd.Index([1],name="event_id"),
+            columns=pd.Index(["FR","US"],name="region_mriot")
+        )
+
+        distributor = pd.Series([4,6,5,5], index=pd.MultiIndex.from_tuples([( "FR","sec1" ),( "FR","sec2" ),( "US", "sec1" ), ( "US", "sec2")],names=[ "region","sector" ]))
+        ret = distribute_reg_impact_to_sectors(reg_impact, distributor)
+        expected = pd.DataFrame( [[4.,6.,1.,1.]],
+            index=pd.Index([1],name="event_id"),
+            columns=pd.MultiIndex.from_tuples([( "FR","sec1" ),( "FR","sec2" ),( "US", "sec1" ), ( "US", "sec2")],names=[ "region","sector" ])
+        )
+        pd.testing.assert_frame_equal(ret, expected)
