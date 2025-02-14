@@ -19,6 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test non-trivial runs of TCSurgeGeoClaw class
 """
 
+import sys
 import unittest
 
 import numpy as np
@@ -61,6 +62,7 @@ def _test_bathymetry_tif():
 class TestGeoclawRun(unittest.TestCase):
     """Test functions that set up and run GeoClaw instances"""
 
+    @unittest.skipIf(sys.platform.startswith("win"), "does not run on Windows")
     def test_surge_from_track(self):
         """Test _geoclaw_surge_from_track function (~30 seconds on a notebook)"""
         # similar to IBTrACS 2010029S12177 (OLI, 2010) hitting Tubuai
