@@ -68,6 +68,7 @@ jobs:
           create-args: >-
             python=${{ matrix.python-version }}
             make
+            gfortran>=13
           # Persist environment for branch, Python version, single day
           cache-environment-key: env-${{ github.ref }}-${{ matrix.python-version }}-${{ steps.date.outputs.date }}
       -
