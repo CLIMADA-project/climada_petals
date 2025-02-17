@@ -13,7 +13,7 @@ dependencies:
   - osm-flex>=1.1
   - overpy>=0.7
   - pymrio>=0.5
-  - rioxarray>=0.15
+  - rioxarray>=0.18
   - ruamel.yaml>=0.18
-  - scikit-image>=0.20
+  - scikit-image>=0.25
   - xesmf>=0.8
