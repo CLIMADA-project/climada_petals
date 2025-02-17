@@ -33,9 +33,9 @@ setup(
         'Topic :: Scientific/Engineering :: GIS',
         'Topic :: Scientific/Engineering :: Mathematics',
     ],
-
     keywords='climate adaptation',
 
+    python_requires=">=3.10,<3.12",
     install_requires=[
         'boario',
         'climada>=5.0',
