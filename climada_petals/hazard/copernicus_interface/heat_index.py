@@ -80,13 +80,13 @@ def calculate_relative_humidity(t2k, tdk, as_percentage=True):
     float or array-like
         Relative humidity as a percentage (0-100) or as a decimal value (0-1), depending on the `as_percentage` setting.
     """
-    t2c = t2k - 273.15
-    tdc = tdk - 273.15
+    t2c = kelvin_to_celsius(t2k)
+    tdc = kelvin_to_celsius(tdk)
 
     es = 6.11 * 10.0 ** (7.5 * t2c / (237.3 + t2c))
     e = 6.11 * 10.0 ** (7.5 * tdc / (237.3 + tdc))
 
-    rh = e / es  # Wert zwischen 0 und 1
+    rh = e / es
     if as_percentage:
         rh *= 100  # Umwandlung in Prozent
 
@@ -101,13 +101,9 @@ def calculate_heat_index_simplified(t2k, tdk):
     """
     Calculates the simplified heat index (HIS) based on temperature and dewpoint temperature.
 
-    The simplified heat index formula is **only valid for temperatures above 20°C**, as the heat index is
-    specifically designed for **warm to hot conditions** where humidity significantly influences perceived temperature.
-    Below 20°C, the function returns the actual air temperature instead of applying the heat index formula.
+    The simplified heat index formula is only valid for temperatures above 20°C, as the heat index is specifically designed for warm to hot conditions where humidity significantly influences perceived temperature. Below 20°C, the function returns the actual air temperature instead of applying the heat index formula.
 
-    The heat index is an empirical measure that estimates the **perceived temperature** by incorporating the
-    effects of both temperature and humidity. It is commonly used in meteorology and climate studies to assess
-    heat stress.
+    The heat index is an empirical measure that estimates the perceived temperature by incorporating the effects of both temperature and humidity. It is commonly used in meteorology and climate studies to assess heat stress.
 
     Parameters
     ----------
@@ -263,6 +259,10 @@ def calculate_heat_index_adjusted(t2k, tdk):
 def calculate_humidex(t2_k, td_k):
     """
     Calculate Humidex (°C)
+    The Humidex is a thermal comfort index that represents the perceived temperature
+    by incorporating both air temperature and humidity. It is commonly used in
+    meteorology to assess heat stress and human discomfort in warm and humid conditions.
+    The higher the Humidex value, the greater the level of discomfort.
 
     Parameters
     ----------
@@ -317,7 +317,7 @@ def calculate_wind_speed(u10, v10):
 # ------------------------
 # Apparent Temperature Calculation
 # ------------------------
-def calculate_apparent_temperature(t2_k, u10, v10, d2m_k):
+def calculate_apparent_temperature(t2_k, u10, v10, tdk):
     """
     Calculate Apparent Temperature (°C)
 
@@ -329,7 +329,7 @@ def calculate_apparent_temperature(t2_k, u10, v10, d2m_k):
         10m eastward wind component in m/s. Indicates the wind speed in the eastward direction at a height of 10 meters.
     v10 : float or np.array
         10m northward wind component in m/s. Indicates the wind speed in the northward direction at a height of 10 meters.
-    d2m_k : float or np.array
+    tdk : float or np.array
         2m dewpoint temperature in Kelvin. Dew point temperature at which air becomes saturated and condensation begins.
 
     Returns
@@ -343,7 +343,7 @@ def calculate_apparent_temperature(t2_k, u10, v10, d2m_k):
     Brimicombe, C., Bröde, P., and Calvi, P. (2022). Thermofeel: A python thermal comfort indices library. *SoftwareX*, 17, 101005. DOI: https://doi.org/10.1016/j.softx.2022.101005
     """
     t2_c = kelvin_to_celsius(t2_k)
-    rh = calculate_relative_humidity(t2_k, d2m_k)
+    rh = calculate_relative_humidity(t2_k, tdk)
     va = calculate_wind_speed(u10, v10)
     e = calculate_nonsaturation_vapour_pressure(t2_k, rh)
     at = t2_c + 0.33 * e - 0.7 * va - 4
@@ -412,7 +412,8 @@ def calculate_wbgt_simple(t2_k, tdk):
 # ------------------------
 def calculate_heat_index(da_t2k, da_tdk, index):
     """
-    Calculates the heat index based on temperature and dewpoint temperature using either the simplified or adjusted formula.
+    Calculates the heat index based on temperature and dewpoint temperature using
+    either the simplified or adjusted formula as implemented in the Thermofeel library.
 
     Parameters
     ----------
@@ -466,7 +467,7 @@ def calculate_tr(temperature_data, tr_threshold=20):
     ----------
     temperature_data : xarray.DataArray
         DataArray containing daily minimum temperatures in Celsius.
-    threshold : float, optional
+    tr_threshold : float, optional
         Temperature threshold in Celsius for a tropical night. Default is 20°C.
 
     Returns
@@ -532,8 +533,10 @@ def calculate_hw_1D(
 
     Returns
     -------
-    list
-        List of tuples representing start and end indices of detected heatwaves. Each tuple indicates the beginning and ending day of a heatwave period.
+        np.ndarray
+        A binary mask (1D array) of the same length as `temperatures`, where:
+        - `1` indicates a heatwave day.
+        - `0` indicates a non-heatwave day.
 
     Acknowledgment
     --------------
@@ -575,6 +578,42 @@ def calculate_hw(
     max_gap: int = 0,
     label_time_step="step",
 ):
+    """
+    Identify and define heatwave events based on a sequence of daily mean temperatures.
+
+    This function detects heatwave events by applying a threshold-based approach to
+    an xarray DataArray of daily mean temperatures. A heatwave is defined as a period
+    where temperatures exceed a specified threshold for a minimum number of consecutive days.
+    If two such periods are separated by a gap of below-threshold temperatures within
+    a given maximum gap length, they are merged into a single heatwave event.
+
+    Parameters
+    ----------
+    daily_mean_temp : xarray.DataArray
+        An xarray DataArray containing daily mean temperatures. The time dimension should be labeled
+        according to `label_time_step`.
+    threshold : float, optional
+        Temperature threshold above which days are considered part of a heatwave. Default is 27°C.
+    min_duration : int, optional
+        Minimum number of consecutive days required to define a heatwave event. Default is 3 days.
+    max_gap : int, optional
+        Maximum allowed gap (in days) of below-threshold temperatures to merge two consecutive
+        heatwave events into one. Default is 0 days.
+    label_time_step : str, optional
+        Name of the time dimension in `daily_mean_temp`. Default is "step".
+
+    Returns
+    -------
+    xarray.DataArray
+        A DataArray of the same shape as `daily_mean_temp`, where heatwave periods
+        are labeled with 1 (heatwave) and 0 (non-heatwave).
+
+    Notes
+    -----
+    This function leverages `xarray.apply_ufunc` to apply the `calculate_hw_1D` function
+    efficiently across all grid points, supporting vectorized operations and parallelized
+    computation with Dask.
+    """
     return xr.apply_ufunc(
         calculate_hw_1D,
         daily_mean_temp,
