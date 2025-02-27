@@ -25,6 +25,8 @@ import pandas as pd
 import logging
 
 import climada_petals.hazard.copernicus_interface.heat_index as heat_index
+from climada_petals.hazard.copernicus_interface.heat_index import kelvin_to_celsius
+
 
 LOGGER = logging.getLogger(__name__)
 
