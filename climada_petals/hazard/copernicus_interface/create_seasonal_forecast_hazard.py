@@ -109,6 +109,7 @@ class SeasonalForecast:
         initiation_month: str,
         valid_period: List[str],
         download_format="grib",
+        print_flag=False,
     ):
 
         initiation_month_str = f"{month_name_to_number(initiation_month):02d}"
@@ -137,23 +138,26 @@ class SeasonalForecast:
         ]
 
         if not downloaded_data_path.exists():
-            print("No downloaded data found for given time periods.")
+            response = "No downloaded data found for given time periods."
         else:
-            print(f"Downloaded data exist at: {downloaded_data_path}")
+            response = f"Downloaded data exist at: {downloaded_data_path}"
         if not processed_data_path.exists():
-            print("No processed data found for given time periods.")
+            response = "No processed data found for given time periods."
         else:
-            print(f"Processed data exist at: {processed_data_path}")
+            response = f"Processed data exist at: {processed_data_path}"
         if not any([path.exists() for path in index_data_paths.values()]):
-            print("No index data found for given time periods.")
+            response = "No index data found for given time periods."
         else:
-            print(f"Index data exist at: {index_data_paths}")
+            response = f"Index data exist at: {index_data_paths}"
         if not hazard_data_path.exists():
-            print("No hazard data found for given time periods.")
+            response = "No hazard data found for given time periods."
         else:
-            print(f"Hazard data exist at: {hazard_data_path}")
+            response = f"Hazard data exist at: {hazard_data_path}"
+        if print_flag:
+            print(response)
+        return response
 
-    def explain_index(self, index_metric=None):
+    def explain_index(self, index_metric=None, print_flag=False):
         """
         Retrieve and print details about the selected climate index.
 
@@ -168,12 +172,11 @@ class SeasonalForecast:
             Explanation and input data required for the index.
         """
         index_metric = index_metric or self.index_metric
-        print(
-            f"Explanation for {index_metric}: {IndexSpecEnum.get_info(index_metric).explanation}"
-        )
-        print(
-            f"Required variables: {', '.join(IndexSpecEnum.get_info(index_metric).variables)}"
-        )
+        response = f"Explanation for {index_metric}: {IndexSpecEnum.get_info(index_metric).explanation} \n"
+        response += f"Required variables: {', '.join(IndexSpecEnum.get_info(index_metric).variables)}"
+        if print_flag:
+            print(response)
+        return response
 
     @staticmethod
     def get_file_path(
@@ -349,9 +352,9 @@ class SeasonalForecast:
             created_files["downloaded_data"] = self._download(overwrite=overwrite)
             # 2) Attempt processing data
             created_files["processed_data"] = self._process(overwrite=overwrite)
-        except ValueError as e:
+        except Exception as e:
             # Catch reversed valid_period or any other ValueError from calculate_leadtimes
-            print(f"Download/process aborted: {e}")
+            raise Exception(f"Download/process aborted: {e}")
 
         return created_files
 
@@ -501,19 +504,17 @@ class SeasonalForecast:
         """
         # Check if the originating_centre is "dwd"
         if self.originating_centre.lower() != "dwd":
-            print(
+            raise ValueError(
                 "Forecast skill metrics are only available for the 'dwd' provider. "
                 f"Current provider: {self.originating_centre}"
             )
-            return
 
         # Check if the index_metric is "Tmax"
         if self.index_metric.lower() != "tmax":
-            print(
+            raise ValueError(
                 "Forecast skills are only available for the 'Tmax' index. "
                 f"Current index: {self.index_metric}"
             )
-            return
 
         # Define the file path pattern for forecast skill data (change for Zenodo when ready)
         base_path = Path("/Users/daraya/Downloads")
@@ -528,7 +529,7 @@ class SeasonalForecast:
             file_path = base_path / file_name_pattern.format(month=month_str)
 
             if not file_path.exists():
-                print(f"Skill data file for month {month_str} not found: {file_path}")
+                LOGGER.warning(f"Skill data file for month {month_str} not found: {file_path}")
                 continue
 
             # Load the data using xarray
@@ -584,12 +585,12 @@ class SeasonalForecast:
                             )
                             plt.show()
                         else:
-                            print(
+                            LOGGER.warning(
                                 f"Variable {var} not found in dataset for month {month_str}."
                             )
 
             except Exception as e:
-                print(f"Failed to load or process data for month {month_str}: {e}")
+                raise Exception(f"Failed to load or process data for month {month_str}: {e}")
 
 
 # ----- Utility Functions -----
@@ -737,7 +738,7 @@ def handle_overwriting(function):
         if isinstance(output_file_name, PosixPath):
             if not overwrite and output_file_name.exists():
                 LOGGER.info(f"{output_file_name} already exists.")
-                return None
+                return output_file_name
         elif isinstance(output_file_name, dict):
             if not overwrite and any(
                 [path.exists() for path in output_file_name.values()]
@@ -745,7 +746,7 @@ def handle_overwriting(function):
                 LOGGER.info(
                     f"A file of {[str(path) for path in output_file_name.values()]} already exists."
                 )
-                return None
+                return output_file_name
 
         return function(output_file_name, overwrite, *args, **kwargs)
 
