@@ -111,7 +111,29 @@ class SeasonalForecast:
         download_format="grib",
         print_flag=False,
     ):
+        """function that checks if downloaded, processed, or hazard files exist for the given parameters.
 
+        Parameters
+        ----------
+        index_metric : str
+            Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
+        year : int
+            Initiation year for the forecasts
+        initiation_month : str
+            Initiation month for the forecasts (e.g., ["March", "April"]).
+        valid_period : list[str or int]
+            A list of start and end month (given as integers or strings) of the valid period. Must have
+            length two. If only one month is requested, use e.g. ["March", "March"].
+        download_format : str, optional
+            Downloaded data format ('grib' or 'netcdf').
+        print_flag : bool, optional
+            Flag if information should be printed, by default False
+
+        Returns
+        -------
+        str
+            Description of if and where files exist 
+        """
         initiation_month_str = f"{month_name_to_number(initiation_month):02d}"
         valid_period_str = "_".join(
             [f"{month_name_to_number(month):02d}" for month in valid_period]
@@ -138,37 +160,39 @@ class SeasonalForecast:
         ]
 
         if not downloaded_data_path.exists():
-            response = "No downloaded data found for given time periods."
+            response = "No downloaded data found for given time periods.\n"
         else:
-            response = f"Downloaded data exist at: {downloaded_data_path}"
+            response = f"Downloaded data exist at: {downloaded_data_path}\n"
         if not processed_data_path.exists():
-            response = "No processed data found for given time periods."
+            response += "No processed data found for given time periods.\n"
         else:
-            response = f"Processed data exist at: {processed_data_path}"
+            response += f"Processed data exist at: {processed_data_path}\n"
         if not any([path.exists() for path in index_data_paths.values()]):
-            response = "No index data found for given time periods."
+            response += "No index data found for given time periods\n."
         else:
-            response = f"Index data exist at: {index_data_paths}"
+            response += f"Index data exist at: {index_data_paths}\n"
         if not hazard_data_path.exists():
-            response = "No hazard data found for given time periods."
+            response += "No hazard data found for given time periods."
         else:
-            response = f"Hazard data exist at: {hazard_data_path}"
+            response += f"Hazard data exist at: {hazard_data_path}"
         if print_flag:
             print(response)
         return response
 
     def explain_index(self, index_metric=None, print_flag=False):
         """
-        Retrieve and print details about the selected climate index.
+        Retrieve details about the selected climate index.
 
         Parameters
         ----------
         index_metric : str, optional
             The climate index to explain. If None, uses the instance's index_metric.
+        print_flag : bool, optional
+            Flag if information should be printed, by default False
 
         Returns
         -------
-        dict
+        str
             Explanation and input data required for the index.
         """
         index_metric = index_metric or self.index_metric
@@ -486,7 +510,7 @@ class SeasonalForecast:
 
         return hazard_outputs
 
-    def forecast_skills(self):
+    def plot_forecast_skills(self):
         """
         Access and plot forecast skill data for the handler's parameters, filtered by the selected area.
 
