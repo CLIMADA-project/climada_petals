@@ -12,7 +12,19 @@ Code freeze date: YYYY-MM-DD
 
 Added:
 
-- `boario` >=0.5.9
+- `boario` >=0.5,<0.6
+- `meson` >=1.4,<1.5
+
+Updated:
+
+- `cdsapi` >=0.6 &rarr; >=0.7
+- `esmpy` !=8.4.* &rarr; >=8.4.2
+- `scikit-image` >=0.22 &rarr; >=0.25
+
+Removed:
+
+- `gfortran`: this conda package conflicts with, e.g., `esmf`, at least on Windows.
+  For using the `climada_petals.hazard.tc_surge_clawpack` module fortran must be installed natively on the local machine.
 
 ### Added
 
