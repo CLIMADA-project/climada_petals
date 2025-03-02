@@ -455,10 +455,9 @@ class SeasonalForecast:
                         f"File not found for {year}-{month_str}. Skipping..."
                     )
                 except Exception as e:
-                    LOGGER.error(
+                    raise Exception(
                         f"Error processing index {self.index_metric} for {year}-{month_str}: {e}"
                     )
-                    raise e
 
         return index_outputs
 
@@ -506,7 +505,7 @@ class SeasonalForecast:
                         f"Monthly index file not found for {year}-{month_str}. Skipping..."
                     )
                 except Exception as e:
-                    LOGGER.error(f"Failed to create hazard for {year}-{month_str}: {e}")
+                    raise Exception(f"Failed to create hazard for {year}-{month_str}: {e}")
 
         return hazard_outputs
 
@@ -895,11 +894,9 @@ def _process_data(output_file_name, overwrite, input_file_name, variables, forma
         return output_file_name
 
     except FileNotFoundError:
-        LOGGER.error(f"Input file {input_file_name} does not exist, processing failed.")
-        raise
+        raise FileNotFoundError(f"Input file {input_file_name} does not exist, processing failed.")
     except Exception as e:
-        LOGGER.error(f"Error during processing for {input_file_name}: {e}")
-        raise
+        raise Exception(f"Error during processing for {input_file_name}: {e}")
 
 
 @handle_overwriting
@@ -1057,5 +1054,4 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
         return output_file_name
 
     except Exception as e:
-        LOGGER.error(f"Failed to convert {input_file_name} to hazard: {e}")
-        raise
+        raise Exception(f"Failed to convert {input_file_name} to hazard: {e}")
