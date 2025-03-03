@@ -1,26 +1,12 @@
 # Changelog
 
-## Unreleased
+## 6.0.1
 
-Release date: YYYY-MM-DD
-
-Code freeze date: YYYY-MM-DD
-
-### Description
+Release date: 2025-03-03
 
 ### Dependency Changes
 
 - `climada` >=5.0 &rarr; >=6.0
-
-### Added
-
-### Changed
-
-### Fixed
-
-### Deprecated
-
-### Removed
 
 ## 6.0.0
 
