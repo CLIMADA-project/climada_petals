@@ -13,7 +13,7 @@ with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
 setup(
     name='climada_petals',
 
-    version='5.0.1-dev',
+    version='6.0.1-dev',
 
     description='CLIMADA Extensions in Python',
 
