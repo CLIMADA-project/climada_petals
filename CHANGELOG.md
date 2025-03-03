@@ -20,6 +20,14 @@ Code freeze date: YYYY-MM-DD
 
 ### Removed
 
+## 6.0.1
+
+Release date: 2025-03-03
+
+### Dependency Changes
+
+- `climada` >=5.0 &rarr; >=6.0
+
 ## 6.0.0
 
 Release date: 2025-03-03
