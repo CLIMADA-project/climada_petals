@@ -18,6 +18,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Top-level computation class for river flood inundation
 """
+
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import logging
@@ -30,6 +31,7 @@ import xarray as xr
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import shapely
 
 from .rf_glofas import DEFAULT_DATA_DIR, dask_client
 from .transform_ops import (
@@ -40,6 +42,12 @@ from .transform_ops import (
     apply_flopros,
     flood_depth,
     save_file,
+)
+from .flood_maps import (
+    open_flood_maps_extents,
+    download_flood_map_tiles,
+    open_flood_map_tiles,
+    JRC_FLOOD_HAZARD_MAP_TILES_FILENAME,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -174,17 +182,21 @@ class RiverFloodInundation:
             created.
         """
         self._tempdir = None
-        data_dir = Path(data_dir)
-        if not data_dir.is_dir():
-            raise FileNotFoundError(f"'data_dir' does not exist: {data_dir}")
+        self.data_dir = Path(data_dir)
+        if not self.data_dir.is_dir():
+            raise FileNotFoundError(f"'data_dir' does not exist: {self.data_dir}")
 
         self.store_intermediates = store_intermediates
-        self.flood_maps = xr.open_dataarray(
-            data_dir / "flood-maps.nc",
-            chunks=dict(return_period=-1, latitude="auto", longitude="auto"),
+        self.flood_maps = None
+        self.flood_map_tiles = open_flood_maps_extents(
+            self.data_dir / JRC_FLOOD_HAZARD_MAP_TILES_FILENAME
         )
-        self.gumbel_fits = xr.open_dataset(data_dir / "gumbel-fit.nc", chunks="auto")
-        self.flopros = gpd.read_file(data_dir / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp")
+        self.gumbel_fits = xr.open_dataset(
+            self.data_dir / "gumbel-fit.nc", chunks="auto"
+        )
+        self.flopros = gpd.read_file(
+            self.data_dir / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp"
+        )
         self.regridder = None
         self._create_tempdir(cache_dir=cache_dir)
 
@@ -290,21 +302,46 @@ class RiverFloodInundation:
         else:
             self.return_period_resample(discharge=discharge, **resample_kws)
 
+        # Load flood maps
+        flood_maps = self.load_flood_maps(reference=discharge)
+
         # Regrid
-        regrid_kws = regrid_kws if regrid_kws is not None else {}
-        self.regrid(**regrid_kws)
+        regrid_defaults = {"flood_maps": flood_maps}
+        if regrid_kws is not None:
+            regrid_defaults.update(regrid_kws)
+        self.regrid(**regrid_defaults)
 
         # Compute flood depth
         ds_flood = xr.Dataset()
         if not apply_protection or apply_protection == "both":
-            ds_flood["flood_depth"] = self.flood_depth()
+            ds_flood["flood_depth"] = self.flood_depth(flood_maps=flood_maps)
 
         # Compute flood depth with protection
         self.apply_protection()
-        ds_flood["flood_depth_flopros"] = self.flood_depth()
+        ds_flood["flood_depth_flopros"] = self.flood_depth(flood_maps=flood_maps)
 
         # Return data
         return ds_flood
+
+    def load_flood_maps(self, reference: Optional[xr.DataArray] = None) -> xr.DataArray:
+        with _maybe_open_dataarray(
+            reference, self.cache_paths.discharge, chunks="auto"
+        ) as reference:
+            select = self.flood_map_tiles.geometry.intersects(
+                shapely.Polygon(
+                    [
+                        [reference["longitude"].min(), reference["latitude"].min()],
+                        [reference["longitude"].max(), reference["latitude"].min()],
+                        [reference["longitude"].max(), reference["latitude"].max()],
+                        [reference["longitude"].min(), reference["latitude"].max()],
+                    ]
+                )
+            )
+            flood_maps_dir = self.data_dir / "flood-maps"
+            download_flood_map_tiles(output_dir=flood_maps_dir)
+            return open_flood_map_tiles(
+                flood_maps_dir=flood_maps_dir, tiles=self.flood_map_tiles.loc[select]
+            )
 
     def download_forecast(
         self,
@@ -523,6 +560,7 @@ class RiverFloodInundation:
     def regrid(
         self,
         r_period: Optional[xr.DataArray] = None,
+        flood_maps: Optional[xr.DataArray] = None,
         method: str = "bilinear",
         reuse_regridder: bool = False,
     ):
@@ -565,11 +603,14 @@ class RiverFloodInundation:
             self.cache_paths.return_period,
             chunks=dict(longitude=-1, latitude=-1, time=1, sample=1, number=1, step=1),
         ) as return_period_data:
+            if flood_maps is None:
+                flood_maps = self.load_flood_maps(reference=r_period)
             if not reuse_regridder:
                 self.regridder = None
+
             return_period_regrid, self.regridder = regrid(
                 return_period_data,
-                self.flood_maps,
+                flood_maps,
                 method=method,
                 regridder=self.regridder,
                 return_regridder=True,
@@ -624,7 +665,11 @@ class RiverFloodInundation:
                 )
             return return_period_regrid_protect
 
-    def flood_depth(self, return_period_regrid: Optional[xr.DataArray] = None):
+    def flood_depth(
+        self,
+        return_period_regrid: Optional[xr.DataArray] = None,
+        flood_maps: Optional[xr.DataArray] = None,
+    ):
         """Compute the flood depth from regridded return period data.
 
         Interpolate the flood hazard maps stored in :py:attr`flood_maps` in the return
@@ -661,5 +706,8 @@ class RiverFloodInundation:
         with _maybe_open_dataarray(
             return_period_regrid, file_path, chunks="auto"
         ) as return_period_regrid_data:
-            inundation = flood_depth(return_period_regrid_data, self.flood_maps)
+            if flood_maps is None:
+                flood_maps = self.load_flood_maps(reference=return_period_regrid)
+
+            inundation = flood_depth(return_period_regrid_data, flood_maps)
             return inundation
