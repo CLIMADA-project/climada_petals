@@ -6,6 +6,22 @@ Release date: 2025-03-03
 
 ### Dependency Changes
 
+### Added
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+## 6.0.0
+
+Release date: 2025-03-03
+
+### Dependency Changes
+
 Added:
 
 - `boario` >=0.5,<0.6
