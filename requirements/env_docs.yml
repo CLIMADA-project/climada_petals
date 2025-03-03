@@ -3,14 +3,15 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - cdsapi>=0.6
+  - boario=0.5
+  - cdsapi>=0.7
   - meson-python=0.15
   - osm-flex>=1.1
   - overpy>=0.7
   - pymrio>=0.5
-  - rioxarray>=0.13
+  - rioxarray>=0.18
   - ruamel.yaml>=0.18
-  - scikit-image>=0.22
+  - scikit-image>=0.25
   - xesmf>=0.8
   - climada
   - ipykernel

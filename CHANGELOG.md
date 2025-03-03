@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+Release date: YYYY-MM-DD
+
+Code freeze date: YYYY-MM-DD
+
+### Description
+
+### Dependency Changes
+
+Added:
+
+- `boario` >=0.5,<0.6
+- `meson` >=1.4,<1.5
+
+Updated:
+
+- `cdsapi` >=0.6 &rarr; >=0.7
+- `esmpy` !=8.4.* &rarr; >=8.4.2
+- `scikit-image` >=0.22 &rarr; >=0.25
+
+Removed:
+
+- `gfortran`: this conda package conflicts with, e.g., `esmf`, at least on Windows.
+  For using the `climada_petals.hazard.tc_surge_clawpack` module fortran must be installed natively on the local machine.
+
+### Added
+
+- Included `boario` in the supplychain module [#81](https://github.com/CLIMADA-project/climada_petals/pull/81/)
+- Added a Copernicus download function `downloader.py` as part of the `climada.hazard.copernicus_interface` module under construction [#150](https://github.com/CLIMADA-project/climada_petals/pull/150/)
+- Update name of IBTrACS file to version 4.1 in tc_rainfield and tc_surge_bathub tests. [#152](https://github.com/CLIMADA-project/climada_petals/pull/152)
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
 ## 5.0.0
 
 Release date: 2024-07-19
@@ -26,6 +66,8 @@ Added:
 - Fix `climada.hazard.tc_rainfield` for TC tracks crossing the antimeridian [#105](https://github.com/CLIMADA-project/climada_petals/pull/105)
 - Update the table of content for the tutorials [#125](https://github.com/CLIMADA-project/climada_petals/pull/125)
 - Store all-zero fraction matrices in `LowFlow` and `WildFire` hazards [#129](https://github.com/CLIMADA-project/climada_petals/pull/129) [#131](https://github.com/CLIMADA-project/climada_petals/pull/131)
+
+- `eeioa` approach from the supply chain module. See [associated discussion](https://github.com/CLIMADA-project/climada_petals/pull/81#discussion_r1596546221).
 
 ## 4.1.0
 
@@ -128,4 +170,3 @@ Release aligned with climada (core) 3.3.
 ### Fixed
 
 - fix issue [#69](https://github.com/CLIMADA-project/climada_petals/issues/70) Warn.zeropadding for islands [](https://github.com/CLIMADA-project/climada_petals/pull/70)
-
