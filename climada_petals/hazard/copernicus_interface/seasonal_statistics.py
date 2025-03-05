@@ -25,6 +25,8 @@ import pandas as pd
 import logging
 
 import climada_petals.hazard.copernicus_interface.heat_index as heat_index
+from climada_petals.hazard.copernicus_interface.heat_index import kelvin_to_celsius
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,12 +40,16 @@ def calculate_heat_indices_metrics(
     hw_max_gap=0,
 ):
     """
-    Calculates heat indices or temperature metrics based on the provided input file and index type.
+    Computes heat indices or temperature-related metrics based on the specified climate index.
 
     Parameters
     ----------
     input_file_name : str
-        Path to the input data file containing temperature and dewpoint information.
+        Path to the input data file containing the variables required for the computation of the selected index. 
+        The file should be in NetCDF (.nc) or GRIB format and contain relevant atmospheric data such as temperature, 
+        dewpoint temperature, humidity, or wind speed. Information on the required variables for each index 
+        can be found in the `index_definitions` class.
+
     index_metric : str
         The climate index to be processed. Supported indices include:
         - "Tmean" : Mean daily temperature
@@ -55,8 +61,18 @@ def calculate_heat_indices_metrics(
         - "HUM" : Humidex
         - "AT"  : Apparent Temperature
         - "WBGT": Wet Bulb Globe Temperature (Simple)
-    tr_threshold : (float, int)
-        Threshold to use when computing tropical nights index. Dedaults to 20.
+    tr_threshold : float, optional
+        Temperature threshold (°C) for computing tropical nights (TR). 
+        Default is 20°C, meaning nights with Tmin > 20°C are considered tropical.
+    hw_threshold : float, optional
+        Temperature threshold (°C) for detecting a heatwave (HW). 
+        Default is 27°C, meaning a heatwave occurs if the temperature remains above this threshold for multiple days.
+    hw_min_duration : int, optional
+        Minimum consecutive days for a heatwave event to be detected. 
+        Default is 3 days.
+    hw_max_gap : int, optional
+        Maximum allowable gap (in days) between heatwave days for them to still be considered part of the same event.
+        Default is 0 days, meaning no gaps are allowed.
 
     Returns
     -------
@@ -80,13 +96,13 @@ def calculate_heat_indices_metrics(
         with xr.open_dataset(input_file_name, engine=engine) as daily_ds:
             # Handling various indices
             if index_metric == "Tmean":
-                da_index = daily_ds["t2m_mean"] - 273.15  # Kelvin to Celsius
+                da_index = kelvin_to_celsius(daily_ds["t2m_mean"])  # Kelvin to Celsius
                 da_index.attrs["units"] = "degC"
             elif index_metric == "Tmax":
-                da_index = daily_ds["t2m_max"].resample(step="1D").max() - 273.15
+                da_index = kelvin_to_celsius(daily_ds["t2m_max"].resample(step="1D").max())
                 da_index.attrs["units"] = "degC"
             elif index_metric == "Tmin":
-                da_index = daily_ds["t2m_min"].resample(step="1D").min() - 273.15
+                da_index = kelvin_to_celsius(daily_ds["t2m_min"].resample(step="1D").min())
                 da_index.attrs["units"] = "degC"
             elif index_metric in ["HIS", "HIA"]:
                 da_index = heat_index.calculate_heat_index(
@@ -193,7 +209,7 @@ def calculate_monthly_dataset(da_index, index_metric, method):
         monthly = da_index.groupby("forecast_month").sum(dim="step")
     else:
         raise ValueError(
-            f"Unknown method {method} to compute monthly data. Please use 'mean' or 'sum'."
+            f"Unknown method {method} to compute monthly data. Please use 'mean' or 'count'."
         )
     monthly = monthly.rename(index_metric)
     monthly = monthly.rename({"forecast_month": "step"})

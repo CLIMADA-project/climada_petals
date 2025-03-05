@@ -184,7 +184,7 @@ class IndexSpecEnum(Enum):
 
 def get_short_name_from_variable(variable):
     """
-    Retrieve the short name for a given variableon an index based on its standard name.
+    Retrieve the short name of a variable within an index based on its standard name.
 
     Parameters
     ----------
@@ -193,7 +193,7 @@ def get_short_name_from_variable(variable):
 
     Returns
     -------
-    str
+    str or None
         The short name corresponding to the specified climate variable (e.g., "t2m" for "2m_temperature").
         Returns None if the variable is not recognized.
 
@@ -205,11 +205,15 @@ def get_short_name_from_variable(variable):
 
     Examples
     --------
-    get_short_name_from_variable("2m_temperature")'t2m'
-    get_short_name_from_variable("10m_u_component_of_wind")'u10'
-    get_short_name_from_variable("unknown_variable")None
-    """
+    >>> get_short_name_from_variable("2m_temperature")
+    't2m'
 
+    >>> get_short_name_from_variable("10m_u_component_of_wind")
+    'u10'
+
+    >>> get_short_name_from_variable("unknown_variable")
+    None
+    """
     if variable == "2m_temperature":
         return "t2m"
     elif variable == "2m_dewpoint_temperature":
@@ -425,11 +429,15 @@ def get_short_name_from_variable(variable):
 
     Examples
     --------
-    get_short_name_from_variable("2m_temperature")'t2m'
-    get_short_name_from_variable("10m_u_component_of_wind")'u10'
-    get_short_name_from_variable("unknown_variable")None
-    """
+    >>> get_short_name_from_variable("2m_temperature")
+    't2m'
 
+    >>> get_short_name_from_variable("10m_u_component_of_wind")
+    'u10'
+
+    >>> get_short_name_from_variable("unknown_variable")
+    None
+    """
     if variable == "2m_temperature":
         return "t2m"
     elif variable == "2m_dewpoint_temperature":
@@ -438,3 +446,6 @@ def get_short_name_from_variable(variable):
         return "u10"
     elif variable == "10m_v_component_of_wind":
         return "v10"
+    else:
+        return None
+
