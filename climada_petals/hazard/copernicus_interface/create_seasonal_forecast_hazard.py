@@ -37,7 +37,7 @@ class SeasonalForecast:
         self,
         index_metric,
         year_list,
-        valid_period,
+        lead_time_months,
         initiation_month,
         bounds,
         format,
@@ -54,9 +54,9 @@ class SeasonalForecast:
             Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
         year_list : list[int]
             Years for which data should be downloaded and processed.
-        valid_period : list[str or int]
-            A list of start and end month (given as integers or strings) of the valid period. Must have
-            length two. If only one month is requested, use e.g. ["March", "March"].
+        lead_time_months : list[str or int]
+            A list specifying the start and end month (given as integers or strings) of the valid period.
+            Must contain two values: the starting and ending month. If only one month is requested, use e.g., ["March", "March"].
         initiation_month : list[str]
             Initiation months for the forecasts (e.g., ["March", "April"]).
         bounds : list
@@ -71,6 +71,7 @@ class SeasonalForecast:
             Directory for storing data. Defaults to a pre-configured directory.
         """
         # initiate initiation month, valid period, and leadtimes
+        valid_period=lead_time_months
         if not isinstance(initiation_month, list):
             initiation_month = [initiation_month]
         if not isinstance(valid_period, list) or len(valid_period) != 2:
