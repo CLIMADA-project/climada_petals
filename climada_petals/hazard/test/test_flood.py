@@ -19,26 +19,91 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test flood module.
 """
 import unittest
-import datetime as dt
+from pathlib import Path
+from unittest.mock import patch, MagicMock, call
+import tempfile
 import numpy as np
+from climada.hazard import Hazard
 from climada.hazard.centroids import Centroids
 from climada_petals.hazard.river_flood import RiverFlood
 from climada_petals.util.constants import HAZ_DEMO_FLDDPH, HAZ_DEMO_FLDFRC
+from climada_petals.hazard.river_flood import AQUEDUCT_SOURCE_LINK
 
 
 class TestRiverFlood(unittest.TestCase):
     """Test for reading flood event from file"""
+
+    @patch("climada_petals.hazard.river_flood.u_fh.download_file")
+    @patch.object(Hazard, "from_raster")
+    def test_from_aqueduct_tif(self, mock_from_raster, mock_download_file):
+
+        scenario = "45"
+        target_year = 2050
+        return_periods = [50, 100]
+        gcm = "GFDL-ESM2M"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+
+            temp_path = Path(temp_dir)
+
+            mock_hazard_instance = MagicMock()
+            mock_from_raster.return_value = mock_hazard_instance
+
+            def download_side_effect(url, download_dir):
+
+                filename = url.split("/")[-1]
+                path = download_dir / filename
+                path.touch()  # create an empty file
+
+                return path
+
+            mock_download_file.side_effect = download_side_effect
+
+            result_haz = RiverFlood.from_aqueduct_tif(
+                scenario=scenario,
+                target_year=target_year,
+                gcm=gcm,
+                return_periods=return_periods,
+                dwd_dir=temp_path,
+            )
+
+            # Check the calls to u_fh.download_file
+            expected_files = [
+                "inunriver_rcp4p5_0000GFDL-ESM2M_2050_rp00100.tif",
+                "inunriver_rcp4p5_0000GFDL-ESM2M_2050_rp00050.tif",
+            ]
+
+            expected_urls = [
+                AQUEDUCT_SOURCE_LINK + filename for filename in expected_files
+            ]
+
+            expected_call_args_list = [
+                call(url, download_dir=temp_path) for url in expected_urls
+            ]
+
+            # Order of calls does not matter.
+            call_args_list = mock_download_file.call_args_list
+            self.assertCountEqual(call_args_list, expected_call_args_list)
+
+            # Check the calls to from_raster.
+            mock_from_raster.assert_called_once()
+
+            _, call_kwargs = mock_from_raster.call_args
+            files_intensity = [f.name for f in call_kwargs["files_intensity"]]
+            self.assertCountEqual(expected_files, files_intensity)
+
+            self.assertIs(result_haz, mock_hazard_instance)
 
     def test_wrong_iso3_fail(self):
 
         with self.assertRaises(LookupError):
             RiverFlood._select_exact_area(['OYY'])
         with self.assertRaises(AttributeError):
-            RiverFlood.from_nc(years=[2600], dph_path=HAZ_DEMO_FLDDPH,
-                                   frc_path=HAZ_DEMO_FLDFRC)
+            RiverFlood.from_isimip_nc(years=[2600], dph_path=HAZ_DEMO_FLDDPH,
+                                          frc_path=HAZ_DEMO_FLDFRC)
         with self.assertRaises(KeyError):
-            RiverFlood.from_nc(reg=['OYY'], dph_path=HAZ_DEMO_FLDDPH,
-                                   frc_path=HAZ_DEMO_FLDFRC, ISINatIDGrid=True)
+            RiverFlood.from_isimip_nc(reg=['OYY'], dph_path=HAZ_DEMO_FLDDPH,
+                                          frc_path=HAZ_DEMO_FLDFRC, ISINatIDGrid=True)
 
     def test_exact_area_selection_country(self):
 
@@ -90,8 +155,8 @@ class TestRiverFlood(unittest.TestCase):
         self.assertAlmostEqual(testCentr.lat[10000], 11.47897099999998, 4)
 
     def test_isimip_country_flood(self):
-        rf = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
-                       countries=['DEU'], ISINatIDGrid=True)
+        rf = RiverFlood.from_isimip_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+                                           countries=['DEU'], ISINatIDGrid=True)
         self.assertEqual(rf.date[0], 730303)
         self.assertEqual(rf.event_id[0], 1)
         self.assertEqual(rf.event_name[0], '2000')
@@ -119,8 +184,8 @@ class TestRiverFlood(unittest.TestCase):
         return
 
     def test_NATearth_country_flood(self):
-        rf = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
-                       countries=['DEU'])
+        rf = RiverFlood.from_isimip_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+                                           countries=['DEU'])
 
         self.assertEqual(rf.date[0], 730303)
         self.assertEqual(rf.event_id[0], 1)
@@ -145,8 +210,8 @@ class TestRiverFlood(unittest.TestCase):
         lon = np.arange(5, 15, 0.2)
         lon, lat = np.meshgrid(lon, lat)
         rand_centroids = Centroids.from_lat_lon(lat.flatten(), lon.flatten())
-        rf = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
-                       centroids=rand_centroids, ISINatIDGrid=False)
+        rf = RiverFlood.from_isimip_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+                                           centroids=rand_centroids, ISINatIDGrid=False)
 
         self.assertEqual(rf.date[0], 730303)
         self.assertEqual(rf.event_id[0], 1)
@@ -177,8 +242,8 @@ class TestRiverFlood(unittest.TestCase):
     def test_meta_centroids_flood(self):
         min_lat, max_lat, min_lon, max_lon = 45.7, 47.8, 7.5, 10.5
         cent = Centroids.from_pnt_bounds((min_lon, min_lat, max_lon, max_lat), res=0.05)
-        rf_rast = RiverFlood.from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
-                            centroids=cent)
+        rf_rast = RiverFlood.from_isimip_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
+                                                centroids=cent)
         self.assertEqual(rf_rast.centroids.shape, (43, 61))
         self.assertAlmostEqual(np.min(rf_rast.centroids.lat),
                                45.70000000000012, 4)
@@ -202,20 +267,17 @@ class TestRiverFlood(unittest.TestCase):
         self.assertEqual(np.argmin(rf_rast.fraction), 0, 4)
         self.assertEqual(np.argmax(rf_rast.fraction), 360, 4)
 
-#    def test_regularGrid_centroids_flood(self):
-#        return
-#
     def test_flooded_area(self):
 
-        testRFset = RiverFlood.from_nc(countries=['DEU', 'CHE'], dph_path=HAZ_DEMO_FLDDPH,
-                              frc_path=HAZ_DEMO_FLDFRC, ISINatIDGrid=True)
+        testRFset = RiverFlood.from_isimip_nc(countries=['DEU', 'CHE'], dph_path=HAZ_DEMO_FLDDPH,
+                                                  frc_path=HAZ_DEMO_FLDFRC, ISINatIDGrid=True)
         years = [2000, 2001, 2002]
         manipulated_dates = [730303, 730669, 731034]
         for i in range(len(years)):
-            testRFaddset = RiverFlood.from_nc(countries=['DEU', 'CHE'],
-                                     dph_path=HAZ_DEMO_FLDDPH,
-                                     frc_path=HAZ_DEMO_FLDFRC,
-                                     ISINatIDGrid=True)
+            testRFaddset = RiverFlood.from_isimip_nc(countries=['DEU', 'CHE'],
+                                                         dph_path=HAZ_DEMO_FLDDPH,
+                                                         frc_path=HAZ_DEMO_FLDFRC,
+                                                         ISINatIDGrid=True)
             testRFaddset.date = np.array([manipulated_dates[i]])
             if i == 0:
                 testRFaddset.event_name = ['2000_2']
@@ -254,7 +316,6 @@ class TestRiverFlood(unittest.TestCase):
                                3285305678.419206, 3)
         self.assertAlmostEqual(testRFset.fla_ev_av,
                                2463979258.8144045, 3)
-
 
 if __name__ == "__main__":
     # Execute Tests
