@@ -63,6 +63,9 @@ def clawpack_info() -> Tuple[Optional[pathlib.Path], Tuple[str]]:
         import clawpack
     except ImportError:
         return None, ()
+    except subprocess.CalledProcessError:
+        subprocess.call("python -m pip uninstall clawpack -y".split())
+        return None, ()
 
     ver = clawpack.__version__
     path = pathlib.Path(clawpack.__file__).parent.parent

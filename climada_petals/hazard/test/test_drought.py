@@ -18,14 +18,20 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Tests on Drought Hazard"""
 
-
+from pathlib import Path
 import unittest
 
-from climada_petals.hazard.drought import Drought
+from climada_petals.hazard.drought import Drought, SPEI_FILE_DIR, SPEI_FILE_NAME
 
 
 class TestReader(unittest.TestCase):
     """Test loading functions from the Drought class"""
+    
+    # when running this test, drought will be _set up_ first, which by default involves
+    # downloading a 340M file from https://digital.csic.es/, if it is not already present
+    # for saving resources we skip the test unless the file has been downloaded beforehand
+    @unittest.skipUnless(Path(SPEI_FILE_DIR, SPEI_FILE_NAME).is_file(),
+        "the SPEI file is missing, run `Drought().setup()` before running this test")
     def test(self):
 
         drought = Drought()

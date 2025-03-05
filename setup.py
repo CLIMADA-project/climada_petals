@@ -13,7 +13,7 @@ with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
 setup(
     name='climada_petals',
 
-    version='5.0.1-dev',
+    version='6.0.2-dev',
 
     description='CLIMADA Extensions in Python',
 
@@ -33,12 +33,12 @@ setup(
         'Topic :: Scientific/Engineering :: GIS',
         'Topic :: Scientific/Engineering :: Mathematics',
     ],
-
     keywords='climate adaptation',
 
+    python_requires=">=3.10,<3.12",
     install_requires=[
         'boario',
-        'climada>=5.0',
+        'climada>=6.0',
         'cdsapi',
         'osm-flex',
         "pymrio",
