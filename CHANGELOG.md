@@ -1,20 +1,16 @@
 # Changelog
 
-## 4.1.0
+## Unreleased
 
-Release date: 2024-02-19
+Release date: YYYY-MM-DD
+
+Code freeze date: YYYY-MM-DD
+
+### Description
 
 ### Dependency Changes
 
-Added:
-
-- `boario` >=0.5.9
-
 ### Added
-
-- Included `boario` in the supplychain module [#81](https://github.com/CLIMADA-project/climada_petals/pull/81/)
-- Added a Copernicus download function `downloader.py` as part of the `climada.hazard.copernicus_interface` module under construction [#150](https://github.com/CLIMADA-project/climada_petals/pull/150/)
-- Update name of IBTrACS file to version 4.1 in tc_rainfield and tc_surge_bathub tests. [#152](https://github.com/CLIMADA-project/climada_petals/pull/152)
 
 ### Changed
 
@@ -23,6 +19,42 @@ Added:
 ### Deprecated
 
 ### Removed
+
+## 6.0.1
+
+Release date: 2025-03-03
+
+### Dependency Changes
+
+- `climada` >=5.0 &rarr; >=6.0
+
+## 6.0.0
+
+Release date: 2025-03-03
+
+### Dependency Changes
+
+Added:
+
+- `boario` >=0.5,<0.6
+- `meson` >=1.4,<1.5
+
+Updated:
+
+- `cdsapi` >=0.6 &rarr; >=0.7
+- `esmpy` !=8.4.* &rarr; >=8.4.2
+- `scikit-image` >=0.22 &rarr; >=0.25
+
+Removed:
+
+- `gfortran`: this conda package conflicts with, e.g., `esmf`, at least on Windows.
+For using the `climada_petals.hazard.tc_surge_clawpack` module fortran must be installed natively on the local machine.
+
+### Added
+
+- Included `boario` in the supplychain module [#81](https://github.com/CLIMADA-project/climada_petals/pull/81/)
+- Added a Copernicus download function `downloader.py` as part of the `climada.hazard.copernicus_interface` module under construction [#150](https://github.com/CLIMADA-project/climada_petals/pull/150/)
+- Update name of IBTrACS file to version 4.1 in tc_rainfield and tc_surge_bathub tests. [#152](https://github.com/CLIMADA-project/climada_petals/pull/152)
 
 ## 5.0.0
 
