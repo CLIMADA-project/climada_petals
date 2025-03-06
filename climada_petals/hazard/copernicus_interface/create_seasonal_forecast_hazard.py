@@ -40,7 +40,7 @@ class SeasonalForecast:
         lead_time_months,
         initiation_month,
         bounds,
-        format,
+        data_format,
         originating_centre,
         system,
         data_out=None,
@@ -61,7 +61,7 @@ class SeasonalForecast:
             Initiation months for the forecasts (e.g., ["March", "April"]).
         bounds : list
             bounding box values (in EPSG 4326) in the order (min_lon, min_lat, max_lon, max_lat) or (west, south, east, north]).
-        format : str
+        data_format : str
             Data format ('grib' or 'netcdf').
         originating_centre : str
             Data source (e.g., "dwd").
@@ -71,7 +71,7 @@ class SeasonalForecast:
             Directory for storing data. Defaults to a pre-configured directory.
         """
         # initiate initiation month, valid period, and leadtimes
-        valid_period=lead_time_months
+        valid_period = lead_time_months
         if not isinstance(initiation_month, list):
             initiation_month = [initiation_month]
         if not isinstance(valid_period, list) or len(valid_period) != 2:
@@ -88,7 +88,7 @@ class SeasonalForecast:
         self.year_list = year_list
         self.bounds = bounds
         self.bounds_str = f"boundsW{int(self.bounds[0])}_S{int(self.bounds[1])}_E{int(self.bounds[2])}_N{int(self.bounds[3])}"
-        self.format = format
+        self.data_format = data_format
         self.originating_centre = originating_centre
         self.system = system
 
@@ -133,7 +133,7 @@ class SeasonalForecast:
         Returns
         -------
         str
-            Description of if and where files exist 
+            Description of if and where files exist
         """
         initiation_month_str = f"{month_name_to_number(initiation_month):02d}"
         valid_period_str = "_".join(
@@ -155,7 +155,8 @@ class SeasonalForecast:
                 data_type,
                 index_metric,
                 self.bounds_str,
-                format=download_format,
+                self.system,
+                data_format=download_format,
             )
             for data_type in ["downloaded_data", "processed_data", "indices", "hazard"]
         ]
@@ -213,37 +214,38 @@ class SeasonalForecast:
         data_type,
         index_metric,
         bounds_str,
-        format="grib",
+        system,
+        data_format="grib",
     ):
         """
         Provide general file paths for forecast pipeline.
         """
 
         if data_type == "downloaded_data":
-            data_type += f"/{format}"
+            data_type += f"/{data_format}"
         elif data_type == "hazard":
             data_type += f"/{index_metric}"
-            format = "hdf5"
+            data_format = "hdf5"
         elif data_type == "indices":
             data_type += f"/{index_metric}"
-            format = "nc"
+            data_format = "nc"
         elif data_type == "processed_data":
-            format = "nc"
+            data_format = "nc"
         else:
-            raise ValueError(f"Unknown format {format}.")
+            raise ValueError(f"Unknown format {data_format}.")
 
         # prepare parent directory
-        sub_dir = f"{base_dir}/{originating_centre}/{year}/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
+        sub_dir = f"{base_dir}/{originating_centre}/sys{system}/{year}/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
 
         if data_type.startswith("indices"):
             return {
                 timeframe: Path(
-                    f"{sub_dir}/{index_metric}_{bounds_str}_{timeframe}.{format}"
+                    f"{sub_dir}/{index_metric}_{bounds_str}_{timeframe}.{data_format}"
                 )
                 for timeframe in ["daily", "monthly", "stats"]
             }
         else:
-            return Path(f"{sub_dir}/{index_metric}_{bounds_str}.{format}")
+            return Path(f"{sub_dir}/{index_metric}_{bounds_str}.{data_format}")
 
     def get_pipeline_path(self, year, initiation_month_str, data_type):
         """
@@ -259,7 +261,8 @@ class SeasonalForecast:
             data_type,
             self.index_metric,
             self.bounds_str,
-            self.format,
+            self.system,
+            self.data_format,
         )
 
         # create directory if not existing
@@ -307,7 +310,7 @@ class SeasonalForecast:
                         self.variables,
                         year,
                         month_str,
-                        self.format,
+                        self.data_format,
                         self.originating_centre,
                         self.system,
                         bounds_CDS_order,
@@ -350,7 +353,7 @@ class SeasonalForecast:
                     overwrite,
                     downloaded_data_path,
                     self.variables_short,
-                    self.format,
+                    self.data_format,
                 )
 
         return processed_files
@@ -506,7 +509,9 @@ class SeasonalForecast:
                         f"Monthly index file not found for {year}-{month_str}. Skipping..."
                     )
                 except Exception as e:
-                    raise Exception(f"Failed to create hazard for {year}-{month_str}: {e}")
+                    raise Exception(
+                        f"Failed to create hazard for {year}-{month_str}: {e}"
+                    )
 
         return hazard_outputs
 
@@ -553,7 +558,9 @@ class SeasonalForecast:
             file_path = base_path / file_name_pattern.format(month=month_str)
 
             if not file_path.exists():
-                LOGGER.warning(f"Skill data file for month {month_str} not found: {file_path}")
+                LOGGER.warning(
+                    f"Skill data file for month {month_str} not found: {file_path}"
+                )
                 continue
 
             # Load the data using xarray
@@ -614,7 +621,9 @@ class SeasonalForecast:
                             )
 
             except Exception as e:
-                raise Exception(f"Failed to load or process data for month {month_str}: {e}")
+                raise Exception(
+                    f"Failed to load or process data for month {month_str}: {e}"
+                )
 
 
 # ----- Utility Functions -----
@@ -642,12 +651,12 @@ def month_name_to_number(month):
             raise ValueError("Month number must be between 1 and 12.")
     if isinstance(month, str):
         if not month.strip():
-            raise ValueError("Month cannot be empty.") # e.g. "" or "   "
+            raise ValueError("Month cannot be empty.")  # e.g. "" or "   "
         month = month.capitalize()  # Ensure consistent capitalization
         if month in calendar.month_name:
-            return list(calendar.month_name).index(month)  
+            return list(calendar.month_name).index(month)
         elif month in calendar.month_abbr:
-            return list(calendar.month_abbr).index(month)  
+            return list(calendar.month_abbr).index(month)
     raise ValueError(f"Invalid month input: {month}")
 
 
@@ -787,7 +796,7 @@ def _download_data(
     variables,
     year,
     initiation_month,
-    format,
+    data_format,
     originating_centre,
     system,
     bounds_CDS_order,
@@ -808,7 +817,7 @@ def _download_data(
         The year for which data is being downloaded.
     initiation_month : int
         The month when the forecast is initiated.
-    format : str
+    data_format : str
         File format for the downloaded data, either 'grib' or 'netcdf'.
     originating_centre : str
         The data source, e.g., 'dwd' for German Weather Service.
@@ -826,7 +835,7 @@ def _download_data(
     """
     # Prepare download parameters
     download_params = {
-        "format": format,
+        "data_format": data_format,
         "originating_centre": originating_centre,
         "area": bounds_CDS_order,
         "system": system,
@@ -849,7 +858,7 @@ def _download_data(
 
 
 @handle_overwriting
-def _process_data(output_file_name, overwrite, input_file_name, variables, format):
+def _process_data(output_file_name, overwrite, input_file_name, variables, data_format):
     """
     Process a single input file into the desired daily NetCDF format.
 
@@ -863,7 +872,7 @@ def _process_data(output_file_name, overwrite, input_file_name, variables, forma
         Path to the input file.
     variables : list[str]
         Variables to process in the input file.
-    format : str
+    data_format : str
         File format of the input file ('grib' or 'netcdf').
 
     Returns
@@ -874,7 +883,7 @@ def _process_data(output_file_name, overwrite, input_file_name, variables, forma
     try:
         with xr.open_dataset(
             input_file_name,
-            engine="cfgrib" if format == "grib" else None,
+            engine="cfgrib" if data_format == "grib" else None,
         ) as ds:
             # Coarsen the data
             ds_mean = ds.coarsen(step=4, boundary="trim").mean()
@@ -895,7 +904,9 @@ def _process_data(output_file_name, overwrite, input_file_name, variables, forma
         return output_file_name
 
     except FileNotFoundError:
-        raise FileNotFoundError(f"Input file {input_file_name} does not exist, processing failed.")
+        raise FileNotFoundError(
+            f"Input file {input_file_name} does not exist, processing failed."
+        )
     except Exception as e:
         raise Exception(f"Error during processing for {input_file_name}: {e}")
 
