@@ -324,7 +324,7 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
             overwrite=True,
             input_file_name=self.input_file_process,
             variables=["t2m"],
-            format="netcdf",
+            data_format="netcdf",
         )
 
         # Verify the output file exists

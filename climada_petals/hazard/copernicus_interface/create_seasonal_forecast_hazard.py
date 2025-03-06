@@ -217,10 +217,52 @@ class SeasonalForecast:
         system,
         data_format="grib",
     ):
-        """
-        Provide general file paths for forecast pipeline.
-        """
+        """Provide file paths for forecast pipeline. For the path tree structure,
+        see Notes.
 
+        Parameters
+        ----------
+        base_dir : _type_
+            Base directory where copernicus data and files should be stored. In the pipeline, if
+            not specified differently, CONFIG.hazard.copernicus.seasonal_forecasts.dir() is used.
+        originating_centre : _type_
+            Data source (e.g., "dwd").
+        year : int or str
+            Initiation year.
+        initiation_month_str : str
+            Initiation month (e.g., '02' or '11').
+        valid_period_str : str
+            Valid period (e.g., '04_06' or '07_07').
+        data_type : str
+            Type of the data content. Must be in
+            ['downloaded_data', 'processed_data', 'indices', 'hazard'].
+        index_metric : str
+            Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
+        bounds_str : str
+            Spatial bounds as a str, e.g., 'W4_S44_E11_N48'.
+        system : _type_
+            Model configuration (e.g., "21").
+        data_format : str, optional
+            Data format ('grib' or 'netcdf').
+
+        Returns
+        -------
+        pathlib.Path
+            Path based on provided parameters.
+        
+        Notes
+        -----
+        The file path will have following structure 
+        {base_dir}/{originating_centre}/sys{system}/{year}/
+        init{initiation_month_str}/valid{valid_period_str}/
+        Depending on the data_type, further subdirectories are created. The parameters
+        index_metric and bounds_str are included in the file name.
+
+        Raises
+        ------
+        ValueError
+            If unknown data_type is provided.
+        """
         if data_type == "downloaded_data":
             data_type += f"/{data_format}"
         elif data_type == "hazard":
@@ -232,10 +274,13 @@ class SeasonalForecast:
         elif data_type == "processed_data":
             data_format = "nc"
         else:
-            raise ValueError(f"Unknown format {data_format}.")
+            raise ValueError(
+                f"Unknown data type {data_type}. Must be in "
+                "['downloaded_data', 'processed_data', 'indices', 'hazard']")
 
         # prepare parent directory
-        sub_dir = f"{base_dir}/{originating_centre}/sys{system}/{year}/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
+        sub_dir = f"{base_dir}/{originating_centre}/sys{system}/{year}"\
+            f"/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
 
         if data_type.startswith("indices"):
             return {
@@ -244,8 +289,7 @@ class SeasonalForecast:
                 )
                 for timeframe in ["daily", "monthly", "stats"]
             }
-        else:
-            return Path(f"{sub_dir}/{index_metric}_{bounds_str}.{data_format}")
+        return Path(f"{sub_dir}/{index_metric}_{bounds_str}.{data_format}")
 
     def get_pipeline_path(self, year, initiation_month_str, data_type):
         """
