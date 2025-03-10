@@ -30,6 +30,8 @@ from climada_petals.engine.networks.nw_base import Network, Graph
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
                                                      _ckdnearest,
                                                      _preselect_destinations)
+from climada_petals.engine.networks.nw_preps import (reset_ids,
+                                                     ordered_network)
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -167,10 +169,10 @@ def link_vertices_edgecond(graph, target_attrs, edge_attrs, link_attrs,
         if all(graph.graph.es[item][key] == value for key, value in edge_attrs.items())
         ]
 
-    _edges_from_vlists(graph, [edge.source for edge in pot_edges],
+    graph = _edges_from_vlists(graph, [edge.source for edge in pot_edges],
                        [edge.target for edge in pot_edges], link_attrs)
     if bidir:
-        _edges_from_vlists(graph, [edge.target for edge in pot_edges],
+        graph = _edges_from_vlists(graph, [edge.target for edge in pot_edges],
                            [edge.source for edge in pot_edges], link_attrs)
 
     return graph
@@ -222,37 +224,37 @@ def link_vertices_shortest_paths(graph, source_attrs, target_attrs, via_attrs,
     if len(path_dists) == 0:
         return graph
 
-    #if single_shortest:
-    #    ix_source, ix_target = np.where(
-    #        ((path_dists == path_dists.min(axis=0)) &
-    #         (path_dists <= dist_thresh)))  # min dist. per target
-    #else:
-    #    ix_source, ix_target = np.where(path_dists < dist_thresh)
+    if k==1:#single_shortest
+        ix_source, ix_target = np.where(
+            ((path_dists == path_dists.min(axis=0)) &
+             (path_dists <= dist_thresh)))  # min dist. per target
+    else:
+        ix_source, ix_target = np.where(path_dists < dist_thresh)
 
     # Get the indices of the k shortest distances per target
-    sorted_indices = np.argsort(path_dists, axis=0)[:k, :]  # Indices of k smallest distances
-    valid_mask = path_dists[sorted_indices, np.arange(path_dists.shape[1])] <= dist_thresh  # Apply threshold
-
-    # Extract source and target indices
-    ix_source, ix_target = np.where(valid_mask)
-    ix_source = sorted_indices[ix_source, ix_target]  # Map to original indices
+    #sorted_indices = np.argsort(path_dists, axis=0)[:k, :]  # Indices of k smallest distances
+    #valid_mask = path_dists[sorted_indices, np.arange(path_dists.shape[1])] <= dist_thresh  # Apply threshold
+#
+    ## Extract source and target indices
+    #ix_source, ix_target = np.where(valid_mask)
+    #ix_source = sorted_indices[ix_source, ix_target]  # Map to original indices
 
     ## re-map sources to original graph
-    v_ids_source = df_vs_source.index.values[list(ix_source)]
-    #v_ids_source = [subgraph_graph_vsdict[v_id_source] for v_id_source
-    #                in df_vs_source.index.values[list(ix_source)]]
-#
+    #v_ids_source = df_vs_source.index.values[list(ix_source)]
+    v_ids_source = [subgraph_graph_vsdict[v_id_source] for v_id_source
+                    in df_vs_source.index.values[list(ix_source)]]
+
     ## re-map targets to original graph
-    v_ids_target = df_vs_target.index.values[list(ix_target)]
-    #v_ids_target = [subgraph_graph_vsdict[v_id_target] for v_id_target
-    #                in df_vs_target.index.values[list(ix_target)]]
+    #v_ids_target = df_vs_target.index.values[list(ix_target)]
+    v_ids_target = [subgraph_graph_vsdict[v_id_target] for v_id_target
+                    in df_vs_target.index.values[list(ix_target)]]
 
     link_attrs['distance'] = path_dists[(ix_source, ix_target)]
 
-    _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs)
+    graph = _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs)
 
     if bidir:
-        _edges_from_vlists(graph, v_ids_target, v_ids_source, link_attrs)
+       graph = _edges_from_vlists(graph, v_ids_target, v_ids_source, link_attrs)
 
     return graph
 
@@ -262,8 +264,8 @@ def link_vertices_friction_surf(graph, source_ci, target_ci, friction_surf,
 
         gdf_vs = graph.graph.get_vertex_dataframe()
         gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci)]#&
-                               #(gdf_vs.func_tot==1)]
+        gdf_vs_source = gdf_vs[(gdf_vs.ci_type==source_ci) &
+                               (gdf_vs.func_tot==1)]
         del gdf_vs
 
         if not (gdf_vs_source.empty or gdf_vs_target.empty):
@@ -281,7 +283,7 @@ def link_vertices_friction_surf(graph, source_ci, target_ci, friction_surf,
             if not link_name:
                 link_name = f'dependency_{source_ci}_{target_ci}'
 
-            _edges_from_vlists(
+            graph = _edges_from_vlists(
                 graph, list(v_ids_source), list(v_ids_target), {'ci_type': link_name})
         return graph
 
@@ -349,13 +351,15 @@ def _edges_from_vlists(graph, v_ids_source, v_ids_target, link_attrs=None):
         graph.graph.vs[v_ids_target]['geometry'])
 
     if 'distance' not in link_attrs.keys():
+        print("! adding distance")
         link_attrs['distance'] = [
             pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
             for edge_geom in link_attrs['geometry']
         ]
+    ## check if save to add new orig_id here as they might replace existing ones
     #add orig_id to new edges
-    if 'orig_id' not in link_attrs.keys():
-        link_attrs['orig_id'] = np.max(graph.graph.es['orig_id'])+np.arange(len(pairs))
+    #if 'orig_id' not in link_attrs.keys():
+    #    link_attrs['orig_id'] = np.max(graph.graph.es['orig_id'])+np.arange(len(pairs))
 
     graph.graph.add_edges(pairs, attributes=link_attrs)
 
@@ -482,7 +486,7 @@ def _get_subgraph2graph_vsdict(graph, subgraph):
         graph_vs_indices, index=graph_orig_ids,  columns=['index_g'])
 
     df_conc = pd.concat([df_subg, df_g], axis=1)
-    #dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) previous version, very slow
+    #result = dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) #previous version, very slow
     result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
     return result
 
@@ -552,7 +556,7 @@ def propagate_check_fail(graph, source, target, thresh_func):
 
     try:
         adj_sub = subgraph.get_adjacency_sparse()
-    except TypeError:
+    except (TypeError, ValueError):
         # treats case where empty adjacency matrix!
         adj_sub = scipy.sparse.csr_matrix(subgraph.get_adjacency().data)
 
@@ -562,7 +566,7 @@ def propagate_check_fail(graph, source, target, thresh_func):
     # propagate capacities down from source --> target along adj
     capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
 
-    # functionality thesholds for recieved capacity
+    # functionality thesholds for received capacity
     func_thresh = np.array([thresh_func if vx['ci_type'] == target
                             else 0 for vx in v_seq])
 
@@ -695,9 +699,10 @@ def update_enduser_dependencies(graph, df_dependencies,
             if (row.source == 'road'):  # separate checking algorithm for road access
                 graph.graph.delete_edges(
                     ci_type=f'dependency_{row.source}_{row.target}')
-                graph = link_vertices_edgecond(graph, {'source':row.source, 'func_tot':1}, row.target,#,'func_tot':1
-                                            link_name=dependency_name,
-                                            edge_type='road')
+                graph = link_vertices_edgecond(graph, target_attrs={'ci_type':row.target},
+                                               edge_attrs={'ci_type':row.source, 'func_tot':1},
+                                               link_attrs={'ci_type':dependency_name},
+                                               edge_type='road')
             #elif row.n_links == 1:  # those need to be re-checked on their fixed s-t
 #
             #    graph = recheck_access(graph, row.source, row.target, via_ci='road',
@@ -721,11 +726,15 @@ def update_enduser_dependencies(graph, df_dependencies,
                     ) - starttime)
                 if criterion in ["both", "distance"]:
                     starttime = timeit.default_timer()
-                    graph = link_vertices_shortest_paths(graph, {'ci_type': row.source}, {'ci_type': row.target},#'func_tot':1
-                                                 via_attrs={'ci_type': 'road'}, link_attrs={'ci_type': dependency_name},
-                                                      dist_thresh=row.thresh_dist, criterion='distance', k=row.n_links,bidir=False)
+                    graph = link_vertices_shortest_paths(graph, source_attrs={'ci_type': row.source,'func_tot':1},
+                                                         target_attrs={'ci_type': row.target},
+                                                         via_attrs={'ci_type': 'road','func_tot':1},
+                                                         link_attrs={'ci_type': dependency_name},
+                                                         dist_thresh=row.thresh_dist, criterion='distance',
+                                                         k=row.n_links,bidir=False)
                     print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
                     ) - starttime)
+
         graph = propagate_check_fail(graph, row.source, row.target, row.thresh_func)
     return graph
 
