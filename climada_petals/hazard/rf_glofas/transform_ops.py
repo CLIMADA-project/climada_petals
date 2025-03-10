@@ -35,7 +35,7 @@ import xesmf as xe
 from numba import guvectorize
 
 from climada.util.coordinates import get_country_geometries, country_to_iso
-from .cds_glofas_downloader import glofas_request, CDS_DOWNLOAD_DIR
+from .cds_glofas_downloader import glofas_request, datetime_index_to_request, CDS_DOWNLOAD_DIR
 
 LOGGER = logging.getLogger(__name__)
 
@@ -241,13 +241,13 @@ def fit_gumbel_r(
 
 def download_glofas_discharge(
     product: str,
-    date_from: str,
-    date_to: Optional[str],
+    dates: pd.DatetimeIndex,
     num_proc: int = 1,
     download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
     countries: Optional[Union[List[str], str]] = None,
     preprocess: Optional[Callable] = None,
     open_mfdataset_kw: Optional[Mapping[str, Any]] = None,
+    split_request_keys: Union[bool, Iterable[str]] = True,
     **request_kwargs,
 ) -> xr.DataArray:
     """Download the GloFAS data and return the resulting dataset
@@ -262,11 +262,8 @@ def download_glofas_discharge(
         The string identifier of the product to download. See
         :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`
         for supported products.
-    date_from : str
-        Earliest date to download. Specification depends on the ``product`` chosen.
-    date_to : str or None
-        Latest date to download. If ``None``, only download the ``date_from``.
-        Specification depends on the ``product`` chosen.
+    dates : pd.DatetimeIndex
+        Dates to download data for.
     num_proc : int
         Number of parallel processes to use for downloading. Defaults to 1.
     download_path : str or pathlib.Path
@@ -288,6 +285,14 @@ def download_glofas_discharge(
     LOGGER.debug("Preparing download directory: %s", download_path)
     download_path = Path(download_path)  # Make sure it is a Path
     download_path.mkdir(parents=True, exist_ok=True)
+
+    # Parse dates
+    request = datetime_index_to_request(dates, product)
+    if split_request_keys is True:
+        split_request_keys = ["hyear"] if product == "historical" else ["year", "month", "day"]
+    elif split_request_keys is False:
+        split_request_keys = None
+    print(split_request_keys)
 
     # Determine area from 'countries'
     if countries is not None:
@@ -313,20 +318,23 @@ def download_glofas_discharge(
         request_kwargs["area"] = list(bounds)
 
     # Request the data
+    request.update(request_kwargs)
     files = glofas_request(
         product=product,
-        date_from=date_from,
-        date_to=date_to,
         num_proc=num_proc,
         output_dir=download_path,
-        request_kw=request_kwargs,
+        request_kw=request,
+        split_request_keys=split_request_keys,
     )
+
+    if open_mfdataset_kw is False:
+        return files
 
     # Set arguments for 'open_mfdataset'
     open_kwargs = dict(
         chunks={}, combine="nested", concat_dim="time", preprocess=preprocess
     )
-    if open_mfdataset_kw is not None:
+    if open_mfdataset_kw is not None and open_mfdataset_kw is not True:
         open_kwargs.update(open_mfdataset_kw)
 
     # Squeeze all dimensions except time

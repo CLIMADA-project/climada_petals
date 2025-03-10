@@ -25,13 +25,18 @@ from tempfile import TemporaryFile, TemporaryDirectory
 from zipfile import ZipFile
 import logging
 import shutil
+import multiprocessing
+from itertools import repeat
 
 import xarray as xr
 import requests
 import geopandas as gpd
 import shapely
+import pandas as pd
 
-from .flood_maps import open_flood_maps_extents
+from climada.util import log_level
+
+from .flood_maps import open_flood_maps_extents, JRC_FLOOD_HAZARD_MAP_TILES_FILENAME
 from .transform_ops import (
     merge_flood_maps,
     download_glofas_discharge,
@@ -51,6 +56,16 @@ JRC_FLOOD_HAZARD_MAP_RPS = [10, 20, 50, 75, 100, 200, 500]
 FLOPROS_DATA = "https://nhess.copernicus.org/articles/16/1049/2016/nhess-16-1049-2016-supplement.zip"
 
 GUMBEL_FIT_DATA = "https://www.research-collection.ethz.ch/bitstream/handle/20.500.11850/641667/gumbel-fit.nc"
+
+
+def yearly_max(inpath, outpath, bounds):
+    lon_min, lat_min, lon_max, lat_max = bounds
+    with xr.open_dataset(inpath, chunks={"time": -1, "longitude": "auto", "latitude": "auto"}) as ds:
+        dis = ds["dis24"].sel(
+            longitude=slice(lon_min, lon_max), latitude=slice(lat_max, lat_min)
+        ).compute()
+        dis = dis.groupby("time.year").max()
+        save_file(dis, outpath)
 
 
 def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):
@@ -194,16 +209,17 @@ def setup_gumbel_fit(
     """
     # Download discharge and preprocess
     LOGGER.debug("Downloading historical discharge data")
-    discharge = download_glofas_discharge(
+    discharge_files = download_glofas_discharge(
         "historical",
         "1979",
         "2023",
         num_proc=num_downloads,
-        open_mfdataset_kw=dict(
-            concat_dim="time",
-            chunks=dict(time=-1, longitude="auto", latitude="auto"),
-            parallel=parallel,
-        ),
+        open_mfdataset_kw=False,
+        # open_mfdataset_kw=dict(
+        #     concat_dim="time",
+        #     chunks=dict(time=-1, longitude="auto", latitude="auto"),
+        #     parallel=parallel,
+        # ),
     )
 
     # Create output dir
@@ -217,17 +233,45 @@ def setup_gumbel_fit(
     # Save yearly max
     LOGGER.debug("Saving yearly maximum of discharge data")
     flood_map_tiles = open_flood_maps_extents()
-    for _, tile in flood_map_tiles.iterrows():
-        lon_min, lon_max, lat_min, lat_max = shapely.bounds(tile["geometry"]).tolist()
-        # NOTE: latitude inverted!
-        dis = discharge.sel(
-            longitude=slice(lon_min, lon_max), latitude=slice(lat_max, lat_min)
-        )
-        dis = dis.groupby("time.year").max()
-        save_file(
-            dis, outdir_discharge / tile_filename(id=tile["id"], name=tile["name"])
-        )
-    discharge.close()
+    for _, tile in flood_map_tiles.iloc[23:].iterrows():  # TODO: Remove subselection
+        LOGGER.debug("Tile %s", tile["name"])
+        bounds = shapely.bounds(tile["geometry"]).tolist()
+        # print(bounds)
+        tiledir = outdir_discharge / tile_filename(id=tile["id"], name=tile["name"])
+        tiledir.mkdir(exist_ok=True)
+        outfiles = [tiledir / file.with_suffix(".nc").name for file in discharge_files]
+
+        with log_level("ERROR"):
+            with multiprocessing.Pool(num_downloads) as pool:
+                pool.starmap(yearly_max, zip(discharge_files, outfiles, repeat(bounds)))
+
+    # Save yearly max
+    # LOGGER.debug("Saving yearly maximum of discharge data")
+    # flood_map_tiles = open_flood_maps_extents()
+    # for _, tile in flood_map_tiles.iterrows():
+    #     lon_min, lon_max, lat_min, lat_max = shapely.bounds(tile["geometry"]).tolist()
+    #     tiledir = outdir_discharge / tile_filename(id=tile["id"], name=tile["name"])
+    #     tiledir.mkdir(exist_ok=True)
+
+    #     def work(arr):
+    #         # NOTE: latitude inverted!
+    #         dis = arr.sel(
+    #             longitude=slice(lon_min, lon_max), latitude=slice(lat_max, lat_min)
+    #         )
+    #         return dis.groupby("time.year").max()
+
+    #     data = [xr.open_dataarray(file, chunks={"time": -1, "longitude": "auto", "latitude": "auto"}) for file in discharge_files]
+    #     xr.save_mfdataset(
+    #         [work(da).to_dataset() for da in data],
+    #         [tiledir / file.with_suffix(".nc").name for file in discharge_files],
+    #         engine="netcdf4",
+    #         encoding={"dis24": {"dtype": "float32", "zlib": False}},
+    #     )
+
+        # save_file(
+        #     dis, outdir_discharge / tile_filename(id=tile["id"], name=tile["name"])
+        # )
+    # discharge.close()
 
     # Fit Gumbel
     LOGGER.debug("Fitting Gumbel distributions to historical discharge data")
@@ -244,6 +288,121 @@ def setup_gumbel_fit(
                 outdir_fit / tile_filename(id=tile["id"], name=tile["name"]),
                 dtype="float64",
             )
+
+
+def setup_gumbel_fit_new(
+    output_dir: Union[Path, str] = DEFAULT_DATA_DIR,
+    num_downloads: int = 1,
+    parallel: bool = False,
+):
+    """Download historical discharge data and compute the Gumbel distribution fits.
+
+    Data is downloaded from the Copernicus Climate Data Store (CDS).
+
+    Parameters
+    ----------
+    output_dir
+        The directory to place the resulting file
+    num_downloads : int
+        Number of parallel downloads from the CDS. Defaults to 1.
+    parallel : bool
+        Whether to preprocess data in parallel. Defaults to ``False``.
+    """
+    # Create output dir
+    output_dir = Path(output_dir)
+    outdir_discharge = output_dir / "discharge"
+    outdir_discharge.mkdir(exist_ok=True)
+    outdir_fit = output_dir / "gumbel-fit"
+    outdir_fit.mkdir(exist_ok=True)
+
+    # Tile bands
+    BANDS = [
+        ("N80",),
+        ("N70",),
+        ("N60",),
+        ("N50",),
+        ("N40",),
+        ("N30",),
+        ("N20",),
+        ("N10",),
+        ("N0",),
+        ("S10", "S20"),
+        ("S30", "S40", "S50"),
+    ]
+
+    def tile_filename(id: int, name: str):
+        return f"ID{id}_{name}"
+
+    def band_filename(band):
+        return band[0]
+
+    flood_map_tiles = open_flood_maps_extents()
+
+    # flood_map_tiles_file = output_dir / JRC_FLOOD_HAZARD_MAP_TILES_FILENAME
+    # if flood_map_tiles_file.is_file():
+    #     flood_map_tiles = gpd.read_file(flood_map_tiles_file)
+    # else:
+    #     flood_map_tiles = open_flood_maps_extents()
+    #     flood_map_tiles["Processed"] = False
+
+    # Store which ones have been processed
+    # for row, tile in flood_map_tiles.iterrows():
+    #     LOGGER.debug("Tile %d %s", tile["id"], tile["name"])
+    #     if tile["Processed"]:
+    #         LOGGER.debug("Already processed. Continuing...")
+    #         continue
+
+        # bounds = shapely.bounds(tile["geometry"]).tolist()
+        # filename = Path(tile_filename(id=tile["id"], name=tile["name"])).with_suffix(".nc")
+
+    for band in BANDS:
+        LOGGER.debug("Band %s", band[0])
+        bounds = flood_map_tiles.loc[flood_map_tiles["name"].str.startswith(band)].total_bounds.tolist()
+        
+        filename = Path(band_filename(band)).with_suffix(".nc")
+        discharge_path = outdir_discharge / filename
+        fit_path = outdir_fit / filename
+
+        if fit_path.is_file():
+            LOGGER.debug("Already processed. Continuing...")
+            continue
+
+        if not discharge_path.is_file():
+            discharge = download_glofas_discharge(
+                "historical",
+                pd.date_range("1979", "2023", freq="D"),
+                split_request_keys=True,
+                # NOTE: 'area': north (maxy), west (minx), south (miny), east (maxx)
+                area=[bounds[3], bounds[0], bounds[1], bounds[2]],
+                num_proc=num_downloads,
+                preprocess=lambda x: x.groupby("time.year").max(),
+                open_mfdataset_kw=dict(
+                    concat_dim="year",
+                    chunks=dict(time=-1, longitude="auto", latitude="auto"),
+                    parallel=parallel,
+                ),
+            )
+            # Save yearly max
+            save_file(discharge, discharge_path)
+            discharge.close()
+
+        with xr.open_dataarray(
+            discharge_path, chunks=dict(year=-1, longitude=50, latitude=50)
+        ) as discharge:
+            fit = fit_gumbel_r(discharge, min_samples=10)
+            save_file(fit, fit_path, dtype="float64")
+
+        # flood_map_tiles.loc[row, "Processed"] = True
+        # flood_map_tiles.to_file(flood_map_tiles_file, driver='GeoJSON')
+
+    # Merge files
+    LOGGER.debug("Merging tiles")
+    dsets = [xr.open_dataset(outdir_fit / Path(band_filename(band)).with_suffix(".nc"), chunks={}) for band in BANDS]
+    ds_merge = xr.combine_by_coords(
+        [ds.reindex({"longitude": dsets[0]["longitude"]}, method="nearest", tolerance=0.0001) for ds in dsets],
+        combine_attrs="drop_conflicts",
+    )
+    save_file(ds_merge, output_dir / "gumbel-fit.nc", dtype="float64", zlib=True, complevel=9)
 
 
 def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
