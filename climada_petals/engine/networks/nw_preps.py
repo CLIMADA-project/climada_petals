@@ -667,27 +667,41 @@ def reset_ids(network):
     -------
         [type]: [description]
     """
+    # Copy nodes and edges to avoid modifying the original data
     nodes = network.nodes.copy()
     edges = network.edges.copy()
 
-    to_ids = edges['to_id'].to_numpy()
-    from_ids = edges['from_id'].to_numpy()
-    new_node_ids = range(len(nodes))
-    # creates a dictionary of the node ids and the actual indices
-    id_dict = dict(zip(nodes.id, new_node_ids))
-    nt = np.copy(to_ids)
-    nf = np.copy(from_ids)
-    # updates all from and to ids, because many nodes are effected, this
-    # is quite optimal approach for large dataframes
-    for k, v in id_dict.items():
-        nt[to_ids == k] = v
-        nf[from_ids == k] = v
-    edges.drop(labels=['to_id', 'from_id'], axis=1, inplace=True)
-    edges['from_id'] = nf
-    edges['to_id'] = nt
-    nodes.drop(labels=['id'], axis=1, inplace=True)
+    #to_ids = edges['to_id'].to_numpy()
+    #from_ids = edges['from_id'].to_numpy()
+    # Generate new node IDs
+    new_node_ids = np.arange(len(nodes))
+
+    ## creates a dictionary of the node ids and the actual indices
+    #id_dict = dict(zip(nodes.id, new_node_ids))
+    #nt = np.copy(to_ids)
+    #nf = np.copy(from_ids)
+    ## updates all from and to ids, because many nodes are effected, this
+    ## is quite optimal approach for large dataframes
+    #for k, v in id_dict.items():
+    #    nt[to_ids == k] = v
+    #    nf[from_ids == k] = v
+    #edges.drop(labels=['to_id', 'from_id'], axis=1, inplace=True)
+    #edges['from_id'] = nf
+    #edges['to_id'] = nt
+    #nodes.drop(labels=['id'], axis=1, inplace=True)
+
+    # Map old node IDs to new IDs using a dictionary
+    id_map = dict(zip(nodes['id'], new_node_ids))
+
+    # Efficiently map old IDs to new IDs in 'to_id' and 'from_id' columns
+    edges['from_id'] = edges['from_id'].map(id_map)
+    edges['to_id'] = edges['to_id'].map(id_map)
+
+    # Update node and edge IDs
     nodes['id'] = new_node_ids
-    edges['id'] = range(len(edges))
+    edges['id'] = np.arange(len(edges))
+
+    # Reset indices to ensure a clean, sequential index
     edges.reset_index(drop=True, inplace=True)
     nodes.reset_index(drop=True, inplace=True)
 
