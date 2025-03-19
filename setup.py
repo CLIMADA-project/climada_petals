@@ -35,7 +35,7 @@ setup(
     ],
     keywords='climate adaptation',
 
-    python_requires=">=3.10,<3.12",
+    python_requires=">=3.10,<3.13",
     install_requires=[
         'boario',
         'climada>=6.0',
