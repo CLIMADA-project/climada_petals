@@ -12,6 +12,8 @@ Code freeze date: YYYY-MM-DD
 
 ### Added
 
+- Add coastal and riverine flood data from Aqueduct [#108](https://github.com/CLIMADA-project/climada_petals/pull/108) [#100](https://github.com/CLIMADA-project/climada_petals/pull/100)
+
 ### Changed
 
 ### Fixed
