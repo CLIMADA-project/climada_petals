@@ -11,6 +11,7 @@ from datetime import datetime
 from matplotlib.ticker import FuncFormatter
 from climada.engine import Impact
 from climada.util.config import CONFIG
+import matplotlib.gridspec as gridspec
 from climada_petals.hazard.copernicus_interface.create_seasonal_forecast_hazard import SeasonalForecast
 
 # Suppress warnings
