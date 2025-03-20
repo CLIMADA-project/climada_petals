@@ -45,9 +45,9 @@ def calculate_heat_indices_metrics(
     Parameters
     ----------
     input_file_name : str
-        Path to the input data file containing the variables required for the computation of the selected index. 
-        The file should be in NetCDF (.nc) or GRIB format and contain relevant atmospheric data such as temperature, 
-        dewpoint temperature, humidity, or wind speed. Information on the required variables for each index 
+        Path to the input data file containing the variables required for the computation of the selected index.
+        The file should be in NetCDF (.nc) or GRIB format and contain relevant atmospheric data such as temperature,
+        dewpoint temperature, humidity, or wind speed. Information on the required variables for each index
         can be found in the `index_definitions` class.
 
     index_metric : str
@@ -62,13 +62,13 @@ def calculate_heat_indices_metrics(
         - "AT"  : Apparent Temperature
         - "WBGT": Wet Bulb Globe Temperature (Simple)
     tr_threshold : float, optional
-        Temperature threshold (°C) for computing tropical nights (TR). 
+        Temperature threshold (°C) for computing tropical nights (TR).
         Default is 20°C, meaning nights with Tmin > 20°C are considered tropical.
     hw_threshold : float, optional
-        Temperature threshold (°C) for detecting a heatwave (HW). 
+        Temperature threshold (°C) for detecting a heatwave (HW).
         Default is 27°C, meaning a heatwave occurs if the temperature remains above this threshold for multiple days.
     hw_min_duration : int, optional
-        Minimum consecutive days for a heatwave event to be detected. 
+        Minimum consecutive days for a heatwave event to be detected.
         Default is 3 days.
     hw_max_gap : int, optional
         Maximum allowable gap (in days) between heatwave days for them to still be considered part of the same event.
@@ -99,10 +99,14 @@ def calculate_heat_indices_metrics(
                 da_index = kelvin_to_celsius(daily_ds["t2m_mean"])  # Kelvin to Celsius
                 da_index.attrs["units"] = "degC"
             elif index_metric == "Tmax":
-                da_index = kelvin_to_celsius(daily_ds["t2m_max"].resample(step="1D").max())
+                da_index = kelvin_to_celsius(
+                    daily_ds["t2m_max"].resample(step="1D").max()
+                )
                 da_index.attrs["units"] = "degC"
             elif index_metric == "Tmin":
-                da_index = kelvin_to_celsius(daily_ds["t2m_min"].resample(step="1D").min())
+                da_index = kelvin_to_celsius(
+                    daily_ds["t2m_min"].resample(step="1D").min()
+                )
                 da_index.attrs["units"] = "degC"
             elif index_metric in ["HIS", "HIA"]:
                 da_index = heat_index.calculate_heat_index(

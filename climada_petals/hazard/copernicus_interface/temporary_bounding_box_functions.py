@@ -38,10 +38,12 @@ def bounding_box_from_countries(country_names, buffer=1.0):
 
     country_geometry = get_country_geometries(country_names).geometry
     longitudes, latitudes = [], []
-    
+
     for multipolygon in country_geometry:
         if isinstance(multipolygon, Polygon):  # Single polygon case
-            for coord in multipolygon.exterior.coords:  # From 'polygon' to 'multipolygon'
+            for (
+                coord
+            ) in multipolygon.exterior.coords:  # From 'polygon' to 'multipolygon'
                 longitudes.append(coord[0])
                 latitudes.append(coord[1])
         else:  # MultiPolygon case

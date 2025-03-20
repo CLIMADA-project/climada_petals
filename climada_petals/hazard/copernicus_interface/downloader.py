@@ -32,7 +32,7 @@ Prerequisites:
    For instance, if you want to access the Climate Data Store, see here for instructions:
    https://cds.climate.copernicus.eu/how-to-api#install-the-cds-api-client
 
-4. Dataset Terms and Conditions: After selecting the dataset to download, make 
+4. Dataset Terms and Conditions: After selecting the dataset to download, make
    sure to accept the terms and conditions on the corresponding dataset webpage (under the "download" tab)
    in the CDS portal before running the script.
 """

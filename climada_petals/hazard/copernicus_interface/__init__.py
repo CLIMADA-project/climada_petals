@@ -19,7 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 init Copernicus forecast handler
 """
 
-from .create_seasonal_forecast_hazard import * # This will import all functions from create_seasonal_forecast_hazard.py
+from .create_seasonal_forecast_hazard import *  # This will import all functions from create_seasonal_forecast_hazard.py
 from .downloader import (
     download_data,
 )  # This will import all functions from downloader.py

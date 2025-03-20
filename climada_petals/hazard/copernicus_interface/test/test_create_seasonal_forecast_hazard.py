@@ -88,7 +88,6 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate_leadtimes(2023, "InvalidMonth", ["January", "February"])
 
-
     def setUp(self):
 
         ###############################################
@@ -101,7 +100,7 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
         self.input_file = self.test_dir / "test_fixed_monthly_data.nc"
         self.output_file = self.test_dir / "test_fixed_hazard.hdf5"
 
-        n_members = 5 # members
+        n_members = 5  # members
         step_vals = ["2018-02", "2018-03"]  # 2 forecast steps (months)
         lat_vals = np.array([-20.0, -25.0, -30.0])  # 3 latitude points
         lon_vals = np.array([100.0, 105.0, 110.0])  # 3 longitude points
@@ -140,7 +139,7 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
                 Tmax=(
                     ["number", "step", "latitude", "longitude"],
                     data,
-                ),  
+                ),
             ),
             coords=dict(
                 number=("number", np.arange(n_members)),
@@ -160,7 +159,9 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
         self.test_dir_process = Path("./test_data_process")
         self.test_dir_process.mkdir(exist_ok=True)
 
-        self.input_file_process = self.test_dir_process / "test_sample.nc" # note that this could also be a grib test file
+        self.input_file_process = (
+            self.test_dir_process / "test_sample.nc"
+        )  # note that this could also be a grib test file
         self.output_file_process = self.test_dir_process / "test_output.nc"
 
         # Define fixed grid dimensions
@@ -328,7 +329,9 @@ class TestCalculateSeasonalForescastHazard(unittest.TestCase):
         )
 
         # Verify the output file exists
-        self.assertTrue(self.output_file_process.exists(), "Processed file was not created.")
+        self.assertTrue(
+            self.output_file_process.exists(), "Processed file was not created."
+        )
 
         # Read processed file and check values
         ds_out = xr.open_dataset(self.output_file_process)

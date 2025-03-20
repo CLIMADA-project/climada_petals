@@ -249,10 +249,10 @@ class SeasonalForecast:
         -------
         pathlib.Path
             Path based on provided parameters.
-        
+
         Notes
         -----
-        The file path will have following structure 
+        The file path will have following structure
         {base_dir}/{originating_centre}/sys{system}/{year}/
         init{initiation_month_str}/valid{valid_period_str}/
         Depending on the data_type, further subdirectories are created. The parameters
@@ -276,11 +276,14 @@ class SeasonalForecast:
         else:
             raise ValueError(
                 f"Unknown data type {data_type}. Must be in "
-                "['downloaded_data', 'processed_data', 'indices', 'hazard']")
+                "['downloaded_data', 'processed_data', 'indices', 'hazard']"
+            )
 
         # prepare parent directory
-        sub_dir = f"{base_dir}/{originating_centre}/sys{system}/{year}"\
+        sub_dir = (
+            f"{base_dir}/{originating_centre}/sys{system}/{year}"
             f"/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
+        )
 
         if data_type.startswith("indices"):
             return {

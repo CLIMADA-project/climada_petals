@@ -39,7 +39,7 @@ IndexSpec : dataclass
 
 IndexSpecEnum : Enum
     Enumerates the supported climate indices, each mapped to its `IndexSpec` configuration.
-    
+
 Functions
 ---------
 get_info(index_name)
@@ -224,4 +224,3 @@ def get_short_name_from_variable(variable):
         return "v10"
     else:
         return None
-
