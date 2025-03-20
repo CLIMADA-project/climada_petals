@@ -1,18 +1,23 @@
-
-
-from climada_petals.hazard.copernicus_interface.create_seasonal_forecast_hazard import SeasonalForecast
-
-
 import warnings
+import os
+import numpy as np
+import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import cartopy.crs as ccrs
-import cartopy.feature as cfeature  # Import cartopy features
+import cartopy.feature as cfeature
+from datetime import datetime
+from matplotlib.ticker import FuncFormatter
+from climada.engine import Impact
+from climada.util.config import CONFIG
+from climada_petals.hazard.copernicus_interface.create_seasonal_forecast_hazard import SeasonalForecast
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="shapely")
 warnings.filterwarnings("ignore", category=UserWarning, message="This figure includes Axes that are not compatible with tight_layout")
 
+#plot forescast
 def plot_forecast(forecast_year, initiation_month_str, target_month, handler, index_metric="TX30"):
     """
     Plots ensemble members for a given seasonal forecast.
@@ -80,12 +85,8 @@ def plot_forecast(forecast_year, initiation_month_str, target_month, handler, in
 
     plt.show()
 
-# Example Usage:
-# plot_forecast(2023, "04", "2023-07", handler)
-    
-import xarray as xr
-import matplotlib.pyplot as plt
-import pandas as pd
+
+#########extract statitcs
 
 def extract_statistics(file_path, forecast_months):
     """Extracts tropical nights statistics from a dataset for the given months."""
@@ -160,22 +161,7 @@ def plot_tropical_nights_statistics(forecast_year, initiation_months, valid_peri
     plt.tight_layout()
     plt.show()
 
-# Example Usage
-
-#plot_tropical_nights_statistics(
-   # forecast_year=2022, 
-   # initiation_months=["04", "05"], 
-   # valid_periods=["06", "07", "08"],
-   # handler=handler
-#)
-
-
-import os
-import xarray as xr
-import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib.dates as mdates
-
+###########
 
 
 def get_dynamic_dataset_paths(forecast_year, initiation_months, valid_periods, handler):
@@ -215,24 +201,9 @@ def load_dataset(file_path):
         print(f"Error loading {file_path}: {e}")
         return None
 
+
 def plot_seasonal_metrics_by_lat(forecast_year, initiation_months, valid_periods, handler, threshold=5):
-    """
-    Plots seasonal forecast metrics against latitude for different initiation months.
-
-    Parameters:
-    - forecast_year (int): Year of the forecast.
-    - initiation_months (list of str): Initiation months (e.g., ["04", "05"]).
-    - valid_periods (list of str): Valid forecast months (e.g., ["06", "07", "08"]).
-    - handler (SeasonalForecast): An instance of SeasonalForecast.
-    - threshold (float): Threshold value for metric calculations.
-
-    Returns:
-    - None
-    """
-
-    # ✅ Retrieve index metric from handler
     index_metric = handler.index_metric
-
     dataset_paths = get_dynamic_dataset_paths(forecast_year, initiation_months, valid_periods, handler)
 
     if not dataset_paths:
@@ -254,30 +225,20 @@ def plot_seasonal_metrics_by_lat(forecast_year, initiation_months, valid_periods
             print(f"Skipping dataset {init_label}: Variable '{index_metric}' not found.")
             continue
 
-        # Extract dimensions
         data_var = ds[index_metric]
         forecast_steps = ds["step"].values
         latitudes = ds["latitude"].values
 
         for row, (name, func) in enumerate(metrics_functions):
             metric_data = func(data_var, threshold)
-
-            # ✅ Plot using pcolormesh
             c = axs[row, col].pcolormesh(forecast_steps, latitudes, metric_data.T, shading='auto', cmap='coolwarm')
-
             axs[row, col].set_title(f"{name} ({init_label})")
             axs[row, col].set_xlabel("Forecast Month")
             axs[row, col].set_ylabel("Latitude")
-
-            # ✅ Set forecast month labels
             axs[row, col].set_xticks(forecast_steps)
-
-            # ✅ Add color bar
             fig.colorbar(c, ax=axs[row, col], orientation='horizontal', pad=0.2, fraction=0.08).set_label('Metric Scale')
 
     plt.subplots_adjust(hspace=0.5, wspace=0.4)
-
-    # ✅ General description for all plots
     description = """
     Each plot represents a different metric for assessing forecast skills in climate models:
     - Ensemble Spread: Standard deviation of forecasts across ensemble members.
@@ -287,9 +248,8 @@ def plot_seasonal_metrics_by_lat(forecast_year, initiation_months, valid_periods
     X-axis (Forecast Month) represents forecast steps, while Y-axis (Latitude) represents spatial variation.
     """
     fig.text(0.1, -0.13, description, wrap=True, fontsize=17)
-
     plt.show()
-# ✅ Calculation Functions
+
 def calculate_ensemble_spread(data, threshold):
     return data.std(dim='number').mean(dim='longitude')
 
@@ -305,21 +265,7 @@ def calculate_ensemble_agreement_index(data, threshold):
 
 
 
-#plot_seasonal_metrics_by_lat(
-#    forecast_year=2023,
-#    initiation_months=["04", "05"],
-#    valid_periods=["06", "07", "08"],
-#    handler=handler,
-#    threshold=20
-#)
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-from climada.engine import Impact
-from datetime import datetime
-from matplotlib.ticker import FuncFormatter
-from climada.util.config import CONFIG
+############
 
 climada_base_path = CONFIG.hazard.copernicus.local_data.dir()
 
@@ -387,16 +333,7 @@ def plot_individual_and_aggregated_impacts(year_list, index_metric, *init_months
     plt.tight_layout()
     plt.show()
 
-# Example call
-#plot_individual_and_aggregated_impacts([2023], "TX30", "04", "05")
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-from datetime import datetime
-from matplotlib.ticker import FuncFormatter
-from climada.engine import Impact
-from climada.util.config import CONFIG
+###########
 
 climada_base_path = CONFIG.hazard.copernicus.local_data.dir()
 
@@ -466,7 +403,6 @@ def plot_impact_distributions(year_list, index_metric, init_months):
 
                 axes[i].bar(bin_midpoints, hist_percentage, width=np.diff(edges), color="black", alpha=0.5, edgecolor="black", align="edge")
 
-                # ✅ Ensure polynomial fitting only when enough data points exist
                 if len(bin_midpoints) > 3:  # Ensure at least 4 points for cubic fit
                     try:
                         coefficients = np.polyfit(bin_midpoints, hist_percentage, min(3, len(bin_midpoints)-1))
@@ -499,21 +435,9 @@ def plot_impact_distributions(year_list, index_metric, init_months):
 
             plt.show()
 
-# Example usage
-#plot_impact_distributions([2023], "TX30", ["04", "05"])
-            
 
 
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-import warnings
-from matplotlib.colors import LogNorm
-from climada.util.config import CONFIG
-from climada.engine import Impact
+############
 
 # Suppress specific runtime warnings
 warnings.filterwarnings("ignore", message="All-NaN axis encountered")
@@ -650,18 +574,10 @@ def plot_statistics_per_location(year_list, index_metric, *init_months, scale="n
 
             plt.show()
 
-# Example call:
-#plot_statistics_per_location([2023], "TX30", "04", "05", scale="log")
 
 
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-import matplotlib.colors as mcolors
-from climada.util.config import CONFIG
-from climada.engine import Impact
+
+####### plot statistics per member
 
 def month_num_to_name_stats(month_num):
     month_names = ["January", "February", "March", "April", "May", "June",
@@ -780,5 +696,3 @@ def plot_statistics_and_member_agreement(year_list, index_metric, agreement_thre
             plt.subplots_adjust(hspace=0.05, wspace=0.1)
             plt.show()
 
-# Example usage:
-#plot_statistics_and_member_agreement([2023], "TX30", 0.7, "04")
