@@ -67,8 +67,8 @@ and error and information logging. It supports both index-based and variable-bas
 in how indices and variables are processed and managed.
 """
 
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
 
 
 @dataclass

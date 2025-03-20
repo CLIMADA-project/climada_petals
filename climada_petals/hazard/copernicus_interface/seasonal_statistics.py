@@ -19,14 +19,13 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 File to calculate different seasonal forecast indices.
 """
 
-import numpy as np
-import xarray as xr
-import pandas as pd
 import logging
 
 import climada_petals.hazard.copernicus_interface.heat_index as heat_index
+import numpy as np
+import pandas as pd
+import xarray as xr
 from climada_petals.hazard.copernicus_interface.heat_index import kelvin_to_celsius
-
 
 LOGGER = logging.getLogger(__name__)
 

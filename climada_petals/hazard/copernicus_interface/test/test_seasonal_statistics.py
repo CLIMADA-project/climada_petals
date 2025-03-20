@@ -1,17 +1,17 @@
-import unittest
-import numpy as np
-import xarray as xr
 import os
+import unittest
+
+import numpy as np
 import pandas as pd
+import xarray as xr
 
 # Import the module to test
 from climada_petals.hazard.copernicus_interface.seasonal_statistics import (
     calculate_heat_indices_metrics,
-    calculate_statistics_from_index,
     calculate_monthly_dataset,
+    calculate_statistics_from_index,
     monthly_periods_from_valid_times,
 )
-
 
 """
 Test Suite for seasonal Statistics Functions

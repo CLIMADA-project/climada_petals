@@ -1,20 +1,21 @@
-import warnings
 import os
+import warnings
+from datetime import datetime
+
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import matplotlib.colors as mcolors
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from datetime import datetime
-from matplotlib.ticker import FuncFormatter
 from climada.engine import Impact
 from climada.util.config import CONFIG
-import matplotlib.gridspec as gridspec
 from climada_petals.hazard.copernicus_interface.create_seasonal_forecast_hazard import (
     SeasonalForecast,
 )
+from matplotlib.ticker import FuncFormatter
 
 # Suppress warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="shapely")

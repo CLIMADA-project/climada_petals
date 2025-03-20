@@ -1,17 +1,17 @@
-import unittest
 import os
-import xarray as xr
-import pandas as pd
+import unittest
+from pathlib import Path
+
 import numpy as np
 import numpy.testing as npt
-from pathlib import Path
+import pandas as pd
+import xarray as xr
 from climada.hazard import Hazard
-
 from climada_petals.hazard.copernicus_interface.create_seasonal_forecast_hazard import (
-    calculate_leadtimes,
-    month_name_to_number,
     _convert_to_hazard,
     _process_data,
+    calculate_leadtimes,
+    month_name_to_number,
 )
 
 

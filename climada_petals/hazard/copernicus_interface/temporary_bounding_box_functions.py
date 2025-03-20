@@ -1,10 +1,8 @@
 # intermediate util file until below functions are part of climada.util.coordinates.py
 
 import numpy as np
-from shapely import Polygon
-
-
 from climada.util.coordinates import get_country_geometries, latlon_bounds
+from shapely import Polygon
 
 
 def bounding_box_global():

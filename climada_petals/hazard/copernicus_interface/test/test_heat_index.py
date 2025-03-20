@@ -1,18 +1,19 @@
 import unittest
+
 import numpy as np
-import xarray as xr
 import numpy.testing as npt
 import pandas as pd
+import xarray as xr
 from climada_petals.hazard.copernicus_interface.heat_index import (
-    calculate_relative_humidity,
-    calculate_heat_index_simplified,
-    calculate_heat_index_adjusted,
-    calculate_humidex,
     calculate_apparent_temperature,
-    calculate_wbgt_simple,
-    calculate_tx30,
-    calculate_tr,
+    calculate_heat_index_adjusted,
+    calculate_heat_index_simplified,
+    calculate_humidex,
     calculate_hw,
+    calculate_relative_humidity,
+    calculate_tr,
+    calculate_tx30,
+    calculate_wbgt_simple,
 )
 
 

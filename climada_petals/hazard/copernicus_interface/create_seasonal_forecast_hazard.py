@@ -1,21 +1,18 @@
-import logging
 import calendar
+import logging
+from datetime import date
 from pathlib import Path, PosixPath
+from typing import List
 
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
-import matplotlib.pyplot as plt
-from datetime import date
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from typing import List
-
-from climada.hazard import Hazard
 from climada import CONFIG
-
-import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
+from climada.hazard import Hazard
 from climada_petals.hazard.copernicus_interface.downloader import download_data
 from climada_petals.hazard.copernicus_interface.index_definitions import (
     IndexSpecEnum,

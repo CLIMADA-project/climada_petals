@@ -38,9 +38,9 @@ Prerequisites:
 """
 
 import logging
-import cdsapi
 from pathlib import Path
 
+import cdsapi
 from climada import CONFIG
 
 DATA_DIR = CONFIG.hazard.copernicus.local_data.dir()
