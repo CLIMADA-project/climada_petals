@@ -31,3 +31,4 @@ dependencies:
     - readthedocs-sphinx-ext>=2.1
     - sphinx-book-theme
     - sphinx-markdown-tables
+    - sphinx-mdinclude

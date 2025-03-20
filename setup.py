@@ -7,7 +7,7 @@ from setuptools import setup, find_namespace_packages
 here = Path(__file__).parent.absolute()
 
 # Get the long description from the README file
-with open(here / 'doc/misc/README.md', encoding='utf-8') as f:
+with open(here / 'README.md', encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
@@ -35,7 +35,7 @@ setup(
     ],
     keywords='climate adaptation',
 
-    python_requires=">=3.10,<3.12",
+    python_requires=">=3.10,<3.13",
     install_requires=[
         'boario',
         'climada>=6.0',
