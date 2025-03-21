@@ -646,9 +646,10 @@ def _update_internal_dependencies(graph, p_source, p_sink, source_var,
     # specifically for roads: if edge is dysfunctional, render its target vertex dysfunctional
     if {'road'}.issubset(set(graph.graph.vs['ci_type'])):
         LOGGER.info('Updating roads')
-        targets_dys = [edge.target for edge in graph.graph.es.select(
+        sources_targets_dys = [[edge.source, edge.target] for edge in graph.graph.es.select(
             ci_type='road').select(func_tot_eq=0)]
-        graph.graph.vs.select(targets_dys).select(
+        sources_targets_dys = np.array(sources_targets_dys).flatten().tolist()#flatten array
+        graph.graph.vs.select(sources_targets_dys).select(
             ci_type='road')['func_tot'] = 0
 
     # specifically for powerlines: check power clusters
@@ -721,7 +722,7 @@ def update_enduser_dependencies(graph, df_dependencies,
                     graph = link_vertices_friction_surf(graph, row.source, row.target, friction_surf,
                                                      link_name=dependency_name,
                                                      dist_thresh=row.thresh_dur*83.33,
-                                                     k=row.n_links, dur_thresh=row.thresh_dur)
+                                                     k=row.n_links, bidir=True, dur_thresh=row.thresh_dur)
                     print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
                     ) - starttime)
                 if criterion in ["both", "distance"]:
@@ -731,7 +732,7 @@ def update_enduser_dependencies(graph, df_dependencies,
                                                          via_attrs={'ci_type': 'road','func_tot':1},
                                                          link_attrs={'ci_type': dependency_name},
                                                          dist_thresh=row.thresh_dist, criterion='distance',
-                                                         k=row.n_links,bidir=False)
+                                                         k=row.n_links, bidir=True)
                     print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
                     ) - starttime)
 
