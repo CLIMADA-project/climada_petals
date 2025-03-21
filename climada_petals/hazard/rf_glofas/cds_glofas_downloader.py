@@ -23,9 +23,9 @@ Store (CDS).
 from pathlib import Path
 import multiprocessing as mp
 from copy import deepcopy
-from typing import Iterable, Mapping, Any, Optional, List, Union
-from itertools import repeat
-from datetime import date, datetime
+from typing import Iterable, Mapping, Any, Optional, List, Union, Dict
+import itertools as it
+from datetime import datetime
 import logging
 import hashlib
 
@@ -46,7 +46,7 @@ DEFAULT_REQUESTS = { #default requests to change after cds update
         "product_type": ["consolidated"],
         "system_version": ["version_4_0"],
         "hydrological_model": ["lisflood"],
-        "format": "grib2",
+        "data_format": "grib2",
         "download_format": "unarchived",
         "hyear": ["1979"],
         "hmonth": [f"{month:02}" for month in range(1, 13)],
@@ -57,7 +57,7 @@ DEFAULT_REQUESTS = { #default requests to change after cds update
         "product_type": ["ensemble_perturbed_forecasts"],
         "system_version": ["operational"],
         "hydrological_model": ["lisflood"],
-        "format": "grib2",
+        "data_format": "grib2",
         "download_format": "unarchived",
         "year": ["2022"],
         "month": ["08"],
@@ -102,6 +102,22 @@ DEFAULT_REQUESTS = { #default requests to change after cds update
 #    },
 #}
 """Default request keyword arguments to be updated by the user requests"""
+
+CLIENT_KW_DEFAULT = {
+    "quiet": False, "debug": False, "timeout": 240, "sleep_max": 480
+}
+"""Default keyword argument for the API client"""
+
+def datetime_index_to_request(
+    index: pd.DatetimeIndex, product: str
+) -> Dict[str, List[str]]:
+    """Create a request-compatible dict from a series"""
+    prefix = "h" if product == "historical" else ""
+    return {
+        prefix + "year": list(map(str, index.year.unique())),
+        prefix + "month": list(map(lambda x: f"{x:02d}", index.month.unique())),
+        prefix + "day": list(map(lambda x: f"{x:02d}", index.day.unique())),
+    }
 
 
 def request_to_md5(request: Mapping[Any, Any]) -> str:
@@ -157,7 +173,7 @@ def glofas_request_single(
     outfile = outpath / (
         datetime.today().strftime("%y%m%d-%H%M%S") + f"-{request_hash}"
     )
-    extension = ".grib" if request["format"] == "grib" else ".nc"
+    extension = ".grib" if request["data_format"] == "grib2" else ".nc"
     outfile = outfile.with_suffix(extension)
 
     # Check if request was issued before
@@ -171,7 +187,7 @@ def glofas_request_single(
 
     # Set up client and retrieve data
     LOGGER.info("Downloading file: %s", outfile)
-    client_kw_default = dict(quiet=False, debug=False)
+    client_kw_default = deepcopy(CLIENT_KW_DEFAULT)
     if client_kw is not None:
         client_kw_default.update(client_kw)
     client = Client(**client_kw_default)
@@ -198,23 +214,22 @@ def glofas_request_multiple(
         return pool.starmap(
             glofas_request_single,
             zip(
-                repeat(product),
+                it.repeat(product),
                 requests,
-                repeat(outdir),
-                repeat(use_cache),
-                repeat(client_kw),
+                it.repeat(outdir),
+                it.repeat(use_cache),
+                it.repeat(client_kw),
             ),
         )
 
 
 def glofas_request(
     product: str,
-    date_from: str,
-    date_to: Optional[str],
     output_dir: Union[Path, str],
     num_proc: int = 1,
     use_cache: bool = True,
-    request_kw: Optional[Mapping[str, str]] = None,
+    split_request_keys: Optional[Iterable[str]] = None,
+    request_kw: Optional[Mapping[str, Union[str, List[str]]]] = None,
     client_kw: Optional[Mapping[str, Any]] = None,
 ) -> List[Path]:
     """Request download of GloFAS data products from the Copernicus Data Store (CDS)
@@ -245,11 +260,6 @@ def glofas_request(
     ----------
     product : str
         The indentifier for the CMS product to download. See below for available options.
-    date_from : str
-        First date to download data for. Interpretation varies based on ``product``.
-    date_to : str or None
-        Last date to download data for. Interpretation varies based on ``product``. If
-        ``None``, or the same date as ``date_from``, only download data for ``date_from``
     output_dir : Path
         Output directory for the downloaded data
     num_proc : int
@@ -257,6 +267,8 @@ def glofas_request(
     use_cache : bool (optional)
         Skip downloading if the target file exists and the accompanying request file
         contains the same request
+    split_request_keys : Iterable of str
+        The keys for which this request is to be split in multiple requests.
     request_kw : dict(str: str)
         Dictionary to update the default request for the given product
     client_kw : dict (optional)
@@ -268,6 +280,7 @@ def glofas_request(
         Paths of the downloaded files
     """
     # Check if product exists
+    glofas_product = f"cems-glofas-{product}"
     try:
         default_request = deepcopy(DEFAULT_REQUESTS[product])
     except KeyError as err:
@@ -279,35 +292,31 @@ def glofas_request(
     if request_kw is not None:
         default_request.update(**request_kw)
 
-    if product == "historical":
-        # Interpret dates as years only
-        year_from = int(date_from)
-        year_to = int(date_to) if date_to is not None else year_from
-
-        # List up all requests
-        requests = [
-            {"hyear": str(year)} for year in list(range(year_from, year_to + 1))
+    # Single request
+    if split_request_keys is None:
+        return [
+            glofas_request_single(
+                glofas_product, default_request, output_dir, use_cache, client_kw
+            )
         ]
 
-    elif product == "forecast":
-        # Download single date if 'date_to' is 'None'
-        date_from: date = date.fromisoformat(date_from)
-        date_to: date = (
-            date.fromisoformat(date_to) if date_to is not None else date_from
-        )
+    # Split requests
+    split_request_map = {key: default_request[key] for key in split_request_keys}
+    requests = [
+        {**default_request, **dict(zip(split_request_map.keys(), bits))}
+        for bits in it.product(*split_request_map.values())
+    ]
 
-        # List up all requests
-        dates = pd.date_range(date_from, date_to, freq="D", inclusive="both").date
-        requests = [
-            {"year": str(d.year), "month": f"{d.month:02d}", "day": f"{d.day:02d}"}
-            for d in dates
-        ]
+    def sanitize_request_lists(request):
+        """Turn each item into a list if the default request item is a list"""
+        default = deepcopy(DEFAULT_REQUESTS[product])
+        request_sane = deepcopy(request)
+        for key, default_value in default.items():
+            if isinstance(default_value, list) and not isinstance(request[key], list):
+                request_sane[key] = [request[key]]
+        return request_sane
 
-    else:
-        NotImplementedError("Unknown product: %s" % product)
-
-    requests = [{**default_request, **req} for req in requests]
-    glofas_product = f"cems-glofas-{product}"
+    requests = [sanitize_request_lists(req) for req in requests]
 
     # Execute request
     return glofas_request_multiple(

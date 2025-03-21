@@ -153,7 +153,13 @@ class TestECMWF(unittest.TestCase):
             for key in tr.attrs.keys():
                 self.assertEqual(tr.attrs[key], tr_read.attrs[key])
             for v in tr.variables:
-                self.assertEqual(tr[v].dtype, tr_read[v].dtype)
+                if v == 'time':
+                    # depending on the xarray version the tc_track type may be datatime64[us]
+                    # or datatime64[ns]. dump and read will cast this to datetime64[ns].
+                    # we just make sure it is _some_ datetime64
+                    self.assertTrue(np.issubdtype(tr_read[v].dtype, np.datetime64))
+                else:
+                    self.assertEqual(tr[v].dtype, tr_read[v].dtype)
                 np.testing.assert_array_equal(tr[v].values, tr_read[v].values)
             self.assertEqual(tr.sid, tr_read.sid)
 

@@ -23,6 +23,6 @@
 * Emanuel Schmid
 * Chris Fairless
 * Jan Wüthrich
-* Zélie Standhanske
+* Zélie Stalhandske
 * Lukas Riedel
 * Samuel Juhel

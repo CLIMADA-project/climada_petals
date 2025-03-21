@@ -687,16 +687,15 @@ class SupplyChain:
 
         Notes
         -----
-           * The Leontief approach assumes the shock to degrade the final demand,
-           and computes the resulting changed production.
-           * The Ghosh approach assumes the shock to impact value added,
-           and computes the resulting production.
-           * The BoARIO approach assumes the shock to incapacitate productive capital
-           (and possibly generate a reconstruction demand with ``boario_type="rebuild"``)
-           and computes the change of production over time with the ARIO model.
-           See the `BoARIO documentation <https://spjuhel.github.io/BoARIO/>`_ for more details
-           (Note that not all features of BoARIO are included yet).
-
+        * The Leontief approach assumes the shock to degrade the final demand,
+          and computes the resulting changed production.
+        * The Ghosh approach assumes the shock to impact value added,
+          and computes the resulting production.
+        * The BoARIO approach assumes the shock to incapacitate productive capital
+          (and possibly generate a reconstruction demand with ``boario_type="rebuild"``)
+          and computes the change of production over time with the ARIO model.
+          See the `BoARIO documentation <https://spjuhel.github.io/BoARIO/>`_ for more details
+          (Note that not all features of BoARIO are included yet).
 
         References
         ----------
