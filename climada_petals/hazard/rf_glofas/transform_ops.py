@@ -332,7 +332,7 @@ def download_glofas_discharge(
         open_kwargs.update(open_mfdataset_kw)
 
     # Squeeze all dimensions except time
-    arr = xr.open_mfdataset(files, **open_kwargs)["dis24"]
+    arr = xr.open_mfdataset(files, engine="cfgrib", **open_kwargs)["dis24"]#engine="cfgrib"
     dims = {dim for dim, size in arr.sizes.items() if size == 1} - {"time"}
     return arr.squeeze(dim=dims)
 

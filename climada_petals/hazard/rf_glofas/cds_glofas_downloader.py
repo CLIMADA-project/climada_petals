@@ -40,43 +40,67 @@ from climada.util.constants import SYSTEM_DIR
 LOGGER = logging.getLogger(__name__)
 
 CDS_DOWNLOAD_DIR = Path(SYSTEM_DIR, "cds-download")
-
-DEFAULT_REQUESTS = {
+DEFAULT_REQUESTS = { #default requests to change after cds update
     "historical": {
-        "variable": "river_discharge_in_the_last_24_hours",
-        "product_type": "consolidated",
-        "system_version": "version_3_1",
-        "hydrological_model": "lisflood",
-        "format": "grib",
-        "hyear": "1979",
-        "hmonth": [
-            "january",
-            "february",
-            "march",
-            "april",
-            "may",
-            "june",
-            "july",
-            "august",
-            "september",
-            "october",
-            "november",
-            "december",
-        ],
+        "variable": ["river_discharge_in_the_last_24_hours"],
+        "product_type": ["consolidated"],
+        "system_version": ["version_4_0"],
+        "hydrological_model": ["lisflood"],
+        "format": "grib2",
+        "download_format": "unarchived",
+        "hyear": ["1979"],
+        "hmonth": [f"{month:02}" for month in range(1, 13)],
         "hday": [f"{day:02}" for day in range(1, 32)],
     },
     "forecast": {
-        "variable": "river_discharge_in_the_last_24_hours",
-        "product_type": "ensemble_perturbed_forecasts",
-        "system_version": "version_3_1",
-        "hydrological_model": "lisflood",
-        "format": "grib",
-        "year": "2022",
-        "month": "08",
-        "day": "01",
+        "variable": ["river_discharge_in_the_last_24_hours"],
+        "product_type": ["ensemble_perturbed_forecasts"],
+        "system_version": ["operational"],
+        "hydrological_model": ["lisflood"],
+        "format": "grib2",
+        "download_format": "unarchived",
+        "year": ["2022"],
+        "month": ["08"],
+        "day": ["01"],
         "leadtime_hour": (np.arange(1, 31) * 24).astype(str).tolist(),
     },
 }
+#DEFAULT_REQUESTS = {
+#    "historical": {
+#        "variable": "river_discharge_in_the_last_24_hours",
+#        "product_type": "consolidated",
+#        "system_version": "version_3_1",
+#        "hydrological_model": "lisflood",
+#        "format": "grib",
+#        "hyear": "1979",
+#        "hmonth": [
+#            "january",
+#            "february",
+#            "march",
+#            "april",
+#            "may",
+#            "june",
+#            "july",
+#            "august",
+#            "september",
+#            "october",
+#            "november",
+#            "december",
+#        ],
+#        "hday": [f"{day:02}" for day in range(1, 32)],
+#    },
+#    "forecast": {
+#        "variable": "river_discharge_in_the_last_24_hours",
+#        "product_type": "ensemble_perturbed_forecasts",
+#        "system_version": "version_3_1",
+#        "hydrological_model": "lisflood",
+#        "format": "grib",
+#        "year": "2022",
+#        "month": "08",
+#        "day": "01",
+#        "leadtime_hour": (np.arange(1, 31) * 24).astype(str).tolist(),
+#    },
+#}
 """Default request keyword arguments to be updated by the user requests"""
 
 
