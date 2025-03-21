@@ -25,7 +25,7 @@ import multiprocessing as mp
 from copy import deepcopy
 from typing import Iterable, Mapping, Any, Optional, List, Union, Dict
 import itertools as it
-from datetime import date, datetime
+from datetime import datetime
 import logging
 import hashlib
 
@@ -68,8 +68,14 @@ DEFAULT_REQUESTS = {
 }
 """Default request keyword arguments to be updated by the user requests"""
 
+CLIENT_KW_DEFAULT = {
+    "quiet": False, "debug": False, "timeout": 240, "sleep_max": 480
+}
+"""Default keyword argument for the API client"""
 
-def datetime_index_to_request(index: pd.DatetimeIndex, product: str) -> Dict[str, List[str]]:
+def datetime_index_to_request(
+    index: pd.DatetimeIndex, product: str
+) -> Dict[str, List[str]]:
     """Create a request-compatible dict from a series"""
     prefix = "h" if product == "historical" else ""
     return {
@@ -146,7 +152,7 @@ def glofas_request_single(
 
     # Set up client and retrieve data
     LOGGER.info("Downloading file: %s", outfile)
-    client_kw_default = dict(quiet=False, debug=False, timeout=240, sleep_max=480)
+    client_kw_default = deepcopy(CLIENT_KW_DEFAULT)
     if client_kw is not None:
         client_kw_default.update(client_kw)
     client = Client(**client_kw_default)
@@ -188,7 +194,7 @@ def glofas_request(
     num_proc: int = 1,
     use_cache: bool = True,
     split_request_keys: Optional[Iterable[str]] = None,
-    request_kw: Optional[Mapping[str, str]] = None,
+    request_kw: Optional[Mapping[str, Union[str, List[str]]]] = None,
     client_kw: Optional[Mapping[str, Any]] = None,
 ) -> List[Path]:
     """Request download of GloFAS data products from the Copernicus Data Store (CDS)
@@ -253,16 +259,31 @@ def glofas_request(
 
     # Single request
     if split_request_keys is None:
-        return glofas_request_single(
-            glofas_product, default_request, output_dir, use_cache, client_kw
-        )
+        return [
+            glofas_request_single(
+                glofas_product, default_request, output_dir, use_cache, client_kw
+            )
+        ]
 
     # Split requests
     split_request_map = {key: default_request[key] for key in split_request_keys}
-    requests = [{**default_request, **dict(zip(split_request_map.keys(), bits))} for bits in it.product(*split_request_map.values())]
+    requests = [
+        {**default_request, **dict(zip(split_request_map.keys(), bits))}
+        for bits in it.product(*split_request_map.values())
+    ]
+
+    def sanitize_request_lists(request):
+        """Turn each item into a list if the default request item is a list"""
+        default = deepcopy(DEFAULT_REQUESTS[product])
+        request_sane = deepcopy(request)
+        for key, default_value in default.items():
+            if isinstance(default_value, list) and not isinstance(request[key], list):
+                request_sane[key] = [request[key]]
+        return request_sane
+
+    requests = [sanitize_request_lists(req) for req in requests]
 
     # Execute request
     return glofas_request_multiple(
         glofas_product, requests, output_dir, num_proc, use_cache, client_kw
     )
-

@@ -10,6 +10,7 @@ import pandas as pd
 import shapely
 
 from .rf_glofas import DEFAULT_DATA_DIR
+from .transform_ops import save_file
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def tile_filename(return_period: int, id: int, name: str):
 
 
 def download_flood_maps_extents(
-    filepath: Union[str, Path] = DEFAULT_DATA_DIR / JRC_FLOOD_HAZARD_MAP_TILES_FILENAME
+    filepath: Union[str, Path] = DEFAULT_DATA_DIR / JRC_FLOOD_HAZARD_MAP_TILES_FILENAME,
 ):
     """Download the extents dataset for the flood hazard map tiles"""
     output_path = Path(filepath).parent
@@ -43,7 +44,7 @@ def download_flood_maps_extents(
 
 
 def open_flood_maps_extents(
-    filepath: Union[str, Path] = DEFAULT_DATA_DIR / JRC_FLOOD_HAZARD_MAP_TILES_FILENAME
+    filepath: Union[str, Path] = DEFAULT_DATA_DIR / JRC_FLOOD_HAZARD_MAP_TILES_FILENAME,
 ) -> gpd.GeoDataFrame:
     if not Path(filepath).is_file():
         download_flood_maps_extents(filepath)
@@ -70,26 +71,38 @@ def download_flood_map_tiles(
 
     for return_period in JRC_FLOOD_HAZARD_MAP_RPS:
         # Set output path for the files
-        output_path = output_path / f"RP{return_period}"
-        output_path.mkdir(exist_ok=True)
+        rp_path = output_path / f"RP{return_period}"
+        rp_path.mkdir(exist_ok=True)
 
         # Download the files (streaming, because they may be tens of MB large)
         for _, tile in tiles.iterrows():
             url = tile_url(
                 return_period=return_period, id=tile["id"], name=tile["name"]
             )
-            filename = output_path / tile_filename(
+            filepath = rp_path / tile_filename(
                 return_period=return_period, id=tile["id"], name=tile["name"]
             )
-            if filename.is_file() and not overwrite:
-                LOGGER.debug("Skipping file %s because it already exists", filename)
+            if filepath.is_file() and not overwrite:
+                LOGGER.debug("Skipping file %s because it already exists", filepath)
                 continue
 
             LOGGER.debug("Downloading %s", url)
             response = requests.get(url, stream=True)
-            with open(filename, "w") as file:
+            with open(filepath, "wb") as file:
                 for chunk in response.iter_content(chunk_size=10 * 1024):
                     file.write(chunk)
+
+
+def rewrite_tile(filepath: Union[str, Path], overwrite: bool = False):
+    """Rewrite a GeoTIFF tile as NetCDF"""
+    output_path = Path(filepath).with_suffix(".nc")
+    if overwrite or not output_path.is_file():
+        LOGGER.debug("Rewriting %s as NetCDF", filepath)
+        with xr.open_dataarray(filepath, chunks="auto", engine="rasterio") as da:
+            da = da.drop_vars("spatial_ref", errors="ignore").squeeze("band", drop=True)
+            save_file(da, output_path=output_path, zlib=True)
+
+    return output_path
 
 
 def open_flood_map_tiles(
@@ -102,7 +115,7 @@ def open_flood_map_tiles(
 
     def open_rp(return_period: int) -> xr.DataArray:
         """Open and merge flood maps tiles for a single return period"""
-        files = [
+        tif_files = [
             Path(flood_maps_dir)
             / f"RP{return_period}"
             / tile_filename(
@@ -110,23 +123,23 @@ def open_flood_map_tiles(
             )
             for _, tile in tiles.iterrows()
         ]
-        return (
-            xr.open_mfdataset(
-                [files],
-                chunks="auto",
-                combine="by_coords",
-                engine="rasterio",
-            )
-            .drop_vars("spatial_ref", errors="ignore")
-            .squeeze("band", drop=True)["band_data"]
-        )
+        # nc_files = [rewrite_tile(tif) for tif in tif_files]
+        with xr.open_mfdataset(
+            tif_files,
+            chunks="auto",
+            combine="by_coords",
+            engine="rasterio",
+        ) as ds:
+            return ds.drop_vars("spatial_ref", errors="ignore").squeeze(
+                "band", drop=True
+            )["band_data"]
 
     darrs = [open_rp(rp) for rp in JRC_FLOOD_HAZARD_MAP_RPS]
     da_null = xr.full_like(darrs[0], np.nan)
 
     return (
         xr.concat(
-            da_null + darrs,
+            [da_null] + darrs,
             pd.Index([1] + JRC_FLOOD_HAZARD_MAP_RPS, name="return_period"),
         )
         .rename(x="longitude", y="latitude")

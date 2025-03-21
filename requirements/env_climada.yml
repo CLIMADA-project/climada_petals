@@ -6,7 +6,7 @@ dependencies:
   - boario>=0.5
   - cdsapi>=0.7
   - importlib-metadata<8.0  # 8.0 is incompatible with esmpy 8.4 (which is the only version available for windows 2024-07)
-  - esmpy>=8.3,<8.4.1  # 8.4.1 has an issue with ESMFMKFILE env var being required (otherwise, listing esmpy is redundant as xesmf needs it)
+  - esmf>=8.7
   - gfortran>=13.0
   - meson-python>=0.15,<0.16  # as of 2024-04 something seems to be wrong with 0.16
   - osm-flex>=1.1

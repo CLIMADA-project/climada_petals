@@ -22,10 +22,11 @@ Top-level computation class for river flood inundation
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import logging
-from typing import Iterable, Union, Optional, Mapping, Any, Callable, List
+from typing import Union, Optional, Mapping, Any, Callable, List
 from contextlib import contextmanager
 from datetime import datetime
 from collections import namedtuple
+import shutil
 
 import xarray as xr
 import geopandas as gpd
@@ -38,6 +39,7 @@ from .transform_ops import (
     download_glofas_discharge,
     return_period,
     return_period_resample,
+    interpolate_space,
     regrid,
     apply_flopros,
     flood_depth,
@@ -57,6 +59,7 @@ LOGGER = logging.getLogger(__name__)
 def _maybe_open_dataarray(
     arr: Optional[xr.DataArray],
     filename: Union[str, Path],
+    engine="netcdf4",
     **open_dataarray_kwargs,
 ):
     """Create a context for opening an xarray file or yielding the input array
@@ -80,7 +83,8 @@ def _maybe_open_dataarray(
     """
     if arr is None:
         LOGGER.debug("Opening file: %s", filename)
-        arr = xr.open_dataarray(filename, **open_dataarray_kwargs)
+        kwargs = {"engine": engine} | open_dataarray_kwargs
+        arr = xr.open_dataarray(filename, **kwargs)
         try:
             yield arr
         finally:
@@ -89,6 +93,18 @@ def _maybe_open_dataarray(
 
     else:
         yield arr
+
+
+def cleanup_cache_dir(
+    cache_dir: Union[Path, str] = DEFAULT_DATA_DIR / ".cache", dry_run: bool = False
+):
+    """Delete the contents of the cache directory"""
+    directories = [path for path in Path(cache_dir).iterdir() if path.is_dir()]
+    for path in directories:
+        LOGGER.debug("Removing directory: %s", path)
+        shutil.rmtree(path)
+    if dry_run:
+        LOGGER.debug("Dry run. No files removed")
 
 
 _RiverFloodCachePaths = namedtuple(
@@ -181,18 +197,19 @@ class RiverFloodInundation:
             (see above for configuration). This directory (and all its parents) will be
             created.
         """
-        self._tempdir = None
         self.data_dir = Path(data_dir)
         if not self.data_dir.is_dir():
             raise FileNotFoundError(f"'data_dir' does not exist: {self.data_dir}")
 
         self.store_intermediates = store_intermediates
-        self.flood_maps = None
         self.flood_map_tiles = open_flood_maps_extents(
             self.data_dir / JRC_FLOOD_HAZARD_MAP_TILES_FILENAME
         )
+        self.flood_maps_dir = self.data_dir / "flood-maps"
         self.gumbel_fits = xr.open_dataset(
-            self.data_dir / "gumbel-fit.nc", chunks="auto"
+            self.data_dir / "gumbel-fit.nc",
+            chunks="auto",
+            engine="netcdf4",
         )
         self.flopros = gpd.read_file(
             self.data_dir / "FLOPROS_shp_V1/FLOPROS_shp_V1.shp"
@@ -203,8 +220,10 @@ class RiverFloodInundation:
     def __del__(self):
         """Upon deletion, make sure the temporary directory is cleaned up"""
         # NOTE: Deletion might also happen when __init__ did not succeed/conclude!
-        if self._tempdir is not None:
-            self._tempdir.cleanup()
+        try:
+            getattr(self, "_tempdir").cleanup()
+        except AttributeError:
+            pass
 
     def _create_tempdir(self, cache_dir: Union[Path, str]):
         """Create a temporary directory inside the top-level cache dir
@@ -242,6 +261,7 @@ class RiverFloodInundation:
         self,
         discharge: Optional[xr.DataArray] = None,
         apply_protection: Union[bool, str] = "both",
+        load_flood_maps_kwargs: Optional[Mapping[str, Any]] = None,
         resample_kws: Optional[Mapping[str, Any]] = None,
         regrid_kws: Optional[Mapping[str, Any]] = None,
     ):
@@ -303,7 +323,10 @@ class RiverFloodInundation:
             self.return_period_resample(discharge=discharge, **resample_kws)
 
         # Load flood maps
-        flood_maps = self.load_flood_maps(reference=discharge)
+        load_flood_maps_defaults = {"reference": discharge}
+        if load_flood_maps_kwargs is not None:
+            load_flood_maps_defaults.update(load_flood_maps_kwargs)
+        flood_maps = self.load_flood_maps(**load_flood_maps_defaults)
 
         # Regrid
         regrid_defaults = {"flood_maps": flood_maps}
@@ -323,7 +346,34 @@ class RiverFloodInundation:
         # Return data
         return ds_flood
 
-    def load_flood_maps(self, reference: Optional[xr.DataArray] = None) -> xr.DataArray:
+    def load_flood_maps(
+        self,
+        reference: Optional[xr.DataArray] = None,
+        coarsening: int = 7,
+        coarsen_agg=np.mean,
+    ) -> xr.DataArray:
+        """Load flood hazard maps for the area represented by the given reference
+
+        Parameters
+        ----------
+        reference : xr.DataArray (optional)
+            The array serving as spatial reference for the flood maps. All flood map
+            tiles intersecting the bounds of the reference area will be downloaded and
+            opened. If ``None`` (default), the cached discharge will be opened as
+            reference.
+        coarsening : int
+            How many pixels in horizontal and vertical direction will be coarsened into
+            a single pixel. This reduces memory load due to the computation, but also
+            reduces accuracy. The original resolution is 3 arc seconds. Defaults to 7
+            (coarse resolution of 21 arc seconds).
+        coarsen_agg
+            Function used for coarsening pixels. Defaults to mean.
+
+        Returns
+        -------
+        flood_maps : xr.DataArray
+            Flood hazard maps for the given area reference
+        """
         with _maybe_open_dataarray(
             reference, self.cache_paths.discharge, chunks="auto"
         ) as reference:
@@ -337,11 +387,15 @@ class RiverFloodInundation:
                     ]
                 )
             )
+            tiles_select = self.flood_map_tiles.loc[select]
             flood_maps_dir = self.data_dir / "flood-maps"
-            download_flood_map_tiles(output_dir=flood_maps_dir)
-            return open_flood_map_tiles(
-                flood_maps_dir=flood_maps_dir, tiles=self.flood_map_tiles.loc[select]
+            download_flood_map_tiles(output_dir=flood_maps_dir, tiles=tiles_select)
+            flood_maps = open_flood_map_tiles(
+                flood_maps_dir=flood_maps_dir, tiles=tiles_select
             )
+            return flood_maps.coarsen(
+                longitude=coarsening, latitude=coarsening, boundary="trim"
+            ).reduce(func=coarsen_agg)
 
     def download_forecast(
         self,
@@ -390,11 +444,11 @@ class RiverFloodInundation:
         )
         forecast = download_glofas_discharge(
             product="forecast",
-            date_from=pd.Timestamp(forecast_date).date().isoformat(),
-            date_to=None,
+            dates=pd.DatetimeIndex([forecast_date]),
             countries=countries,
             preprocess=preprocess,
             leadtime_hour=leadtime_hour,
+            split_request_keys=False,
             **download_glofas_discharge_kwargs,
         )
         if self.store_intermediates:
@@ -403,7 +457,7 @@ class RiverFloodInundation:
 
     def download_reanalysis(
         self,
-        countries: Union[str, Iterable[str]],
+        countries: Union[str, List[str]],
         year: int,
         preprocess: Optional[Callable] = None,
         **download_glofas_discharge_kwargs,
@@ -438,10 +492,10 @@ class RiverFloodInundation:
         """
         reanalysis = download_glofas_discharge(
             product="historical",
-            date_from=str(year),
-            date_to=None,
+            dates=pd.date_range(f"{year}-01-01", f"{year}-12-31"),
             countries=countries,
             preprocess=preprocess,
+            split_request_keys=False,
             **download_glofas_discharge_kwargs,
         )
         if self.store_intermediates:
@@ -580,6 +634,9 @@ class RiverFloodInundation:
         r_period : xr.DataArray, optional
             The return period data to regrid. Defaults to ``None``, which indicates that
             data should be loaded from the cache.
+        flood_maps : xr.DataArray, optional
+            The flood maps to use for regridding. Defaults to ``None``, which means that
+            flood maps compatible to ``r_period`` will be downloaded and opened.
         method : str, optional
             Interpolation method of the return period data. Defaults to ``"bilinear"``.
             See https://xesmf.readthedocs.io/en/stable/notebooks/Compare_algorithms.html
@@ -601,10 +658,12 @@ class RiverFloodInundation:
         with _maybe_open_dataarray(
             r_period,
             self.cache_paths.return_period,
-            chunks=dict(longitude=-1, latitude=-1, time=1, sample=1, number=1, step=1),
+            chunks=dict(
+                longitude=100, latitude=100, time=1, sample=1, number=1, step=1
+            ),
         ) as return_period_data:
             if flood_maps is None:
-                flood_maps = self.load_flood_maps(reference=r_period)
+                flood_maps = self.load_flood_maps(reference=return_period_data)
             if not reuse_regridder:
                 self.regridder = None
 
@@ -690,6 +749,10 @@ class RiverFloodInundation:
             cache. If :py:attr:`RiverFloodCachePaths.return_period_regrid_protect`
             exists, that data is used. Otherwise, the "unprotected" data
             :py:attr:`RiverFloodCachePaths.return_period_regrid` is loaded.
+        flood_maps : xr.DataArray, optional
+            The flood maps to use for regridding. Defaults to ``None``, which means that
+            flood maps compatible to ``return_period_regrid`` will be downloaded and
+            opened.
 
         Returns
         -------
