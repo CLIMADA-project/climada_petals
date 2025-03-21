@@ -28,6 +28,7 @@ import rasterio
 import xarray as xr
 
 from climada.hazard import Centroids, TCTracks, TropCyclone
+from climada.hazard.tc_tracks import IBTRACS_FILE
 from climada_petals.hazard.tc_surge_bathtub import _fraction_on_land, TCSurgeBathtub
 from climada.util.constants import SYSTEM_DIR
 
@@ -95,7 +96,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
         shape = (lat.size, lon.size)
         lon, lat = [ar.ravel() for ar in np.meshgrid(lon, lat)]
         centroids = Centroids.from_lat_lon(lat, lon)
-        
+
         dem_bounds = (bounds[0] - 1, bounds[1] - 1, bounds[2] + 1, bounds[3] + 1)
         dem_res = 3 / (60 * 60)
         with tmp_artifical_topo(dem_bounds, dem_res) as topo_path:
@@ -176,7 +177,7 @@ class TestTCSurgeBathtub(unittest.TestCase):
                 self.assertAlmostEqual(inten[9, 31], max(-1.270 + slr, 0), places=2)
                 self.assertAlmostEqual(inten[14, 34] - slr, 2.805, places=2)
 
-    @unittest.skipUnless(SYSTEM_DIR.joinpath("IBTrACS.ALL.v04r00.nc").is_file(),
+    @unittest.skipUnless(SYSTEM_DIR.joinpath(IBTRACS_FILE).is_file(),
                          "IBTrACS file is missing, no download in unitttests")
     def test_cross_antimeridian(self):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.

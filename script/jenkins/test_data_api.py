@@ -21,7 +21,8 @@ Test files_handler module.
 
 from pathlib import Path
 import unittest
-import xmlrunner
+
+import pytest
 
 from climada_petals.hazard.tc_tracks_forecast import TCForecast
 
@@ -37,7 +38,7 @@ class TestDataAvail(unittest.TestCase):
 
 # Execute Tests
 if __name__ == '__main__':
-    TESTS = unittest.TestLoader().loadTestsFromTestCase(TestDataAvail)
     from sys import argv
-    outputdir = argv[1] if len(argv) > 1 else str(Path.cwd().joinpath('tests_xml'))
-    xmlrunner.XMLTestRunner(output=outputdir).run(TESTS)
+
+    outputdir = argv[1] if len(argv) > 1 else str(Path.cwd().joinpath("tests_xml"))
+    pytest.main([f"--junitxml={outputdir}/tests.xml", __file__])
