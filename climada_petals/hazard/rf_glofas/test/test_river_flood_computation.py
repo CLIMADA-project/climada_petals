@@ -203,15 +203,16 @@ class TestRiverFloodInundation(unittest.TestCase):
             preprocess=preprocess,
             foo="bar",
         )
-        self.assertDictContainsSubset(
-            dict(
-                product="historical",
-                countries="ABC",
-                split_request_keys=False,
-                preprocess=preprocess,
-                foo="bar",
-            ),
+        call_subset = dict(
+            product="historical",
+            countries="ABC",
+            split_request_keys=False,
+            preprocess=preprocess,
+            foo="bar",
+        )
+        self.assertDictEqual(
             download_glofas_discharge.call_args.kwargs,
+            download_glofas_discharge.call_args.kwargs | call_subset,
         )
         pdt.assert_index_equal(
             download_glofas_discharge.call_args.kwargs["dates"],
@@ -398,7 +399,9 @@ class TestRiverFloodInundation(unittest.TestCase):
         self.rf.cache_paths.return_period_regrid.unlink()
 
         # Store regrid protect, load automatically
-        xr.ones_like(self.flood_maps).to_netcdf(self.rf.cache_paths.return_period_regrid)
+        xr.ones_like(self.flood_maps).to_netcdf(
+            self.rf.cache_paths.return_period_regrid
+        )
         self.flood_maps.to_netcdf(self.rf.cache_paths.return_period_regrid_protect)
         self.rf.flood_depth(None)
         flood_depth.assert_called_with(
