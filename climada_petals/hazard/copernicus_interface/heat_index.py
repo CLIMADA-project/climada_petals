@@ -54,7 +54,7 @@ def fahrenheit_to_kelvin(fahrenheit):
 
 
 def fahrenheit_to_celsius(fahrenheit):
-    return (fahrenheit - 32) * 5 / 9  
+    return (fahrenheit - 32) * 5 / 9
 
 
 def celsius_to_kelvin(temp_c):
@@ -100,6 +100,7 @@ def calculate_relative_humidity(t2k, tdk, as_percentage=True):
     rh = np.clip(rh, 0, 100 if as_percentage else 1)  # Begrenzung auf sinnvolle Werte
     return rh
 
+
 # ------------------------
 # Humidex Calculation
 # ------------------------
@@ -135,7 +136,6 @@ def calculate_humidex(t2_k, td_k):
     return humidex
 
 
-
 # ------------------------
 # Heat Index Calculations
 # ------------------------
@@ -168,23 +168,24 @@ HI_ADJUSTED_COEFFS = {
     "c9": 0.00000199,
 }
 
+
 def calculate_heat_index_simplified(t2k, tdk):
     """
     Calculates the simplified heat index (HIS) based on temperature and dewpoint temperature.
 
-    The simplified heat index formula is **only valid for temperatures above 20°C**, 
-    as the heat index is specifically designed for **warm to hot conditions** where 
-    humidity significantly influences perceived temperature. Below 20°C, the function 
+    The simplified heat index formula is **only valid for temperatures above 20°C**,
+    as the heat index is specifically designed for **warm to hot conditions** where
+    humidity significantly influences perceived temperature. Below 20°C, the function
     returns the actual air temperature instead of applying the heat index formula.
 
-    The heat index is an empirical measure that estimates the **perceived temperature** 
-    by incorporating the effects of both temperature and humidity. It is commonly used 
+    The heat index is an empirical measure that estimates the **perceived temperature**
+    by incorporating the effects of both temperature and humidity. It is commonly used
     in meteorology and climate studies to assess heat stress.
 
     Parameters
     ----------
     t2k : float or array-like
-        2-meter air temperature in Kelvin. This is used for consistency with 
+        2-meter air temperature in Kelvin. This is used for consistency with
         climate datasets and numerical weather models.
     tdk : float or array-like
         2-meter dewpoint temperature in Kelvin.
@@ -192,7 +193,7 @@ def calculate_heat_index_simplified(t2k, tdk):
     Returns
     -------
     float or array-like
-        Simplified heat index in degrees Celsius, representing how hot it feels 
+        Simplified heat index in degrees Celsius, representing how hot it feels
         to the human body by accounting for both temperature and relative humidity.
 
     Formula
@@ -209,17 +210,17 @@ def calculate_heat_index_simplified(t2k, tdk):
 
     Acknowledgment
     --------------
-    This function is based on the Thermofeel library. The original implementation and methodology 
+    This function is based on the Thermofeel library. The original implementation and methodology
     can be found in:
-    Brimicombe, C., Bröde, P., and Calvi, P. (2022). Thermofeel: A python thermal comfort indices 
+    Brimicombe, C., Bröde, P., and Calvi, P. (2022). Thermofeel: A python thermal comfort indices
     library. *SoftwareX*, 17, 101005. DOI: https://doi.org/10.1016/j.softx.2022.101005
     """
 
     # Convert temperature to Celsius
     t2_c = kelvin_to_celsius(t2k)
-    
+
     # Compute relative humidity
-    rh = calculate_relative_humidity(t2k, tdk)  
+    rh = calculate_relative_humidity(t2k, tdk)
 
     # Default to air temperature where T ≤ 20°C
     hi = np.copy(t2_c)
@@ -245,15 +246,15 @@ def calculate_heat_index_adjusted(t2k, tdk):
     """
     Calculates the adjusted heat index based on temperature and dewpoint temperature.
 
-    This function refines the standard heat index calculation by incorporating adjustments 
-    for extreme values of temperature and relative humidity. The adjustments improve accuracy 
-    in conditions where the simplified formula may not be sufficient, particularly for 
+    This function refines the standard heat index calculation by incorporating adjustments
+    for extreme values of temperature and relative humidity. The adjustments improve accuracy
+    in conditions where the simplified formula may not be sufficient, particularly for
     high temperatures (> 80°F / ~27°C) and very low or high humidity levels.
 
     Parameters
     ----------
     t2k : float or array-like
-        2-meter air temperature in Kelvin. This is used for consistency with 
+        2-meter air temperature in Kelvin. This is used for consistency with
         climate datasets and numerical weather models.
     tdk : float or array-like
         2-meter dewpoint temperature in Kelvin.
@@ -261,7 +262,7 @@ def calculate_heat_index_adjusted(t2k, tdk):
     Returns
     -------
     float or array-like
-        Adjusted heat index in degrees Celsius, representing how hot it feels 
+        Adjusted heat index in degrees Celsius, representing how hot it feels
         to the human body by accounting for both temperature and relative humidity.
 
     Formula
