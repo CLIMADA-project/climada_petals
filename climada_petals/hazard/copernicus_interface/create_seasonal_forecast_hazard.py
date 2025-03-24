@@ -37,7 +37,7 @@ class SeasonalForecast:
         self,
         index_metric,
         year_list,
-        lead_time_months,
+        forecast_period,
         initiation_month,
         bounds,
         data_format,
@@ -71,7 +71,7 @@ class SeasonalForecast:
             Directory for storing data. Defaults to a pre-configured directory.
         """
         # initiate initiation month, valid period, and leadtimes
-        valid_period = lead_time_months
+        valid_period = forecast_period
         if not isinstance(initiation_month, list):
             initiation_month = [initiation_month]
         if not isinstance(valid_period, list) or len(valid_period) != 2:

@@ -697,3 +697,98 @@ def plot_statistics_and_member_agreement(year_list, index_metric, agreement_thre
             plt.subplots_adjust(hspace=0.05, wspace=0.1)
             plt.show()
 
+#----
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from climada.hazard import Hazard
+
+def analyze_hazard_intensities(year, months, handler):
+    """
+    Internal helper to load hazard data and extract event-wise intensities.
+
+    Parameters:
+    - year (int): Forecast year.
+    - months (list of str): Initiation months as strings, e.g. ["03", "04", "05"]
+    - handler (object): CLIMADA pipeline handler with get_pipeline_path method
+
+    Returns:
+    - dict: Intensity data per event per month
+    """
+    def load_hazard_data(year, month):
+        hazard_path = handler.get_pipeline_path(year, month, "hazard")
+        try:
+            return Hazard.from_hdf5(hazard_path)
+        except FileNotFoundError:
+            print(f"Warning: No hazard data found for initiation month {month}")
+            return None
+
+    hazards = {month: load_hazard_data(year, month) for month in months}
+
+    intensity_data = {}
+    for month, hazard in hazards.items():
+        if hazard:
+            intensity_data[month] = {
+                event: hazard.intensity[i, :].toarray().flatten()
+                for i, event in enumerate(hazard.event_name)
+            }
+        else:
+            intensity_data[month] = {}
+
+    return intensity_data
+
+
+def print_summary_statistics(year, months, handler):
+    """Print summary statistics for each initiation month."""
+    intensity_data = analyze_hazard_intensities(year, months, handler)
+
+    for month, intensity_dict in intensity_data.items():
+        all_intensities = np.concatenate(list(intensity_dict.values())) if intensity_dict else np.array([])
+        print(f"\n--- Initiation Month {month} ---")
+        if all_intensities.size > 0:
+            print(f"Max intensity: {np.max(all_intensities):.2f}")
+            print(f"Min intensity: {np.min(all_intensities):.2f}")
+            print(f"Mean intensity (across all members): {np.mean(all_intensities):.2f}")
+            print(f"Median intensity (across all members): {np.median(all_intensities):.2f}")
+            print(f"Standard Deviation: {np.std(all_intensities):.2f}")
+        else:
+            print("No intensity data found!")
+
+
+
+def plot_intensity_distributions(year, months, handler):
+    """
+    Plot intensity distributions with mean and median lines for each initiation month.
+    """
+    intensity_data = analyze_hazard_intensities(year, months, handler)
+
+    fig, axes = plt.subplots(1, len(intensity_data), figsize=(15, 5), sharey=True)
+    if len(intensity_data) == 1:
+        axes = [axes]
+
+    colors = sns.color_palette("tab10", n_colors=50)
+
+    for ax, (month, intensity_dict) in zip(axes, intensity_data.items()):
+        if intensity_dict:
+            all_intensities = np.concatenate(list(intensity_dict.values()))
+
+            for idx, (event, data) in enumerate(intensity_dict.items()):
+                ax.hist(data, bins=50, alpha=0.3, color=colors[idx % len(colors)], density=False)
+
+            mean_val = np.mean(all_intensities)
+            median_val = np.median(all_intensities)
+
+            ax.axvline(mean_val, color="red", linestyle="--", linewidth=2)
+            ax.axvline(median_val, color="blue", linestyle="-.", linewidth=2)
+
+            ax.text(mean_val, ax.get_ylim()[1] * 0.9, f"Mean: {mean_val:.2f}", color="red", fontsize=10)
+            ax.text(median_val, ax.get_ylim()[1] * 0.8, f"Median: {median_val:.2f}", color="blue", fontsize=10)
+
+            ax.set_title(f"Intensity Distribution: Month {month}")
+            ax.set_xlabel("Intensity")
+            ax.set_ylabel("Frequency")
+        else:
+            ax.set_title(f"No Data: Month {month}")
+
+    plt.tight_layout()
+    plt.show()
