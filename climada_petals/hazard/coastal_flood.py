@@ -1,3 +1,24 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Define CoastalFlood class.
+"""
+
 from typing import Iterable, Union, Optional
 import numpy as np
 from shapely.geometry import Polygon
@@ -80,7 +101,8 @@ class CoastalFlood(Hazard):
 
         if (rcp == "historical") & (percentile != "0"):
             raise ValueError(
-                "Historical shall not have a assigned percentiles of sea level rise. Leave default values."
+                "Historical shall not have a assigned percentiles of sea level rise."
+                " Leave default values."
             )
 
         if isinstance(return_periods, int):
