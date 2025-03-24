@@ -12,6 +12,8 @@ Code freeze date: YYYY-MM-DD
 
 ### Added
 
+- Module `climada_petals.hazard.coastal_flood` with new Hazard class `CoastalFlood` and associated method `from_aqueduct_tif` to read coastal flood data directly from the Aqueduct tif files [#100](https://github.com/CLIMADA-project/climada_petals/pull/100)
+
 ### Changed
 
 ### Fixed
