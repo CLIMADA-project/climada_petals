@@ -26,9 +26,8 @@ import numpy as np
 from scipy import sparse
 import xarray as xr
 
-from climada import CONFIG
 from climada.hazard import Centroids, TCTracks
-import climada.hazard.test as hazard_test
+from climada.hazard.tc_tracks import IBTRACS_FILE
 from climada_petals.hazard.tc_rainfield import (
     TCRain,
     compute_rain,
@@ -40,6 +39,7 @@ from climada_petals.hazard.tc_rainfield import (
 )
 from climada.util.api_client import Client
 from climada.util.constants import SYSTEM_DIR
+
 
 
 def getTestData():
@@ -112,7 +112,7 @@ class TestReader(unittest.TestCase):
         self.assertAlmostEqual(tc_haz.intensity[0, 100], 123.55255892009247)
         self.assertAlmostEqual(tc_haz.intensity[0, 260], 15.148539942329757)
 
-    @unittest.skipUnless(SYSTEM_DIR.joinpath("IBTrACS.ALL.v04r00.nc").is_file(),
+    @unittest.skipUnless(SYSTEM_DIR.joinpath(IBTRACS_FILE).is_file(),
                          "IBTrACS file is missing, no download in unitttests")
     def test_cross_antimeridian(self):
         # Two locations on the island Taveuni (Fiji), one west and one east of 180° longitude.

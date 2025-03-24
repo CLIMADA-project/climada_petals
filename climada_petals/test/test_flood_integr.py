@@ -71,13 +71,14 @@ class TestRiverFlood(unittest.TestCase):
 
         gdpa = GDP2Asset()
         gdpa.set_countries(countries=['CHE'], ref_year=2000, path=DEMO_GDP2ASSET)
+        gdpa.gdf['impf_RF'] = 31
 
         impf_set = flood_imp_func_set()
         imp = Impact()
         imp.calc(gdpa, impf_set, testRF)
 
-        self.assertAlmostEqual(imp.at_event[0], 226839.72426476143)
-        self.assertAlmostEqual(gdpa.gdf['impf_RF'].iloc[0], 3.0)
+        self.assertAlmostEqual(imp.at_event[0], 188191.9029567669)
+        self.assertAlmostEqual(gdpa.gdf['impf_RF'].iloc[0], 31)
 
 
 # Execute Tests
