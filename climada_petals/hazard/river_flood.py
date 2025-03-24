@@ -119,6 +119,9 @@ class RiverFlood(Hazard):
                 maximum longitude, maximum latitude
         """
 
+        if target_year not in [1980, 2030, 2050, 2080]:
+            raise ValueError("Invalid value in 'target_year'")
+
         if return_periods is None:
             return_periods = RETURN_PERIODS
 
@@ -132,6 +135,8 @@ class RiverFlood(Hazard):
 
         if scenario in ['45', '85']:
             scenario = f'rcp{scenario[0]}p{scenario[1]}'
+        elif scenario != "historical":
+            raise ValueError("Invalid value in 'scenario'")
 
         file_names = [f"inunriver_{scenario}_{gcm.zfill(14)}"
                       f"_{target_year}_rp{str(rp).zfill(5)}.tif"
