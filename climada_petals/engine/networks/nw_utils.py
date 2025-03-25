@@ -142,7 +142,7 @@ def service_dict():
             'healthcare': 'actual_supply_healthcare_people',
             'education': 'actual_supply_education_people',
             'telecom': 'actual_supply_celltower_people',
-            'mobility': 'actual_supply_road_people',
+            'road': 'actual_supply_road_people',
             'water': 'actual_supply_wastewater_people'}
 
 
