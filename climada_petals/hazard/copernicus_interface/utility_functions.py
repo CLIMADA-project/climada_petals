@@ -1,50 +1,65 @@
 import os
 import warnings
 from datetime import datetime
-
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import xarray as xr
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import xarray as xr
+from matplotlib.ticker import FuncFormatter
+from climada.hazard import Hazard
 from climada.engine import Impact
 from climada.util.config import CONFIG
-from climada_petals.hazard.copernicus_interface.create_seasonal_forecast_hazard import (
-    SeasonalForecast,
-)
-from matplotlib.ticker import FuncFormatter
+from climada_petals.hazard.copernicus_interface.create_seasonal_forecast_hazard import SeasonalForecast
 
-# Suppress warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="shapely")
+warnings.filterwarnings("ignore", message="All-NaN axis encountered")
+warnings.filterwarnings("ignore", message="divide by zero encountered in log10")
+warnings.filterwarnings("ignore", message="invalid value encountered in intersects")
 warnings.filterwarnings(
     "ignore",
     category=UserWarning,
     message="This figure includes Axes that are not compatible with tight_layout",
 )
 
+climada_base_path = CONFIG.hazard.copernicus.local_data.dir()
 
-# plot forescast
+
+
+#### plot forescast ####
 def plot_forecast(
     forecast_year, initiation_month_str, target_month, handler, index_metric="TX30"
 ):
     """
-    Plots ensemble members for a given seasonal forecast.
+    Plot all 50 ensemble members for a given seasonal forecast month.
 
-    Parameters:
-    - forecast_year (int): The year of the forecast.
-    - initiation_month_str (str): The initiation month as a string (e.g., "03" for March).
-    - target_month (str): The target month in "YYYY-MM" format (e.g., "2022-07").
-    - handler (SeasonalForecast): An instance of SeasonalForecast.
-    - index_metric (str, optional): The climate index variable to plot. Default is "TX30".
+    Parameters
+    ----------
+    forecast_year : int
+        The year of the seasonal forecast (e.g., 2023).
+    initiation_month_str : str
+        Forecast initiation month in string format (e.g., "03" for March).
+    target_month : str
+        Forecast valid month in "YYYY-MM" format (must match the 'step' coordinate in the dataset).
+    handler : SeasonalForecast
+        Object that provides access to the file structure via get_pipeline_path(...).
+    index_metric : str, optional
+        Name of the climate index variable to visualize. Default is "TX30".
 
-    Raises:
-    - ValueError if the dataset cannot be loaded or required keys are missing.
+    Raises
+    ------
+    ValueError
+        If dataset or required variables/coordinates are not found, or loading fails.
+
+    Returns
+    -------
+    None
+        Displays a grid of maps (5 rows × 10 columns) with one plot per ensemble member.
     """
-
-    # Retrieve the dataset path
     indices_paths = handler.get_pipeline_path(
         forecast_year, initiation_month_str, "indices"
     )
@@ -117,11 +132,27 @@ def plot_forecast(
     plt.show()
 
 
-#########extract statitcs
 
+#### plot_ensemble_index_summary ####
 
 def extract_statistics(file_path, forecast_months):
-    """Extracts tropical nights statistics from a dataset for the given months."""
+    """
+    Extract ensemble summary statistics from a NetCDF dataset for specified forecast months.
+
+    Parameters
+    ----------
+    file_path : str or pathlib.Path
+        Path to the NetCDF file containing ensemble statistics.
+    forecast_months : list of str
+        List of forecast months in "YYYY-MM" format to extract (matches 'step' coordinate in NetCDF).
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        DataFrame with rows indexed by forecast_months and columns:
+        'Mean', 'Median', 'Max', 'Min', 'Std'.
+        Returns None if file not found or extraction fails.
+    """
     try:
         ds_stats = xr.open_dataset(file_path, engine="netcdf4")
         stats = {
@@ -152,10 +183,30 @@ def extract_statistics(file_path, forecast_months):
         return None
 
 
-def plot_tropical_nights_statistics(
+def plot_ensemble_index_summary(
     forecast_year, initiation_months, valid_periods, handler, index_metric="TX30"
 ):
-    """Plots tropical nights forecast statistics for multiple datasets."""
+    """
+    Plot ensemble forecast statistics (Mean, Median, Min, Max, Std) per initiation month.
+
+    Parameters
+    ----------
+    forecast_year : int
+        Year of the forecast initialization.
+    initiation_months : list of str
+        Initialization months (e.g., ['03', '04']).
+    valid_periods : list of str
+        Forecast valid months (e.g., ['06', '07', '08']).
+    handler : object
+        Object with method get_pipeline_path(...) that returns file paths for the given config.
+    index_metric : str, optional
+        Name of the index to be plotted (default is 'TX30').
+
+    Returns
+    -------
+    None
+        Displays matplotlib plots showing forecast statistics over time for each init month.
+    """
 
     forecast_months = [
         f"{forecast_year}-{month}" for month in valid_periods
@@ -227,148 +278,51 @@ def plot_tropical_nights_statistics(
     plt.show()
 
 
-###########
 
-
-def get_dynamic_dataset_paths(forecast_year, initiation_months, valid_periods, handler):
-    """
-    Dynamically retrieve dataset paths for given forecast parameters.
-
-    Parameters:
-    - forecast_year (int): Year of the forecast.
-    - initiation_months (list of str): List of initiation months (e.g., ["04", "05"]).
-    - valid_periods (list of str): List of valid forecast months (e.g., ["06", "07", "08"]).
-    - handler (SeasonalForecast): Instance of SeasonalForecast class.
-
-    Returns:
-    - dict: Dictionary mapping labels (e.g., "2022_init04_valid06_08") to file paths.
-    """
-    dataset_paths = {}
-
-    valid_period_str = "_".join(valid_periods)
-
-    for init_month in initiation_months:
-        indices_paths = handler.get_pipeline_path(forecast_year, init_month, "indices")
-
-        if isinstance(indices_paths, dict) and "monthly" in indices_paths:
-            dataset_label = f"{forecast_year}_init{init_month}_valid{valid_period_str}"
-            dataset_paths[dataset_label] = indices_paths["monthly"]
-        else:
-            print(f"Skipping initiation month {init_month}: 'monthly' file not found.")
-
-    return dataset_paths
-
-
-# Load dataset function
-def load_dataset(file_path):
-    """Opens an xarray dataset safely, handling errors."""
-    try:
-        return xr.open_dataset(file_path, engine="netcdf4")
-    except Exception as e:
-        print(f"Error loading {file_path}: {e}")
-        return None
-
-
-def plot_seasonal_metrics_by_lat(
-    forecast_year, initiation_months, valid_periods, handler, threshold=5
-):
-    index_metric = handler.index_metric
-    dataset_paths = get_dynamic_dataset_paths(
-        forecast_year, initiation_months, valid_periods, handler
-    )
-
-    if not dataset_paths:
-        print("No valid datasets found. Exiting.")
-        return
-
-    metrics_functions = [
-        ("Ensemble Spread", calculate_ensemble_spread),
-        ("SMR", calculate_smr),
-        ("Interquartile Range", calculate_interquartile_range),
-        ("Ensemble Agreement Index", calculate_ensemble_agreement_index),
-    ]
-
-    fig, axs = plt.subplots(
-        len(metrics_functions),
-        len(dataset_paths),
-        figsize=(20, 15),
-        sharex="col",
-        sharey="row",
-    )
-
-    for col, (init_label, file_path) in enumerate(dataset_paths.items()):
-        ds = load_dataset(file_path)
-        if ds is None or index_metric not in ds:
-            print(
-                f"Skipping dataset {init_label}: Variable '{index_metric}' not found."
-            )
-            continue
-
-        data_var = ds[index_metric]
-        forecast_steps = ds["step"].values
-        latitudes = ds["latitude"].values
-
-        for row, (name, func) in enumerate(metrics_functions):
-            metric_data = func(data_var, threshold)
-            c = axs[row, col].pcolormesh(
-                forecast_steps,
-                latitudes,
-                metric_data.T,
-                shading="auto",
-                cmap="coolwarm",
-            )
-            axs[row, col].set_title(f"{name} ({init_label})")
-            axs[row, col].set_xlabel("Forecast Month")
-            axs[row, col].set_ylabel("Latitude")
-            axs[row, col].set_xticks(forecast_steps)
-            fig.colorbar(
-                c, ax=axs[row, col], orientation="horizontal", pad=0.2, fraction=0.08
-            ).set_label("Metric Scale")
-
-    plt.subplots_adjust(hspace=0.5, wspace=0.4)
-    description = """
-    Each plot represents a different metric for assessing forecast skills in climate models:
-    - Ensemble Spread: Standard deviation of forecasts across ensemble members.
-    - SMR (Spread to Mean Ratio): Ratio of forecast spread to mean value.
-    - Interquartile Range: Spread between 25th and 75th percentiles of the forecasts.
-    - Ensemble Agreement Index: Fraction of ensemble members exceeding the threshold.
-    X-axis (Forecast Month) represents forecast steps, while Y-axis (Latitude) represents spatial variation.
-    """
-    fig.text(0.1, -0.13, description, wrap=True, fontsize=17)
-    plt.show()
-
-
-def calculate_ensemble_spread(data, threshold):
-    return data.std(dim="number").mean(dim="longitude")
-
-
-def calculate_smr(data, threshold):
-    return (data.std(dim="number") / data.mean(dim="number")).mean(dim="longitude")
-
-
-def calculate_interquartile_range(data, threshold):
-    return (data.quantile(0.75, dim="number") - data.quantile(0.25, dim="number")).mean(
-        dim="longitude"
-    )
-
-
-def calculate_ensemble_agreement_index(data, threshold):
-    event_occurrence = data > threshold
-    return (event_occurrence.sum(dim="number") / event_occurrence.sizes["number"]).mean(
-        dim="longitude"
-    )
-
-
-############
-
-climada_base_path = CONFIG.hazard.copernicus.local_data.dir()
-
+#### plot_individual_and_aggregated_impacts ####
 
 def thousands_comma_formatter(x, pos):
+    """
+    Format tick values as thousands with commas.
+
+    Parameters
+    ----------
+    x : float
+        Tick value (usually raw population value).
+    pos : int
+        Tick position (required by matplotlib, not used here).
+
+    Returns
+    -------
+    str
+        Tick label in 'X,XXXK' format.
+    """
     return "{:,.0f}K".format(x * 1e-3)
 
 
 def load_impact_data(init_month, year_list, index_metric):
+    """
+    Load CLIMADA Impact object for a given year, initialization month, and index metric.
+
+    Parameters
+    ----------
+    init_month : str
+        Initialization month as a two-digit string (e.g., "04").
+    year_list : list of int
+        List of forecast years (only the first year is used).
+    index_metric : str
+        Climate index used to select the impact file (e.g., "TX30").
+
+    Returns
+    -------
+    Impact
+        CLIMADA Impact object for the selected configuration.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the impact directory or relevant HDF5 file cannot be found.
+    """
     year_str = str(year_list[0])
 
     impact_dir = os.path.join(
@@ -399,6 +353,30 @@ def load_impact_data(init_month, year_list, index_metric):
 
 
 def plot_individual_and_aggregated_impacts(year_list, index_metric, *init_months):
+    """
+    Plot individual ensemble member impact time series and aggregated statistics (mean, median, std).
+
+    Parameters
+    ----------
+    year_list : list of int
+        List of forecast years to load (only the first element is used).
+    index_metric : str
+        Name of the climate index metric (e.g., "TX30").
+    *init_months : str
+        One or more initialization months as strings (e.g., "04", "05").
+
+    Returns
+    -------
+    None
+        Displays line plots showing ensemble impacts over time for each init month.
+
+    Notes
+    -----
+    - Each subplot corresponds to an initialization month.
+    - Up to 50 ensemble members are visualized.
+    - Overlaid lines show the ensemble mean, median, and ±1 std range.
+    - The y-axis uses a thousands-based formatter for better readability.
+    """
     month_names = ["Jun", "Jul", "Aug"]
     cmap = plt.cm.get_cmap("tab20", 50)
 
@@ -464,10 +442,8 @@ def plot_individual_and_aggregated_impacts(year_list, index_metric, *init_months
     plt.show()
 
 
-###########
 
-climada_base_path = CONFIG.hazard.copernicus.local_data.dir()
-
+#### plot_impact_distributions ####
 
 def month_num_to_name(month_num):
     month_names = [
@@ -491,10 +467,47 @@ def month_num_to_name(month_num):
 
 
 def log_formatter(x, pos):
+    """
+    Format tick labels for log-scaled x-axis using base-10 notation.
+
+    Parameters
+    ----------
+    x : float
+        Tick value.
+    pos : int
+        Tick position (unused but required by matplotlib formatter).
+
+    Returns
+    -------
+    str
+        Formatted tick label as a LaTeX-style power of 10.
+    """
     return f"$10^{{{int(x)}}}$"
 
 
 def load_impact_data(init_month, year_list, index_metric):
+    """
+    Load the Impact object for a given year, initialization month, and index metric.
+
+    Parameters
+    ----------
+    init_month : str
+        Initialization month as a two-digit string (e.g., "04").
+    year_list : list of int
+        List of forecast years (only the first year is used).
+    index_metric : str
+        Name of the index metric (e.g., "TX30").
+
+    Returns
+    -------
+    Impact
+        A CLIMADA Impact object loaded from the corresponding HDF5 file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the impact directory or matching file is not found.
+    """
     year_str = str(year_list[0])
     impact_dir = os.path.join(
         climada_base_path,
@@ -524,6 +537,30 @@ def load_impact_data(init_month, year_list, index_metric):
 
 
 def plot_impact_distributions(year_list, index_metric, init_months):
+    """
+    Plot log-scaled histograms of forecasted impact values across ensemble members.
+
+    Parameters
+    ----------
+    year_list : list of int
+        List of forecast years to analyze.
+    index_metric : str
+        Name of the climate index (e.g., "TX30").
+    init_months : list of str
+        List of initialization months (e.g., ["04", "05", "06"]).
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    - Impacts are log-transformed to better represent skewed distributions.
+    - Each subplot shows the distribution for one valid forecast month.
+    - Mean and median lines are overlaid for interpretability.
+    - A fitted curve (up to cubic polynomial) is added to illustrate distribution shape.
+    - Uses up to 50 ensemble members per valid forecast month.
+    """
     max_members = 50
 
     for year in year_list:
@@ -632,19 +669,28 @@ def plot_impact_distributions(year_list, index_metric, init_months):
             plt.show()
 
 
-############
+
+#### plot_statistics_per_location ####
 
 # Suppress specific runtime warnings
 warnings.filterwarnings("ignore", message="All-NaN axis encountered")
 warnings.filterwarnings("ignore", message="divide by zero encountered in log10")
 warnings.filterwarnings("ignore", message="invalid value encountered in intersects")
 
-# Base path configuration
-climada_base_path = CONFIG.hazard.copernicus.local_data.dir()
-
-
 def month_num_to_name_stats(month_num):
-    """Convert a month number to the corresponding month name."""
+    """
+    Convert a numeric month to its English name.
+
+    Parameters
+    ----------
+    month_num : int
+        Numeric representation of the month (1 = January, ..., 12 = December).
+
+    Returns
+    -------
+    str
+        English name of the corresponding month.
+    """
     month_names = [
         "January",
         "February",
@@ -663,7 +709,28 @@ def month_num_to_name_stats(month_num):
 
 
 def load_impact_data(init_month, year_list, index_metric):
-    """Load impact data dynamically based on initiation month and year."""
+    """
+    Load CLIMADA Impact object for a given initialization month and year.
+
+    Parameters
+    ----------
+    init_month : str
+        Initialization month as a two-digit string (e.g., '04').
+    year_list : list of int
+        List containing the target forecast year. Only the first entry is used.
+    index_metric : str
+        Climate index metric (e.g., 'TX30').
+
+    Returns
+    -------
+    climada.hazard.Impact
+        Loaded Impact object containing impact data.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the impact directory or the impact file does not exist.
+    """
     year_str = str(year_list[0])
     impact_dir = os.path.join(
         climada_base_path,
@@ -694,18 +761,33 @@ def load_impact_data(init_month, year_list, index_metric):
 
 def plot_statistics_per_location(year_list, index_metric, *init_months, scale="normal"):
     """
-    Plots Mean, Median, Standard Deviation, Maximum, and Minimum impact across members for each location.
+    Plot spatial impact statistics across members for each location.
 
-    Parameters:
-    - year_list (list): List of years to process (e.g., [2023]).
-    - index_metric (str): Climate index metric (e.g., "TX30").
-    - *init_months (str): List of initiation months (e.g., "04", "05").
-    - scale (str): 'normal' or 'log' scale for plotting.
+    Parameters
+    ----------
+    year_list : list of int
+        List of years to process (e.g., [2023]).
+    index_metric : str
+        Climate index metric (e.g., 'TX30').
+    *init_months : str
+        Variable number of initialization months (e.g., '04', '05').
+    scale : str, optional
+        Scale of the plots: 'normal' for linear or 'log' for logarithmic (default is 'normal').
 
-    Returns:
-    - None. Displays statistical maps with histograms and colorbars.
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    For each forecast month (June–August), this function:
+    - Loads the corresponding impact matrix.
+    - Computes statistics (mean, median, std, min, max) across members per grid cell.
+    - Generates:
+        1) A spatial scatter map of each statistic.
+        2) A histogram of grid-level values.
+        3) Summary statistics printed below each histogram.
     """
-
     proj = ccrs.PlateCarree()
     valid_months = ["06", "07", "08"]  # Corresponds to Jun, Jul, Aug
 
@@ -844,10 +926,23 @@ def plot_statistics_per_location(year_list, index_metric, *init_months, scale="n
             plt.show()
 
 
-####### plot statistics per member
 
+#### plot statistics per member ####
 
 def month_num_to_name_stats(month_num):
+    """
+    Convert a numeric month (1–12) to its English name.
+
+    Parameters
+    ----------
+    month_num : int
+        Month number (1 = January, ..., 12 = December).
+
+    Returns
+    -------
+    str
+        Month name corresponding to the input number.
+    """
     month_names = [
         "January",
         "February",
@@ -866,12 +961,48 @@ def month_num_to_name_stats(month_num):
 
 
 def event_num_to_month_name(base_month, event_num):
+    """
+    Convert an event number into a calendar month name, based on the base month.
+
+    Parameters
+    ----------
+    base_month : int
+        Initialization month number (1 = January, ..., 12 = December).
+    event_num : int
+        Relative event offset (e.g., 1 = first month, 2 = second month...).
+
+    Returns
+    -------
+    str
+        Forecast month name accounting for offset from initialization month.
+    """
     new_month_index = (base_month - 1 + event_num - 1) % 12
     return month_num_to_name_stats(new_month_index + 1)
 
 
 def load_impact_data(init_month, year_list, index_metric):
-    climada_base_path = CONFIG.hazard.copernicus.local_data.dir()
+    """
+    Load a CLIMADA Impact object from the impact directory for a given init month and year.
+
+    Parameters
+    ----------
+    init_month : str
+        Initialization month (e.g., '03').
+    year_list : list of int
+        List containing a single forecast year (used to resolve folder structure).
+    index_metric : str
+        Name of the climate index (e.g., 'TX30', 'HW').
+
+    Returns
+    -------
+    climada.hazard.Impact
+        Loaded Impact object containing impact data for the given forecast.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the impact directory or expected file does not exist.
+    """
     year_str = str(year_list[0])
     impact_dir = os.path.join(
         climada_base_path,
@@ -903,6 +1034,34 @@ def load_impact_data(init_month, year_list, index_metric):
 def plot_statistics_and_member_agreement(
     year_list, index_metric, agreement_threshold, *init_months
 ):
+    """
+    Plot spatial impact statistics and ensemble member agreement for forecast data.
+
+    Parameters
+    ----------
+    year_list : list of int
+        List of forecast years (currently only the first entry is used).
+    index_metric : str
+        Climate index metric (e.g., 'TX30', 'HW').
+    agreement_threshold : float
+        Threshold for agreement (e.g., 0.7 = 70%) used to highlight consistent regions.
+    *init_months : str
+        Variable number of initialization months (e.g., '03', '04', '05').
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    For each initialization month, this function will:
+    - Load the corresponding Impact object.
+    - Calculate mean, max, std, and 95th percentile values.
+    - Create a 3x3 plot grid:
+        Column 1: spatial distribution of log-transformed statistics.
+        Column 2: binary high agreement map where member values fall within ±1 std.
+        Column 3: percentage of members that agree with the central estimate.
+    """
     proj = ccrs.PlateCarree()
     valid_months = ["06", "07", "08"]
 
@@ -1082,30 +1241,41 @@ def plot_statistics_and_member_agreement(
             plt.subplots_adjust(hspace=0.05, wspace=0.1)
             plt.show()
 
-#----
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from climada.hazard import Hazard
+
+
+#### plot_intensity_distributions ####
 
 def analyze_hazard_intensities(year, months, handler):
     """
-    Internal helper to load hazard data and extract event-wise intensities.
+    Load CLIMADA Hazard objects and extract intensity values for each event.
 
-    Parameters:
-    - year (int): Forecast year.
-    - months (list of str): Initiation months as strings, e.g. ["03", "04", "05"]
-    - handler (object): CLIMADA pipeline handler with get_pipeline_path method
+    Parameters
+    ----------
+    year : int
+        Forecast year of interest.
+    months : list of str
+        List of initiation months (e.g., ['03', '04', '05']).
+    handler : object
+        Object providing the method `get_pipeline_path(year, month, "hazard")`
+        to resolve paths to hazard HDF5 files.
 
-    Returns:
-    - dict: Intensity data per event per month
+    Returns
+    -------
+    dict
+        Dictionary mapping each month to a sub-dictionary with event names as keys
+        and flattened intensity arrays as values. Example:
+        {
+            '03': {'member0': array([...]), 'member1': array([...]), ...},
+            '04': {...},
+            ...
+        }
     """
     def load_hazard_data(year, month):
         hazard_path = handler.get_pipeline_path(year, month, "hazard")
         try:
             return Hazard.from_hdf5(hazard_path)
         except FileNotFoundError:
-            print(f"Warning: No hazard data found for initiation month {month}")
+            print(f"No hazard data for month {month}")
             return None
 
     hazards = {month: load_hazard_data(year, month) for month in months}
@@ -1119,61 +1289,387 @@ def analyze_hazard_intensities(year, months, handler):
             }
         else:
             intensity_data[month] = {}
-
     return intensity_data
 
-
 def print_summary_statistics(year, months, handler):
-    """Print summary statistics for each initiation month."""
-    intensity_data = analyze_hazard_intensities(year, months, handler)
+    """
+    Print summary statistics (min, max, mean, median, std) of hazard intensities.
 
+    Parameters
+    ----------
+    year : int
+        Forecast year to analyze.
+    months : list of str
+        List of initiation months (e.g., ['03', '04', '05']).
+    handler : object
+        Object used to resolve file paths to hazard HDF5 files.
+
+    Returns
+    -------
+    None
+    """
+    intensity_data = analyze_hazard_intensities(year, months, handler)
     for month, intensity_dict in intensity_data.items():
         all_intensities = np.concatenate(list(intensity_dict.values())) if intensity_dict else np.array([])
-        print(f"\n--- Initiation Month {month} ---")
+        print(f"\nInitiation Month {month}")
         if all_intensities.size > 0:
-            print(f"Max intensity: {np.max(all_intensities):.2f}")
-            print(f"Min intensity: {np.min(all_intensities):.2f}")
-            print(f"Mean intensity (across all members): {np.mean(all_intensities):.2f}")
-            print(f"Median intensity (across all members): {np.median(all_intensities):.2f}")
-            print(f"Standard Deviation: {np.std(all_intensities):.2f}")
+            print(f"  Max intensity: {np.max(all_intensities):.2f}")
+            print(f"  Min intensity: {np.min(all_intensities):.2f}")
+            print(f"  Mean: {np.mean(all_intensities):.2f}")
+            print(f"  Median: {np.median(all_intensities):.2f}")
+            print(f"  Std Dev: {np.std(all_intensities):.2f}")
         else:
-            print("No intensity data found!")
-
-
+            print("No intensity data found.")
 
 def plot_intensity_distributions(year, months, handler):
     """
-    Plot intensity distributions with mean and median lines for each initiation month.
+    Plot histograms of hazard intensities for each forecast initiation month.
+
+    Parameters
+    ----------
+    year : int
+        Forecast year to visualize.
+    months : list of str
+        List of initiation months (e.g., ['03', '04', '05']).
+    handler : object
+        Object used to resolve file paths to hazard HDF5 files.
+
+    Returns
+    -------
+    None
     """
     intensity_data = analyze_hazard_intensities(year, months, handler)
 
     fig, axes = plt.subplots(1, len(intensity_data), figsize=(15, 5), sharey=True)
     if len(intensity_data) == 1:
         axes = [axes]
-
     colors = sns.color_palette("tab10", n_colors=50)
 
     for ax, (month, intensity_dict) in zip(axes, intensity_data.items()):
         if intensity_dict:
             all_intensities = np.concatenate(list(intensity_dict.values()))
-
-            for idx, (event, data) in enumerate(intensity_dict.items()):
+            for idx, (_, data) in enumerate(intensity_dict.items()):
                 ax.hist(data, bins=50, alpha=0.3, color=colors[idx % len(colors)], density=False)
-
-            mean_val = np.mean(all_intensities)
-            median_val = np.median(all_intensities)
-
-            ax.axvline(mean_val, color="red", linestyle="--", linewidth=2)
-            ax.axvline(median_val, color="blue", linestyle="-.", linewidth=2)
-
-            ax.text(mean_val, ax.get_ylim()[1] * 0.9, f"Mean: {mean_val:.2f}", color="red", fontsize=10)
-            ax.text(median_val, ax.get_ylim()[1] * 0.8, f"Median: {median_val:.2f}", color="blue", fontsize=10)
-
-            ax.set_title(f"Intensity Distribution: Month {month}")
+            ax.axvline(np.mean(all_intensities), color="red", linestyle="--", linewidth=2)
+            ax.axvline(np.median(all_intensities), color="blue", linestyle="-.", linewidth=2)
+            ax.set_title(f"Forecast Intensity Distribution, Init Month {month}")
             ax.set_xlabel("Intensity")
             ax.set_ylabel("Frequency")
         else:
             ax.set_title(f"No Data: Month {month}")
-
     plt.tight_layout()
+    plt.show()
+
+
+
+#### forecast_skills_metrics ####
+
+def plot_smr_line(ax, forecast_years, init_months, handler, index_metric):
+    """
+    Plot the Spread to Mean Ratio (SMR) of a climate index across forecast months.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axis object to draw the plot on.
+    forecast_years : list of int
+        List of forecast years to include.
+    init_months : list of str
+        List of initialization months (e.g., ['03', '04']).
+    handler : object
+        Handler object that provides the `get_pipeline_path(...)` method.
+    index_metric : str
+        Name of the climate index (e.g., 'TX30').
+
+    Returns
+    -------
+    None
+    """
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    color_idx = 0
+
+    for year in forecast_years:
+        for init_month in init_months:
+            try:
+                paths = handler.get_pipeline_path(year, init_month, "indices")
+                monthly_path = paths.get("monthly")
+                if not monthly_path or not monthly_path.exists():
+                    print(f"Monthly file missing for {year}-init{init_month}.")
+                    continue
+
+                ds = xr.open_dataset(monthly_path)
+                if index_metric not in ds:
+                    print(f"Variable {index_metric} not found in {monthly_path}.")
+                    continue
+
+                da = ds[index_metric]
+                aggregated = da.sum(dim=["latitude", "longitude"])
+                steps = ds["step"].values
+
+                smrs = []
+                for step in steps:
+                    group = aggregated.sel(step=step)
+                    mean = group.mean(dim="number")
+                    std = group.std(dim="number")
+                    smrs.append((std / mean).values)
+
+                ax.plot(steps, smrs, marker='o', linestyle='-',
+                        color=colors[color_idx % len(colors)], label=f'{year}-init{init_month}')
+                color_idx += 1
+
+            except Exception as e:
+                print(f"Error for {year}-init{init_month}: {e}")
+
+    ax.axhline(y=1.0, color='gray', linestyle='--', label='SMR Threshold')
+    ax.set_xlabel('Forecast Month', fontsize=14)
+    ax.set_ylabel('Spread to Mean Ratio (SMR)', fontsize=14)
+    ax.set_title('Spread to Mean Ratio (SMR)', fontsize=16)
+    ax.legend(fontsize=12)
+    ax.grid(True)
+
+def plot_iqr_line(ax, forecast_years, init_months, handler, index_metric):
+    """
+    Plot the Interquartile Range (IQR) of a climate index across forecast months.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axis object to draw the plot on.
+    forecast_years : list of int
+        List of forecast years to include.
+    init_months : list of str
+        List of initialization months (e.g., ['03', '04']).
+    handler : object
+        Handler object that provides the `get_pipeline_path(...)` method.
+    index_metric : str
+        Name of the climate index (e.g., 'TX30').
+
+    Returns
+    -------
+    None
+    """
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    color_idx = 0
+
+    for year in forecast_years:
+        for init_month in init_months:
+            try:
+                paths = handler.get_pipeline_path(year, init_month, "indices")
+                monthly_path = paths.get("monthly")
+                if not monthly_path or not monthly_path.exists():
+                    print(f"Monthly file missing for {year}-init{init_month}.")
+                    continue
+
+                ds = xr.open_dataset(monthly_path)
+                if index_metric not in ds:
+                    print(f"Variable {index_metric} not found in {monthly_path}.")
+                    continue
+
+                da = ds[index_metric]
+                aggregated = da.sum(dim=["latitude", "longitude"])
+                steps = ds["step"].values
+
+                iqrs = []
+                for step in steps:
+                    group = aggregated.sel(step=step)
+                    q75 = group.quantile(0.75, dim="number")
+                    q25 = group.quantile(0.25, dim="number")
+                    iqrs.append((q75 - q25).values)
+
+                ax.plot(steps, iqrs, marker='o', linestyle='-',
+                        color=colors[color_idx % len(colors)], label=f'{year}-init{init_month}')
+                color_idx += 1
+
+            except Exception as e:
+                print(f"Error for {year}-init{init_month}: {e}")
+
+    ax.axhline(y=50, color='gray', linestyle='--', label='IQR Threshold')
+    ax.set_xlabel('Forecast Month', fontsize=14)
+    ax.set_ylabel('Interquartile Range (IQR)', fontsize=14)
+    ax.set_title('Interquartile Range (IQR)', fontsize=16)
+    ax.legend(fontsize=12)
+    ax.grid(True)
+
+def plot_ensemble_spread_line(ax, forecast_years, init_months, handler, index_metric):
+    """
+    Plot the ensemble standard deviation (spread) of a climate index across forecast months.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axis object to draw the plot on.
+    forecast_years : list of int
+        List of forecast years to include.
+    init_months : list of str
+        List of initialization months (e.g., ['03', '04']).
+    handler : object
+        Handler object that provides the `get_pipeline_path(...)` method.
+    index_metric : str
+        Name of the climate index (e.g., 'TX30').
+
+    Returns
+    -------
+    None
+    """
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    color_idx = 0
+
+    for year in forecast_years:
+        for init_month in init_months:
+            try:
+                paths = handler.get_pipeline_path(year, init_month, "indices")
+                monthly_path = paths.get("monthly")
+                if not monthly_path or not monthly_path.exists():
+                    print(f"Monthly file missing for {year}-init{init_month}.")
+                    continue
+
+                ds = xr.open_dataset(monthly_path)
+                if index_metric not in ds:
+                    print(f"Variable {index_metric} not found in {monthly_path}.")
+                    continue
+
+                da = ds[index_metric]
+                aggregated = da.sum(dim=["latitude", "longitude"])
+                steps = ds["step"].values
+
+                spreads = []
+                for step in steps:
+                    group = aggregated.sel(step=step)
+                    spread = group.std(dim="number")
+                    spreads.append(spread.values)
+
+                ax.plot(steps, spreads, marker='o', linestyle='-',
+                        color=colors[color_idx % len(colors)], label=f'{year}-init{init_month}')
+                color_idx += 1
+
+            except Exception as e:
+                print(f"Error for {year}-init{init_month}: {e}")
+
+    ax.axhline(y=100, color='gray', linestyle='--', label='Ensemble Spread Threshold')
+    ax.set_xlabel('Forecast Month', fontsize=14)
+    ax.set_ylabel('Ensemble Spread', fontsize=14)
+    ax.set_title('Ensemble Spread', fontsize=16)
+    ax.legend(fontsize=12)
+    ax.grid(True)
+
+def plot_eai_line(ax, forecast_years, init_months, forecast_months, handler, index_metric, threshold):
+    """
+    Plot the Ensemble Agreement Index (EAI) for a climate index across forecast months.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axis object to draw the plot on.
+    forecast_years : list of int
+        List of forecast years to include.
+    init_months : list of str
+        List of initialization months (e.g., ['03', '04']).
+    forecast_months : list of str or None
+        List of valid forecast months (not used internally, can be None).
+    handler : object
+        Handler object that provides the `get_pipeline_path(...)` method.
+    index_metric : str
+        Name of the climate index (e.g., 'TX30').
+    threshold : float
+        Threshold above which a grid cell is considered to have an "event".
+
+    Returns
+    -------
+    None
+    """
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+    color_idx = 0
+
+    for year in forecast_years:
+        for init_month in init_months:
+            try:
+                paths = handler.get_pipeline_path(year, init_month, "indices")
+
+                monthly_path = paths.get("monthly")
+                if not monthly_path or not monthly_path.exists():
+                    print(f"Monthly file missing for {year}-init{init_month}.")
+                    continue
+
+                ds = xr.open_dataset(monthly_path)
+
+                if index_metric not in ds:
+                    print(f"Variable {index_metric} not found in {monthly_path}.")
+                    continue
+
+                above_thresh = ds[index_metric] > threshold
+                eai = above_thresh.sum(dim="number") / above_thresh.sizes["number"]
+                eai_avg = eai.mean(dim=["latitude", "longitude"])
+                forecast_steps = ds["step"].values
+
+                ax.plot(
+                    forecast_steps,
+                    eai_avg.values,
+                    marker='o',
+                    linestyle='-',
+                    color=colors[color_idx % len(colors)],
+                    label=f"{year}-init{init_month}"
+                )
+                color_idx += 1
+
+            except Exception as e:
+                print(f"Error for {year}-init{init_month}: {e}")
+
+    ax.axhline(y=0.1, color='gray', linestyle='--', label='EAI Threshold')
+    ax.set_xlabel("Forecast Month", fontsize=14)
+    ax.set_ylabel("Ensemble Agreement Index (EAI)", fontsize=14)
+    ax.set_title("Ensemble Agreement Index (EAI)", fontsize=16)
+    ax.legend(fontsize=12)
+    ax.grid(True)
+    
+def forecast_skills_metrics(forecast_years, init_months, handler, index_metric, threshold):
+    """
+    Plot all ensemble forecast skill metrics (SMR, IQR, Spread, EAI) in a 2x2 grid.
+
+    Parameters
+    ----------
+    forecast_years : list of int
+        List of forecast years to include in the evaluation.
+    init_months : list of str
+        List of initialization months (e.g., ['03', '04']).
+    handler : object
+        Handler object that provides the `get_pipeline_path(...)` method.
+    index_metric : str
+        Name of the climate index (e.g., 'TX30').
+    threshold : float
+        Threshold used for computing the Ensemble Agreement Index (EAI).
+
+    Returns
+    -------
+    None
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(20, 12))
+    fig.suptitle("Ensemble Skill Metrics", fontsize=16)
+
+    plot_smr_line(axes[0, 0], forecast_years, init_months, handler, index_metric)
+    plot_iqr_line(axes[0, 1], forecast_years, init_months, handler, index_metric)
+    plot_ensemble_spread_line(axes[1, 0], forecast_years, init_months, handler, index_metric)
+    plot_eai_line(axes[1, 1], forecast_years, init_months, forecast_months=None, handler=handler, index_metric=index_metric, threshold=threshold)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    plt.figtext(0.02, -0.05, "The first month in each plot represents the initialization. "
+                             "Subsequent months are forecast-valid months based on the index 'step' coordinate.",
+                wrap=True, fontsize=14)
+
+    plt.figtext(0.02, -0.10, "SMR (Spread to Mean Ratio): Measures variability relative to the mean. "
+                             "Higher SMR implies greater uncertainty. Threshold line: SMR = 1.",
+                wrap=True, fontsize=14)
+
+    plt.figtext(0.02, -0.15, "IQR (Interquartile Range): Difference between Q3 and Q1 across ensemble members. "
+                             "Larger IQR signals higher spread. Threshold line: IQR = 50.",
+                wrap=True, fontsize=14)
+
+    plt.figtext(0.02, -0.20, "Ensemble Spread: Standard deviation among ensemble members. "
+                             "High values indicate more disagreement. Threshold line: 100.",
+                wrap=True, fontsize=14)
+
+    plt.figtext(0.02, -0.25, "EAI (Ensemble Agreement Index): Proportion of members above threshold. "
+                             "High EAI implies strong forecast agreement. Threshold line: 0.1.",
+                wrap=True, fontsize=14)
+
     plt.show()
