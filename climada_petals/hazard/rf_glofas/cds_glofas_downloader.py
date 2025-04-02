@@ -281,7 +281,20 @@ def glofas_request(
                 request_sane[key] = [request[key]]
         return request_sane
 
-    requests = [sanitize_request_lists(req) for req in requests]
+    def is_valid_date(request):
+        """Returns True if the date in the request is valid, otherwise False."""
+        prefix = "h" if product == "historical" else ""
+        date_request_to_int = lambda x: int(x) if not isinstance(x, list) else int(x[0])
+        year = date_request_to_int(request[prefix+"year"])
+        month = date_request_to_int(request[prefix+"month"])
+        day = date_request_to_int(request[prefix+"day"])
+        try:
+            pd.Timestamp(year, month, day)  # Try creating a date object
+            return True
+        except ValueError:
+            return False
+
+    requests = [sanitize_request_lists(req) for req in requests if is_valid_date(req)]
 
     # Execute request
     return glofas_request_multiple(
