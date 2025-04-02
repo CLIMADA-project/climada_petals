@@ -1403,15 +1403,16 @@ def plot_smr_line(ax, forecast_years, init_months, handler, index_metric):
                     continue
 
                 da = ds[index_metric]
-                aggregated = da.sum(dim=["latitude", "longitude"])
                 steps = ds["step"].values
 
                 smrs = []
                 for step in steps:
-                    group = aggregated.sel(step=step)
-                    mean = group.mean(dim="number")
-                    std = group.std(dim="number")
-                    smrs.append((std / mean).values)
+                    group = da.sel(step=step)
+                    std_map = group.std(dim="number")
+                    mean_map = group.mean(dim="number")
+                    smr_map = std_map / mean_map
+                    smr_value = smr_map.mean(dim=["latitude", "longitude"])
+                    smrs.append(smr_value.values)
 
                 ax.plot(steps, smrs, marker='o', linestyle='-',
                         color=colors[color_idx % len(colors)], label=f'{year}-init{init_month}')
@@ -1426,6 +1427,7 @@ def plot_smr_line(ax, forecast_years, init_months, handler, index_metric):
     ax.set_title('Spread to Mean Ratio (SMR)', fontsize=16)
     ax.legend(fontsize=12)
     ax.grid(True)
+
 
 def plot_iqr_line(ax, forecast_years, init_months, handler, index_metric):
     """
@@ -1466,15 +1468,15 @@ def plot_iqr_line(ax, forecast_years, init_months, handler, index_metric):
                     continue
 
                 da = ds[index_metric]
-                aggregated = da.sum(dim=["latitude", "longitude"])
                 steps = ds["step"].values
 
                 iqrs = []
                 for step in steps:
-                    group = aggregated.sel(step=step)
+                    group = da.sel(step=step)
                     q75 = group.quantile(0.75, dim="number")
                     q25 = group.quantile(0.25, dim="number")
-                    iqrs.append((q75 - q25).values)
+                    iqr = (q75 - q25).mean(dim=["latitude", "longitude"])
+                    iqrs.append(iqr.values)
 
                 ax.plot(steps, iqrs, marker='o', linestyle='-',
                         color=colors[color_idx % len(colors)], label=f'{year}-init{init_month}')
@@ -1489,6 +1491,7 @@ def plot_iqr_line(ax, forecast_years, init_months, handler, index_metric):
     ax.set_title('Interquartile Range (IQR)', fontsize=16)
     ax.legend(fontsize=12)
     ax.grid(True)
+
 
 def plot_ensemble_spread_line(ax, forecast_years, init_months, handler, index_metric):
     """
@@ -1529,13 +1532,12 @@ def plot_ensemble_spread_line(ax, forecast_years, init_months, handler, index_me
                     continue
 
                 da = ds[index_metric]
-                aggregated = da.sum(dim=["latitude", "longitude"])
                 steps = ds["step"].values
 
                 spreads = []
                 for step in steps:
-                    group = aggregated.sel(step=step)
-                    spread = group.std(dim="number")
+                    group = da.sel(step=step)
+                    spread = group.std(dim="number").mean(dim=["latitude", "longitude"])
                     spreads.append(spread.values)
 
                 ax.plot(steps, spreads, marker='o', linestyle='-',
@@ -1551,6 +1553,7 @@ def plot_ensemble_spread_line(ax, forecast_years, init_months, handler, index_me
     ax.set_title('Ensemble Spread', fontsize=16)
     ax.legend(fontsize=12)
     ax.grid(True)
+
 
 def plot_eai_line(ax, forecast_years, init_months, forecast_months, handler, index_metric, threshold):
     """
