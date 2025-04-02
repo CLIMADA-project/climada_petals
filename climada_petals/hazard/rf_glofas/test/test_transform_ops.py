@@ -294,9 +294,10 @@ class TestGlofasDownloadOps(unittest.TestCase):
             open_mfdataset_kw=False,
         )
         glofas_request_multiple.assert_not_called()
-        self.assertDictContainsSubset(
-            {"hyear": ["2022"], "hmonth": ["01"], "hday": ["01"]},
+        self.assertDictEqual(
             glofas_request_single.call_args.args[1],
+            glofas_request_single.call_args.args[1]
+            | {"hyear": ["2022"], "hmonth": ["01"], "hday": ["01"]},
         )
         reset_mocks()
 
@@ -310,13 +311,15 @@ class TestGlofasDownloadOps(unittest.TestCase):
         )
         glofas_request_single.assert_not_called()
         self.assertIs(len(glofas_request_multiple.call_args.args[1]), 2)  # Two requests
-        self.assertDictContainsSubset(
-            {"hyear": ["2000"], "hmonth": ["01"], "hday": ["01", "02"]},
+        self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][0],
+            glofas_request_multiple.call_args.args[1][0]
+            | {"hyear": ["2000"], "hmonth": ["01"], "hday": ["01", "02"]},
         )
-        self.assertDictContainsSubset(
-            {"hyear": ["2001"], "hmonth": ["01"], "hday": ["01", "02"]},
+        self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][1],
+            glofas_request_multiple.call_args.args[1][1]
+            | {"hyear": ["2001"], "hmonth": ["01"], "hday": ["01", "02"]},
         )
         reset_mocks()
 
@@ -332,9 +335,10 @@ class TestGlofasDownloadOps(unittest.TestCase):
         combinations = product(["2000", "2001"], ["01", "02", "03"], ["10", "11"])
         for idx, combo in enumerate(combinations):
             with self.subTest(request_idx=idx):
-                self.assertDictContainsSubset(
-                    {"year": [combo[0]], "month": [combo[1]], "day": [combo[2]]},
+                self.assertDictEqual(
                     glofas_request_multiple.call_args.args[1][idx],
+                    glofas_request_multiple.call_args.args[1][idx]
+                    | {"year": [combo[0]], "month": [combo[1]], "day": [combo[2]]},
                 )
 
         download_glofas_discharge(
@@ -347,17 +351,20 @@ class TestGlofasDownloadOps(unittest.TestCase):
         )
         glofas_request_single.assert_not_called()
         self.assertIs(len(glofas_request_multiple.call_args.args[1]), 3)  # 3 requests
-        self.assertDictContainsSubset(
-            {"year": ["2000", "2001"], "month": ["01"], "day": ["10", "11"]},
+        self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][0],
+            glofas_request_multiple.call_args.args[1][0]
+            | {"year": ["2000", "2001"], "month": ["01"], "day": ["10", "11"]},
         )
-        self.assertDictContainsSubset(
-            {"year": ["2000", "2001"], "month": ["02"], "day": ["10", "11"]},
+        self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][1],
+            glofas_request_multiple.call_args.args[1][1]
+            | {"year": ["2000", "2001"], "month": ["02"], "day": ["10", "11"]},
         )
-        self.assertDictContainsSubset(
-            {"year": ["2000", "2001"], "month": ["03"], "day": ["10", "11"]},
+        self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][2],
+            glofas_request_multiple.call_args.args[1][2]
+            | {"year": ["2000", "2001"], "month": ["03"], "day": ["10", "11"]},
         )
 
 
