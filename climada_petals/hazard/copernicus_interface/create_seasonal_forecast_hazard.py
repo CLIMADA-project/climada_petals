@@ -109,28 +109,47 @@ class SeasonalForecast:
         download_format="grib",
         print_flag=False,
     ):
-        """function that checks if downloaded, processed, or hazard files exist for the given parameters.
+        """    
+        Check whether the forecast data files for the specified parameters exist.
+
+        This function checks the existence of the downloaded raw data, processed data,
+        calculated index files, and hazard files for the given forecast configuration.
 
         Parameters
         ----------
         index_metric : str
             Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
         year : int
-            Initiation year for the forecasts
+            Year of the forecast initiation.
         initiation_month : str
-            Initiation month for the forecasts (e.g., ["March", "April"]).
-        valid_period : list[str or int]
-            A list of start and end month (given as integers or strings) of the valid period. Must have
-            length two. If only one month is requested, use e.g. ["March", "March"].
+            Initiation month of the forecast (e.g., 'March', 'April').
+        valid_period : list of str
+            List with start and end month of the valid forecast period, e.g., ['June', 'August'].
         download_format : str, optional
-            Downloaded data format ('grib' or 'netcdf').
+            Format of the downloaded data ('grib' or 'netcdf'). Default is 'grib'.
         print_flag : bool, optional
-            Flag if information should be printed, by default False
+            If True, prints information about file availability. Default is False.
 
         Returns
         -------
         str
-            Description of if and where files exist
+            Description of which files exist and their locations.
+
+        Raises
+        ------
+        ValueError
+            If valid_period does not contain exactly two months.
+
+        Notes
+        -----
+        The function checks for the following file types:
+        - Downloaded raw data
+        - Processed NetCDF data
+        - Calculated index NetCDF files (daily, monthly, stats)
+        - Hazard HDF5 file
+
+        The file locations are constructed based on the provided parameters and the
+        file structure defined in `get_file_path`.
         """
         initiation_month_str = f"{month_name_to_number(initiation_month):02d}"
         valid_period_str = "_".join(
@@ -180,19 +199,27 @@ class SeasonalForecast:
 
     def explain_index(self, index_metric=None, print_flag=False):
         """
-        Retrieve details about the selected climate index.
+        Retrieve and display information about a specific climate index.
+
+        This function provides an explanation and the required input variables
+        for the selected climate index. If no index is provided, the instance's
+        `index_metric` is used.
 
         Parameters
         ----------
         index_metric : str, optional
-            The climate index to explain. If None, uses the instance's index_metric.
+            Climate index to explain (e.g., 'HW', 'TR', 'Tmax'). If None, uses the instance's index_metric.
         print_flag : bool, optional
-            Flag if information should be printed, by default False
+            If True, prints the explanation. Default is False.
 
         Returns
         -------
         str
-            Explanation and input data required for the index.
+            Text description of the index explanation and required input variables.
+
+        Notes
+        -----
+        The index information is retrieved from `IndexSpecEnum.get_info`.
         """
         index_metric = index_metric or self.index_metric
         response = f"Explanation for {index_metric}: {IndexSpecEnum.get_info(index_metric).explanation} \n"
@@ -294,6 +321,30 @@ class SeasonalForecast:
     def get_pipeline_path(self, year, initiation_month_str, data_type):
         """
         Provide (and possibly create) file paths for forecast pipeline.
+
+        Parameters
+        ----------
+        year : int
+            Year of the forecast initiation.
+        init_month : str
+            Initiation month as two-digit string (e.g., '03' for March).
+        data_type : str
+            Type of data to access ('downloaded_data', 'processed_data', 'indices', 'hazard').
+
+        Returns
+        -------
+        Path or dict of Path
+            Path to the requested file(s). For 'indices', returns a dictionary with keys 'daily', 'monthly', 'stats'.
+
+        Raises
+        ------
+        ValueError
+            If unknown data_type is provided.
+
+        Notes
+        -----
+        File structure:
+        {base_dir}/{originating_centre}/sys{system}/{year}/init{init_month}/valid{valid_period}/{data_type}
         """
 
         file_path = self.get_file_path(
@@ -321,17 +372,28 @@ class SeasonalForecast:
 
     def _download(self, overwrite=False):
         """
-        Download data for specified years and initiation months.
+        Download seasonal forecast data for the specified years and initiation months.
+
+        This function downloads the raw forecast data files for each year and initiation month
+        defined in the instance configuration. The data is downloaded in the specified format
+        ('grib' or 'netcdf') and stored in the configured directory structure.
 
         Parameters
         ----------
-        overwrite : bool
-            Whether to overwrite existing downloaded files.
+        overwrite : bool, optional
+            If True, existing downloaded files will be overwritten. Default is False.
 
         Returns
         -------
         dict
-            Paths to the downloaded files, indexed by (year, initiation_month).
+            Dictionary with keys of the form "<year>_init<month>_valid<valid_period>"
+            and values corresponding to the downloaded data file paths.
+
+        Notes
+        -----
+        The data is downloaded using the `_download_data` function and follows the directory
+        structure defined in `get_pipeline_path`. The bounding box is automatically converted
+        to CDS (Climate Data Store) format before download.
         """
         output_files = {}
         bounds_CDS_order = [
@@ -366,17 +428,28 @@ class SeasonalForecast:
 
     def _process(self, overwrite=False):
         """
-        Process the downloaded data into daily NetCDF format.
+        Process the downloaded forecast data into daily NetCDF format.
+
+        This function processes the raw downloaded data files into a standardized
+        daily NetCDF format, applying basic aggregation operations (mean, max, min).
+        The processed files are saved in the configured output directory.
 
         Parameters
         ----------
-        overwrite : bool
-            Whether to overwrite existing processed files.
+        overwrite : bool, optional
+            If True, existing processed files will be overwritten. Default is False.
 
         Returns
         -------
         dict
-            Paths to the processed files, indexed by (year, initiation_month, month).
+            Dictionary with keys of the form "<year>_init<month>_valid<valid_period>"
+            and values corresponding to the processed NetCDF file paths.
+
+        Notes
+        -----
+        The processing applies a daily coarsening operation and aggregates the data.
+        The processed data is saved in NetCDF format in the directory defined by
+        `get_pipeline_path`. Processing is performed using the `_process_data` function.
         """
         processed_files = {}
         for year in self.year_list:
@@ -404,17 +477,34 @@ class SeasonalForecast:
 
     def download_and_process_data(self, overwrite=False):
         """
-        Download and process climate forecast data.
+        Download and process seasonal climate forecast data.
+
+        This function performs the complete data pipeline by first downloading
+        the raw forecast data for the specified years and initiation months,
+        and then processing the downloaded data into a daily NetCDF format.
 
         Parameters
         ----------
-        overwrite : bool
-            Whether to overwrite existing files.
+        overwrite : bool, optional
+            If True, existing downloaded and processed files will be overwritten. Default is False.
 
         Returns
         -------
         dict
-            A dictionary containing paths to downloaded and processed data.
+            Dictionary containing two keys:
+            - "downloaded_data": dict with file paths to downloaded raw data.
+            - "processed_data": dict with file paths to processed NetCDF data.
+
+        Raises
+        ------
+        Exception
+            If an error occurs during download or processing, such as invalid input parameters
+            or file system issues.
+
+        Notes
+        -----
+        This is a high-level method that internally calls `_download()` and `_process()`.
+        The file structure and naming follow the configuration defined in `get_pipeline_path`.
         """
 
         # Call high-level methods for downloading and processing
@@ -441,25 +531,44 @@ class SeasonalForecast:
         tr_threshold=20,
     ):
         """
-        Calculate the specified climate index based on the downloaded data.
+        Calculate the specified climate index based on the downloaded forecast data.
+
+        This function processes the downloaded or processed forecast data to compute
+        the selected climate index (e.g., Heatwave days, Tropical Nights) according
+        to the parameters defined for the index.
 
         Parameters
         ----------
-        overwrite : bool
-            Whether to overwrite existing files.
-        threshold : float
-            Threshold value for the index.
-        min_duration : int
-            Minimum duration for consecutive conditions (specific to certain indices).
-        max_gap : int
-            Maximum allowable gap between conditions (specific to certain indices).
-        tr_threshold : float
-            Threshold for tropical nights.
+        overwrite : bool, optional
+            If True, existing index files will be overwritten. Default is False.
+        hw_threshold : float, optional
+            Temperature threshold for heatwave days index calculation. Default is 27°C.
+        hw_min_duration : int, optional
+            Minimum duration (in days) of consecutive conditions for a heatwave event. Default is 3.
+        hw_max_gap : int, optional
+            Maximum allowable gap (in days) between conditions to still consider as a single heatwave event. Default is 0.
+        tr_threshold : float, optional
+            Temperature threshold for tropical nights index calculation. Default is 20°C.
 
         Returns
         -------
         dict
-            Outputs for each processed year and month, indexed by (year, month).
+            Dictionary with keys of the form "<year>_init<month>_valid<valid_period>"
+            and values corresponding to the output NetCDF index files (daily, monthly, stats).
+
+        Raises
+        ------
+        Exception
+            If index calculation fails due to missing files or processing errors.
+
+        Notes
+        -----
+        The input files used depend on the index:
+        - For 'TX30', 'TR', and 'HW', the raw downloaded GRIB data is used.
+        - For other indices, the processed NetCDF data is used.
+
+        The calculation is performed using the `_calculate_index` function and results
+        are saved in the configured output directory structure.
         """
         index_outputs = {}
 
@@ -513,17 +622,35 @@ class SeasonalForecast:
 
     def save_index_to_hazard(self, overwrite=False):
         """
-        Convert the calculated index to a Hazard object and save it as HDF5.
+        Convert the calculated climate index to a CLIMADA Hazard object and save it as HDF5.
+
+        This function reads the monthly aggregated index NetCDF files and converts them
+        into a CLIMADA Hazard object. The resulting hazard files are saved in HDF5 format.
 
         Parameters
         ----------
-        overwrite : bool
-            Whether to overwrite existing files.
+        overwrite : bool, optional
+            If True, existing hazard files will be overwritten. Default is False.
 
         Returns
         -------
         dict
-            Paths to the saved Hazard files, indexed by (year, month).
+            Dictionary with keys of the form "<year>_init<month>_valid<valid_period>"
+            and values corresponding to the saved Hazard HDF5 file paths.
+
+        Raises
+        ------
+        Exception
+            If the hazard conversion fails due to missing input files or processing errors.
+
+        Notes
+        -----
+        The hazard conversion is performed using the `_convert_to_hazard` function.
+        The function expects that the index files (monthly NetCDF) have already been
+        calculated and saved using `calculate_index()`.
+
+        The resulting Hazard objects follow CLIMADA's internal structure and can be
+        used for further risk assessment workflows.
         """
         hazard_outputs = {}
 
@@ -675,18 +802,27 @@ class SeasonalForecast:
 
 
 def month_name_to_number(month):
-    """_summary_
+    """
+    Convert a month name or number to its corresponding integer value.
+
+    Accepts either an integer (1-12), full month name (e.g., 'March'),
+    or abbreviated month name (e.g., 'Mar') and returns the corresponding
+    month number (1-12).
 
     Parameters
     ----------
-    month : (int, str)
-        month as integer or string
+    month : int or str
+        Month as an integer (1-12) or as a string (full or abbreviated month name).
 
     Returns
     -------
     int
-        month as integer
+        Month as an integer in the range 1-12.
 
+    Raises
+    ------
+    ValueError
+        If the input month is invalid, empty, or outside the valid range.
     """
     if isinstance(month, int):  # Already a number
         if 1 <= month <= 12:
@@ -706,34 +842,39 @@ def month_name_to_number(month):
 
 def calculate_leadtimes(year, initiation_month, valid_period):
     """
-    Calculate lead times in hours for forecast initiation and lead months.
+    Calculate lead times in hours for a forecast period based on initiation and valid months.
+
+    This function computes a list of lead times (in hours) for a seasonal forecast, starting
+    from the initiation month to the end of the valid period. The lead times are generated
+    in 6-hour steps, following the standard forecast output intervals.
 
     Parameters
     ----------
     year : int
-        The starting year for the forecast.
+        Year of the forecast initiation.
     initiation_month : int or str
-        The initiation month for the forecast.
-    valid_period : List[int or str]
-        A list of start and end month (given as integers or strings) of the valid period. Must have
-        length two. If only one month is requested, use e.g. ["March", "March"].
+        Initiation month of the forecast, as integer (1-12) or month name (e.g., 'March').
+    valid_period : list of int or str
+        List containing the start and end month of the valid period, either as integers (1-12)
+        or month names (e.g., ['June', 'August']). Must contain exactly two elements.
+
     Returns
     -------
-    list[int]
-        A sorted list of lead times in hours, with each step being 6 hours.
+    list of int
+        List of lead times in hours, sorted and spaced by 6 hours.
 
     Raises
     ------
     ValueError
-        If initiation month or lead time months are invalid.
+        If initiation month or valid period months are invalid or reversed.
     Exception
         For general errors during lead time calculation.
 
     Notes
     -----
-    - The function determines the correct year(s) for the valid forecast period.
-    - If the forecast extends into the next year, the valid period spans two years.
-    - Lead times are computed in hourly intervals from the initiation month to the end of the forecast period.
+    - The valid period may extend into the following year if the valid months are after December.
+    - Lead times are calculated relative to the initiation date.
+    - Each lead time corresponds to a 6-hour forecast step.
 
     Example:
     ---------
@@ -742,7 +883,6 @@ def calculate_leadtimes(year, initiation_month, valid_period):
     - Recognize that the forecast extends into the next year (2023).
     - Compute lead times starting from **December 1, 2022** (0 hours) to **February 28, 2023**.
     - Generate lead times in 6-hour intervals, covering the entire forecast period from December 2022 through February 2023.
-
     """
 
     # Convert initiation month to numeric if it is a string
@@ -792,22 +932,32 @@ def calculate_leadtimes(year, initiation_month, valid_period):
 
 def handle_overwriting(function):
     """
-    Decorator to manage file overwriting during processing.
+    Decorator to handle file overwriting during data processing.
+
+    This decorator checks if the target output file(s) already exist and
+    whether overwriting is allowed. If the file(s) exist and overwriting
+    is disabled, the existing file paths are returned without executing
+    the decorated function.
 
     Parameters
     ----------
     function : callable
-        The function to decorate.
+        Function to be decorated. Must have the first two arguments:
+        - output_file_name : Path or dict of Path
+        - overwrite : bool
 
     Returns
     -------
     callable
-        The wrapped function, which checks file existence before executing.
+        Wrapped function with added file existence check logic.
 
     Notes
     -----
-    If the file already exists and overwriting is not allowed, the existing file path
-    is returned directly without calling the wrapped function.
+    - If `output_file_name` is a `Path`, its existence is checked.
+    - If `output_file_name` is a `dict` of `Path`, the existence of any file is checked.
+    - If `overwrite` is False and the file(s) exist, the function is skipped and the
+      existing path(s) are returned.
+    - The function must accept `overwrite` as the second argument.
     """
 
     def wrapper(output_file_name, overwrite, *args, **kwargs):
@@ -849,33 +999,42 @@ def _download_data(
     """
     Download seasonal forecast data for a specific year and initiation month.
 
+    This function downloads raw seasonal forecast data from the Copernicus Climate Data Store (CDS)
+    based on the specified forecast configuration and geographical domain. The data is saved
+    in the specified format and location.
+
     Parameters
     ----------
     output_file_name : Path
-        Path to save the downloaded data.
+        Path to save the downloaded data file.
     overwrite : bool
-        Whether to overwrite existing files.
-    variables : list[str]
-        List of variables to download.
+        If True, existing files will be overwritten. If False and the file exists, the download is skipped.
+    variables : list of str
+        List of variable names to download (e.g., ['tasmax', 'tasmin']).
     year : int
-        The year for which data is being downloaded.
+        Year of the forecast initiation.
     initiation_month : int
-        The month when the forecast is initiated.
+        Month of the forecast initiation (1-12).
     data_format : str
-        File format for the downloaded data, either 'grib' or 'netcdf'.
+        File format for the downloaded data ('grib' or 'netcdf').
     originating_centre : str
-        The data source, e.g., 'dwd' for German Weather Service.
+        Forecast data provider (e.g., 'dwd' for German Weather Service).
     system : str
-        The specific forecast model or system version.
-    bounds_CDS_order : list[float]
-        Geographical bounds in CDS order [north, west, south, east] for the data.
-    leadtimes : list[int]
-        List of leadtimes in hours.
+        Model system identifier (e.g., '21').
+    bounds_CDS_order : list of float
+        Geographical bounding box in CDS order: [north, west, south, east].
+    leadtimes : list of int
+        List of forecast lead times in hours.
 
     Returns
     -------
     Path
         Path to the downloaded data file.
+
+    Notes
+    -----
+    The function uses the `download_data` method from the Copernicus interface module.
+    The downloaded data is stored following the directory structure defined by the pipeline.
     """
     # Prepare download parameters
     download_params = {
@@ -904,25 +1063,44 @@ def _download_data(
 @handle_overwriting
 def _process_data(output_file_name, overwrite, input_file_name, variables, data_format):
     """
-    Process a single input file into the desired daily NetCDF format.
+    Process a downloaded forecast data file into daily NetCDF format.
+
+    This function reads the downloaded forecast data (in GRIB or NetCDF format),
+    applies a temporal coarsening operation (aggregation over 4 time steps),
+    and saves the resulting daily data as a NetCDF file. For each variable,
+    daily mean, maximum, and minimum values are computed.
 
     Parameters
     ----------
     output_file_name : Path
-        Path to save the processed data.
+        Path to save the processed NetCDF file.
     overwrite : bool
-        Whether to overwrite existing files.
+        If True, existing processed files will be overwritten. If False and the file exists,
+        the processing is skipped.
     input_file_name : Path
-        Path to the input file.
-    variables : list[str]
-        Variables to process in the input file.
+        Path to the input downloaded data file.
+    variables : list of str
+        List of short variable names to process (e.g., ['tasmax', 'tasmin']).
     data_format : str
-        File format of the input file ('grib' or 'netcdf').
+        Format of the input file ('grib' or 'netcdf').
 
     Returns
     -------
     Path
-        Path to the processed data file.
+        Path to the saved processed NetCDF file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the input file does not exist.
+    Exception
+        If an error occurs during data processing.
+
+    Notes
+    -----
+    The function performs a temporal aggregation by coarsening the data over 4 time steps,
+    resulting in daily mean, maximum, and minimum values for each variable.
+    The processed data is saved in NetCDF format and can be used for index calculation.
     """
     try:
         with xr.open_dataset(
@@ -1028,30 +1206,45 @@ def _calculate_index(
 @handle_overwriting
 def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metric):
     """
-    Convert an index file to a Hazard object and save it as HDF5.
+    Convert a climate index file to a CLIMADA Hazard object and save it as HDF5.
+
+    This function reads a processed climate index NetCDF file, converts it to a
+    CLIMADA Hazard object, and saves it in HDF5 format. The function supports
+    ensemble members and concatenates them into a single Hazard object.
 
     Parameters
     ----------
     output_file_name : Path
-        Path to save the Hazard file.
+        Path to save the generated Hazard HDF5 file.
     overwrite : bool
-        Whether to overwrite existing files.
+        If True, existing hazard files will be overwritten. If False and the file exists,
+        the conversion is skipped.
     input_file_name : Path
-        Path to the input index file.
+        Path to the input NetCDF file containing the calculated climate index.
     index_metric : str
-        Climate index metric (e.g., 'HW', 'TR').
+        Climate index metric used for hazard creation (e.g., 'HW', 'TR', 'Tmax').
 
     Returns
     -------
     Path
-        Path to the saved Hazard file.
+        Path to the saved Hazard HDF5 file.
 
     Raises
     ------
     KeyError
-        If required variables are missing in the dataset.
+        If required variables (e.g., 'step' or index variable) are missing in the dataset.
     Exception
-        If the conversion process fails.
+        If the hazard conversion process fails.
+
+    Notes
+    -----
+    - The function uses `Hazard.from_xarray_raster()` to create Hazard objects from the input dataset.
+    - If multiple ensemble members are present, individual Hazard objects are created for each member
+      and concatenated.
+    - The function determines the intensity unit based on the selected index:
+        - '%' for relative humidity (RH)
+        - 'days' for duration indices (e.g., 'HW', 'TR', 'TX30')
+        - '°C' for temperature indices
     """
     try:
         with xr.open_dataset(str(input_file_name)) as ds:
