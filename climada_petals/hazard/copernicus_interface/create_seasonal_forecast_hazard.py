@@ -6,11 +6,11 @@ from typing import List
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
+
 from climada import CONFIG
 from climada.hazard import Hazard
 from climada_petals.hazard.copernicus_interface.downloader import download_data
@@ -18,6 +18,8 @@ from climada_petals.hazard.copernicus_interface.index_definitions import (
     IndexSpecEnum,
     get_short_name_from_variable,
 )
+import climada_petals.hazard.copernicus_interface.seasonal_statistics as seasonal_statistics
+
 
 # set path to store data
 DATA_OUT = CONFIG.hazard.copernicus.seasonal_forecasts.dir()
@@ -48,24 +50,30 @@ class SeasonalForecast:
         Parameters
         ----------
         index_metric : str
-            Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
-        year_list : list[int]
-            Years for which data should be downloaded and processed.
-        lead_time_months : list[str or int]
-            A list specifying the start and end month (given as integers or strings) of the valid period.
-            Must contain two values: the starting and ending month. If only one month is requested, use e.g., ["March", "March"].
-        initiation_month : list[str]
-            Initiation months for the forecasts (e.g., ["March", "April"]).
-        bounds : list
-            bounding box values (in EPSG 4326) in the order (min_lon, min_lat, max_lon, max_lat) or (west, south, east, north]).
+            Climate index to calculate (e.g., "HW", "TR", "Tmax").
+        year_list : list of int
+            List of years for which data should be downloaded and processed.
+        lead_time_months : list of str or int
+            List specifying the start and end month (given as integers or strings) 
+            of the valid forecast period. Must contain exactly two elements.
+        initiation_month : list of str
+            List of initiation months for the forecast (e.g., ["March", "April"]).
+        bounds : list of float
+            Bounding box values in EPSG 4326 format: (min_lon, min_lat, max_lon, max_lat).
         data_format : str
-            Data format ('grib' or 'netcdf').
+            Format of the downloaded data. Either "grib" or "netcdf".
         originating_centre : str
-            Data source (e.g., "dwd").
+            Data provider (e.g., "dwd").
         system : str
-            Model configuration (e.g., "21").
-        data_out : Path, optional
-            Directory for storing data. Defaults to a pre-configured directory.
+            Forecast system configuration (e.g., "21").
+        data_out : pathlib.Path, optional
+            Output directory for storing downloaded and processed data. If None, 
+            uses a default directory specified in the configuration.
+
+        Raises
+        ------
+        ValueError
+            If the valid period does not contain exactly two months.
         """
         # initiate initiation month, valid period, and leadtimes
         valid_period = forecast_period
@@ -84,7 +92,10 @@ class SeasonalForecast:
         self.index_metric = index_metric
         self.year_list = year_list
         self.bounds = bounds
-        self.bounds_str = f"boundsW{int(self.bounds[0])}_S{int(self.bounds[1])}_E{int(self.bounds[2])}_N{int(self.bounds[3])}"
+        self.bounds_str = (
+            f"boundsN{int(self.bounds[0])}_S{int(self.bounds[1])}_"
+            f"E{int(self.bounds[2])}_W{int(self.bounds[3])}"
+            )
         self.data_format = data_format
         self.originating_centre = originating_centre
         self.system = system
@@ -109,7 +120,7 @@ class SeasonalForecast:
         download_format="grib",
         print_flag=False,
     ):
-        """    
+        """
         Check whether the forecast data files for the specified parameters exist.
 
         This function checks the existence of the downloaded raw data, processed data,
@@ -201,14 +212,15 @@ class SeasonalForecast:
         """
         Retrieve and display information about a specific climate index.
 
-        This function provides an explanation and the required input variables
-        for the selected climate index. If no index is provided, the instance's
+        This function provides an explanation and the required input variables for
+        the selected climate index. If no index is provided, the instance's
         `index_metric` is used.
 
         Parameters
         ----------
         index_metric : str, optional
-            Climate index to explain (e.g., 'HW', 'TR', 'Tmax'). If None, uses the instance's index_metric.
+            Climate index to explain (e.g., 'HW', 'TR', 'Tmax'). If None, uses the
+            instance's index_metric.
         print_flag : bool, optional
             If True, prints the explanation. Default is False.
 
@@ -222,8 +234,14 @@ class SeasonalForecast:
         The index information is retrieved from `IndexSpecEnum.get_info`.
         """
         index_metric = index_metric or self.index_metric
-        response = f"Explanation for {index_metric}: {IndexSpecEnum.get_info(index_metric).explanation} \n"
-        response += f"Required variables: {', '.join(IndexSpecEnum.get_info(index_metric).variables)}"
+        response = (
+            f"Explanation for {index_metric}: "
+            f"{IndexSpecEnum.get_info(index_metric).explanation}\n"
+        )
+        response += (
+            "Required variables: "
+            f"{', '.join(IndexSpecEnum.get_info(index_metric).variables)}"
+        )
         if print_flag:
             print(response)
         return response
@@ -334,7 +352,8 @@ class SeasonalForecast:
         Returns
         -------
         Path or dict of Path
-            Path to the requested file(s). For 'indices', returns a dictionary with keys 'daily', 'monthly', 'stats'.
+            Path to the requested file(s). For 'indices', returns a dictionary with keys 
+            'daily', 'monthly', 'stats'.
 
         Raises
         ------
@@ -344,7 +363,8 @@ class SeasonalForecast:
         Notes
         -----
         File structure:
-        {base_dir}/{originating_centre}/sys{system}/{year}/init{init_month}/valid{valid_period}/{data_type}
+        {base_dir}/{originating_centre}/sys{system}/{year}/init{init_month}/valid{valid_period}
+        /{data_type}
         """
 
         file_path = self.get_file_path(
@@ -396,7 +416,7 @@ class SeasonalForecast:
         to CDS (Climate Data Store) format before download.
         """
         output_files = {}
-        bounds_CDS_order = [
+        bounds_cds_order = [
             self.bounds[3],
             *self.bounds[:3],
         ]  # convert bounds to CDS order
@@ -419,7 +439,7 @@ class SeasonalForecast:
                         self.data_format,
                         self.originating_centre,
                         self.system,
-                        bounds_CDS_order,
+                        bounds_cds_order,
                         leadtimes,
                     )
                 )
@@ -514,9 +534,9 @@ class SeasonalForecast:
             created_files["downloaded_data"] = self._download(overwrite=overwrite)
             # 2) Attempt processing data
             created_files["processed_data"] = self._process(overwrite=overwrite)
-        except Exception as e:
+        except Exception as error:
             # Catch reversed valid_period or any other ValueError from calculate_leadtimes
-            raise Exception(f"Download/process aborted: {e}")
+            raise Exception(f"Download/process aborted: {error}") from error
 
         return created_files
 
@@ -546,7 +566,8 @@ class SeasonalForecast:
         hw_min_duration : int, optional
             Minimum duration (in days) of consecutive conditions for a heatwave event. Default is 3.
         hw_max_gap : int, optional
-            Maximum allowable gap (in days) between conditions to still consider as a single heatwave event. Default is 0.
+            Maximum allowable gap (in days) between conditions to still
+            consider as a single heatwave event. Default is 0.
         tr_threshold : float, optional
             Temperature threshold for tropical nights index calculation. Default is 20°C.
 
@@ -576,8 +597,12 @@ class SeasonalForecast:
         for year in self.year_list:
             for month_str in self.initiation_month_str:
                 LOGGER.info(
-                    f"Processing index {self.index_metric} for year {year}, initiation month {month_str}."
+                    "Processing index %s for year %s, initiation month %s.",
+                    self.index_metric,
+                    year,
+                    month_str,
                 )
+
                 # Determine the input file based on index type
                 if self.index_metric in ["TX30", "TR", "HW"]:  # Metrics using GRIB
                     input_data_path = self.get_pipeline_path(
@@ -609,12 +634,13 @@ class SeasonalForecast:
 
                 except FileNotFoundError:
                     LOGGER.warning(
-                        f"File not found for {year}-{month_str}. Skipping..."
+                        "File not found for %s-%s. Skipping...", year, month_str
                     )
-                except Exception as e:
+                except Exception as error:
                     raise Exception(
-                        f"Error processing index {self.index_metric} for {year}-{month_str}: {e}"
-                    )
+                        f"Error processing index {self.index_metric} for "
+                        f"{year}-{month_str}: {error}"
+                    ) from error
 
         return index_outputs
 
@@ -657,7 +683,10 @@ class SeasonalForecast:
         for year in self.year_list:
             for month_str in self.initiation_month_str:
                 LOGGER.info(
-                    f"Creating hazard for index {self.index_metric} for year {year}, initiation month {month_str}."
+                    "Creating hazard for index %s for year %s, initiation month %s.",
+                    self.index_metric,
+                    year,
+                    month_str,
                 )
                 # Get input index file paths and hazard output file paths
                 index_data_path = self.get_pipeline_path(year, month_str, "indices")[
@@ -677,19 +706,21 @@ class SeasonalForecast:
                     )
                 except FileNotFoundError:
                     LOGGER.warning(
-                        f"Monthly index file not found for {year}-{month_str}. Skipping..."
+                        "Monthly index file not found for %s-%s. Skipping...",
+                        year,
+                        month_str,
                     )
-                except Exception as e:
+                except Exception as error:
                     raise Exception(
-                        f"Failed to create hazard for {year}-{month_str}: {e}"
-                    )
+                        f"Failed to create hazard for {year}-{month_str}: {error}"
+                    ) from error
 
         return hazard_outputs
 
     def plot_forecast_skills(self):
         """
-        Access and plot forecast skill data for the handler's parameters, filtered by the selected area.
-
+        Access and plot forecast skill data for the handler's parameters,
+        filtered by the selected area.
         Raises
         ------
         ValueError
@@ -700,7 +731,9 @@ class SeasonalForecast:
         Returns
         -------
         None
-            Generates plots for forecast skill metrics based on the handler's parameters and the selected area.
+            Generates plots for forecast skill metrics based on the handler's parameters
+            and the selected area.
+
         """
         # Check if the originating_centre is "dwd"
         if self.originating_centre.lower() != "dwd":
@@ -730,7 +763,9 @@ class SeasonalForecast:
 
             if not file_path.exists():
                 LOGGER.warning(
-                    f"Skill data file for month {month_str} not found: {file_path}"
+                    "Skill data file for month %s not found: %s",
+                    month_str,
+                    file_path,
                 )
                 continue
 
@@ -757,7 +792,7 @@ class SeasonalForecast:
                             vmin = subset_ds[var].quantile(0.05).item()
                             vmax = subset_ds[var].quantile(0.95).item()
 
-                            im = (
+                            plot_handle = (
                                 subset_ds[var]
                                 .isel(time=0)
                                 .plot(
@@ -770,7 +805,7 @@ class SeasonalForecast:
                             )
 
                             cbar = plt.colorbar(
-                                im, ax=ax, orientation="vertical", pad=0.1, shrink=0.7
+                                plot_handle, ax=ax, orientation="vertical", pad=0.1, shrink=0.7
                             )
                             cbar.set_label(var, fontsize=10)
 
@@ -788,13 +823,14 @@ class SeasonalForecast:
                             plt.show()
                         else:
                             LOGGER.warning(
-                                f"Variable {var} not found in dataset for month {month_str}."
+                                "Variable %s not found in dataset for month %s.",
+                                var,
+                                month_str,
                             )
-
-            except Exception as e:
-                raise Exception(
-                    f"Failed to load or process data for month {month_str}: {e}"
-                )
+            except Exception as error:
+                raise RuntimeError(
+                    f"Failed to load or process data for month {month_str}: {error}"
+                ) from error
 
 
 # ----- Utility Functions -----
@@ -878,11 +914,13 @@ def calculate_leadtimes(year, initiation_month, valid_period):
 
     Example:
     ---------
-    If the forecast is initiated in **December 2022** and the valid period is **January to February 2023**,
+    If the forecast is initiated in **December 2022** and the valid period is **January 
+    to February 2023**,
     the function will:
     - Recognize that the forecast extends into the next year (2023).
     - Compute lead times starting from **December 1, 2022** (0 hours) to **February 28, 2023**.
-    - Generate lead times in 6-hour intervals, covering the entire forecast period from December 2022 through February 2023.
+    - Generate lead times in 6-hour intervals, covering the entire forecast period from 
+    December 2022 through February 2023.
     """
 
     # Convert initiation month to numeric if it is a string
@@ -964,15 +1002,14 @@ def handle_overwriting(function):
         # if data exists and we do not want to overwrite
         if isinstance(output_file_name, PosixPath):
             if not overwrite and output_file_name.exists():
-                LOGGER.info(f"{output_file_name} already exists.")
+                LOGGER.info("%s already exists.", output_file_name)
                 return output_file_name
         elif isinstance(output_file_name, dict):
             if not overwrite and any(
-                [path.exists() for path in output_file_name.values()]
+                path.exists() for path in output_file_name.values()
             ):
-                LOGGER.info(
-                    f"A file of {[str(path) for path in output_file_name.values()]} already exists."
-                )
+                existing_files = [str(path) for path in output_file_name.values()]
+                LOGGER.info("One or more files already exist: %s", existing_files)
                 return output_file_name
 
         return function(output_file_name, overwrite, *args, **kwargs)
@@ -993,22 +1030,24 @@ def _download_data(
     data_format,
     originating_centre,
     system,
-    bounds_CDS_order,
+    bounds_cds_order,
     leadtimes,
 ):
     """
     Download seasonal forecast data for a specific year and initiation month.
 
-    This function downloads raw seasonal forecast data from the Copernicus Climate Data Store (CDS)
-    based on the specified forecast configuration and geographical domain. The data is saved
-    in the specified format and location.
+    This function downloads raw seasonal forecast data from the Copernicus 
+    Climate Data Store (CDS) based on the specified forecast configuration 
+    and geographical domain. The data is saved in the specified format and 
+    location.
 
     Parameters
     ----------
     output_file_name : Path
         Path to save the downloaded data file.
     overwrite : bool
-        If True, existing files will be overwritten. If False and the file exists, the download is skipped.
+        If True, existing files will be overwritten. If False and the file exists, 
+        the download is skipped.
     variables : list of str
         List of variable names to download (e.g., ['tasmax', 'tasmin']).
     year : int
@@ -1021,7 +1060,7 @@ def _download_data(
         Forecast data provider (e.g., 'dwd' for German Weather Service).
     system : str
         Model system identifier (e.g., '21').
-    bounds_CDS_order : list of float
+    bounds_cds_order : list of float
         Geographical bounding box in CDS order: [north, west, south, east].
     leadtimes : list of int
         List of forecast lead times in hours.
@@ -1040,7 +1079,7 @@ def _download_data(
     download_params = {
         "data_format": data_format,
         "originating_centre": originating_centre,
-        "area": bounds_CDS_order,
+        "area": bounds_cds_order,
         "system": system,
         "variable": variables,
         "month": initiation_month,
@@ -1121,16 +1160,18 @@ def _process_data(output_file_name, overwrite, input_file_name, variables, data_
 
         # Save the combined dataset to NetCDF
         combined_ds.to_netcdf(str(output_file_name))
-        LOGGER.info(f"Daily file saved to {output_file_name}")
+        LOGGER.info("Daily file saved to %s", output_file_name)
 
         return output_file_name
 
-    except FileNotFoundError:
+    except FileNotFoundError as error:
         raise FileNotFoundError(
-            f"Input file {input_file_name} does not exist, processing failed."
-        )
-    except Exception as e:
-        raise Exception(f"Error during processing for {input_file_name}: {e}")
+            f"Input file {input_file_name} does not exist. Processing failed."
+        ) from error
+    except Exception as error:
+        raise Exception(
+            f"Error during processing for {input_file_name}: {error}"
+        ) from error
 
 
 @handle_overwriting
@@ -1188,13 +1229,13 @@ def _calculate_index(
     # Save outputs
     if ds_daily is not None:
         ds_daily.to_netcdf(daily_output_path)
-        LOGGER.info(f"Saved daily index to {daily_output_path}")
+        LOGGER.info("Saved daily index to %s", daily_output_path)
     if ds_monthly is not None:
         ds_monthly.to_netcdf(monthly_output_path)
-        LOGGER.info(f"Saved monthly index to {monthly_output_path}")
+        LOGGER.info("Saved monthly index to %s", monthly_output_path)
     if ds_stats is not None:
         ds_stats.to_netcdf(stats_output_path)
-        LOGGER.info(f"Saved stats index to {stats_output_path}")
+        LOGGER.info("Saved stats index to %s", stats_output_path)
 
     return {
         "daily": daily_output_path,
@@ -1238,9 +1279,10 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
 
     Notes
     -----
-    - The function uses `Hazard.from_xarray_raster()` to create Hazard objects from the input dataset.
-    - If multiple ensemble members are present, individual Hazard objects are created for each member
-      and concatenated.
+    - The function uses `Hazard.from_xarray_raster()` to create Hazard objects 
+      from the input dataset.
+    - If multiple ensemble members are present, individual Hazard objects are 
+      created for each member and concatenated.
     - The function determines the intensity unit based on the selected index:
         - '%' for relative humidity (RH)
         - 'days' for duration indices (e.g., 'HW', 'TR', 'TX30')
@@ -1299,8 +1341,10 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
             hazard.check()
             hazard.write_hdf5(str(output_file_name))
 
-        LOGGER.info(f"Hazard file saved to {output_file_name}")
+        LOGGER.info("Hazard file saved to %s.", output_file_name)
         return output_file_name
 
-    except Exception as e:
-        raise Exception(f"Failed to convert {input_file_name} to hazard: {e}")
+    except Exception as error:
+        raise Exception(
+            f"Failed to convert {input_file_name} to hazard: {error}"
+        ) from error
