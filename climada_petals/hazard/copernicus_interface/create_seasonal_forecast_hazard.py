@@ -239,7 +239,7 @@ class SeasonalForecast:
         index_metric = index_metric or self.index_metric
         response = (
             f"Explanation for {index_metric}: "
-            f"{IndexSpecEnum.get_info(index_metric).explanation}\n"
+            f"{IndexSpecEnum.get_info(index_metric).explanation} "
         )
         response += (
             "Required variables: "
@@ -539,7 +539,7 @@ class SeasonalForecast:
             created_files["processed_data"] = self._process(overwrite=overwrite)
         except Exception as error:
             # Catch reversed valid_period or any other ValueError from calculate_leadtimes
-            raise Exception(f"Download/process aborted: {error}") from error
+            raise RuntimeError(f"Download/process aborted: {error}") from error
 
         return created_files
 
@@ -636,11 +636,15 @@ class SeasonalForecast:
                     ] = outputs
 
                 except FileNotFoundError:
-                    LOGGER.warning(
-                        "File not found for %s-%s. Skipping...", year, month_str
+                    msg = (
+                        f"[Index Calculation] Skipped {self.index_metric} for "
+                        f"year={year}, month={month_str} — input file not found. "
+                        f"Expected: {input_data_path}"
                     )
+                    LOGGER.warning(msg)
+
                 except Exception as error:
-                    raise Exception(
+                    raise RuntimeError(
                         f"Error processing index {self.index_metric} for "
                         f"{year}-{month_str}: {error}"
                     ) from error
@@ -707,15 +711,17 @@ class SeasonalForecast:
                         index_data_path,
                         self.index_metric,
                     )
+
                 except FileNotFoundError:
-                    LOGGER.warning(
-                        "Monthly index file not found for %s-%s. Skipping...",
-                        year,
-                        month_str,
+                    msg = (
+                        f"[Hazard Conversion] Skipped {self.index_metric} for year={year}, "
+                        f"month={month_str} — monthly index file not found."
                     )
+                    LOGGER.warning(msg)
+
                 except Exception as error:
-                    raise Exception(
-                        f"Failed to create hazard for {year}-{month_str}: {error}"
+                    raise RuntimeError(
+                        f"Hazard creation failed for {year}-{month_str}: {error}"
                     ) from error
 
         return hazard_outputs
@@ -912,8 +918,6 @@ def calculate_leadtimes(year, initiation_month, valid_period):
     ------
     ValueError
         If initiation month or valid period months are invalid or reversed.
-    Exception
-        For general errors during lead time calculation.
 
     Notes
     -----
@@ -1178,7 +1182,7 @@ def _process_data(output_file_name, overwrite, input_file_name, variables, data_
             f"Input file {input_file_name} does not exist. Processing failed."
         ) from error
     except Exception as error:
-        raise Exception(
+        raise RuntimeError(
             f"Error during processing for {input_file_name}: {error}"
         ) from error
 
@@ -1354,6 +1358,6 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
         return output_file_name
 
     except Exception as error:
-        raise Exception(
-            f"Failed to convert {input_file_name} to hazard: {error}"
+        raise RuntimeError(
+            f"Hazard conversion failed for {input_file_name}: {error}"
         ) from error
