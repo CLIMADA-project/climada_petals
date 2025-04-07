@@ -1,5 +1,3 @@
-import sys
-print(sys.executable)
 import calendar
 import logging
 from datetime import date
@@ -112,6 +110,9 @@ class SeasonalForecast:
             get_short_name_from_variable(var) for var in self.variables
         ]
 
+
+    ##########  Path Utilities  ##########
+        
     def check_existing_files(
         self,
         *,
@@ -773,10 +774,10 @@ class SeasonalForecast:
 
             # Load the data using xarray
             try:
-                with xr.open_dataset(file_path) as ds:
+                with xr.open_dataset(file_path) as input_dataset:
                     # Subset the dataset by area bounds
                     west, south, east, north = self.bounds
-                    subset_ds = ds.sel(lon=slice(west, east), lat=slice(north, south))
+                    subset_ds = input_dataset.sel(lon=slice(west, east), lat=slice(north, south))
 
                     # Plot each variable
                     variables = [
@@ -788,7 +789,7 @@ class SeasonalForecast:
                     for var in variables:
                         if var in subset_ds:
                             plt.figure(figsize=(10, 8))
-                            ax = plt.axes(projection=ccrs.PlateCarree())
+                            plot_axis = plt.axes(projection=ccrs.PlateCarree())
 
                             # Adjust color scale to improve clarity
                             vmin = subset_ds[var].quantile(0.05).item()
@@ -798,7 +799,7 @@ class SeasonalForecast:
                                 subset_ds[var]
                                 .isel(time=0)
                                 .plot(
-                                    ax=ax,
+                                    ax=plot_axis,
                                     cmap="coolwarm",
                                     vmin=vmin,
                                     vmax=vmax,
@@ -807,17 +808,21 @@ class SeasonalForecast:
                             )
 
                             cbar = plt.colorbar(
-                                plot_handle, ax=ax, orientation="vertical", pad=0.1, shrink=0.7
+                                plot_handle, 
+                                ax=plot_axis, 
+                                orientation="vertical", 
+                                pad=0.1, 
+                                shrink=0.7
                             )
                             cbar.set_label(var, fontsize=10)
 
-                            ax.set_extent(
+                            plot_axis.set_extent(
                                 [west, east, south, north], crs=ccrs.PlateCarree()
                             )
-                            ax.add_feature(cfeature.BORDERS, linestyle=":")
-                            ax.add_feature(cfeature.COASTLINE)
-                            ax.add_feature(cfeature.LAND, edgecolor="black", alpha=0.3)
-                            ax.gridlines(draw_labels=True, crs=ccrs.PlateCarree())
+                            plot_axis.add_feature(cfeature.BORDERS, linestyle=":")
+                            plot_axis.add_feature(cfeature.COASTLINE)
+                            plot_axis.add_feature(cfeature.LAND, edgecolor="black", alpha=0.3)
+                            plot_axis.gridlines(draw_labels=True, crs=ccrs.PlateCarree())
 
                             plt.title(
                                 f"{var} for month {month_str},  {self.bounds_str}"
@@ -835,7 +840,9 @@ class SeasonalForecast:
                 ) from error
 
 
-# ----- Utility Functions -----
+
+##########  Utility Functions  ##########
+
 # Utility function for month name to number conversion (if not already defined)
 
 
@@ -1019,7 +1026,7 @@ def handle_overwriting(function):
     return wrapper
 
 
-# ----- Decorated Functions -----
+##########  Decorated Functions  ##########
 
 
 @handle_overwriting
@@ -1147,11 +1154,11 @@ def _process_data(output_file_name, overwrite, input_file_name, variables, data_
         with xr.open_dataset(
             input_file_name,
             engine="cfgrib" if data_format == "grib" else None,
-        ) as ds:
+        ) as input_dataset:
             # Coarsen the data
-            ds_mean = ds.coarsen(step=4, boundary="trim").mean()
-            ds_max = ds.coarsen(step=4, boundary="trim").max()
-            ds_min = ds.coarsen(step=4, boundary="trim").min()
+            ds_mean = input_dataset.coarsen(step=4, boundary="trim").mean()
+            ds_max = input_dataset.coarsen(step=4, boundary="trim").max()
+            ds_min = input_dataset.coarsen(step=4, boundary="trim").min()
 
         # Create a new dataset combining mean, max, and min values
         combined_ds = xr.Dataset()
@@ -1291,19 +1298,19 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
         - '°C' for temperature indices
     """
     try:
-        with xr.open_dataset(str(input_file_name)) as ds:
-            if "step" not in ds.variables:
+        with xr.open_dataset(str(input_file_name)) as input_dataset:
+            if "step" not in input_dataset.variables:
                 raise KeyError(
                     f"Missing 'step' variable in dataset for {input_file_name}."
                 )
 
-            ds["step"] = xr.DataArray(
-                [f"{date}-01" for date in ds["step"].values],
+            input_dataset["step"] = xr.DataArray(
+                [f"{date}-01" for date in input_dataset["step"].values],
                 dims=["step"],
             )
-            ds["step"] = pd.to_datetime(ds["step"].values)
+            input_dataset["step"] = pd.to_datetime(input_dataset["step"].values)
 
-            ensemble_members = ds.get("number", [0]).values
+            ensemble_members = input_dataset.get("number", [0]).values
             hazards = []
 
             # Determine intensity unit and variable
@@ -1314,15 +1321,15 @@ def _convert_to_hazard(output_file_name, overwrite, input_file_name, index_metri
             )
             intensity_variable = index_metric
 
-            if intensity_variable not in ds.variables:
+            if intensity_variable not in input_dataset.variables:
                 raise KeyError(
                     f"No variable named '{intensity_variable}' in the dataset. "
-                    f"Available variables: {list(ds.variables)}"
+                    f"Available variables: {list(input_dataset.variables)}"
                 )
 
             # Create Hazard objects
             for member in ensemble_members:
-                ds_subset = ds.sel(number=member) if "number" in ds.dims else ds
+                ds_subset = input_dataset.sel(number=member) if "number" in input_dataset.dims else input_dataset
                 hazard = Hazard.from_xarray_raster(
                     data=ds_subset,
                     hazard_type=index_metric,
