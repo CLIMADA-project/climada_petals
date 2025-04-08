@@ -23,6 +23,9 @@ from climada_petals.hazard.copernicus_interface.time_utils import (
     month_name_to_number,
     calculate_leadtimes,
 )
+from climada_petals.hazard.copernicus_interface.path_utils import (
+check_existing_files, get_file_path
+)
 
 
 # set path to store data
@@ -155,197 +158,9 @@ class SeasonalForecast:
             print(response)
         return response
     
+    
     ##########  Path Utilities  ##########
         
-    def check_existing_files(
-        self,
-        *,
-        index_metric: str,
-        year: int,
-        initiation_month: str,
-        valid_period: List[str],
-        download_format="grib",
-        print_flag=False,
-    ):
-        """
-        Check whether the forecast data files for the specified parameters exist.
-
-        This function checks the existence of the downloaded raw data, processed data,
-        calculated index files, and hazard files for the given forecast configuration.
-
-        Parameters
-        ----------
-        index_metric : str
-            Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
-        year : int
-            Year of the forecast initiation.
-        initiation_month : str
-            Initiation month of the forecast (e.g., 'March', 'April').
-        valid_period : list of str
-            List with start and end month of the valid forecast period, e.g., ['June', 'August'].
-        download_format : str, optional
-            Format of the downloaded data ('grib' or 'netcdf'). Default is 'grib'.
-        print_flag : bool, optional
-            If True, prints information about file availability. Default is False.
-
-        Returns
-        -------
-        str
-            Description of which files exist and their locations.
-
-        Raises
-        ------
-        ValueError
-            If valid_period does not contain exactly two months.
-
-        Notes
-        -----
-        The function checks for the following file types:
-        - Downloaded raw data
-        - Processed NetCDF data
-        - Calculated index NetCDF files (daily, monthly, stats)
-        - Hazard HDF5 file
-
-        The file locations are constructed based on the provided parameters and the
-        file structure defined in `get_file_path`.
-        """
-        initiation_month_str = f"{month_name_to_number(initiation_month):02d}"
-        valid_period_str = "_".join(
-            [f"{month_name_to_number(month):02d}" for month in valid_period]
-        )
-
-        (
-            downloaded_data_path,
-            processed_data_path,
-            index_data_paths,
-            hazard_data_path,
-        ) = [
-            self.get_file_path(
-                self.data_out,
-                self.originating_centre,
-                year,
-                initiation_month_str,
-                valid_period_str,
-                data_type,
-                index_metric,
-                self.bounds_str,
-                self.system,
-                data_format=download_format,
-            )
-            for data_type in ["downloaded_data", "processed_data", "indices", "hazard"]
-        ]
-
-        if not downloaded_data_path.exists():
-            response = "No downloaded data found for given time periods.\n"
-        else:
-            response = f"Downloaded data exist at: {downloaded_data_path}\n"
-        if not processed_data_path.exists():
-            response += "No processed data found for given time periods.\n"
-        else:
-            response += f"Processed data exist at: {processed_data_path}\n"
-        if not any([path.exists() for path in index_data_paths.values()]):
-            response += "No index data found for given time periods\n."
-        else:
-            response += f"Index data exist at: {index_data_paths}\n"
-        if not hazard_data_path.exists():
-            response += "No hazard data found for given time periods."
-        else:
-            response += f"Hazard data exist at: {hazard_data_path}"
-        if print_flag:
-            print(response)
-        return response
-
-
-    @staticmethod
-    def get_file_path(
-        base_dir,
-        originating_centre,
-        year,
-        initiation_month_str,
-        valid_period_str,
-        data_type,
-        index_metric,
-        bounds_str,
-        system,
-        data_format="grib",
-    ):
-        """Provide file paths for forecast pipeline. For the path tree structure,
-        see Notes.
-
-        Parameters
-        ----------
-        base_dir : _type_
-            Base directory where copernicus data and files should be stored. In the pipeline, if
-            not specified differently, CONFIG.hazard.copernicus.seasonal_forecasts.dir() is used.
-        originating_centre : _type_
-            Data source (e.g., "dwd").
-        year : int or str
-            Initiation year.
-        initiation_month_str : str
-            Initiation month (e.g., '02' or '11').
-        valid_period_str : str
-            Valid period (e.g., '04_06' or '07_07').
-        data_type : str
-            Type of the data content. Must be in
-            ['downloaded_data', 'processed_data', 'indices', 'hazard'].
-        index_metric : str
-            Climate index to calculate (e.g., 'HW', 'TR', 'Tmax').
-        bounds_str : str
-            Spatial bounds as a str, e.g., 'W4_S44_E11_N48'.
-        system : _type_
-            Model configuration (e.g., "21").
-        data_format : str, optional
-            Data format ('grib' or 'netcdf').
-
-        Returns
-        -------
-        pathlib.Path
-            Path based on provided parameters.
-
-        Notes
-        -----
-        The file path will have following structure
-        {base_dir}/{originating_centre}/sys{system}/{year}/
-        init{initiation_month_str}/valid{valid_period_str}/
-        Depending on the data_type, further subdirectories are created. The parameters
-        index_metric and bounds_str are included in the file name.
-
-        Raises
-        ------
-        ValueError
-            If unknown data_type is provided.
-        """
-        if data_type == "downloaded_data":
-            data_type += f"/{data_format}"
-        elif data_type == "hazard":
-            data_type += f"/{index_metric}"
-            data_format = "hdf5"
-        elif data_type == "indices":
-            data_type += f"/{index_metric}"
-            data_format = "nc"
-        elif data_type == "processed_data":
-            data_format = "nc"
-        else:
-            raise ValueError(
-                f"Unknown data type {data_type}. Must be in "
-                "['downloaded_data', 'processed_data', 'indices', 'hazard']"
-            )
-
-        # prepare parent directory
-        sub_dir = (
-            f"{base_dir}/{originating_centre}/sys{system}/{year}"
-            f"/init{initiation_month_str}/valid{valid_period_str}/{data_type}"
-        )
-
-        if data_type.startswith("indices"):
-            return {
-                timeframe: Path(
-                    f"{sub_dir}/{index_metric}_{bounds_str}_{timeframe}.{data_format}"
-                )
-                for timeframe in ["daily", "monthly", "stats"]
-            }
-        return Path(f"{sub_dir}/{index_metric}_{bounds_str}.{data_format}")
-
     def get_pipeline_path(self, year, initiation_month_str, data_type):
         """
         Provide (and possibly create) file paths for forecast pipeline.
@@ -376,8 +191,7 @@ class SeasonalForecast:
         {base_dir}/{originating_centre}/sys{system}/{year}/init{init_month}/valid{valid_period}
         /{data_type}
         """
-
-        file_path = self.get_file_path(
+        file_path = get_file_path(
             self.data_out,
             self.originating_centre,
             year,
