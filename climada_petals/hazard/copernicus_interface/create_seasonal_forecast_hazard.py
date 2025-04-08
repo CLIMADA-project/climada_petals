@@ -115,6 +115,46 @@ class SeasonalForecast:
         ]
 
 
+    ##########  Index Metadata Utilities  ##########
+        
+    def explain_index(self, index_metric=None, print_flag=False):
+        """
+        Retrieve and display information about a specific climate index.
+
+        This function provides an explanation and the required input variables for
+        the selected climate index. If no index is provided, the instance's
+        `index_metric` is used.
+
+        Parameters
+        ----------
+        index_metric : str, optional
+            Climate index to explain (e.g., 'HW', 'TR', 'Tmax'). If None, uses the
+            instance's index_metric.
+        print_flag : bool, optional
+            If True, prints the explanation. Default is False.
+
+        Returns
+        -------
+        str
+            Text description of the index explanation and required input variables.
+
+        Notes
+        -----
+        The index information is retrieved from `IndexSpecEnum.get_info`.
+        """
+        index_metric = index_metric or self.index_metric
+        response = (
+            f"Explanation for {index_metric}: "
+            f"{IndexSpecEnum.get_info(index_metric).explanation} "
+        )
+        response += (
+            "Required variables: "
+            f"{', '.join(IndexSpecEnum.get_info(index_metric).variables)}"
+        )
+        if print_flag:
+            print(response)
+        return response
+    
     ##########  Path Utilities  ##########
         
     def check_existing_files(
@@ -215,43 +255,6 @@ class SeasonalForecast:
             print(response)
         return response
 
-    def explain_index(self, index_metric=None, print_flag=False):
-        """
-        Retrieve and display information about a specific climate index.
-
-        This function provides an explanation and the required input variables for
-        the selected climate index. If no index is provided, the instance's
-        `index_metric` is used.
-
-        Parameters
-        ----------
-        index_metric : str, optional
-            Climate index to explain (e.g., 'HW', 'TR', 'Tmax'). If None, uses the
-            instance's index_metric.
-        print_flag : bool, optional
-            If True, prints the explanation. Default is False.
-
-        Returns
-        -------
-        str
-            Text description of the index explanation and required input variables.
-
-        Notes
-        -----
-        The index information is retrieved from `IndexSpecEnum.get_info`.
-        """
-        index_metric = index_metric or self.index_metric
-        response = (
-            f"Explanation for {index_metric}: "
-            f"{IndexSpecEnum.get_info(index_metric).explanation} "
-        )
-        response += (
-            "Required variables: "
-            f"{', '.join(IndexSpecEnum.get_info(index_metric).variables)}"
-        )
-        if print_flag:
-            print(response)
-        return response
 
     @staticmethod
     def get_file_path(
@@ -729,6 +732,9 @@ class SeasonalForecast:
                     ) from error
 
         return hazard_outputs
+    
+
+    ##########  Plot Forescast Skills  ##########
 
     def plot_forecast_skills(self):
         """
@@ -853,7 +859,6 @@ class SeasonalForecast:
 
 ##########  Utility Functions  ##########
 
-
 def handle_overwriting(function):
     """
     Decorator to handle file overwriting during data processing.
@@ -904,7 +909,6 @@ def handle_overwriting(function):
 
 
 ##########  Decorated Functions  ##########
-
 
 @handle_overwriting
 def _download_data(
