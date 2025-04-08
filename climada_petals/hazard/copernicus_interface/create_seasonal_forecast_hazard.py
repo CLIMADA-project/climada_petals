@@ -1,3 +1,44 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+Core interface for managing seasonal climate forecasts in CLIMADA.
+
+This module provides the SeasonalForecast class, which enables:
+- Downloading Copernicus seasonal forecast data for selected years and months.
+- Processing raw GRIB or NetCDF data into standardized daily format.
+- Computing user-defined climate indices (e.g., Heatwaves, Tropical Nights, Tmax).
+- Converting the calculated indices into CLIMADA-compatible Hazard objects.
+- Organizing outputs by forecast system, initialization time, and spatial domain.
+
+The interface integrates several submodules under copernicus_interface:
+- create_seasonal_forecast_hazard.py: implements the core SeasonalForecast class 
+  that coordinates the entire workflow.
+- downloader.py: handles forecast data retrieval from the CDS API.
+- index_definitions.py: climate index definitions and variable handling.
+- heat_index.py: calculate different thermal indices.
+- seasonal_statistics.py: provides statistical postprocessing and index calculations.
+- path_utils.py: standardizes and validates file and folder structures.
+- time_utils.py: computes lead times and handles month name conversions.
+- forecast_skill.py: manages access and plotting of seasonal forecast skill scores from Zenodo.
+
+All inputs and outputs are consistently managed through a pipeline structure that ensures
+modularity, traceability, and ease of integration into CLIMADA workflows.
+
+"""
 import calendar
 import logging
 from datetime import date
@@ -158,7 +199,7 @@ class SeasonalForecast:
             print(response)
         return response
     
-    
+
     ##########  Path Utilities  ##########
         
     def get_pipeline_path(self, year, initiation_month_str, data_type):
@@ -547,129 +588,6 @@ class SeasonalForecast:
 
         return hazard_outputs
     
-
-    ##########  Plot Forescast Skills  ##########
-
-    def plot_forecast_skills(self):
-        """
-        Access and plot forecast skill data for the handler's parameters,
-        filtered by the selected area.
-        Raises
-        ------
-        ValueError
-            If the originating_centre is not "dwd".
-        ValueError
-            If the index_metric is not "Tmax".
-
-        Returns
-        -------
-        None
-            Generates plots for forecast skill metrics based on the handler's parameters
-            and the selected area.
-
-        """
-        # Check if the originating_centre is "dwd"
-        if self.originating_centre.lower() != "dwd":
-            raise ValueError(
-                "Forecast skill metrics are only available for the 'dwd' provider. "
-                f"Current provider: {self.originating_centre}"
-            )
-
-        # Check if the index_metric is "Tmax"
-        if self.index_metric.lower() != "tmax":
-            raise ValueError(
-                "Forecast skills are only available for the 'Tmax' index. "
-                f"Current index: {self.index_metric}"
-            )
-
-        # Define the file path pattern for forecast skill data (change for Zenodo when ready)
-        base_path = Path("/Users/daraya/Downloads")
-        file_name_pattern = (
-            "tasmaxMSESS_subyr_gcfs21_shc{month}-climatology_r1i1p1_1990-2019.nc"
-        )
-
-        # Iterate over initiation months and access the corresponding file
-        for month_str in self.initiation_month_str:
-
-            # Construct the file name and path
-            file_path = base_path / file_name_pattern.format(month=month_str)
-
-            if not file_path.exists():
-                LOGGER.warning(
-                    "Skill data file for month %s not found: %s",
-                    month_str,
-                    file_path,
-                )
-                continue
-
-            # Load the data using xarray
-            try:
-                with xr.open_dataset(file_path) as input_dataset:
-                    # Subset the dataset by area bounds
-                    west, south, east, north = self.bounds
-                    subset_ds = input_dataset.sel(lon=slice(west, east), lat=slice(north, south))
-
-                    # Plot each variable
-                    variables = [
-                        "tasmax_fc_mse",
-                        "tasmax_ref_mse",
-                        "tasmax_msess",
-                        "tasmax_msessSig",
-                    ]
-                    for var in variables:
-                        if var in subset_ds:
-                            plt.figure(figsize=(10, 8))
-                            plot_axis = plt.axes(projection=ccrs.PlateCarree())
-
-                            # Adjust color scale to improve clarity
-                            vmin = subset_ds[var].quantile(0.05).item()
-                            vmax = subset_ds[var].quantile(0.95).item()
-
-                            plot_handle = (
-                                subset_ds[var]
-                                .isel(time=0)
-                                .plot(
-                                    ax=plot_axis,
-                                    cmap="coolwarm",
-                                    vmin=vmin,
-                                    vmax=vmax,
-                                    add_colorbar=False,
-                                )
-                            )
-
-                            cbar = plt.colorbar(
-                                plot_handle, 
-                                ax=plot_axis, 
-                                orientation="vertical", 
-                                pad=0.1, 
-                                shrink=0.7
-                            )
-                            cbar.set_label(var, fontsize=10)
-
-                            plot_axis.set_extent(
-                                [west, east, south, north], crs=ccrs.PlateCarree()
-                            )
-                            plot_axis.add_feature(cfeature.BORDERS, linestyle=":")
-                            plot_axis.add_feature(cfeature.COASTLINE)
-                            plot_axis.add_feature(cfeature.LAND, edgecolor="black", alpha=0.3)
-                            plot_axis.gridlines(draw_labels=True, crs=ccrs.PlateCarree())
-
-                            plt.title(
-                                f"{var} for month {month_str},  {self.bounds_str}"
-                            )
-                            plt.show()
-                        else:
-                            LOGGER.warning(
-                                "Variable %s not found in dataset for month %s.",
-                                var,
-                                month_str,
-                            )
-            except Exception as error:
-                raise RuntimeError(
-                    f"Failed to load or process data for month {month_str}: {error}"
-                ) from error
-
-
 
 ##########  Utility Functions  ##########
 

@@ -27,4 +27,5 @@ from .heat_index import *  # This will import all functions from heat_index.py
 from .index_definitions import *  # This will import all functions from index_definitions.py
 from .seasonal_statistics import *  # This will import all functions from seasonal_statistics.py
 from .time_utils import *  # Time-related helpers (e.g. month conversion, leadtime calculation)
-from .path_utils import *  # Time-related helpers (e.g. month conversion, leadtime calculation)
+from .path_utils import *  # Computes lead times and handles month name conversions.
+from .forecast_skill import *  # Manages access and plotting of seasonal forecast skill scores from Zenodo.
