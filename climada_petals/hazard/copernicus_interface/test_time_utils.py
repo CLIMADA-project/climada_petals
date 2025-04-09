@@ -12,8 +12,9 @@ import unittest
 from datetime import date
 from climada_petals.hazard.copernicus_interface.time_utils import (
     month_name_to_number,
-    calculate_leadtimes
+    calculate_leadtimes,
 )
+
 
 class TestTimeUtils(unittest.TestCase):
 
@@ -32,7 +33,6 @@ class TestTimeUtils(unittest.TestCase):
         with self.assertRaises(ValueError):
             month_name_to_number(13)
 
-
     ### Test calculate_leadtimes for a valid period within the same year ###
     def test_calculate_leadtimes_normal_valid_period(self):
         year = 2023
@@ -44,7 +44,9 @@ class TestTimeUtils(unittest.TestCase):
         base_date = date(2023, 3, 1)
 
         expected_start = (start_date - base_date).days * 24
-        expected_end = ((end_date - base_date).days * 24 + 24) - 6 # 6 excludes the stop value
+        expected_end = (
+            (end_date - base_date).days * 24 + 24
+        ) - 6  # 6 excludes the stop value
 
         leadtimes = calculate_leadtimes(year, initiation, valid_period)
         self.assertEqual(leadtimes[0], expected_start)
@@ -61,7 +63,9 @@ class TestTimeUtils(unittest.TestCase):
         base_date = date(2023, 12, 1)
 
         expected_start = (start_date - base_date).days * 24
-        expected_end = ((end_date - base_date).days * 24 + 24) - 6 # 6 excludes the stop value
+        expected_end = (
+            (end_date - base_date).days * 24 + 24
+        ) - 6  # 6 excludes the stop value
 
         leadtimes = calculate_leadtimes(year, initiation, valid_period)
         self.assertEqual(leadtimes[0], expected_start)
@@ -77,4 +81,3 @@ class TestTimeUtils(unittest.TestCase):
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestTimeUtils)
     unittest.TextTestRunner(verbosity=2).run(TESTS)
-

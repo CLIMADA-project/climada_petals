@@ -26,6 +26,7 @@ import numpy as np
 
 ##########  Utility Functions  ##########
 
+
 def month_name_to_number(month):
     """
     Convert a month name or number to its corresponding integer value.
@@ -101,12 +102,12 @@ def calculate_leadtimes(year, initiation_month, valid_period):
 
     Example:
     ---------
-    If the forecast is initiated in **December 2022** and the valid period is **January 
+    If the forecast is initiated in **December 2022** and the valid period is **January
     to February 2023**,
     the function will:
     - Recognize that the forecast extends into the next year (2023).
     - Compute lead times starting from **December 1, 2022** (0 hours) to **February 28, 2023**.
-    - Generate lead times in 6-hour intervals, covering the entire forecast period from 
+    - Generate lead times in 6-hour intervals, covering the entire forecast period from
     December 2022 through February 2023.
     """
 

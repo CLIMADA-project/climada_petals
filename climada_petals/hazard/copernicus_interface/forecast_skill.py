@@ -165,7 +165,6 @@ def plot_forecast_skills(bounds, bounds_str, index_metric, init_months):
 
     for month_str in init_months:
         file_path = base_dir / file_name_pattern.format(month=month_str)
-
         if not file_path.exists():
             LOGGER.warning(
                 "Skill data file for month %s not found: %s", month_str, file_path
@@ -175,9 +174,35 @@ def plot_forecast_skills(bounds, bounds_str, index_metric, init_months):
         try:
             with xr.open_dataset(file_path) as input_dataset:
                 west, south, east, north = bounds
-                subset_ds = input_dataset.sel(
-                    lon=slice(west, east), lat=slice(north, south)
+
+                # Log ranges
+                LOGGER.info(
+                    "Dataset lon range: %s to %s",
+                    input_dataset.lon.min().item(),
+                    input_dataset.lon.max().item(),
                 )
+                LOGGER.info(
+                    "Dataset lat range: %s to %s",
+                    input_dataset.lat.min().item(),
+                    input_dataset.lat.max().item(),
+                )
+                LOGGER.info(
+                    "Requested bounds: west=%s, east=%s, south=%s, north=%s",
+                    west,
+                    east,
+                    south,
+                    north,
+                )
+
+                # Fix slicing direction based on actual lat order
+                lat_is_descending = (
+                    input_dataset.lat[0].item() > input_dataset.lat[-1].item()
+                )
+                lat_slice = (
+                    slice(north, south) if lat_is_descending else slice(south, north)
+                )
+
+                subset_ds = input_dataset.sel(lon=slice(west, east), lat=lat_slice)
 
                 variables = [
                     "tasmax_fc_mse",
@@ -187,7 +212,7 @@ def plot_forecast_skills(bounds, bounds_str, index_metric, init_months):
                 ]
 
                 for var in variables:
-                    if var in subset_ds:
+                    if var in subset_ds and subset_ds[var].size > 0:
                         plt.figure(figsize=(10, 8))
                         plot_axis = plt.axes(projection=ccrs.PlateCarree())
 
@@ -207,7 +232,11 @@ def plot_forecast_skills(bounds, bounds_str, index_metric, init_months):
                         )
 
                         cbar = plt.colorbar(
-                            handle, ax=plot_axis, orientation="vertical", pad=0.1, shrink=0.7
+                            handle,
+                            ax=plot_axis,
+                            orientation="vertical",
+                            pad=0.1,
+                            shrink=0.7,
                         )
                         cbar.set_label(var, fontsize=10)
 
@@ -216,14 +245,16 @@ def plot_forecast_skills(bounds, bounds_str, index_metric, init_months):
                         )
                         plot_axis.add_feature(cfeature.BORDERS, linestyle=":")
                         plot_axis.add_feature(cfeature.COASTLINE)
-                        plot_axis.add_feature(cfeature.LAND, edgecolor="black", alpha=0.3)
+                        plot_axis.add_feature(
+                            cfeature.LAND, edgecolor="black", alpha=0.3
+                        )
                         plot_axis.gridlines(draw_labels=True, crs=ccrs.PlateCarree())
 
                         plt.title(f"{var} for month {month_str}, {bounds_str}")
                         plt.show()
                     else:
                         LOGGER.warning(
-                            "Variable %s not found in dataset for month %s.",
+                            "Variable %s is empty after slicing in month %s",
                             var,
                             month_str,
                         )

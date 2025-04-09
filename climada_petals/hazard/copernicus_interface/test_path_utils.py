@@ -14,7 +14,10 @@ import unittest
 from pathlib import Path
 import shutil
 import os
-from climada_petals.hazard.copernicus_interface.path_utils import get_file_path, check_existing_files
+from climada_petals.hazard.copernicus_interface.path_utils import (
+    get_file_path,
+    check_existing_files,
+)
 
 
 class TestPathUtils(unittest.TestCase):
@@ -50,10 +53,12 @@ class TestPathUtils(unittest.TestCase):
             self.system,
             data_format=self.download_format,
         )
-        expected_suffix = f"{self.index_metric}_{self.bounds_str}.{self.download_format}"
+        expected_suffix = (
+            f"{self.index_metric}_{self.bounds_str}.{self.download_format}"
+        )
         self.assertTrue(str(path).endswith(expected_suffix))
 
-   ### Test that get_file_path returns a dictionary for indices data type ###
+    ### Test that get_file_path returns a dictionary for indices data type ###
     def test_get_file_path_indices(self):
         paths = get_file_path(
             self.base_dir,
@@ -83,7 +88,7 @@ class TestPathUtils(unittest.TestCase):
             bounds_str=self.bounds_str,
             system=self.system,
             download_format=self.download_format,
-            print_flag=False
+            print_flag=False,
         )
         self.assertIn("No downloaded data found", result)
         self.assertIn("No processed data found", result)
