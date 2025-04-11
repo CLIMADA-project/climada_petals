@@ -69,7 +69,7 @@ class TestRiverFlood(unittest.TestCase):
 
     def test_full_impact(self):
         """test full flood impact"""
-        testRF = RiverFlood.from_nc(
+        testRF = RiverFlood.from_isimip_nc(
             dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC, countries=["CHE"]
         )
 
