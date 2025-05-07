@@ -709,7 +709,7 @@ def update_enduser_dependencies(graph, df_dependencies,
                 graph = link_vertices_edgecond(graph, target_attrs={'ci_type':row.target},
                                                edge_attrs={'ci_type':row.source, 'func_tot':1},
                                                link_attrs={'ci_type':dependency_name},
-                                               edge_type='road')
+                                               )
             #elif row.n_links == 1:  # those need to be re-checked on their fixed s-t
 #
             #    graph = recheck_access(graph, row.source, row.target, via_ci='road',
