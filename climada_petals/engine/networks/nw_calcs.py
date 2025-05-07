@@ -23,6 +23,9 @@ import geopandas as gpd
 import pyproj
 from tqdm import tqdm
 import timeit
+import gc
+from memory_profiler import profile
+
 
 import scipy
 
@@ -585,8 +588,11 @@ def propagate_check_fail(graph, source, target, thresh_func):
         #v_seq['func_tot'] = func_tot
         graph.graph.vs[v_seq_orig_id]['func_tot'] = func_tot
 
+    #delete large objects to avoid memory issues
+    del capa_rec, func_capa, capa_suff, adj_sub, func_thresh, subgraph
+    gc.collect()
     return graph
-
+#@profile
 def cascade(graph, df_dependencies, p_source='power_plant',
             p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
               initial=False, friction_surf=None, criterion='both'):
