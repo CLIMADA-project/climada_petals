@@ -60,6 +60,18 @@ class Network:
         self.edges = edges
         self.nodes = nodes
 
+    def reproject(self, crs):
+        """
+        Reproject the network from its current crs to a new one.
+
+        Parameters
+        ----------
+        crs : str
+            The new crs to project to.
+        """
+        self.nodes = self.nodes.to_crs(crs)
+        self.edges = self.edges.to_crs(crs)
+
     @classmethod
     def from_nws(cls, networks):
         """
@@ -113,7 +125,7 @@ class Network:
 
 class Graph():
     """
-    creates an igraph graph object 
+    creates an igraph graph object
     """
 
     def __init__(self, network, directed=False):
