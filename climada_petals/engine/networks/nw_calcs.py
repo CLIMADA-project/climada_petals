@@ -489,8 +489,8 @@ def _get_subgraph2graph_vsdict(graph, subgraph):
         graph_vs_indices, index=graph_orig_ids,  columns=['index_g'])
 
     df_conc = pd.concat([df_subg, df_g], axis=1)
-    #result = dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) #previous version, very slow
     result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
+    #result = dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) #previous version, very slow
     return result
 
 def _calc_friction(edge_geoms, friction_surf):
@@ -576,11 +576,11 @@ def propagate_check_fail(graph, source, target, thresh_func):
     # boolean vector whether received capacity great enough to supply endusers
     capa_suff = (np.array(capa_rec.todense()).squeeze()
                  >= func_thresh).astype(int)
-
     # This is under the assumption that subgraph retains the same
     # relative ordering of vertices as in v_seq extracted from graph!
     # This further assumes that any operation on a VertexSeq equally modifies its graph.
     # Both should be the case, but the igraph doc is always a bit ambiguous
+
     if target == 'people':
         graph.graph.vs[v_seq_orig_id][f'actual_supply_{source}_{target}'] = capa_suff
     else:
@@ -728,7 +728,7 @@ def update_enduser_dependencies(graph, df_dependencies,
                     graph = link_vertices_friction_surf(graph, row.source, row.target, friction_surf,
                                                      link_name=dependency_name,
                                                      dist_thresh=row.thresh_dur*83.33,
-                                                     k=row.n_links, bidir=True, dur_thresh=row.thresh_dur)
+                                                     k=row.n_links, bidir=False, dur_thresh=row.thresh_dur)
                     print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
                     ) - starttime)
                 if criterion in ["both", "distance"]:
@@ -738,7 +738,7 @@ def update_enduser_dependencies(graph, df_dependencies,
                                                          via_attrs={'ci_type': 'road','func_tot':1},
                                                          link_attrs={'ci_type': dependency_name},
                                                          dist_thresh=row.thresh_dist, criterion='distance',
-                                                         k=row.n_links, bidir=True)
+                                                         k=row.n_links, bidir=False)
                     print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
                     ) - starttime)
 
