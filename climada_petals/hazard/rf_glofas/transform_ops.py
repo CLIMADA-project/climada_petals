@@ -223,7 +223,7 @@ def download_glofas_discharge(
     countries: Optional[Union[List[str], str]] = None,
     preprocess: Optional[Callable] = None,
     open_mfdataset_kw: Optional[Mapping[str, Any]] = None,
-    split_request_keys: Optional[Union[bool, Iterable[str]]] = True,
+    split_request: bool | str = True,
     **request_kwargs,
 ) -> xr.DataArray:
     """Download the GloFAS data and return the resulting dataset
@@ -254,6 +254,14 @@ def download_glofas_discharge(
         Must be valid Python code. The downloaded data is passed as variable ``x``.
     open_mfdataset_kw : dict, optional
         Optional keyword arguments for the ``xarray.open_mfdataset`` function.
+    split_request : bool or str
+        How to split requests according to groupings of the ``dates``. This is either a
+        frequency string that will be inserted into a
+        `pandas.Grouper <https://pandas.pydata.org/docs/reference/api/pandas.Grouper.html#pandas.Grouper>`_
+        as ``freq`` parameter,
+        or a boolean, in which case a split frequency of 1 day (``freq=1D``) is chosen
+        for ``forecast`` products and 1 year (``freq=1Y``) is chosen for ``historical``
+        products.
     request_kwargs:
         Keyword arguments for the Copernicus data store request.
     """
@@ -262,14 +270,24 @@ def download_glofas_discharge(
     download_path = Path(download_path)  # Make sure it is a Path
     download_path.mkdir(parents=True, exist_ok=True)
 
-    # Parse dates
-    request = datetime_index_to_request(dates, product)
-    if split_request_keys is True:
-        split_request_keys = (
-            ["hyear"] if product == "historical" else ["year", "month", "day"]
-        )
-    elif split_request_keys is False:
-        split_request_keys = None
+    # Parse input
+    if split_request is True:
+        split_request_freq = "1Y" if product == "historical" else "1D"
+    elif split_request is False:
+        split_request_freq = None
+    else:
+        split_request_freq = split_request
+
+    # Split requests according to dates
+    if split_request_freq is None:
+        requests = [datetime_index_to_request(dates, product)]
+    else:
+        requests = [
+            datetime_index_to_request(series.index, product)
+            for _, series in dates.to_series()
+            .groupby(pd.Grouper(freq=split_request_freq, closed="left"))
+            if not series.empty
+        ]
 
     # Determine area from 'countries'
     if countries is not None:
@@ -295,13 +313,12 @@ def download_glofas_discharge(
         request_kwargs["area"] = list(bounds)
 
     # Request the data
-    request.update(request_kwargs)
     files = glofas_request(
         product=product,
         num_proc=num_proc,
         output_dir=download_path,
-        request_kw=request,
-        split_request_keys=split_request_keys,
+        request_kw=request_kwargs,
+        requests=requests,
     )
 
     if open_mfdataset_kw is False:
@@ -368,7 +385,7 @@ def return_period(
 
     See Also
     --------
-    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp`
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp_comp`
     :py:func:`climada_petals.hazard.rf_glofas.transform_ops.return_period_resample`
     """
     reindex_kwargs = dict(tolerance=1e-3, fill_value=-1, assert_no_fill_value=True)
@@ -435,7 +452,7 @@ def return_period_resample(
 
     See Also
     --------
-    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp`
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp_comp`
     :py:func:`climada_petals.hazard.rf_glofas.transform_ops.return_period`
     """
     reindex_kwargs = dict(tolerance=1e-3, fill_value=-1, assert_no_fill_value=True)

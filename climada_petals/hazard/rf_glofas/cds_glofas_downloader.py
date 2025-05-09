@@ -68,20 +68,19 @@ DEFAULT_REQUESTS = {
 }
 """Default request keyword arguments to be updated by the user requests"""
 
-CLIENT_KW_DEFAULT = {
-    "quiet": False, "debug": False, "timeout": 240, "sleep_max": 480
-}
+CLIENT_KW_DEFAULT = {"quiet": False, "debug": False, "timeout": 240, "sleep_max": 480}
 """Default keyword argument for the API client"""
+
 
 def datetime_index_to_request(
     index: pd.DatetimeIndex, product: str
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     """Create a request-compatible dict from a series"""
     prefix = "h" if product == "historical" else ""
     return {
-        prefix + "year": list(map(str, index.year.unique())),
-        prefix + "month": list(map(lambda x: f"{x:02d}", index.month.unique())),
-        prefix + "day": list(map(lambda x: f"{x:02d}", index.day.unique())),
+        prefix + "year": list(map(str, index.year)),
+        prefix + "month": list(map(lambda x: f"{x:02d}", index.month)),
+        prefix + "day": list(map(lambda x: f"{x:02d}", index.day)),
     }
 
 
@@ -107,7 +106,7 @@ def cleanup_download_dir(
 
 def glofas_request_single(
     product: str,
-    request: Mapping[str, Any],
+    request: Mapping[str, str | list[str]],
     outpath: Union[Path, str],
     use_cache: bool = True,
     client_kw: Optional[Mapping[str, Any]] = None,
@@ -168,7 +167,7 @@ def glofas_request_single(
 
 def glofas_request_multiple(
     product: str,
-    requests: Iterable[Mapping[str, str]],
+    requests: Iterable[Mapping[str, str | list[str]]],
     outdir: Union[Path, str],
     num_proc: int,
     use_cache: bool,
@@ -191,25 +190,16 @@ def glofas_request_multiple(
 def glofas_request(
     product: str,
     output_dir: Union[Path, str],
+    *,
     num_proc: int = 1,
     use_cache: bool = True,
-    split_request_keys: Optional[Iterable[str]] = None,
-    request_kw: Optional[Mapping[str, Union[str, List[str]]]] = None,
     client_kw: Optional[Mapping[str, Any]] = None,
+    request_kw: Optional[Mapping[str, str | list[str]]] = None,
+    requests: Optional[List[Mapping[str, str | list[str]]]] = None,
 ) -> List[Path]:
     """Request download of GloFAS data products from the Copernicus Data Store (CDS)
 
-    Uses the Copernicus Data Store API (cdsapi) Python module. The interpretation of the
-    ``date`` parameters and the grouping of the downloaded data depends on the type of
-    ``product`` requested.
-
-    Available ``products``:
-
-    - ``historical``: Historical reanalysis discharge data. ``date_from`` and ``date_to``
-      are interpreted as integer years. Data for each year is placed into a single file.
-    - ``forecast``: Forecast discharge data. ``date_from`` and ``date_to`` are
-      interpreted as ISO date format strings. Data for each day is placed into a single
-      file.
+    Uses the Copernicus Data Store API (cdsapi) Python module.
 
     Notes
     -----
@@ -224,7 +214,10 @@ def glofas_request(
     Parameters
     ----------
     product : str
-        The indentifier for the CMS product to download. See below for available options.
+        The indentifier for the CMS product to download.
+
+        - ``historical``: Historical reanalysis discharge data.
+        - ``forecast``: Ensemble forecast discharge data.
     output_dir : Path
         Output directory for the downloaded data
     num_proc : int
@@ -232,17 +225,24 @@ def glofas_request(
     use_cache : bool (optional)
         Skip downloading if the target file exists and the accompanying request file
         contains the same request
-    split_request_keys : Iterable of str
-        The keys for which this request is to be split in multiple requests.
-    request_kw : dict(str: str)
-        Dictionary to update the default request for the given product
     client_kw : dict (optional)
         Dictionary with keyword arguments for the ``cdsapi.Client`` used for downloading
+    request_kw : dict(str: str), optional
+        Dictionary to update the default request for the given product. If ``None``, the
+        default request is issued.
+    requests : list, optional
+        A list of dictionaries for multiple requests. These will be used to update the
+        default request after ``request_kw`` was applied. If ``None``, only one request
+        will be issued.
 
     Returns
     -------
     list of Path
         Paths of the downloaded files
+
+    See Also
+    --------
+    :py:const:`~climada_petals.hazard.rf_glofas.cds_glofas_downloader.DEFAULT_REQUESTS`
     """
     # Check if product exists
     glofas_product = f"cems-glofas-{product}"
@@ -257,21 +257,6 @@ def glofas_request(
     if request_kw is not None:
         default_request.update(**request_kw)
 
-    # Single request
-    if split_request_keys is None:
-        return [
-            glofas_request_single(
-                glofas_product, default_request, output_dir, use_cache, client_kw
-            )
-        ]
-
-    # Split requests
-    split_request_map = {key: default_request[key] for key in split_request_keys}
-    requests = [
-        {**default_request, **dict(zip(split_request_map.keys(), bits))}
-        for bits in it.product(*split_request_map.values())
-    ]
-
     def sanitize_request_lists(request):
         """Turn each item into a list if the default request item is a list"""
         default = deepcopy(DEFAULT_REQUESTS[product])
@@ -281,20 +266,31 @@ def glofas_request(
                 request_sane[key] = [request[key]]
         return request_sane
 
-    def is_valid_date(request):
-        """Returns True if the date in the request is valid, otherwise False."""
-        prefix = "h" if product == "historical" else ""
-        date_request_to_int = lambda x: int(x) if not isinstance(x, list) else int(x[0])
-        year = date_request_to_int(request[prefix+"year"])
-        month = date_request_to_int(request[prefix+"month"])
-        day = date_request_to_int(request[prefix+"day"])
-        try:
-            pd.Timestamp(year, month, day)  # Try creating a date object
-            return True
-        except ValueError:
-            return False
+    # Single request
+    if requests is None:
+        return [
+            glofas_request_single(
+                glofas_product,
+                sanitize_request_lists(default_request),
+                output_dir,
+                use_cache,
+                client_kw,
+            )
+        ]
 
-    requests = [sanitize_request_lists(req) for req in requests if is_valid_date(req)]
+    # Request list
+    requests = [
+        sanitize_request_lists(deepcopy(default_request) | dict(req))
+        for req in requests
+    ]
+
+    # Single request
+    if len(requests) == 1:
+        return [
+            glofas_request_single(
+                glofas_product, requests[0], output_dir, use_cache, client_kw
+            )
+        ]
 
     # Execute request
     return glofas_request_multiple(

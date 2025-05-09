@@ -105,13 +105,12 @@ class TestGlofasDownloadOps(unittest.TestCase):
             product="forecast",
             num_proc=42,
             output_dir=out_dir,
-            request_kw={
+            request_kw={"some_kwarg": "foo"},
+            requests=[{
                 "year": ["2022"],
                 "month": ["01"],
                 "day": ["01"],
-                "some_kwarg": "foo",
-            },
-            split_request_keys=["year", "month", "day"],
+            }],
         )
 
         # Check return value
@@ -220,55 +219,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
         npt.assert_array_equal(ds["year"].data, [0, 1])
         npt.assert_array_equal(ds.data, [2, 12])
 
-    def test_split_request_keys(self):
-        """Check handling of split request"""
-        download_glofas_discharge(
-            "forecast",
-            self.dates,
-            42,
-            self.tempdir.name,
-            open_mfdataset_kw=False,
-        )
-        self.assertListEqual(
-            self.glofas_request_mock.call_args.kwargs["split_request_keys"],
-            ["year", "month", "day"],
-        )
-
-        download_glofas_discharge(
-            "historical",
-            self.dates,
-            42,
-            self.tempdir.name,
-            open_mfdataset_kw=False,
-        )
-        self.assertListEqual(
-            self.glofas_request_mock.call_args.kwargs["split_request_keys"], ["hyear"]
-        )
-
-        download_glofas_discharge(
-            "historical",
-            self.dates,
-            42,
-            self.tempdir.name,
-            split_request_keys=False,
-            open_mfdataset_kw=False,
-        )
-        self.assertIsNone(
-            self.glofas_request_mock.call_args.kwargs["split_request_keys"]
-        )
-
-        download_glofas_discharge(
-            "historical",
-            self.dates,
-            42,
-            self.tempdir.name,
-            split_request_keys=["a", "b"],
-            open_mfdataset_kw=False,
-        )
-        self.assertListEqual(
-            self.glofas_request_mock.call_args.kwargs["split_request_keys"], ["a", "b"]
-        )
-
     @patch.multiple(
         "climada_petals.hazard.rf_glofas.cds_glofas_downloader",
         glofas_request_single=DEFAULT,
@@ -290,7 +240,7 @@ class TestGlofasDownloadOps(unittest.TestCase):
             self.dates,
             42,
             self.tempdir.name,
-            split_request_keys=False,  # request_single should be called
+            split_request=False,  # request_single should be called
             open_mfdataset_kw=False,
         )
         glofas_request_multiple.assert_not_called()
@@ -303,10 +253,10 @@ class TestGlofasDownloadOps(unittest.TestCase):
 
         download_glofas_discharge(
             "historical",
-            pd.DatetimeIndex(["2000-01-01", "2001-01-02"]),
+            pd.DatetimeIndex(["2000-01-01", "2001-02-02"]),
             42,
             self.tempdir.name,
-            split_request_keys=True,  # request_multiple should be called
+            split_request=True,  # request_multiple should be called
             open_mfdataset_kw=False,
         )
         glofas_request_single.assert_not_called()
@@ -314,12 +264,12 @@ class TestGlofasDownloadOps(unittest.TestCase):
         self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][0],
             glofas_request_multiple.call_args.args[1][0]
-            | {"hyear": ["2000"], "hmonth": ["01"], "hday": ["01", "02"]},
+            | {"hyear": ["2000"], "hmonth": ["01"], "hday": ["01"]},
         )
         self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][1],
             glofas_request_multiple.call_args.args[1][1]
-            | {"hyear": ["2001"], "hmonth": ["01"], "hday": ["01", "02"]},
+            | {"hyear": ["2001"], "hmonth": ["02"], "hday": ["02"]},
         )
         reset_mocks()
 
@@ -328,43 +278,48 @@ class TestGlofasDownloadOps(unittest.TestCase):
             pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2001-03-11"]),
             42,
             self.tempdir.name,
-            split_request_keys=True,
+            split_request=True,
             open_mfdataset_kw=False,
         )
         glofas_request_single.assert_not_called()
-        combinations = product(["2000", "2001"], ["01", "02", "03"], ["10", "11"])
-        for idx, combo in enumerate(combinations):
-            with self.subTest(request_idx=idx):
-                self.assertDictEqual(
-                    glofas_request_multiple.call_args.args[1][idx],
-                    glofas_request_multiple.call_args.args[1][idx]
-                    | {"year": [combo[0]], "month": [combo[1]], "day": [combo[2]]},
-                )
-
-        download_glofas_discharge(
-            "forecast",
-            pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2001-03-11"]),
-            42,
-            self.tempdir.name,
-            split_request_keys=["month"],
-            open_mfdataset_kw=False,
-        )
-        glofas_request_single.assert_not_called()
-        self.assertIs(len(glofas_request_multiple.call_args.args[1]), 3)  # 3 requests
+        self.assertEqual(
+            len(glofas_request_multiple.call_args.args[1]), 3
+        )  # 3 requests
         self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][0],
             glofas_request_multiple.call_args.args[1][0]
-            | {"year": ["2000", "2001"], "month": ["01"], "day": ["10", "11"]},
+            | {"year": ["2000"], "month": ["01"], "day": ["10"]},
         )
         self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][1],
             glofas_request_multiple.call_args.args[1][1]
-            | {"year": ["2000", "2001"], "month": ["02"], "day": ["10", "11"]},
+            | {"year": ["2000"], "month": ["02"], "day": ["10"]},
         )
         self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][2],
             glofas_request_multiple.call_args.args[1][2]
-            | {"year": ["2000", "2001"], "month": ["03"], "day": ["10", "11"]},
+            | {"year": ["2001"], "month": ["03"], "day": ["11"]},
+        )
+        reset_mocks()
+
+        download_glofas_discharge(
+            "forecast",
+            pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2000-03-11"]),
+            42,
+            self.tempdir.name,
+            split_request="2M",
+            open_mfdataset_kw=False,
+        )
+        glofas_request_single.assert_not_called()
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][0],
+            glofas_request_multiple.call_args.args[1][0]
+            | {"year": ["2000", "2000"], "month": ["01", "02"], "day": ["10", "10"]},
+        )
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][1],
+            glofas_request_multiple.call_args.args[1][1]
+            | {"year": ["2000"], "month": ["03"], "day": ["11"]},
         )
 
 
