@@ -445,14 +445,22 @@ def _create_subgraph(graph, source_attrs, target_attrs, via_attrs):
     graph.graph.es['orig_id'] = range(len(graph.graph.es))
     subgraph = graph.graph.induced_subgraph(vs_keep)
 
+    #map graph ids to subgraph ids
+    #subgraph_graph_esdict = _get_subgraph2graph_esdict(graph, subgraph)
+    #graph_to_subgraph_esdict = {v: k for k, v in subgraph_graph_esdict.items()}
+
     # delete remaining edges that have wrong attributes
-    df_es_target = _filter_edges(graph.graph, target_attrs)
-    df_es_source = _filter_edges(graph.graph, source_attrs)
-    df_es_via = _filter_edges(graph.graph, via_attrs)
+    df_es_target = _filter_edges(subgraph, target_attrs)
+    df_es_source = _filter_edges(subgraph, source_attrs)
+    df_es_via = _filter_edges(subgraph, via_attrs)
 
     correct_edges = np.concatenate((df_es_target.index.values,
                                    df_es_source.index.values,
                                    df_es_via.index.values))
+
+    #map correct edge ids back to subgraph ids
+    #correct_edges = [graph_to_subgraph_esdict[id_corr_edg] for id_corr_edg
+    #                in correct_edges]
 
     wrong_edges = set(range(len(subgraph.es))).difference(set(correct_edges))
 
@@ -487,6 +495,38 @@ def _get_subgraph2graph_vsdict(graph, subgraph):
     graph_orig_ids = graph.vs.get_attribute_values('orig_id')
     df_g = pd.DataFrame(
         graph_vs_indices, index=graph_orig_ids,  columns=['index_g'])
+
+    df_conc = pd.concat([df_subg, df_g], axis=1)
+    result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
+    #result = dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) #previous version, very slow
+    return result
+
+def _get_subgraph2graph_esdict(graph, subgraph):
+    """
+    Keep track of which edges in induced subgraph represent which edges
+    in original graph. dict[subgraph_vs_ind] = graph_vs_ind
+    Goes via the named attribute 'orig_id' created before making the subgraph.
+
+    Parameters
+    ----------
+    graph : igraph.Graph
+    subgraph : igraph.Graph
+        induced subgraph of graph
+
+    Returns
+    -------
+    dict
+        mapping from subgraph to graph indices.
+    """
+    subgraph_es_indices = [subvx.index for subvx in subgraph.es]
+    subgraph_orig_ids = subgraph.es.get_attribute_values('orig_id')
+    df_subg = pd.DataFrame(
+        subgraph_es_indices, index=subgraph_orig_ids, columns=['index_sub'])
+
+    graph_es_indices = [vx.index for vx in graph.es]
+    graph_orig_ids = graph.es.get_attribute_values('orig_id')
+    df_g = pd.DataFrame(
+        graph_es_indices, index=graph_orig_ids,  columns=['index_g'])
 
     df_conc = pd.concat([df_subg, df_g], axis=1)
     result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
