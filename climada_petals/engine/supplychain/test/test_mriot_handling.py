@@ -782,8 +782,8 @@ class TestParseMriot(unittest.TestCase):
         mock_build_exio3.assert_called_once_with(
             mrio_zip=downloaded_file, testkwarg="testkwarg"
         )
-        mock_mriot.meta.change_meta.has_calls(
-            call("name", "EXIOBASE3-2010"), any_order=True
+        mock_mriot.meta.change_meta.assert_has_calls(
+            [ call("name", "EXIOBASE3-2010") ], any_order=True
         )
 
     @patch("climada_petals.engine.supplychain.mriot_handling.parse_wiod_v2016")
@@ -805,8 +805,8 @@ class TestParseMriot(unittest.TestCase):
 
         # Assert pymrio.parse_exiobase3 was called correctly
         mock_parse_wiod.assert_called_once_with(mrio_xlsb=downloaded_file)
-        mock_mriot.meta.change_meta.has_calls(
-            call("name", "WIOD16-2010"), any_order=True
+        mock_mriot.meta.change_meta.assert_has_calls(
+            [ call("name", "WIOD16-2010") ], any_order=True
         )
 
     @patch("climada_petals.engine.supplychain.mriot_handling.build_oecd_from_csv")
@@ -829,8 +829,8 @@ class TestParseMriot(unittest.TestCase):
 
         # Assert pymrio.parse_oecd was called correctly
         mock_build_oecd.assert_called_once_with(mrio_csv=downloaded_file, year=2010)
-        mock_mriot.meta.change_meta.has_calls(
-            call("name", "OECD23-2010"), any_order=True
+        mock_mriot.meta.change_meta.assert_has_calls(
+            [ call("name", "OECD23-2010") ], any_order=True
         )
 
     @patch("climada_petals.engine.supplychain.mriot_handling.build_eora_from_zip")
@@ -864,8 +864,8 @@ class TestParseMriot(unittest.TestCase):
 
         # Assert pymrio.parse_oecd was called correctly
         mock_build_eora.assert_called_once_with(mrio_zip=downloaded_file)
-        mock_mriot.meta.change_meta.has_calls(
-            call("name", "EORA26-2010"), any_order=True
+        mock_mriot.meta.change_meta.assert_has_calls(
+            calls=[ call("name", "EORA26-2010") ], any_order=True
         )
 
     def test_parse_mriot_unknown_type(self):
