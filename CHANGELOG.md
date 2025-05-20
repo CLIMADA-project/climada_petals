@@ -14,6 +14,10 @@ Added:
 
 - `lxml` >=5 (was implicitly part of the dependency tree before)
 
+Updated:
+
+- `boario` >=0.5,<0.6 &rarr; >=0.6.2 # Previous versions are not compatible anymore with the refactor.
+
 ### Added
 
 - Module `climada_petals.hazard.coastal_flood` with new Hazard class `CoastalFlood` and associated method `from_aqueduct_tif` to read coastal flood data directly from the Aqueduct tif files [#100](https://github.com/CLIMADA-project/climada_petals/pull/100)
@@ -21,6 +25,7 @@ Added:
 ### Changed
 
 - Module `climada_petals.hazard.river_flood`, class `RiverFlood`: New method `from_aqueduct_tif` to read river flood data directly from the online Aqueduct tif files, and renamed methods `from_nc` to `from_isimip_nc` and `set_from_nc` to `set_from_isimip_nc` [#108](https://github.com/CLIMADA-project/climada_petals/pull/108)
+- Complete refactor of the `supplychain` module. See [#159](https://github.com/CLIMADA-project/climada_petals/pull/159) for details.
 
 ### Fixed
 
