@@ -700,7 +700,7 @@ class StaticIOModel(IndirectCostModel):
         pd.Series
             A series representing the value added by sector.
         """
-        return calc_va(self.mriot.Z, self.mriot.x).loc["value added"]
+        return calc_va(self.mriot.Z, self.mriot.x).loc[VA_NAME]
 
     @property
     def final_demand(self) -> pd.Series:
