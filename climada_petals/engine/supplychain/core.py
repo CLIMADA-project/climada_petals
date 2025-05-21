@@ -972,11 +972,11 @@ class BoARIOModel(IndirectCostModel):
 
         # Set the different parameters from defaults and user given.
         default_event_params = {"recovery_tau": 180, "rebuild_tau": 180}
-        event_params = {**(event_kwargs or {}), **default_event_params}
+        event_params = {**default_event_params,**(event_kwargs or {})}
         default_model_params = {}
-        model_params = {**(model_kwargs or {}), **default_model_params}
+        model_params = {**default_model_params,**(model_kwargs or {})}
         default_sim_params = {}
-        sim_params = {**(simulation_kwargs or {}), **default_sim_params}
+        sim_params = {**default_sim_params,**(simulation_kwargs or {})}
 
         # Instantiate the BoARIO objects
         model = ARIOPsiModel(
