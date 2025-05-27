@@ -14,7 +14,7 @@ You will find a repository containing scientific peer-reviewed articles that exp
 CLIMADA is divided into two parts (two repositories):
 
 1. the core [climada_python](https://github.com/CLIMADA-project/climada_python) contains all the modules necessary for the probabilistic impact, the averted damage, uncertainty and forecast calculations. Data for hazard, exposures and impact functions can be obtained from the [data API](https://github.com/CLIMADA-project/climada_python/blob/main/doc/tutorial/climada_util_api_client.ipynb). [Litpop](https://github.com/CLIMADA-project/climada_python/blob/main/doc/tutorial/climada_entity_LitPop.ipynb) is included as demo Exposures module, and [Tropical cyclones](https://github.com/CLIMADA-project/climada_python/blob/main/doc/tutorial/climada_hazard_TropCyclone.ipynb) is included as a demo Hazard module.
-2. the petals [climada_petals](https://github.com/CLIMADA-project/climada_petals) contains all the modules for generating data (e.g., TC_Surge, WildFire, OpenStreeMap, ...). Most development is done here. The petals builds-upon the core and does not work as a stand-alone.
+2. the petals [climada_petals](https://github.com/CLIMADA-project/climada_petals) contains all the modules for generating data (e.g., TC_Surge, WildFire, OpenStreeMap, ...). Most development is done here. The petals builds upon the core and does not work as a stand-alone.
 
 It is recommend for new users to begin with the core (1) and the [tutorials](https://github.com/CLIMADA-project/climada_python/tree/main/doc/tutorial) therein.
 
@@ -65,7 +65,7 @@ Please use the following logo if you are presenting results obtained with or thr
 
 We welcome any contribution to this repository, be it bugfixes and other code changes and additions, documentation improvements, or tutorial updates.
 
-If you would like to contribute, please refer to our [Contribution Guide](CONTRIBUTING.md).
+If you would like to contribute, please refer to the CLIMADA Project's [Contribution Guide](https://github.com/CLIMADA-project/climada_python/blob/main/CONTRIBUTING.md).
 
 ## Versioning
 
