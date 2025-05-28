@@ -28,6 +28,7 @@ from pathlib import Path
 import urllib.request
 import requests
 import time
+import copy as cp
 
 from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
@@ -244,11 +245,18 @@ def disaster_impact_allservices_df(df_pre, df_post,
     same as disaster_impact_allservices, just that it's performed on a df,
     not on the graph
     """
+    services = cp.deepcopy(services)
+    dict_delta = {}
+    if "people" in services:
+        services.remove("people")
+        #directly affected people
+        dict_delta["people"] = sum(
+                    df_post[df_post.ci_type == "people"].imp_dir
+                )
     dict_pre = number_noservices_df(df_pre, services)
     dict_post = number_noservices_df(df_post, services)
-    dict_delta = {}
     for key, value in dict_post.items():
-        dict_delta[key] = value-dict_pre[key]
+        dict_delta[key+"_access"] = value-dict_pre[key]
     return dict_delta
 
 
@@ -265,7 +273,7 @@ def get_graphstats(graph):
 # =============================================================================
 # Worldpop Data
 # =============================================================================
-def get_worldpop_data(iso3, save_path, res=1000):
+def get_worldpop_data(iso3, save_path, res=100):
 
     if res == 1000:
         download_url = 'https://data.worldpop.org/GIS/Population/' + \
@@ -290,9 +298,11 @@ def get_pop_cutoff(gdf_people, cutoff):
     the entire gdf for less than a cutoff fraction of the entire population number
     to decrease the
     """
-    bins = [0, 10, 20, 35, 50, 75]
-    bins.extend(
-        list(np.linspace(start=100, stop=gdf_people["counts"].max(), num=30)))
+    #redefine bins as high res data might have less than 100 max count values
+    bins = list(np.arange(start=0, stop=gdf_people["counts"].max(), step=10))
+    #bins = [0, 10, 20, 35, 50, 75]
+    #bins.extend(
+    #    list(np.linspace(start=100, stop=gdf_people["counts"].max(), num=30)))
     df_cum = gdf_people.groupby(
         pd.cut(gdf_people["counts"], bins)).sum(numeric_only=True)/gdf_people["counts"].sum()
     cutoff_bool = (df_cum.cumsum() >= cutoff).counts.values
