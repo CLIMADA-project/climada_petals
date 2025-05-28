@@ -448,7 +448,7 @@ class RiverFloodInundation:
             countries=countries,
             preprocess=preprocess,
             leadtime_hour=leadtime_hour,
-            split_request_keys=False,
+            split_request=False,
             **download_glofas_discharge_kwargs,
         )
         if self.store_intermediates:
@@ -495,7 +495,7 @@ class RiverFloodInundation:
             dates=pd.date_range(f"{year}-01-01", f"{year}-12-31"),
             countries=countries,
             preprocess=preprocess,
-            split_request_keys=False,
+            split_request=False,
             **download_glofas_discharge_kwargs,
         )
         if self.store_intermediates:

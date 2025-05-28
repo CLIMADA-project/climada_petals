@@ -631,10 +631,9 @@ class TCForecast(TCTracks):
         if xsl_path is None:
             xsl_path = CXML2CSV_XSL
 
-        # coerce Path objects to str; coercion superfluous for lxml >= 4.8.0
         # pylint: disable= c-extension-no-member
-        xsl = et.parse(str(xsl_path))
-        xml = et.parse(str(cxml_path))
+        xsl = et.parse(xsl_path)
+        xml = et.parse(cxml_path)
         transformer = et.XSLT(xsl)
         csv_string = str(transformer(xml))
 

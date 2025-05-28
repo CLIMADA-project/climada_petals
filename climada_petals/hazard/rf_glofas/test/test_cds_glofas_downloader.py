@@ -27,9 +27,9 @@ class TestDateTimeIndexToRequest(unittest.TestCase):
         """Create the default range"""
         self.index_default = pd.date_range("2000-01-01", "2001-02-02")
         self.target_default = {
-            "year": ["2000", "2001"],
-            "month": [f"{month:02}" for month in range(1, 13)],
-            "day": [f"{day:02}" for day in range(1, 32)],
+            "year": [f"{year:04}" for year in self.index_default.year],
+            "month": [f"{month:02}" for month in self.index_default.month],
+            "day": [f"{day:02}" for day in self.index_default.day],
         }
 
     def test_range_default(self):
@@ -48,7 +48,8 @@ class TestDateTimeIndexToRequest(unittest.TestCase):
             pd.date_range("2000-01-01", "2001-01-01", freq="YS"), product="forecast"
         )
         self.assertDictEqual(
-            request, {"year": ["2000", "2001"], "month": ["01"], "day": ["01"]}
+            request,
+            {"year": ["2000", "2001"], "month": ["01", "01"], "day": ["01", "01"]},
         )
 
 
@@ -194,19 +195,18 @@ class TestGloFASRequest(unittest.TestCase):
         glofas_request_multiple=mock.DEFAULT,
         autospec=True,
     )
-    def test_forecast_split_request(
+    def test_dispatch_to_request_multiple(
         self, glofas_request_single, glofas_request_multiple
     ):
-        """Test request splitting"""
+        """Test requesting sequentially and in parallel"""
         default_request = deepcopy(DEFAULT_REQUESTS["forecast"])
         request_kw = {"year": ["2000", "2001"], "day": ["01", "02"]}
 
-        # Do not plit
+        # Single request
         glofas_request(
             "forecast",
             self.tempdir.name,
             request_kw=request_kw,
-            split_request_keys=None,
         )
         glofas_request_multiple.assert_not_called()
         request = glofas_request_single.call_args.args[1]
@@ -217,44 +217,35 @@ class TestGloFASRequest(unittest.TestCase):
         glofas_request_single.reset_mock()
         glofas_request_multiple.reset_mock()
 
-        # Split only by day
+        # Another single request
         glofas_request(
             "forecast",
             self.tempdir.name,
             request_kw=request_kw,
-            split_request_keys=["day"],
+            requests=[{"month": "03"}]  # Also test if request is sanitized
+        )
+        glofas_request_multiple.assert_not_called()
+        request = glofas_request_single.call_args.args[1]
+        self.assertEqual(request["year"], request_kw["year"])
+        self.assertEqual(request["month"], ["03"])  # Sanitized here
+        self.assertEqual(request["day"], request_kw["day"])
+        glofas_request_single.reset_mock()
+        glofas_request_multiple.reset_mock()
+
+        # Multiple requests
+        glofas_request(
+            "forecast",
+            self.tempdir.name,
+            request_kw=request_kw,
+            requests=[{"month": "03"}, {"month": "04"}]
         )
         glofas_request_single.assert_not_called()
         requests = glofas_request_multiple.call_args.args[1]
         self.assertEqual(len(requests), 2)
         self.assertEqual(requests[0]["year"], request_kw["year"])
         self.assertEqual(requests[1]["year"], request_kw["year"])
-        self.assertEqual(requests[0]["month"], default_request["month"])
-        self.assertEqual(requests[1]["month"], default_request["month"])
-        self.assertEqual(requests[0]["day"], ["01"])
-        self.assertEqual(requests[1]["day"], ["02"])
-        self.assertEqual(glofas_request_multiple.call_args.args[2], self.tempdir.name)
-        glofas_request_single.reset_mock()
-        glofas_request_multiple.reset_mock()
-
-        # Split by year and day
-        glofas_request(
-            "forecast",
-            self.tempdir.name,
-            request_kw=request_kw,
-            split_request_keys=["day", "year"],
-        )
-        glofas_request_single.assert_not_called()
-        requests = glofas_request_multiple.call_args.args[1]
-        self.assertEqual(len(requests), 4)
-        self.assertEqual(requests[0]["year"], ["2000"])
-        self.assertEqual(requests[1]["year"], ["2001"])
-        self.assertEqual(requests[2]["year"], ["2000"])
-        self.assertEqual(requests[3]["year"], ["2001"])
-        self.assertEqual(requests[0]["day"], ["01"])
-        self.assertEqual(requests[1]["day"], ["01"])
-        self.assertEqual(requests[2]["day"], ["02"])
-        self.assertEqual(requests[3]["day"], ["02"])
+        self.assertEqual(requests[0]["month"], ["03"])
+        self.assertEqual(requests[1]["month"], ["04"])
         self.assertEqual(glofas_request_multiple.call_args.args[2], self.tempdir.name)
 
     @mock.patch.multiple(
@@ -276,27 +267,6 @@ class TestGloFASRequest(unittest.TestCase):
             True,
             None,
         )
-
-    @mock.patch.multiple(
-        "climada_petals.hazard.rf_glofas.cds_glofas_downloader",
-        glofas_request_single=mock.DEFAULT,
-        glofas_request_multiple=mock.DEFAULT,
-        autospec=True,
-    )
-    def test_historical_iter(self, glofas_request_single, glofas_request_multiple):
-        """Test request for multiple historical years"""
-        glofas_request(
-            "historical",
-            self.tempdir.name,
-            request_kw={"hyear": ["2019", "2020", "2021"]},
-            split_request_keys=["hyear"],
-        )
-        glofas_request_single.assert_not_called()
-        requests = glofas_request_multiple.call_args.args[1]
-        self.assertEqual(requests[0]["hyear"], ["2019"])
-        self.assertEqual(requests[1]["hyear"], ["2020"])
-        self.assertEqual(requests[2]["hyear"], ["2021"])
-        self.assertEqual(glofas_request_multiple.call_args.args[2], self.tempdir.name)
 
     def test_wrong_product(self):
         """Test handling of unknown product"""

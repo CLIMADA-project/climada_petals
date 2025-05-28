@@ -26,3 +26,4 @@
 * Zélie Stalhandske
 * Lukas Riedel
 * Samuel Juhel
+* Jere Lehtomaa
