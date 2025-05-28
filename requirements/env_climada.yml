@@ -9,6 +9,7 @@ dependencies:
   - esmf>=8.7
   - gfortran>=13.0
   - libgdal>=3.10
+  - lxml>=5
   - meson>=1.4,<1.5  # meson >=1.5 may break geoclaw setup (at least for python 3.11)
   - meson-python>=0.15,<0.16  # as of 2024-04 something seems to be wrong with 0.16
   - osm-flex>=1.1
