@@ -143,7 +143,7 @@ def setup_gumbel_fit(
             discharge = download_glofas_discharge(
                 "historical",
                 pd.date_range("1979", "2023", freq="D"),
-                split_request_keys=True,
+                split_request=True,
                 # NOTE: 'area': north (maxy), west (minx), south (miny), east (maxx)
                 area=[bounds[3], bounds[0], bounds[1], bounds[2]],
                 num_proc=num_downloads,

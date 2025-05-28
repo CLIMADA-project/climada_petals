@@ -185,7 +185,7 @@ class TestRiverFloodInundation(unittest.TestCase):
             countries="ABC",
             preprocess=preprocess,
             leadtime_hour=["24", "48"],
-            split_request_keys=False,
+            split_request=False,
             foo="bar",
         )
 
@@ -206,7 +206,7 @@ class TestRiverFloodInundation(unittest.TestCase):
         call_subset = dict(
             product="historical",
             countries="ABC",
-            split_request_keys=False,
+            split_request=False,
             preprocess=preprocess,
             foo="bar",
         )

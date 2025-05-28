@@ -222,7 +222,7 @@ def download_glofas_discharge(
     download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
     countries: Optional[Union[List[str], str]] = None,
     preprocess: Optional[Callable] = None,
-    open_mfdataset_kw: Optional[Mapping[str, Any]] = None,
+    open_mfdataset_kw: Optional[Mapping[str, Any] | bool] = None,
     split_request: bool | str = True,
     **request_kwargs,
 ) -> xr.DataArray:
