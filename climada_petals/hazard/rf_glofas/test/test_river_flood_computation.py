@@ -35,6 +35,7 @@ from climada.util.constants import DEF_CRS
 from climada_petals.hazard.rf_glofas.river_flood_computation import (
     _maybe_open_dataarray,
     RiverFloodInundation,
+    cleanup_cache_dir,
 )
 
 
@@ -163,6 +164,13 @@ class TestRiverFloodInundation(unittest.TestCase):
         self.assertTrue(second_cache.is_dir())
         for path in self.rf.cache_paths._asdict().values():
             self.assertIn(second_cache, path.parents)
+
+        # Clear the cache
+        cleanup_cache_dir(self.cache_dir, dry_run=True)
+        self.assertTrue(second_cache.is_dir())
+        cleanup_cache_dir(self.cache_dir)
+        self.assertFalse(second_cache.is_dir())
+        del self.rf  # NOTE: Cleanup does not raise error if the path does not exist!
 
     def _assert_store_intermediates(
         self, rf, func_name, arr_compare, cache_name, *args, **kwargs
@@ -481,7 +489,7 @@ class TestRiverFloodInundation(unittest.TestCase):
         ds_result = self.rf.compute(
             self.flood_maps,
             apply_protection=True,
-            load_flood_maps_kwargs={"coarsening": 3},
+            load_flood_maps_kws={"coarsening": 3},
             resample_kws=dict(num_bootstrap_samples=10),
             regrid_kws=dict(method="nearest"),
         )

@@ -207,8 +207,8 @@ def open_flood_map_tiles(
             chunks="auto",
             combine="by_coords",
             engine="rasterio",
-        ) as ds:
-            return ds.drop_vars("spatial_ref", errors="ignore").squeeze(
+        ) as dset:
+            return dset.drop_vars("spatial_ref", errors="ignore").squeeze(
                 "band", drop=True
             )["band_data"]
 

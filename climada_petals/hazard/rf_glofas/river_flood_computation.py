@@ -101,7 +101,8 @@ def cleanup_cache_dir(
     directories = [path for path in Path(cache_dir).iterdir() if path.is_dir()]
     for path in directories:
         LOGGER.debug("Removing directory: %s", path)
-        shutil.rmtree(path)
+        if not dry_run:
+            shutil.rmtree(path)
     if dry_run:
         LOGGER.debug("Dry run. No files removed")
 
