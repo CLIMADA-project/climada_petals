@@ -37,6 +37,11 @@ These are the functions exposed by the module.
     :undoc-members:
     :show-inheritance:
 
+.. automodule:: climada_petals.hazard.rf_glofas.flood_maps
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 .. automodule:: climada_petals.hazard.rf_glofas.setup
     :members:
     :undoc-members:
