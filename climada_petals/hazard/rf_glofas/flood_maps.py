@@ -88,7 +88,7 @@ def download_flood_maps_extents(
     output_path = Path(filepath).parent
     output_path.mkdir(exist_ok=True)
 
-    response = requests.get(JRC_FLOOD_HAZARD_MAP_TILES_URL)
+    response = requests.get(JRC_FLOOD_HAZARD_MAP_TILES_URL, timeout=10)
     with open(filepath, "wb") as file:
         file.write(response.content)
 
@@ -149,17 +149,17 @@ def download_flood_map_tiles(
         # Download the files (streaming, because they may be tens of MB large)
         for _, tile in tiles.iterrows():
             url = tile_url(
-                return_period=return_period, id=tile["id"], name=tile["name"]
+                return_period=return_period, tile_id=tile["id"], name=tile["name"]
             )
             filepath = rp_path / tile_filename(
-                return_period=return_period, id=tile["id"], name=tile["name"]
+                return_period=return_period, tile_id=tile["id"], name=tile["name"]
             )
             if filepath.is_file() and not overwrite:
                 LOGGER.debug("Skipping file %s because it already exists", filepath)
                 continue
 
             LOGGER.debug("Downloading %s", url)
-            response = requests.get(url, stream=True)
+            response = requests.get(url, stream=True, timeout=10)
             with open(filepath, "wb") as file:
                 for chunk in response.iter_content(chunk_size=10 * 1024):
                     file.write(chunk)
@@ -198,7 +198,7 @@ def open_flood_map_tiles(
             Path(flood_maps_dir)
             / f"RP{return_period}"
             / tile_filename(
-                return_period=return_period, id=tile["id"], name=tile["name"]
+                return_period=return_period, tile_id=tile["id"], name=tile["name"]
             )
             for _, tile in tiles.iterrows()
         ]

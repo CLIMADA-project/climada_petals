@@ -228,10 +228,6 @@ def download_glofas_discharge(
 ) -> xr.DataArray:
     """Download the GloFAS data and return the resulting dataset
 
-    Several parameters are passed directly to
-    :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`. See
-    this functions documentation for further information.
-
     Parameters
     ----------
     product : str
@@ -252,18 +248,31 @@ def download_glofas_discharge(
     preprocess : str, optional
         String expression for preprocessing the data before merging it into one dataset.
         Must be valid Python code. The downloaded data is passed as variable ``x``.
-    open_mfdataset_kw : dict, optional
+    open_mfdataset_kw : dict or bool, optional
         Optional keyword arguments for the ``xarray.open_mfdataset`` function.
+        If ``False``, this function will return the file paths of the downloaded data
+        instead of the opened data. ``True`` has the same effect as ``None``.
     split_request : bool or str
         How to split requests according to groupings of the ``dates``. This is either a
         frequency string that will be inserted into a
         `pandas.Grouper <https://pandas.pydata.org/docs/reference/api/pandas.Grouper.html#pandas.Grouper>`_
-        as ``freq`` parameter,
-        or a boolean, in which case a split frequency of 1 day (``freq=1D``) is chosen
-        for ``forecast`` products and 1 year (``freq=1Y``) is chosen for ``historical``
-        products.
+        as ``freq`` parameter, or a boolean, in which case a split frequency of 1 day
+        (``freq="1D"``) is chosen for ``forecast`` products and 1 year (``freq="1Y"``)
+        is chosen for ``historical`` (or other) products.
     request_kwargs:
-        Keyword arguments for the Copernicus data store request.
+        Keyword arguments for the Copernicus data store request. See
+        :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`.
+
+    Returns
+    -------
+    xarray.DataArray
+        The downloaded discharge data opened as (squeezed) data array.
+
+    Note
+    ----
+    If ``open_mfdataset_kw=False``, this function will **not** open the
+    downloaded data but return the file paths (as returned by
+    :py:func:`~climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`).
     """
     # Create the download path if it does not yet exist
     LOGGER.debug("Preparing download directory: %s", download_path)
@@ -284,8 +293,9 @@ def download_glofas_discharge(
     else:
         requests = [
             datetime_index_to_request(series.index, product)
-            for _, series in dates.to_series()
-            .groupby(pd.Grouper(freq=split_request_freq, closed="left"))
+            for _, series in dates.to_series().groupby(
+                pd.Grouper(freq=split_request_freq, closed="left")
+            )
             if not series.empty
         ]
 

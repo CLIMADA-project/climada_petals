@@ -39,7 +39,6 @@ from .transform_ops import (
     download_glofas_discharge,
     return_period,
     return_period_resample,
-    interpolate_space,
     regrid,
     apply_flopros,
     flood_depth,
@@ -261,7 +260,7 @@ class RiverFloodInundation:
         self,
         discharge: Optional[xr.DataArray] = None,
         apply_protection: Union[bool, str] = "both",
-        load_flood_maps_kwargs: Optional[Mapping[str, Any]] = None,
+        load_flood_maps_kws: Optional[Mapping[str, Any]] = None,
         resample_kws: Optional[Mapping[str, Any]] = None,
         regrid_kws: Optional[Mapping[str, Any]] = None,
     ):
@@ -272,6 +271,8 @@ class RiverFloodInundation:
 
         - Compute the equivalent return period, either with :py:meth:`return_period`, or
           :py:meth:`return_period_resample`.
+        - Load the flood maps matching the extent of the discharge data with
+          :py:meth:`load_flood_maps`, potentially applying coarsening on them.
         - Regrid the return period data onto the grid of the flood hazard maps with
           :py:meth:`regrid`.
         - *Optional*: Apply the protection layer with :py:meth:`apply_protection`.
@@ -290,6 +291,8 @@ class RiverFloodInundation:
             If the stored protection layer should be considered when computing the flood
             depth. If ``"both"``, this method will return a dataset with two flood depth
             arrays. Defaults to ``both``.
+        load_flood_maps_kws : Mapping (str, Any), optional
+            Keyward arguments for :py:meth:`load_flood_maps`.
         resample_kws : Mapping (str, Any) or None (optional)
             Keyword arguments for :py:meth:`return_period_resample`. If ``None``,
             this method will call :py:meth:`return_period`. Otherwise, it will call
@@ -324,8 +327,8 @@ class RiverFloodInundation:
 
         # Load flood maps
         load_flood_maps_defaults = {"reference": discharge}
-        if load_flood_maps_kwargs is not None:
-            load_flood_maps_defaults.update(load_flood_maps_kwargs)
+        if load_flood_maps_kws is not None:
+            load_flood_maps_defaults.update(load_flood_maps_kws)
         flood_maps = self.load_flood_maps(**load_flood_maps_defaults)
 
         # Regrid
@@ -349,8 +352,9 @@ class RiverFloodInundation:
     def load_flood_maps(
         self,
         reference: Optional[xr.DataArray] = None,
-        coarsening: int = 7,
+        coarsening: int | None = 7,
         coarsen_agg=np.mean,
+        overwrite_tiles: bool = False,
     ) -> xr.DataArray:
         """Load flood hazard maps for the area represented by the given reference
 
@@ -361,13 +365,16 @@ class RiverFloodInundation:
             tiles intersecting the bounds of the reference area will be downloaded and
             opened. If ``None`` (default), the cached discharge will be opened as
             reference.
-        coarsening : int
+        coarsening : int or None
             How many pixels in horizontal and vertical direction will be coarsened into
             a single pixel. This reduces memory load due to the computation, but also
             reduces accuracy. The original resolution is 3 arc seconds. Defaults to 7
-            (coarse resolution of 21 arc seconds).
+            (coarse resolution of 21 arc seconds). If ``None``, does not apply
+            coarsening.
         coarsen_agg
             Function used for coarsening pixels. Defaults to mean.
+        overwrite_tiles : bool
+            Overwrite already downloaded files. Defaults to ``False``.
 
         Returns
         -------
@@ -389,13 +396,18 @@ class RiverFloodInundation:
             )
             tiles_select = self.flood_map_tiles.loc[select]
             flood_maps_dir = self.data_dir / "flood-maps"
-            download_flood_map_tiles(output_dir=flood_maps_dir, tiles=tiles_select)
+            download_flood_map_tiles(
+                output_dir=flood_maps_dir, tiles=tiles_select, overwrite=overwrite_tiles
+            )
             flood_maps = open_flood_map_tiles(
                 flood_maps_dir=flood_maps_dir, tiles=tiles_select
             )
-            return flood_maps.coarsen(
-                longitude=coarsening, latitude=coarsening, boundary="trim"
-            ).reduce(func=coarsen_agg)
+            if coarsening is not None:
+                return flood_maps.coarsen(
+                    longitude=coarsening, latitude=coarsening, boundary="trim"
+                ).reduce(func=coarsen_agg)
+
+            return flood_maps
 
     def download_forecast(
         self,
