@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+Release date: YYYY-MM-DD
+
+Code freeze date: YYYY-MM-DD
+
+### Description
+
+### Dependency Changes
+
+Added:
+
+- `lxml` >=5 (was implicitly part of the dependency tree before)
+
+### Added
+
+- Module `climada_petals.hazard.coastal_flood` with new Hazard class `CoastalFlood` and associated method `from_aqueduct_tif` to read coastal flood data directly from the Aqueduct tif files [#100](https://github.com/CLIMADA-project/climada_petals/pull/100)
+
+### Changed
+
+- Module `climada_petals.hazard.river_flood`, class `RiverFlood`: New method `from_aqueduct_tif` to read river flood data directly from the online Aqueduct tif files, and renamed methods `from_nc` to `from_isimip_nc` and `set_from_nc` to `set_from_isimip_nc` [#108](https://github.com/CLIMADA-project/climada_petals/pull/108)
+
+### Fixed
+
+- Add `lxml` as explicit dependency [#168](https://github.com/CLIMADA-project/climada_petals/pull/168)
+
+### Deprecated
+
+### Removed
+
+- Removed code of the copernicus interface module [#142](https://github.com/CLIMADA-project/climada_petals/pull/142), including code added in [#150](https://github.com/CLIMADA-project/climada_petals/pull/150), [#151](https://github.com/CLIMADA-project/climada_petals/pull/151) and [#156](https://github.com/CLIMADA-project/climada_petals/pull/156). The module has been moved to a separate [repository](https://github.com/DahyannAraya/copernicus-seasonal-forecast-tools).
+
 ## 6.0.1
 
 Release date: 2025-03-03
