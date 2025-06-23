@@ -65,7 +65,7 @@ Please use the following logo if you are presenting results obtained with or thr
 
 We welcome any contribution to this repository, be it bugfixes and other code changes and additions, documentation improvements, or tutorial updates.
 
-If you would like to contribute, please refer to the CLIMADA Project's [Contribution Guide](https://github.com/CLIMADA-project/climada_python/blob/main/CONTRIBUTING.md).
+If you would like to contribute, please refer to the CLIMADA Project's [Developer Guide](https://climada-python.readthedocs.io/en/latest/development/index.html).
 
 ## Versioning
 
