@@ -23,6 +23,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 import rasterio
 from rasterio.enums import Resampling
+from rasterio.windows import from_bounds
 import logging
 from pathlib import Path
 import urllib.request
@@ -94,29 +95,59 @@ def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
     vld_ind_formatted[np.where(dist < np.inf)] = vld_ind
     return dist, vld_ind_formatted
 
+def window_from_extent(xmin, ymin, xmax, ymax, transform):
+    col_start, row_start = ~transform * (xmin, ymax)
+    col_stop, row_stop = ~transform * (xmax, ymin)
+    return Window.from_slices((row_start, row_stop), (col_start, col_stop))
 
-def _resample_res(filepath, upscale_factor, nodata):
+
+def _resample_res(filepath, upscale_factor, nodata, extent=None):
 
     with rasterio.open(filepath) as dataset:
-        # resample data to target shape
-        arr = dataset.read(
-            out_shape=(dataset.count, int(dataset.height * upscale_factor),
-                       int(dataset.width * upscale_factor)),
-            resampling=Resampling.average)
-        # scale image transform
-        transform = dataset.transform * dataset.transform.scale(
-            (dataset.width / arr.shape[-1]),
-            (dataset.height / arr.shape[-2]))
+        # Get the initial transform and metadata
+        transform = dataset.transform
+        meta = dataset.meta.copy()
 
+        if extent:
+            # Create a rasterio window from the extent
+            window = from_bounds(*extent, transform=transform)
+        else:
+            # If no extent is provided, use the full dataset
+            window = rasterio.windows.Window(0, 0, dataset.width, dataset.height)
+
+        # Get the windowed transform and dimensions
+        window_transform = dataset.window_transform(window)
+        window_width = int(window.width * upscale_factor)
+        window_height = int(window.height * upscale_factor)
+
+        # Read and resample the data within the window
+        arr = dataset.read(
+            out_shape=(dataset.count, window_height, window_width),
+            resampling=Resampling.average,
+            window=window
+        )
+        # Update metadata for the cropped and resampled array
+        meta.update(
+            height=window_height,
+            width=window_width,
+            transform=window_transform
+        )
+
+        # Adjust the transform for the scaling
+        transform = window_transform * rasterio.Affine.scale(
+            1 / upscale_factor, 1 / upscale_factor
+        )
+
+    # Replace nodata values with 0 and adjust array values
     arr = np.where(arr == nodata, 0, arr)
-    arr = arr*(1/upscale_factor)**2
+    arr = arr * (1 / upscale_factor) ** 2
 
     return arr, transform
 
 
-def load_resampled_raster(filepath, upscale_factor, nodata=-99999.):
+def load_resampled_raster(filepath, upscale_factor, nodata=-99999., extent=None):
 
-    arr, transform = _resample_res(filepath, upscale_factor, nodata)
+    arr, transform = _resample_res(filepath, upscale_factor, nodata, extent)
 
     grid = u_coords.raster_to_meshgrid(transform, arr.shape[-1],
                                        arr.shape[-2])
@@ -126,7 +157,7 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999.):
     gdf = gdf[gdf.counts != 0].reset_index(drop=True)
 
     # manual correction for over-estimate after aggregation:
-    arr_orig, __ = _resample_res(filepath, 1, nodata)
+    arr_orig, __ = _resample_res(filepath, 1, nodata, extent)
     corr_factor = arr_orig.squeeze().flatten().sum() / \
         arr.squeeze().flatten().sum()
     gdf['counts'] = gdf.counts * corr_factor
