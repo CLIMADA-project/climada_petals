@@ -1,5 +1,26 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Tests for river_flood_computation.py
+"""
+
 import unittest
-from unittest.mock import patch, MagicMock, DEFAULT, create_autospec, call
+from unittest.mock import patch, MagicMock, DEFAULT, create_autospec
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
@@ -14,6 +35,7 @@ from climada.util.constants import DEF_CRS
 from climada_petals.hazard.rf_glofas.river_flood_computation import (
     _maybe_open_dataarray,
     RiverFloodInundation,
+    cleanup_cache_dir,
 )
 
 
@@ -142,6 +164,13 @@ class TestRiverFloodInundation(unittest.TestCase):
         self.assertTrue(second_cache.is_dir())
         for path in self.rf.cache_paths._asdict().values():
             self.assertIn(second_cache, path.parents)
+
+        # Clear the cache
+        cleanup_cache_dir(self.cache_dir, dry_run=True)
+        self.assertTrue(second_cache.is_dir())
+        cleanup_cache_dir(self.cache_dir)
+        self.assertFalse(second_cache.is_dir())
+        del self.rf  # NOTE: Cleanup does not raise error if the path does not exist!
 
     def _assert_store_intermediates(
         self, rf, func_name, arr_compare, cache_name, *args, **kwargs
@@ -460,7 +489,7 @@ class TestRiverFloodInundation(unittest.TestCase):
         ds_result = self.rf.compute(
             self.flood_maps,
             apply_protection=True,
-            load_flood_maps_kwargs={"coarsening": 3},
+            load_flood_maps_kws={"coarsening": 3},
             resample_kws=dict(num_bootstrap_samples=10),
             regrid_kws=dict(method="nearest"),
         )

@@ -208,8 +208,6 @@ def setup_all(
 
     This performs two tasks:
 
-    #. Downloading the JRC river flood hazard maps and merging them into a single NetCDF
-       dataset.
     #. Downloading the FLOPROS flood protection database.
     #. Downloading the Gumbel distribution parameters fitted to GloFAS river discharge
        reanalysis data from 1979 to 2023.

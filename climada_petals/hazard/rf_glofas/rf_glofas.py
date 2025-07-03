@@ -77,7 +77,7 @@ def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
 
 
 def hazard_series_from_dataset(
-    data: xr.Dataset, intensity: str, event_dim: str
+    data: xr.Dataset, intensity: str, event_dim: str, scale_frequency: bool = True
 ) -> Union[pd.Series, Hazard]:
     """Create a series of Hazard objects from a multi-dimensional dataset
 
@@ -101,6 +101,9 @@ def hazard_series_from_dataset(
         Name of the dimension to be used as event dimension in the hazards. All other
         dimension names except the dimensions for longitude and latitude will make up the
         hierarchy of the ``MultiIndex`` of the resulting series.
+    scale_frequency : bool
+        If ``True`` (default), the hazard event frequency will be divided by the number
+        of events for each hazard object.
 
     Returns
     -------
@@ -138,9 +141,10 @@ def hazard_series_from_dataset(
                 1       <climada.hazard.base.Hazard ...
     Length: 4, dtype: object
     """
+
     def create_hazard(dataset: xr.Dataset) -> Hazard:
         """Create hazard from a GloFASRiverFlood hazard dataset"""
-        return Hazard.from_xarray_raster(
+        hazard = Hazard.from_xarray_raster(
             dataset,
             hazard_type="RF",
             intensity=intensity,
@@ -149,6 +153,10 @@ def hazard_series_from_dataset(
             data_vars=dict(date="time"),
             rechunk=True,
         )
+        if scale_frequency:
+            hazard.frequency = hazard.frequency / hazard.size
+
+        return hazard
 
     # Iterate over all dimensions that are not lon, lat, or 'event_dim'
     iter_dims = list(set(data.dims) - {"longitude", "latitude", event_dim})
