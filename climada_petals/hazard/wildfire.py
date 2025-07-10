@@ -388,75 +388,75 @@ def get_CLIMADA_centr(**kwargs):
     
     
 """VISIBLE METHODS OF DEPRECATED FORMER MODULE"""
-    class FirmsParams():
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+class FirmsParams():
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
-    class ProbaParams():
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+class ProbaParams():
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
-    def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None):
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+def from_hist_fire_FIRMS(cls, df_firms, centr_res_factor=1.0, centroids=None):
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
-    @classmethod
-    def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
-                                    centroids=None, hemisphere=None,
-                                    year_start=None, year_end=None,
-                                    keep_all_fires=False):
+@classmethod
+def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
+                                centroids=None, hemisphere=None,
+                                year_start=None, year_end=None,
+                                keep_all_fires=False):
 
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
-    def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+def set_hist_fire_seasons_FIRMS(self, *args, **kwargs):
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
-    def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
-                               keep_all_fires=False):
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+def set_proba_fire_seasons(self, n_fire_seasons=1, n_ignitions=None,
+                           keep_all_fires=False):
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
 
-    def combine_fires(self, event_id_merge=None, remove_rest=False,
-                      probabilistic=False):
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+def combine_fires(self, event_id_merge=None, remove_rest=False,
+                  probabilistic=False):
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
-    def summarize_fires_to_seasons(self, year_start=None, year_end=None,
-                                   hemisphere=None):
+def summarize_fires_to_seasons(self, year_start=None, year_end=None,
+                               hemisphere=None):
 
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
 
-    def plot_fire_prob_matrix(self):
-            LOGGER.warning(
-                "The wildfire module described in Lüthi et al. (2021) has"
-                "been depracted. To reproduce data with the previous calculation,"
-                "use CLIMADA v6.0.1 or less.",
-            )
+def plot_fire_prob_matrix(self):
+        LOGGER.warning(
+            "The wildfire module described in Lüthi et al. (2021) has"
+            "been depracted. To reproduce data with the previous calculation,"
+            "use CLIMADA v6.0.1 or less.",
+        )
