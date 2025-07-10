@@ -43,7 +43,6 @@ modis_date_pattern = re.compile(r'\.A(\d{4})\d{3}\.')  # Matches .A2020123.
 tile_pattern = re.compile(r'\.(h\d{2}v\d{2})\.')
 
 
-
 def create_config_MODIS(dir_code, dir_data):
     
     dir_MODIS = os.path.join(dir_data, "0_original_MODIS")
