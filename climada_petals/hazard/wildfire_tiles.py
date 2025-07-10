@@ -34,8 +34,7 @@ import h5py
 from climada.hazard import Hazard
 from climada.hazard import Centroids
 
-# from climada_petals.hazard.wildfire import create_wf_haz
-from wildfire import create_wf_haz
+from climada_petals.hazard.wildfire import create_wf_haz
 
 DAYS_LEAP = 366
 DAYS_NORMAL = 365
