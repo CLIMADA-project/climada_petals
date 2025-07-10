@@ -41,7 +41,7 @@ class TestWildFire(unittest.TestCase):
         wf.set_hist_fire_FIRMS(TEST_FIRMS, land_path=TEST_LC)
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
+        self.assertEqual(wf.haz_type, 'WFsingle')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 4)))
         self.assertTrue(np.allclose(wf.date,
@@ -58,8 +58,7 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[1, 4907], 311.8)
         self.assertAlmostEqual(wf.intensity[2, 212], 309.8)
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
-        self.assertAlmostEqual(wf.fraction.max(), 1.0)
-        self.assertAlmostEqual(wf.fraction.min(), 0.0)
+        self.assertAlmostEqual(wf.fraction.getnnz(), 0)
 
     def test_from_hist_fire_firms_pass(self):
         """ Test set_hist_events """
@@ -67,7 +66,7 @@ class TestWildFire(unittest.TestCase):
         wf = wf.from_hist_fire_FIRMS(TEST_FIRMS, land_path=TEST_LC)
         wf.check()
 
-        self.assertEqual(wf.tag.haz_type, 'WFsingle')
+        self.assertEqual(wf.haz_type, 'WFsingle')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 4)))
         self.assertTrue(np.allclose(wf.date,
@@ -84,15 +83,14 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[1, 4907], 311.8)
         self.assertAlmostEqual(wf.intensity[2, 212], 309.8)
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
-        self.assertAlmostEqual(wf.fraction.max(), 1.0)
-        self.assertAlmostEqual(wf.fraction.min(), 0.0)    
+        self.assertAlmostEqual(wf.fraction.getnnz(), 0)
 
     def test_hist_fire_season_firms_pass(self):
         """ Test set_hist_event_year_set """
         wf = WildFire()
         wf.set_hist_fire_seasons_FIRMS(TEST_FIRMS, land_path=TEST_LC)
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
@@ -108,15 +106,14 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[0, 346], 312.6)
         self.assertAlmostEqual(wf.intensity[0, 1668], 338.3)
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
-        self.assertAlmostEqual(wf.fraction.max(), 1.0)
-        self.assertAlmostEqual(wf.fraction.min(), 0.0)
-        
+        self.assertAlmostEqual(wf.fraction.getnnz(), 0)
+
     def test_from_hist_fire_season_firms_pass(self):
         """ Test set_hist_event_year_set """
-        wf = WildFire()
-        wf = wf.from_hist_fire_seasons_FIRMS(TEST_FIRMS, land_path=TEST_LC)
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
+        wf = WildFire.from_hist_fire_seasons_FIRMS(TEST_FIRMS)
+
+        self.assertEqual(wf.haz_type, 'WFseason')
         self.assertEqual(wf.units, 'K')
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
         self.assertTrue(np.allclose(wf.date, np.array([735964])))
@@ -132,21 +129,15 @@ class TestWildFire(unittest.TestCase):
         self.assertAlmostEqual(wf.intensity[0, 346], 312.6)
         self.assertAlmostEqual(wf.intensity[0, 1668], 338.3)
         self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
-        self.assertAlmostEqual(wf.fraction.max(), 1.0)
-        self.assertAlmostEqual(wf.fraction.min(), 0.0)
+        self.assertAlmostEqual(wf.fraction.getnnz(), 0)
 
     def test_proba_fire_season_pass(self):
         """ Test probabilistic set_probabilistic_event_year_set """
-        wf = WildFire()
-        wf = WildFire.from_hist_fire_seasons_FIRMS(TEST_FIRMS, land_path=TEST_LC)
-        wf.set_proba_fire_seasons(1,[3,4], land_path=TEST_LC,
-                                  pop_path=TEST_POP, reproduce=True)
 
-        self.assertEqual(wf.size, 2)
-        orig = np.zeros(2, bool)
-        orig[0] = True
-        self.assertTrue(np.allclose(wf.orig, orig))
-        self.assertEqual(len(wf.event_name), 2)
+        wf = WildFire.from_hist_fire_seasons_FIRMS(TEST_FIRMS)
+        wf.set_proba_fire_seasons(1,[3,4])
+
+
         self.assertEqual(wf.intensity.shape, (2, 14904))
         self.assertEqual(wf.fraction.shape, (2, 14904))
         self.assertEqual(wf.n_fires[1], 3)
@@ -167,26 +158,17 @@ class TestWildFire(unittest.TestCase):
         """ Test probabilistic set_probabilistic_event_year_set """
         wf = WildFire()
         wf = WildFire.from_hist_fire_FIRMS(TEST_FIRMS, land_path=TEST_LC)
-        wf.summarize_fires_to_seasons()
 
-        self.assertEqual(wf.tag.haz_type, 'WFseason')
-        self.assertEqual(wf.units, 'K')
-        self.assertTrue(np.allclose(wf.event_id, np.arange(1, 2)))
-        self.assertTrue(np.allclose(wf.date, np.array([735964])))
-        self.assertTrue(np.allclose(wf.orig, np.ones(1, bool)))
-        self.assertEqual(wf.event_name, ['2016'])
-        self.assertTrue(np.allclose(wf.frequency, np.ones(1)))
-        self.assertEqual(wf.intensity.shape, (1, 14904))
-        self.assertEqual(wf.fraction.shape, (1, 14904))
-        self.assertEqual(wf.intensity[0, :].nonzero()[1][0], 20)
-        self.assertEqual(wf.intensity[0, :].nonzero()[1][20], 346)
-        self.assertEqual(wf.intensity[0, :].nonzero()[1][100], 1659)
-        self.assertAlmostEqual(wf.intensity[0, 20], 326.6)
-        self.assertAlmostEqual(wf.intensity[0, 346], 312.6)
-        self.assertAlmostEqual(wf.intensity[0, 1668], 338.3)
-        self.assertAlmostEqual(wf.intensity[0, 8000], 0.0)
-        self.assertAlmostEqual(wf.fraction.max(), 1.0)
-        self.assertAlmostEqual(wf.fraction.min(), 0.0)
+        self.assertEqual(wf.intensity.shape, (2, 51042))
+        self.assertEqual(wf.fraction.shape, (2, 51042))
+        self.assertEqual(wf.intensity[1, :].nonzero()[1][0], 5080)
+        self.assertEqual(wf.intensity[1, :].nonzero()[1][4], 32991)
+        self.assertEqual(wf.intensity[0, :].nonzero()[1][11], 939)
+        self.assertAlmostEqual(wf.intensity[1, 5080], 334.3)
+        self.assertAlmostEqual(wf.intensity[1, 32991], 309.9)
+        self.assertAlmostEqual(wf.intensity[0, 939], 356.0)
+        self.assertAlmostEqual(wf.fraction.getnnz(), 0)
+
 
 # Execute Tests
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
-"""
-This file is part of CLIMADA.
+"""This file is part of CLIMADA.
 
 Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
 
@@ -19,253 +18,769 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test Supplychain class.
 """
 
-from pathlib import Path
+import pathlib
 import unittest
+import warnings
 import numpy as np
+import pandas as pd
+import pymrio
 
-from climada import CONFIG
 from climada.entity.exposures.base import Exposures
-from climada.entity import ImpactFuncSet, ImpfTropCyclone
-from climada.hazard.base import Hazard
-from climada_petals.engine.supplychain import SupplyChain, WIOD_DIRECTORY
-from climada.util.constants import EXP_DEMO_H5
+from climada.engine.impact_calc import Impact
+from climada_petals.engine.supplychain import (
+    SupplyChain,
+    MRIOT_DIRECTORY,
+    VA_NAME,
+    mriot_file_name,
+    parse_mriot_from_df,
+    calc_B,
+    calc_va,
+    calc_G,
+    calc_x_from_G,
+)
+from climada.util.constants import DEF_CRS
 from climada.util.api_client import Client
 from climada.util.files_handler import download_file
+from scipy import sparse
+
+def build_mock_mriot_miller(iso='iso3'):
+    """
+    This is an hypothetical Multi-Regional Input-Output Table adapted from the one in:
+    Miller, R. E., & Blair, P. D. (2009). Input-output analysis: foundations and
+    extensions. : Cambridge University Press.
+    """
+
+    idx_names = ['region', 'sector']
+    fd_names = ['region', 'final demand cat']
+    _sectors = ['Nat. Res.', 'Manuf. & Const.', 'Service']
+    _final_demand = ["final demand"]
+
+    if iso == 'iso3':
+        _regions = ['USA', 'ROW']
+
+    elif iso == 'iso2':
+        _regions = ['US', 'ROW']
+
+    _Z_multiindex = pd.MultiIndex.from_product(
+	                [_regions, _sectors],
+                    names = idx_names
+                    )
+
+    _Y_multiindex = pd.MultiIndex.from_product(
+	                [_regions, _final_demand],
+                    names = fd_names
+                    )
+
+    _Z_data = np.array([[150,500,50,25,75,0],
+                        [200,100,400,200,100,0],
+                        [300,500,50,60,40,0],
+                        [75,100,60,200,250,0],
+                        [50,25,25,150,100,0],
+                        [0,0,0,0,0,0]])
+
+    Z = pd.DataFrame(
+                data = _Z_data,
+                index = _Z_multiindex,
+                columns = _Z_multiindex
+                )
+
+    _X_data = np.array([1000,2000,1000,1200,800,0]).reshape(6,1)
+    X = pd.DataFrame(
+                data = _X_data,
+                index = _Z_multiindex,
+                columns = ['total production']
+                )
+
+    _Y_data = np.array([[180,800,40,65,150,0],
+                      [20,200,10,450,300,0]]).reshape(6,2)
+
+    Y = pd.DataFrame(
+	            data=_Y_data,
+	            index = _Z_multiindex,
+	            columns = _Y_multiindex,
+	            )
+
+    io = pymrio.IOSystem()
+    io.Z = Z
+    io.Y = Y
+    io.x = X
+
+    return io
+
+def build_mock_mriot_timmer(iso='iso3'):
+    """
+    This is an hypothetical Multi-Regional Input-Output Table adapted from the one in:
+    M. P. Timmer et al. “An Illustrated User Guide to the World Input–Output
+    Database: the Case of Global Automotive Production”. In: Review of International
+    Economics 23.3 (2015), pp. 575–605.
+    """
+
+    idx_names = ['region', 'sector']
+    fd_names = ['region', 'final demand cat']
+    _sectors = ['Services', 'Nat. Res.', 'Manuf. & Const.']
+    _final_demand = ["final demand"]
+
+    if iso == 'iso3':
+        _regions = ['USA', 'ROW']
+
+    elif iso == 'iso2':
+        _regions = ['US', 'ROW']
+
+    _Z_multiindex = pd.MultiIndex.from_product(
+	                [_regions, _sectors],
+                    names = idx_names
+                    )
+
+    _Y_multiindex = pd.MultiIndex.from_product(
+	                [_regions, _final_demand],
+                    names = fd_names
+                    )
+
+    _Z_data = np.array([[634, 41, 1, 2241, 271, 3],
+                        [29, 62, 2, 311, 128, 1],
+                        [9, 1, 735, 3574, 311, 947],
+                        [813, 123, 724, 20813, 11113, 594],
+                        [490, 83, 796, 8196, 26678, 905],
+                        [85, 9, 334, 1411, 1315, 1769]])
+
+    Z = pd.DataFrame(
+                data = _Z_data,
+                index = _Z_multiindex,
+                columns = _Z_multiindex
+                )
+
+    _X_data = np.array([4911, 797, 5963, 49398,
+                        93669, 6259]).reshape(6,1)
+    X = pd.DataFrame(
+                data = _X_data,
+                index = _Z_multiindex,
+                columns = ['indout']
+                )
+
+    _Y_data = np.array([[1721*0.2, 264*0.2, 385*0.2, 15218*0.2,
+                        56522*0.2, 1337*0.2],
+                      [1721*0.8, 264*0.8, 385*0.8, 15218*0.8,
+                        56522*0.8, 1337*0.8]]).T
+
+    Y = pd.DataFrame(
+	            data=_Y_data,
+	            index = _Z_multiindex,
+	            columns = _Y_multiindex,
+	            )
+
+    io = pymrio.IOSystem()
+    io.Z = Z
+    io.Y = Y
+    io.x = X
+
+    return io
+
+def dummy_exp_imp():
+    " Generate dummy exposure and impacts "
+    lat = np.array([1, 3])
+    lon = np.array([1.5, 3.5])
+
+    exp = Exposures(
+        crs=DEF_CRS,
+        lon = lon,
+        lat = lat,
+        data = dict(
+            value = np.array([150., 80.]),
+            region_id = [840, 608], # USA, PHL (ROW)
+        )
+    )
+
+    imp = Impact(
+        event_id=np.arange(2) + 10,
+        event_name=np.arange(2),
+        date=np.arange(2),
+        coord_exp=np.vstack([lon, lat]).T,
+        crs=DEF_CRS,
+        unit="USD",
+        eai_exp=np.array([6, 4.33]),
+        at_event=np.array([55, 35]),
+        frequency=np.array([1 / 6, 1 / 30]),
+        frequency_unit="1/month",
+        aai_agg=10.34,
+
+        imp_mat=sparse.csr_matrix(
+            np.array([[30, 25],
+                      [30, 5]]))
+        )
+
+    return exp, imp
+
+class TestCalcFunctions(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mriot = build_mock_mriot_miller()
+        self.expected_va = pd.DataFrame.from_dict({'index': [VA_NAME],
+                                                  'columns': [('USA', 'Nat. Res.'),
+                                                              ('USA', 'Manuf. & Const.'),
+                                                              ('USA', 'Service'),
+                                                              ('ROW', 'Nat. Res.'),
+                                                              ('ROW', 'Manuf. & Const.'),
+                                                              ('ROW', 'Service')],
+                                                  'data': [[225, 775, 415, 565, 235, 0]],
+                                                  'index_names': [None],
+                                                  'column_names': ["region","sector"]}, orient="tight")
+
+        self.expected_B = pd.DataFrame.from_dict({'index': [('USA', 'Nat. Res.'),
+                                                            ('USA', 'Manuf. & Const.'),
+                                                            ('USA', 'Service'),
+                                                            ('ROW', 'Nat. Res.'),
+                                                            ('ROW', 'Manuf. & Const.'),
+                                                            ('ROW', 'Service')],
+                                                  'columns': [('USA', 'Nat. Res.'),
+                                                              ('USA', 'Manuf. & Const.'),
+                                                              ('USA', 'Service'),
+                                                              ('ROW', 'Nat. Res.'),
+                                                              ('ROW', 'Manuf. & Const.'),
+                                                              ('ROW', 'Service')],
+                                                  'data': [[0.15, 0.1, 0.3, 0.0625, 0.0625, 0.0],
+                                                           [0.5, 0.05, 0.5, 0.08333333333333334, 0.03125, 0.0],
+                                                           [0.05, 0.2, 0.05, 0.05, 0.03125, 0.0],
+                                                           [0.025, 0.1, 0.06, 0.16666666666666669, 0.1875, 0.0],
+                                                           [0.075, 0.05, 0.04, 0.20833333333333334, 0.125, 0.0],
+                                                           [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+                                                  'index_names': ['region', 'sector'],
+                                                  'column_names': ['region', 'sector']}, orient="tight")
+
+        self.expected_G = pd.DataFrame.from_dict({'index': [('USA', 'Nat. Res.'),
+                                                       ('USA', 'Manuf. & Const.'),
+                                                       ('USA', 'Service'),
+                                                       ('ROW', 'Nat. Res.'),
+                                                       ('ROW', 'Manuf. & Const.'),
+                                                       ('ROW', 'Service')],
+                                             'columns': [('USA', 'Nat. Res.'),
+                                                         ('USA', 'Manuf. & Const.'),
+                                                         ('USA', 'Service'),
+                                                         ('ROW', 'Nat. Res.'),
+                                                         ('ROW', 'Manuf. & Const.'),
+                                                         ('ROW', 'Service')],
+                                             'data': [[1.423409149449475,
+                                                       0.31730628908222186,
+                                                       0.6382907140159585,
+                                                       0.22266222823849854,
+                                                       0.18351388112243291,
+                                                       0.0],
+                                                      [0.9304525740622405,
+                                                       1.4236653207934866,
+                                                       1.0737395920925703,
+                                                       0.3333461635366272,
+                                                       0.227085251508225,
+                                                       0.0],
+                                                      [0.2909093898805612,
+                                                       0.33533997280126726,
+                                                       1.3362516095901116,
+                                                       0.1644572429148015,
+                                                       0.11571977927290393,
+                                                       0.0],
+                                                      [0.23003182777496692,
+                                                       0.24552984791016436,
+                                                       0.30014627080837747,
+                                                       1.3406124940000408,
+                                                       0.32319338350959714,
+                                                       0.0],
+                                                      [0.24324341481161507,
+                                                       0.18233930089239148,
+                                                       0.24861636642800972,
+                                                       0.36484518239388875,
+                                                       1.2538040568323914,
+                                                       0.0],
+                                                      [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]],
+                                             'index_names': ['region', 'sector'],
+                                             'column_names': ['region', 'sector']}, orient="tight")
+
+        self.va_changed = pd.DataFrame.from_dict({'index': [VA_NAME],
+                                                  'columns': [('USA', 'Nat. Res.'),
+                                                              ('USA', 'Manuf. & Const.'),
+                                                              ('USA', 'Service'),
+                                                              ('ROW', 'Nat. Res.'),
+                                                              ('ROW', 'Manuf. & Const.'),
+                                                              ('ROW', 'Service')],
+                                                  'data': [[225, 400, 415, 565, 235, 0]],
+                                                  'index_names': [None],
+                                                  'column_names': ["region","sector"]}, orient="tight")
+
+        self.expected_x_changed = pd.DataFrame.from_dict({'index': [('USA', 'Nat. Res.'),
+                                                                    ('USA', 'Manuf. & Const.'),
+                                                                    ('USA', 'Service'),
+                                                                    ('ROW', 'Nat. Res.'),
+                                                                    ('ROW', 'Manuf. & Const.'),
+                                                                    ('ROW', 'Service')],
+                                                          'columns': ['indout'],
+                                                          'data': [[881.0101415941668],
+                                                                   [1466.1255047024426],
+                                                                   [874.2475101995246],
+                                                                   [1107.9263070336883],
+                                                                   [731.6227621653532],
+                                                                   [0.0]],
+                                                          'index_names': ['region', 'sector'],
+                                                          'column_names': [None]}, orient="tight")
+
+    def test_calc_v(self):
+        # Test calc_va with DataFrame
+        va = calc_va(self.mriot.Z, self.mriot.x)
+        pd.testing.assert_frame_equal(va, self.expected_va)
+
+        # Test calc_va with NumPy array
+        va = calc_va(self.mriot.Z.values, self.mriot.x.values)
+        np.testing.assert_array_equal(va.values, self.expected_va.values)
+
+    def test_calc_B(self):
+        # Test calc_B with DataFrame
+        B = calc_B(self.mriot.Z, self.mriot.x)
+        pd.testing.assert_frame_equal(B, self.expected_B)
+
+        # Test calc_B with NumPy array
+        B = calc_B(self.mriot.Z.values, self.mriot.x.values)
+        np.testing.assert_array_equal(B, self.expected_B.values)
+
+    def test_calc_G(self):
+        # Test calc_G with DataFrame
+        G = calc_G(self.expected_B)
+        pd.testing.assert_frame_equal(G, self.expected_G)
+
+        # Test calc_G with NumPy array
+        G = calc_G(self.expected_B.values)
+        np.testing.assert_array_equal(G, self.expected_G.values)
+
+    def test_calc_x_from_G(self):
+        # Test calc_x_from_G with DataFrame
+        x = calc_x_from_G(self.expected_G,self.va_changed)
+        pd.testing.assert_frame_equal(x, self.expected_x_changed)
+
+        # Test calc_x_from_G with NumPy array
+        x = calc_x_from_G(self.expected_G.values, self.va_changed.values)
+        np.testing.assert_array_equal(x, self.expected_x_changed.values)
 
 
 class TestSupplyChain(unittest.TestCase):
     def setUp(self) -> None:
         client = Client()
-        
-        tf = 'WIOTtest_Nov16_ROW'
-        if not WIOD_DIRECTORY.joinpath(tf).is_file():
-            dsf = client.get_dataset_info(name=tf, status='test_dataset').files[0]
-            download_file(dsf.url, WIOD_DIRECTORY)
 
-        atl_prob_ds = client.get_dataset_info(name='atl_prob_no_name', status='test_dataset')
+        tf = "WIOTtest_Nov16_ROW"
+        if not MRIOT_DIRECTORY.joinpath(tf).is_file():
+            dsf = client.get_dataset_info(name=tf, status="test_dataset").files[0]
+            download_file(dsf.url, MRIOT_DIRECTORY)
+
+        atl_prob_ds = client.get_dataset_info(
+            name="atl_prob_no_name", status="test_dataset"
+        )
         _, [self.HAZ_TEST_MAT] = client.download_dataset(atl_prob_ds)
 
     """Testing the SupplyChain class."""
-    def test_read_wiot(self):
+
+    def test_mriot_file_name(self):
+        self.assertEqual(mriot_file_name("EXIOBASE3", 2015), "IOT_2015_ixi.zip")
+        self.assertEqual(mriot_file_name("WIOD16", 2016), "WIOT2016_Nov16_ROW.xlsb")
+        self.assertEqual(mriot_file_name("OECD21", 2021), "ICIO2021_2021.csv")
+        with self.assertRaises(ValueError):
+            mriot_file_name("Unknown", 2020)
+
+    def test_read_wiod(self):
         """Test reading of wiod table."""
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
 
-        self.assertAlmostEqual(sup.mriot_data[0, 0], 12924.1797, places=3)
-        self.assertAlmostEqual(sup.mriot_data[0, -1], 0, places=3)
-        self.assertAlmostEqual(sup.mriot_data[-1, 0], 0, places=3)
-        self.assertAlmostEqual(sup.mriot_data[-1, -1], 22.222, places=3)
+        file_loc = MRIOT_DIRECTORY / "WIOTtest_Nov16_ROW.xlsb"
+        mriot_df = pd.read_excel(file_loc, engine="pyxlsb")
+        Z, _, x = parse_mriot_from_df(
+            mriot_df, col_iso3=2, col_sectors=1, rows_data=(5, 117), cols_data=(4, 116)
+        )
+        mriot = pymrio.IOSystem(Z=Z, x=x)
 
-        self.assertAlmostEqual(sup.mriot_data[0, 0],
-                               sup.mriot_data[sup.reg_pos[list(sup.reg_pos)[0]][0],
-                                              sup.reg_pos[list(sup.reg_pos)[0]][0]],
-                               places=3)
-        self.assertAlmostEqual(sup.mriot_data[-1, -1],
-                               sup.mriot_data[sup.reg_pos[list(sup.reg_pos)[-1]][-1],
-                                              sup.reg_pos[list(sup.reg_pos)[-1]][-1]],
-                               places=3)
-        self.assertEqual(np.shape(sup.mriot_data), (112, 112))
-        self.assertAlmostEqual(sup.total_prod.sum(), 3533367.89439, places=3)
+        sup = SupplyChain(mriot)
 
-    def calc_sector_direct_impact(self):
-        """Test running direct impact calculations."""
+        self.assertAlmostEqual(sup.mriot.Z.iloc[0, 0], 12924.1797, places=3)
+        self.assertAlmostEqual(sup.mriot.Z.iloc[0, -1], 0, places=3)
+        self.assertAlmostEqual(sup.mriot.Z.iloc[-1, 0], 0, places=3)
+        self.assertAlmostEqual(sup.mriot.Z.iloc[-1, -1], 22.222, places=3)
 
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
+        self.assertAlmostEqual(
+            sup.mriot.Z.iloc[0, 0],
+            sup.mriot.Z.loc[
+                (sup.mriot.get_regions()[0], sup.mriot.get_sectors()[0]),
+                (sup.mriot.get_regions()[0], sup.mriot.get_sectors()[0]),
+            ],
+            places=3,
+        )
+        self.assertAlmostEqual(
+            sup.mriot.Z.iloc[-1, -1],
+            sup.mriot.Z.loc[
+                (sup.mriot.get_regions()[-1], sup.mriot.get_sectors()[-1]),
+                (sup.mriot.get_regions()[-1], sup.mriot.get_sectors()[-1]),
+            ],
+            places=3,
+        )
+        self.assertEqual(np.shape(sup.mriot.Z), (112, 112))
+        self.assertAlmostEqual(sup.mriot.x.sum().values[0], 3533367.89439, places=3)
 
-        # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
+    def test_map_exp_to_mriot(self):
+        """Test mapping exposure to MRIOT."""
 
-        # Read demo entity values
-        # Set the entity default file to the demo one
-        exp = Exposures.from_hdf5(EXP_DEMO_H5)
-        exp.check()
-        exp.gdf.region_id = 840 #assign right id for USA
-        exp.assign_centroids(hazard)
+        mriot_iso3 = build_mock_mriot_timmer()
+        sup_iso3 = SupplyChain(mriot_iso3)
 
-        impf_tc = ImpfTropCyclone.from_emanuel_usa()
-        impf_set = ImpactFuncSet()
-        impf_set.append(impf_tc)
-        impf_set.check()
+        mriot_iso2 = build_mock_mriot_timmer(iso='iso2')
+        sup_iso2 = SupplyChain(mriot_iso2)
 
-        subsecs = list(range(10))+list(range(15,25))
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec=subsecs)
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.reg_dir_imp[0], 'USA')
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, subsecs].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[subsecs].sum(), places=3)
+        # Test a country listed in IOT, e.g. USA
+        usa_regid = 840
+        ## WIOD16
+        self.assertEqual(
+            sup_iso3.map_exp_to_mriot(usa_regid, 'WIOD16'), 'USA'
+        )
+        ## EXIOBASE3
+        self.assertEqual(
+            sup_iso2.map_exp_to_mriot(usa_regid, 'EXIOBASE3'), 'US'
+        )
+        ## OECD21
+        self.assertEqual(
+            sup_iso3.map_exp_to_mriot(usa_regid, 'OECD21'), 'USA'
+        )
+        ## Unspecified type
+        self.assertEqual(
+            sup_iso3.map_exp_to_mriot(usa_regid, ''), usa_regid
+        )
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='manufacturing')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.reg_dir_imp[0], 'USA')
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, range(4,23)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[range(4,23)].sum(), places=3)
+        # Test a non-listed country in IOT, e.g. PHL
+        phl_regid = 608
+        ## WIOD16
+        self.assertEqual(
+            sup_iso3.map_exp_to_mriot(phl_regid, 'WIOD16'), 'ROW'
+        )
+        ## EXIOBASE3
+        self.assertEqual(
+            sup_iso2.map_exp_to_mriot(phl_regid, 'EXIOBASE3'), 'ROW'
+        )
+        ## OECD21
+        self.assertEqual(
+            sup_iso3.map_exp_to_mriot(phl_regid, 'OECD21'), 'ROW'
+        )
+        ## Unspecified type
+        self.assertEqual(
+            sup_iso3.map_exp_to_mriot(phl_regid, ''), phl_regid
+        )
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='agriculture')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:,  range(0,1)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[ range(0,1)].sum(), places=3)
+    def test_calc_shock_to_sectors(self):
+        """Test sectorial exposure, impact and shock calculations."""
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='mining')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],),
-                                sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, range(3,4)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[range(3,4)].sum(), places=3)
+        mriot = build_mock_mriot_timmer()
+        sup = SupplyChain(mriot)
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set,
-                                      selected_subsec='service')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.direct_impact.shape)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                                sup.direct_impact[:, sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.direct_aai_agg.shape)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                                sup.direct_aai_agg[sup.reg_pos['USA']].sum(),
-                                places = 3)
-        self.assertAlmostEqual(sup.direct_impact.sum(),
-                               sup.direct_impact[:, range(26,56)].sum(), places=3)
-        self.assertAlmostEqual(sup.direct_aai_agg.sum(),
-                               sup.direct_aai_agg[range(26,56)].sum(), places=3)
+        # take one mriot type that supports iso-3
+        sup.mriot.meta.change_meta("name", "WIOD16-2011")
 
-    def test_calc_sector_indirect_impact(self):
-        """Test running indirect impact calculations."""
+        exp, imp = dummy_exp_imp()
+        sup.calc_shock_to_sectors(exp, imp)
 
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
+        # Check that events_date are correctly set.
+        np.testing.assert_array_equal(
+            sup.events_date, imp.date
+        )
 
-        # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
+        # Test sec exposure, impact and shock for one country (e.g. USA) and all sectors
+        reg_id = 840
+        reg_iso3 = 'USA'
+        frac_per_sec = sup.mriot.x.loc[reg_iso3].values.T / sup.mriot.x.loc[reg_iso3].sum().values
 
-        # Read demo entity values
-        # Set the entity default file to the demo one
-        exp = Exposures.from_hdf5(EXP_DEMO_H5)
-        exp.check()
-        exp.gdf.region_id = 840 #assign right id for USA
-        exp.assign_centroids(hazard)
+        # Test sectorial exposure
+        exp_cnt = exp.gdf[exp.gdf.region_id == reg_id].value.sum()
+        expected_secs_exp = exp_cnt * frac_per_sec
 
-        impf_tc = ImpfTropCyclone.from_emanuel_usa()
-        impf_set = ImpactFuncSet()
-        impf_set.append(impf_tc)
-        impf_set.check()
+        np.testing.assert_array_equal(
+            sup.secs_exp[reg_iso3].values, expected_secs_exp
+        )
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set)
-        sup.calc_indirect_impact(io_approach='ghosh')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.indirect_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.indirect_aai_agg.shape)
-        self.assertAlmostEqual(sup.mriot_data.shape, sup.io_data['inverse'].shape)
-        self.assertAlmostEqual(sup.io_data['risk_structure'].shape,
-                               (sup.mriot_data.shape[0], sup.mriot_data.shape[1],
-                                sup.years.shape[0]))
-        self.assertAlmostEqual('ghosh', sup.io_data['io_approach'])
+        # Test sectorial impact
+        imp_cnt = imp.imp_mat.todense()[:,exp.gdf.region_id == reg_id]
+        expected_secs_imp = imp_cnt * frac_per_sec
 
-        sup.calc_indirect_impact(io_approach='leontief')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.indirect_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.indirect_aai_agg.shape)
-        self.assertAlmostEqual(sup.mriot_data.shape, sup.io_data['inverse'].shape)
-        self.assertAlmostEqual(sup.io_data['risk_structure'].shape,
-                               (sup.mriot_data.shape[0], sup.mriot_data.shape[1],
-                                sup.years.shape[0]))
-        self.assertAlmostEqual('leontief', sup.io_data['io_approach'])
+        np.testing.assert_array_equal(
+            sup.secs_imp[reg_iso3].values, expected_secs_imp
+        )
 
-        sup.calc_indirect_impact(io_approach='eeioa')
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.indirect_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.indirect_aai_agg.shape)
-        self.assertAlmostEqual(sup.mriot_data.shape, sup.io_data['inverse'].shape)
-        self.assertAlmostEqual(sup.io_data['risk_structure'].shape,
-                               (sup.mriot_data.shape[0], sup.mriot_data.shape[1],
-                                sup.years.shape[0]))
-        self.assertAlmostEqual('eeioa', sup.io_data['io_approach'])
+        # Test sectorial shock with default shock factor
+        expected_secs_shock = expected_secs_imp / expected_secs_exp
 
-    def test_calc_sector_total_impact(self):
-        """Test running total impact calculations."""
-        sup = SupplyChain()
-        sup.read_wiod16(year='test',
-                        range_rows=(5,117),
-                        range_cols=(4,116),
-                        col_iso3=2, col_sectors=1)
+        np.testing.assert_array_equal(
+            sup.secs_shock[reg_iso3].values, expected_secs_shock
+        )
 
-        # Tropical cyclone over Florida and Caribbean
-        hazard = Hazard.from_mat(self.HAZ_TEST_MAT)
+        # Test sectorial shock with user-defined shock factor
+        shock_factor = pd.DataFrame(np.array([1,2,3,4,5,6])*0.1,
+                                    index=sup.mriot.x.index)
+        sup.calc_shock_to_sectors(exp, imp, shock_factor = shock_factor.values.flatten())
 
-        # Read demo entity values
-        # Set the entity default file to the demo one
-        exp = Exposures.from_hdf5(EXP_DEMO_H5)
-        exp.check()
-        exp.gdf.region_id = 840 #assign right id for USA
-        exp.assign_centroids(hazard)
+        expected_secs_shock = np.array(expected_secs_imp /
+                                       expected_secs_exp) * shock_factor.loc[reg_iso3].values.T
 
-        impf_tc = ImpfTropCyclone.from_emanuel_usa()
-        impf_set = ImpactFuncSet()
-        impf_set.append(impf_tc)
-        impf_set.check()
+        np.testing.assert_array_equal(
+            sup.secs_shock[reg_iso3].values, expected_secs_shock
+        )
 
-        sup.calc_sector_direct_impact(hazard, exp, impf_set)
-        sup.calc_indirect_impact(io_approach='ghosh')
-        sup.calc_total_impact()
+        # Test sec exposure, impact and shock for one country (e.g. USA)
+        # assuming only one sector is impacted (e.g. Services)
+        aff_sec = 'Services'
+        sup.calc_shock_to_sectors(exp, imp, impacted_secs=aff_sec)
 
-        self.assertAlmostEqual((sup.years.shape[0], sup.mriot_data.shape[0]),
-                                sup.total_impact.shape)
-        self.assertAlmostEqual((sup.mriot_data.shape[0],), sup.total_aai_agg.shape)
+        # Test sectorial exposure - since it's only one sector, frac is 1
+        frac_exp_per_sec = np.array([1])
+        expected_secs_exp = exp_cnt * frac_exp_per_sec
+
+        np.testing.assert_array_equal(
+            sup.secs_exp[reg_iso3, aff_sec].values, expected_secs_exp
+        )
+
+        # Test sectorial impact
+        frac_imp_per_sec =  np.array([1])
+        expected_secs_imp = np.array(imp_cnt).flatten() * frac_imp_per_sec
+        np.testing.assert_array_equal(
+            sup.secs_imp[reg_iso3, aff_sec].values, expected_secs_imp
+        )
+
+        # Test sec exposure, impact and shock for one country (e.g. USA)
+        # assuming a range of sector is impacted
+        aff_sec = np.array([0,1])
+        sup.calc_shock_to_sectors(exp, imp, impacted_secs=aff_sec)
+
+        # Test sectorial exposure
+        indus_aff = pd.IndexSlice[reg_iso3, mriot.get_sectors()[aff_sec]]
+        frac_exp_per_sec = sup.mriot.x.loc[indus_aff,:].values.T / sup.mriot.x.loc[indus_aff,:].sum().values
+        frac_imp_per_sec = frac_exp_per_sec
+        expected_secs_exp = exp_cnt * frac_exp_per_sec
+
+        np.testing.assert_array_equal(
+            sup.secs_exp.loc[:,indus_aff].values,
+            expected_secs_exp
+        )
+
+        # Test sectorial impact
+        expected_secs_imp = (np.array(imp_cnt) * frac_imp_per_sec)
+
+        np.testing.assert_array_equal(
+            sup.secs_imp.loc[:,indus_aff].values,
+            expected_secs_imp
+        )
+        with self.assertWarns(Warning):
+            sup.calc_shock_to_sectors(exp, imp, impacted_secs=aff_sec, shock_factor=5)
+
+    def test_calc_impacts_unknown(self):
+        """Test running indirect impact calculations with unknown approach."""
+        mriot = build_mock_mriot_timmer()
+        sup = SupplyChain(mriot)
+        with self.assertRaises(KeyError):
+            sup.calc_impacts(io_approach="xx")
+
+    def test_calc_impacts(self):
+        """Test running indirect impact calculations with ghosh, leontief"""
+
+        mriot = build_mock_mriot_timmer()
+        sup = SupplyChain(mriot)
+
+        # take one mriot type that supports iso-3
+        sup.mriot.meta.change_meta("name", "WIOD16-2011")
+
+        # Test shock is computed if not given
+        reg_id = 840
+        reg_iso3 = "USA"
+        aff_sec = "Services"
+        exp, imp = dummy_exp_imp()
+        imp_cnt = imp.imp_mat.todense()[:,exp.gdf.region_id == reg_id]
+        sup.calc_impacts(io_approach="ghosh", exposure=exp, impact=imp, impacted_secs=aff_sec)
+        frac_imp_per_sec =  np.array([1])
+        expected_secs_imp = np.array(imp_cnt).flatten() * frac_imp_per_sec
+        np.testing.assert_array_equal(
+            sup.secs_imp[reg_iso3, aff_sec].values, expected_secs_imp
+        )
+
+        # apply 20 % shock to Service sector in the USA
+        shock = pd.DataFrame(
+                            np.array([[0.2, 0, 0, 0, 0, 0]]),
+                            columns=sup.mriot.x.index
+                            )
+        sup.secs_shock = shock
+
+        # calc prod losses according to ghosh
+        sup.calc_impacts(io_approach="ghosh")
+
+        # manually build a 20% loss in value added
+        # to the USA service sector
+        delta_v = np.array([[570., 0, 0, 0, 0, 0]])
+
+        # the expected shock is then the dot product
+        # of the value added loss and the ghosh inverse
+        expected_prod_loss = sup.inverse['ghosh'].dot(delta_v.T)
+
+        np.testing.assert_array_equal(
+            sup.supchain_imp['ghosh'].round(0).values,
+            expected_prod_loss.round(0).T
+            )
+
+        # calc prod losses according to leontief
+        sup.calc_impacts(io_approach="leontief")
+
+        # manually build a 20% loss in demand
+        # to the USA service sector
+        delta_y = np.array([344., 0, 0, 0, 0, 0])
+
+        # the expected shock is then the dot product
+        # of the demand loss and the leontief inverse
+        expected_prod_loss = sup.inverse['leontief'].dot(delta_y)
+
+        np.testing.assert_array_equal(
+            sup.supchain_imp['leontief'].round(0).values.flatten(),
+            expected_prod_loss.round(0)
+            )
+
+
+class TestSupplyChain_boario(unittest.TestCase):
+    """Test running indirect impact calculations with boario."""
+
+    def setUp(self) -> None:
+        self.mriot = build_mock_mriot_miller()
+        self.mriot.unit = "M.USD"
+        self.sup = SupplyChain(self.mriot)
+        self.exp, self.imp = dummy_exp_imp()
+        self.sup.mriot.meta.change_meta("name", "WIOD16-2011")
+        self.sup.calc_shock_to_sectors(exposure=self.exp,impact=self.imp)
+
+    def test_calc_impacts_boario_unknown(self):
+        with self.assertRaises(RuntimeError):
+            self.sup.calc_impacts("boario", boario_type="xx")
+
+        with self.assertRaises(RuntimeError):
+            self.sup.calc_impacts("boario", boario_aggregate="xx")
+
+
+    def test_calc_impacts_boario_recovery_no_param(self):
+        """Test running without params."""
+
+        # We check that at least one warning is raised when
+        # called without parameters.
+        with self.assertWarns(Warning):
+            self.sup.calc_impacts("boario")
+
+        # Check capital vector is self.secs_exp
+        np.testing.assert_array_equal(
+            self.sup.sim.model.k_stock,
+            self.sup.secs_exp.sort_index(axis=1).values.flatten()
+        )
+
+        # Check monetary factor
+        self.assertEqual(
+            self.sup.conversion_factor(),
+            1e6
+        )
+        self.assertEqual(
+            self.sup.sim.model.monetary_factor,
+            self.sup.conversion_factor()
+        )
+
+        # Check n_temporal_units_to_sim
+        max_date = int(self.sup.events_date.max()-self.sup.events_date.min()+365)
+        self.assertEqual(
+            self.sup.sim.n_temporal_units_to_sim,
+            max_date
+        )
+
+        # Check size of all_events
+        self.assertEqual(
+            len(self.sup.sim.all_events),
+            self.sup.secs_shock.shape[0]
+        )
+
+        ## Check correctness
+        expected_results=pd.read_csv(pathlib.Path(__file__).parent.joinpath("data/mock_boario_results_recovery_agg.csv"), index_col=0, header=[0,1])
+        pd.testing.assert_frame_equal(
+            self.sup.supchain_imp['boario_recovery_agg'],
+            expected_results
+        )
+
+    def test_calc_impacts_boario_rebuilding_missing(self):
+        """Test running without params."""
+
+        # We check that at least one warning is raised when
+        # called without parameters.
+        with self.assertRaises(ValueError):
+            self.sup.calc_impacts("boario", boario_type="rebuild")
+        with self.assertRaises(TypeError):
+            self.sup.calc_impacts("boario",
+                              boario_type="rebuild",
+                              boario_params={"event":{
+                                  "rebuilding_sectors":{"Manuf. & Const.":1},
+                              }
+                                             })
+
+    def test_calc_impacts_boario_rebuilding_no_param(self):
+        """Test running without params."""
+
+        # We check that at least one warning is raised when
+        # called without parameters.
+        self.sup.calc_impacts("boario",
+                              boario_type="rebuild",
+                              boario_params={"event":{
+                                  "rebuilding_sectors":{"Manuf. & Const.":1},
+                                  "rebuild_tau":365,
+                              }
+                                             })
+
+        # Check capital vector is self.secs_exp
+        np.testing.assert_array_equal(
+            self.sup.sim.model.k_stock,
+            self.sup.secs_exp.sort_index(axis=1).values.flatten()
+        )
+
+        # Check monetary factor
+        self.assertEqual(
+            self.sup.conversion_factor(),
+            1e6
+        )
+        self.assertEqual(
+            self.sup.sim.model.monetary_factor,
+            self.sup.conversion_factor()
+        )
+
+        # Check n_temporal_units_to_sim
+        max_date = int(self.sup.events_date.max()-self.sup.events_date.min()+365)
+        self.assertEqual(
+            self.sup.sim.n_temporal_units_to_sim,
+            max_date
+        )
+
+        # Check size of all_events
+        self.assertEqual(
+            len(self.sup.sim.all_events),
+            self.sup.secs_shock.shape[0]
+        )
+
+        ## Check warnings
+        ## Check correctness
+        expected_results=pd.read_csv(pathlib.Path(__file__).parent.joinpath("data/mock_boario_results_rebuild_agg.csv"), index_col=0, header=[0,1])
+        pd.testing.assert_frame_equal(
+            self.sup.supchain_imp['boario_rebuild_agg'],
+            expected_results
+        )
+
+    def test_calc_impacts_boario_rebuilding_sep(self):
+        """Test running without params."""
+
+        # We check that at least one warning is raised when
+        # called without parameters.
+        self.sup.calc_impacts("boario",
+                              boario_type="rebuild",
+                              boario_aggregate="sep",
+                              boario_params={"event":{
+                                  "rebuilding_sectors":{"Manuf. & Const.":1},
+                                  "rebuild_tau":365,
+                              }
+                                             })
+
+        ## Check
+        expected_results=pd.read_csv(pathlib.Path(__file__).parent.joinpath("data/mock_boario_results_rebuild_sep.csv"), index_col=[0,1], header=[0,1])
+        pd.testing.assert_frame_equal(
+            pd.concat(self.sup.supchain_imp['boario_rebuild_sep'],keys=range(2)),
+            expected_results
+        )
 
 ## Execute Tests
 if __name__ == "__main__":

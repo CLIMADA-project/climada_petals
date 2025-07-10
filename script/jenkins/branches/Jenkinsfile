@@ -1,31 +1,31 @@
 pipeline {
   agent any
 
+  environment {
+    FULL_PATH_BRANCH = "${sh(script:'git name-rev --name-only HEAD', returnStdout: true)}"
+    GIT_BRANCH = FULL_PATH_BRANCH.substring(FULL_PATH_BRANCH.lastIndexOf('/') + 1, FULL_PATH_BRANCH.length() - 1)
+  }
+
   stages {
+    stage('setup-environment') {
+      steps {
+        sh "bash script/jenkins/branches/setup_venv.sh ${env.GIT_BRANCH}"
+      }
+    }
     stage('ci') {
       parallel {
 
         stage('lint') {
           steps {
-            sh '''#!/bin/bash
-            export PATH=$PATH:$CONDAPATH
-            source activate petals_env
-            rm -f pylint.log
-            pylint -ry climada_petals | tee pylint.log'''
-
+            sh "bash script/jenkins/branches/make_in_venv.sh ${env.GIT_BRANCH} lint"
+            discoverGitReferenceBuild referenceJob: 'petals_branches/develop'
             recordIssues tools: [pyLint(pattern: 'pylint.log')]
           }
         }
 
         stage('unit_test') {
           steps {
-            sh '''#!/bin/bash
-            export PATH=$PATH:$CONDAPATH
-            source activate petals_env
-            rm -rf tests_xml/
-            python -m coverage run tests_runner.py unit
-            python -m coverage xml -o coverage.xml
-            python -m coverage html -d coverage'''
+            sh "bash script/jenkins/branches/make_in_venv.sh ${env.GIT_BRANCH} unit_test"
           }
         }
 
@@ -36,7 +36,17 @@ pipeline {
   post {
     always {
       junit 'tests_xml/*.xml'
-      cobertura coberturaReportFile: 'coverage.xml'
+      recordCoverage(
+        qualityGates: [[
+          baseline: 'PROJECT_DELTA',
+          metric: 'LINE',
+          threshold: 0.0
+        ]],
+        tools: [[
+          parser: 'COBERTURA',
+          pattern: 'coverage.xml'
+        ]]
+      )
     }
   }
 }

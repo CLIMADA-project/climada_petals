@@ -26,7 +26,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import scipy as sp
-from climada.entity.tag import Tag
 import climada.util.coordinates as u_coord
 from climada.util.constants import RIVER_FLOOD_REGIONS_CSV, SYSTEM_DIR
 from climada.entity import Exposures, INDICATOR_IMPF
@@ -56,7 +55,7 @@ class GDP2Asset(Exposures):
             path to exposure dataset (ISIMIP)
         """
         gdp2a_list = []
-        tag = Tag()
+        description = ''
 
         if path is None:
             raise NameError('No path for exposure data set')
@@ -75,18 +74,17 @@ class GDP2Asset(Exposures):
             for cntr_ind in range(len(countries)):
                 gdp2a_list.append(self._set_one_country(countries[cntr_ind],
                                                         ref_year, path))
-                tag.description += ("{} GDP2Asset \n").\
+                description += ("{} GDP2Asset \n").\
                     format(countries[cntr_ind])
         except KeyError as err:
             raise KeyError(f'Exposure countries: {countries} or reg {reg} could not be set, '
                            f'check ISO3 or reference year {ref_year}') from err
 
-        tag.description += 'GDP2Asset ' + str(self.ref_year)
+        description += 'GDP2Asset ' + str(self.ref_year)
         Exposures.__init__(
             self,
             data=Exposures.concat(gdp2a_list).gdf,
             ref_year=ref_year,
-            tag=tag,
             value_unit='USD'
         )
 
@@ -94,8 +92,8 @@ class GDP2Asset(Exposures):
         res = 0.0416666
 
         rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-            (self.gdf.longitude.min(), self.gdf.latitude.min(),
-             self.gdf.longitude.max(), self.gdf.latitude.max()), res)
+            (self.longitude.min(), self.latitude.min(),
+             self.longitude.max(), self.latitude.max()), res)
         self.meta = {'width': cols, 'height': rows, 'crs': self.crs,
                      'transform': ras_trans}
 
@@ -132,13 +130,16 @@ class GDP2Asset(Exposures):
         reg_id_info = np.full((len(assets),), reg_id)
         impf_rf_info = np.full((len(assets),), impf_rf)
 
-        exp_gdpasset = GDP2Asset()
-        exp_gdpasset.gdf['value'] = assets
-        exp_gdpasset.gdf['latitude'] = coord[:, 0]
-        exp_gdpasset.gdf['longitude'] = coord[:, 1]
-        exp_gdpasset.gdf[INDICATOR_IMPF + DEF_HAZ_TYPE] = impf_rf_info
-        exp_gdpasset.gdf['region_id'] = reg_id_info
-        return exp_gdpasset
+        return GDP2Asset(
+            ref_year = ref_year,
+            value = assets,
+            lat = coord[:, 0],
+            lon = coord[:, 1],
+            data = {
+                INDICATOR_IMPF + DEF_HAZ_TYPE: impf_rf_info,
+                'region_id': reg_id_info,
+            }
+        )
 
 
 def _read_GDP(shp_exposures, ref_year, path=None):

@@ -24,9 +24,9 @@ import zipfile
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from shapely.geometry import Point
 
 from climada import CONFIG
-from climada.entity.tag import Tag
 from climada.entity.exposures.base import Exposures, INDICATOR_IMPF
 from climada.util.files_handler import download_file
 from climada.util.constants import SYSTEM_DIR
@@ -67,6 +67,8 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
     - 0 if country not found in UNSD.
     - -1 for water
     """
+
+    _metadata = Exposures._metadata + ['spam_file']
 
     def init_spam_agrar(self, **parameters):
         """initiates agriculture exposure from SPAM data:
@@ -152,12 +154,11 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
             i_1 = 7  # get sum over all crops (columns 7 to 48)
             i_2 = 49
         self.gdf['value'] = data.iloc[:, i_1:i_2].sum(axis=1).values
-        self.gdf['latitude'] = lat.values
-        self.gdf['longitude'] = lon.values
+        self.gdf['geometry'] = [Point(x,y) for x,y in zip(lon.values, lat.values)]
         LOGGER.info('Lat. range: {:+.3f} to {:+.3f}.'.format(
-            np.min(self.gdf.latitude), np.max(self.gdf.latitude)))
+            np.min(self.gdf.geometry.y), np.max(self.gdf.geometry.y)))
         LOGGER.info('Lon. range: {:+.3f} to {:+.3f}.'.format(
-            np.min(self.gdf.longitude), np.max(self.gdf.longitude)))
+            np.min(self.gdf.geometry.x), np.max(self.gdf.geometry.x)))
 
         # set region_id (numeric ISO3):
         country_id = data.loc[:, 'iso3']
@@ -170,17 +171,14 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
                 region_id[i] = u_coord.country_to_iso(country_id.iloc[i], "numeric")
         self.gdf['region_id'] = region_id
         self.ref_year = 2005
-        self.tag = Tag()
-        self.tag.description = ("SPAM agrar exposure for variable "
-                                + spam_v + " and technology " + spam_t)
+        self.description = (f"SPAM agrar exposure for variable {spam_v}"
+                            f" and technology {spam_t}")
+        self.spam_file = f"{FILENAME_SPAM}_{spam_v}_{spam_t}.csv"
 
         # if impact id variation iiv = 1, assign different damage function ID
         # per technology type.
         self._set_impf(spam_t, haz_type)
 
-        self.tag.file_name = (FILENAME_SPAM + '_' + spam_v + '_' + spam_t + '.csv')
-#        self.tag.shape = cntry_info[2]
-        #self.tag.country = cntry_info[1]
         if spam_v in ('A', 'H'):
             self.value_unit = 'Ha'
         elif spam_v == 'Y':
@@ -191,7 +189,7 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
             self.value_unit = 'USD'
 
         LOGGER.info('Total {} {} {}: {:.1f} {}.'.format(
-            spam_v, spam_t, region, self.gdf.value.sum(), self.value_unit))
+            spam_v, spam_t, region, self.value.sum(), self.value_unit))
         self.check()
 
     def _set_impf(self, spam_t, haz_type):
@@ -202,31 +200,24 @@ https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DHXBJX
         iiv = 0
         if spam_t == 'TA':
             self.gdf[INDICATOR_IMPF + haz_type] = 1
-            self.tag.description = self.tag.description + '. '\
-            + 'all technologies together, ie complete crop'
+            self.description += "\nall technologies together, ie complete crop"
         elif spam_t == 'TI':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'irrigated portion of crop'
+            self.description += "\nirrigated portion of crop"
         elif spam_t == 'TH':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 2 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed high inputs portion of crop'
+            self.description += "\nrainfed high inputs portion of crop"
         elif spam_t == 'TL':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 3 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed low inputs portion of crop'
+            self.description += "\nrainfed low inputs portion of crop"
         elif spam_t == 'TS':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 4 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed subsistence portion of crop'
+            self.description += "\nrainfed subsistence portion of crop"
         elif spam_t == 'TR':
             self.gdf[INDICATOR_IMPF + haz_type] = 1 + 5 * iiv
-            self.tag.description = self.tag.description + '. '\
-            + 'rainfed portion of crop (= TA - TI)'
+            self.description += "\nrainfed portion of crop (= TA - TI)"
         else:
             self.gdf[INDICATOR_IMPF + haz_type] = 1
-        self.set_geometry_points()
 
     def _read_spam_file(self, **parameters):
         """Reads data from SPAM CSV file and cuts out the data for the

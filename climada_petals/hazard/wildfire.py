@@ -387,7 +387,7 @@ def get_CLIMADA_centr(**kwargs):
    
     
     
-    """VISIBLE METHODS OF DEPRECATED FORMER MODULE"""
+"""VISIBLE METHODS OF DEPRECATED FORMER MODULE"""
     class FirmsParams():
             LOGGER.warning(
                 "The wildfire module described in Lüthi et al. (2021) has"
@@ -408,12 +408,6 @@ def get_CLIMADA_centr(**kwargs):
                 "been depracted. To reproduce data with the previous calculation,"
                 "use CLIMADA v6.0.1 or less.",
             )
-
-    def set_hist_fire_FIRMS(self, *args, **kwargs):
-        """This function is deprecated, use WildFire.from_hist_fire_FIRMS instead."""
-        LOGGER.warning("The use of WildFire.set_hist_fire_FIRMS is deprecated."
-                        "Use WildFire.from_hist_fire_FIRMS .")
-        self.__dict__ = WildFire.from_hist_fire_FIRMS(*args, **kwargs).__dict__
 
     @classmethod
     def from_hist_fire_seasons_FIRMS(cls, df_firms, centr_res_factor=1.0,
@@ -442,6 +436,7 @@ def get_CLIMADA_centr(**kwargs):
                 "use CLIMADA v6.0.1 or less.",
             )
 
+
     def combine_fires(self, event_id_merge=None, remove_rest=False,
                       probabilistic=False):
             LOGGER.warning(
@@ -452,6 +447,7 @@ def get_CLIMADA_centr(**kwargs):
 
     def summarize_fires_to_seasons(self, year_start=None, year_end=None,
                                    hemisphere=None):
+
             LOGGER.warning(
                 "The wildfire module described in Lüthi et al. (2021) has"
                 "been depracted. To reproduce data with the previous calculation,"
