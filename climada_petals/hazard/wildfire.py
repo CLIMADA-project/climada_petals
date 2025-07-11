@@ -93,7 +93,8 @@ class WildFire(Hazard):
     
     """HOTSPOT-BASED HAZARD SET"""
     @staticmethod
-    def assign_HS_2_centroids(HS_directory, centroids, output_csv='HS_assigned.csv'):
+    def assign_HS_2_centroids(HS_directory, centroids, 
+                              output_csv='HS_assigned.csv', **kwargs):
         """
         Create one CSV file with all hotspot detections. Add one column with the
         centroid closest to each detection. 
@@ -106,6 +107,9 @@ class WildFire(Hazard):
             CLIMADA centroid object to map the hotspots on.
         output_csv : str, optional
             Name for the output CSV. The default is 'HS_assigned.csv'.
+        **kwargs: dict, optional
+            Keyword arguments to be passed on to match_coordinates; e.g. 
+            distance threshold (default 100km).
 
         Returns
         -------
@@ -122,19 +126,20 @@ class WildFire(Hazard):
 
             df = pd.read_csv(file)
             
-            #get coordinate
+            # Get coordinates
             coords_hs = np.vstack((df['latitude'], df['longitude'])).T
             coords = np.ascontiguousarray(coords_hs, dtype='float64')
-            assigned_coord = u_coord.match_coordinates(coords, target)
+            assigned_coord = u_coord.match_coordinates(coords, target, **kwargs)
             
-            #extract relevant columns
+            # Extract relevant columns
             dataframe = df[['frp', 'acq_date']]
             dataframe['centroid'] = assigned_coord
             
-            #drop rows of unassigned hotspots
+            # Drop rows of unassigned hotspots
             dataframe = dataframe.dropna()
-
+            
             if idx == 0:
+                # Create CSV file
                 dataframe.to_csv(output_csv, index=False)
             else:
                 # Append to the CSV file
@@ -166,7 +171,7 @@ class WildFire(Hazard):
         return sorted(csv_file_paths)
     
     @staticmethod
-    def assign_march_feb_season_HS(df):
+    def _assign_march_feb_season_HS(df):
         df['season_start_year'] = df.apply(lambda row: row['year'] if row['month'] >= 3 else row['year'] - 1, axis=1)
     
         season_month_counts = df.groupby('season_start_year')['month'].nunique()
@@ -188,7 +193,7 @@ class WildFire(Hazard):
         
         return df, time_array
 
-        
+    @staticmethod
     def _seasonal_assignment(dates, list_sparse_m):
         # 1. Filter to only full March–Feb seasons
     
@@ -248,7 +253,7 @@ class WildFire(Hazard):
             event_name = None
             
         elif temporal_scale == 'season':
-            dataframe, time_array = WildFire.assign_march_feb_season_HS(dataframe)
+            dataframe, time_array = WildFire._assign_march_feb_season_HS(dataframe)
             start_year = dataframe['season_start_year'].min()
             group_by = ['season', 'centroid']
             event_name = dataframe['season']
@@ -291,13 +296,13 @@ class WildFire(Hazard):
 
 
     
-    @classmethod
-    def sum_haz_per_timestep(self, timestep, filename=None):
+    def aggregate_temporaly(self, timestep, filename=None):
         """Aggregate in time"""
         
         cls = self.__class__
     
         dates0 = [datetime.datetime.fromordinal(date) for date in self.date]
+        
         # event_id, name und date funktioniert noch nicht!
         if timestep == 'year':
             dates = [datetime.date(date.year, 1, 1).toordinal() for date in dates0]
@@ -311,12 +316,12 @@ class WildFire(Hazard):
             [valid_dates0, season_years, 
              time_array, event_name, 
              list_valid_m] = WildFire._seasonal_assignment(dates0, 
-                                                            [self.intensity])#, 
-                                                            # self.fraction])
+                                                            [self.intensity, 
+                                                            self.fraction])
         
             # 4. Replace haz.intensity and fraction with trimmed version for aggregation
             self.intensity = list_valid_m[0]
-            # self.fraction = list_valid_m[1]
+            self.fraction = list_valid_m[1]
     
             
         elif timestep == 'month': 
@@ -326,26 +331,24 @@ class WildFire(Hazard):
                           freq='M')
             event_name = time_array.strftime("%Y-%m").tolist()
             
-        
         unique_tst, unique_idx = np.unique(dates, return_index=True)
         all_unique_tstp = np.append(unique_idx, (len(dates)-1))
     
         new_intensity = []
-        # new_fraction = []
+        new_fraction = []
         nr_tstp = len(unique_idx)
         for idx in range(nr_tstp):
-            # new_intensity.append(sp.sparse.csr_matrix(np.max(self.intensity[
-            #     all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
             new_intensity.append(sp.sparse.csr_matrix(np.max(self.intensity[
                 all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
-            # new_fraction.append(sp.sparse.csr_matrix(np.sum(self.fraction[
-            #     all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
+            new_fraction.append(sp.sparse.csr_matrix(np.sum(self.fraction[
+                all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
         
         intensity2 = sp.sparse.vstack(new_intensity).tocsr()
-        # fraction2 = sp.sparse.vstack(new_fraction).tocsr()
+        fraction2 = sp.sparse.vstack(new_fraction).tocsr()
+        fraction2[fraction2.fraction>1] = 1
         
         haz_year = cls.create_wf_haz(intensity2, self.centroids, time_array, 
-                                         # fraction=fraction2, 
+                                         fraction=fraction2, 
                                          units='', 
                                          event_name=event_name)
         
