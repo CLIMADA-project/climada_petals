@@ -33,6 +33,7 @@ from scipy.sparse import dok_matrix
 import xarray as xr
 import calendar
 import gc
+from tqdm import tqdm
 
 from climada.hazard.base import Hazard
 import climada.util.dates_times as u_dates
@@ -117,11 +118,10 @@ class WildFire(Hazard):
         target = np.ascontiguousarray(target_coord, dtype='float64')
     
         csv_file_paths = WildFire._get_csv_file_paths(HS_directory)
+                
+        for idx, file in tqdm(enumerate(csv_file_paths), total=len(csv_file_paths), desc="Processing"):
+
         
-        #LOOP OVER EVERY COUNTRY AND YEAR
-        for idx, file in enumerate(csv_file_paths):
-            print(f"Percentage processed: {((idx+1)/len(csv_file_paths)*100):.2f}%")
-            
             df = pd.read_csv(file)
             
             #get coordinate
@@ -136,6 +136,8 @@ class WildFire(Hazard):
             else:
                 # Append to the CSV file
                 df.to_csv(output_csv, mode='a', header=False, index=False)
+            
+            pass
     
     @staticmethod
     def _get_csv_file_paths(directory):
