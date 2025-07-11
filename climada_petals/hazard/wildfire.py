@@ -32,7 +32,6 @@ import scipy as sp
 from scipy.sparse import dok_matrix
 import xarray as xr
 import calendar
-import gc
 from tqdm import tqdm
 
 from climada.hazard.base import Hazard
@@ -66,7 +65,7 @@ class WildFire(Hazard):
     
     
     @classmethod
-    def create_wf_haz(cls, intensity, centroids, dates, units='', event_name=None):
+    def create_wf_haz(intensity, centroids, dates, units='', event_name=None):
         #dates as datetime.datetime object
        
         n_ev, n_centroids = intensity.shape
@@ -80,7 +79,7 @@ class WildFire(Hazard):
         
         frequency = np.ones(n_ev)/n_ev
         
-        haz = cls(haz_type=HAZ_TYPE,
+        haz = Hazard(haz_type=HAZ_TYPE,
                     intensity=intensity,
                     centroids=centroids,  
                     units=units,
@@ -121,7 +120,6 @@ class WildFire(Hazard):
                 
         for idx, file in tqdm(enumerate(csv_file_paths), total=len(csv_file_paths), desc="Processing"):
 
-        
             df = pd.read_csv(file)
             
             #get coordinate
@@ -129,13 +127,18 @@ class WildFire(Hazard):
             coords = np.ascontiguousarray(coords_hs, dtype='float64')
             assigned_coord = u_coord.match_coordinates(coords, target)
             
-            df['centroid'] = assigned_coord
+            #extract relevant columns
+            dataframe = df[['frp', 'acq_date']]
+            dataframe['centroid'] = assigned_coord
             
+            #drop rows of unassigned hotspots
+            dataframe = dataframe.dropna()
+
             if idx == 0:
-                df.to_csv(output_csv, index=False)
+                dataframe.to_csv(output_csv, index=False)
             else:
                 # Append to the CSV file
-                df.to_csv(output_csv, mode='a', header=False, index=False)
+                dataframe.to_csv(output_csv, mode='a', header=False, index=False)
             
             pass
     
@@ -163,39 +166,95 @@ class WildFire(Hazard):
         return sorted(csv_file_paths)
     
     @staticmethod
-    def get_season(row):
-        # Define the season based on month and year
-        year = row['year']
-        month = row['month']
-        if month >= 3:  # March to December
-            return f"{year}-{year + 1}"
-        else:  # January and February belong to previous year season
-            return f"{year - 1}-{year}"
+    def assign_march_feb_season_HS(df):
+        df['season_start_year'] = df.apply(lambda row: row['year'] if row['month'] >= 3 else row['year'] - 1, axis=1)
+    
+        season_month_counts = df.groupby('season_start_year')['month'].nunique()
+        full_seasons = season_month_counts[season_month_counts == 12].index
+    
+        df.loc[~df['season_start_year'].isin(full_seasons), 'season_start_year'] = pd.NA
+        
+
+        #drop nan values in incomplete seasons
+        df = df.dropna()
+        df['season'] = df['season_start_year'].apply(lambda y: f"{y}-{y + 1}")
+        
+        
+        start_year = df['season_start_year'].min()
+        end_year = df['season_start_year'].max()
+        # Generate season end dates (Feb 28 or 29) from start_year to end_year + 1
+        time_array = pd.to_datetime([f'{y+1}-02-28' for y in range(start_year, end_year+1)])
+        time_array = time_array.map(lambda d: d + pd.Timedelta(days=1) if d.is_leap_year else d)
+        
+        return df, time_array
+
+        
+    def _seasonal_assignment(dates, list_sparse_m):
+        # 1. Filter to only full March–Feb seasons
+    
+        # Find first March or later
+        for i_start, d in enumerate(dates):
+            if d.month == 3:
+                break
+    
+        # Find last February or earlier
+        for i_end in reversed(range(len(dates))):
+            if dates[i_end].month == 2:
+                break
+    
+        # Slice valid dates and intensity
+        valid_dates0 = dates[i_start:i_end+1]
+        list_valid_m = []
+        for matrix in list_sparse_m:
+            list_valid_m.append(matrix[i_start:i_end+1, :])
+    
+        # 2. Assign March–Feb season years
+        season_years = []
+        for d in valid_dates0:
+            season_year = d.year if d.month >= 3 else d.year - 1
+            season_years.append(datetime.date(season_year, 3, 1).toordinal())
+    
+        # dates = season_years
+    
+        # 3. Create time steps and labels
+        start_year = valid_dates0[0].year if valid_dates0[0].month >= 3 else valid_dates0[0].year - 1
+        end_year = valid_dates0[-1].year if valid_dates0[-1].month >= 3 else valid_dates0[-1].year - 1
+    
+        feb_days = [calendar.monthrange(y + 1, 2)[1] for y in range(start_year, end_year+1)]
+        time_array = pd.to_datetime([f"{y + 1}-02-{day}" for y, day in zip(range(start_year, end_year+1), feb_days)])
+        event_name = [f"{y}-{y+1}" for y in range(start_year, end_year+1)]
+        
+        return valid_dates0, season_years, time_array, event_name, list_valid_m
+    
 
     @classmethod
     def create_FRP_hazard(cls, output_csv, target_centroids, temporal_scale='month', 
                        aggregation='percentile', percentile=95):
 
+        dataframe = pd.read_csv(output_csv)
+        dataframe['acq_date'] = pd.to_datetime(dataframe['acq_date'])
         
-        dataframe = cls._read_assigned_CSV(output_csv)
-        
-        start_year = dataframe['year'].min()
-        end_year = dataframe['year'].max()
-        
-        if temporal_scale == 'monthly':
+        if temporal_scale == 'month':
+            dataframe['year'] = dataframe['acq_date'].dt.year.astype(int)
+            dataframe['month'] = dataframe['acq_date'].dt.month.astype(int)
+            #dataframe['day'] = dataframe['acq_date'].dt.day.astype(int)
             group_by = ['year', 'month', 'centroid']
+            
+            start_year = dataframe['year'].min()
+            end_year = dataframe['year'].max()
             time_array = pd.date_range(start=str(start_year)+"-01-01", 
                                        end=str(end_year+1)+"-01-01",
                           freq='M')
-        elif temporal_scale == 'seasonal':
-            dataframe['season'] = dataframe.apply(cls.get_season, axis=1)
+            event_name = None
+            
+        elif temporal_scale == 'season':
+            dataframe, time_array = WildFire.assign_march_feb_season_HS(dataframe)
+            start_year = dataframe['season_start_year'].min()
             group_by = ['season', 'centroid']
+            event_name = dataframe['season']
+        
             
-            # Generate season end dates (Feb 28 or 29) from start_year to end_year + 1
-            time_array = pd.to_datetime([f'{y+1}-02-28' for y in range(start_year, end_year+1)])
-            time_array = time_array.map(lambda d: d + pd.Timedelta(days=1) if d.is_leap_year else d)
-            
-            # Group by 'centroid' and temporal dimension and compute the aggregation metric
+        # Group by 'centroid' and temporal dimension and compute the aggregation metric
         if aggregation == 'percentile':
             grouped_percentile = dataframe.groupby(group_by)['frp'].agg(
                 lambda x: np.percentile(x, percentile)).reset_index()
@@ -215,26 +274,11 @@ class WildFire(Hazard):
 
         final_intensity = sparse.csr_matrix(matrix_hazard)
         haz_fre = cls.create_wf_haz(final_intensity, target_centroids, 
-                                    time_array, units='MW')
+                                    time_array, 'MW', event_name)
         
         return haz_fre
-    
-    @staticmethod
-    def _read_assigned_CSV(output_csv):
-        df = pd.read_csv(output_csv)
-        dataframe = df[['acq_date', 'frp', 'centroid']]
-        del df
-        gc.collect()
 
-        dataframe['acq_date'] = pd.to_datetime(dataframe['acq_date'])
-        # Extract year and month from 'acq_date'
-        dataframe['year'] = dataframe['acq_date'].dt.year
-        dataframe['month'] = dataframe['acq_date'].dt.month
-
-        return dataframe
         
-        
-    
     """Burnt area based hazard - see wildfire_tiles"""
     
 
@@ -257,52 +301,28 @@ class WildFire(Hazard):
         # event_id, name und date funktioniert noch nicht!
         if timestep == 'year':
             dates = [datetime.date(date.year, 1, 1).toordinal() for date in dates0]
-            time_array = pd.date_range(start=str(dates0[0].year)+"-01-01", end=str(dates0[-1].year+1)+"-01-01",
-                          freq='Y')
+            time_array = pd.date_range(start=str(dates0[0].year)+"-01-01", 
+                                       end=str(dates0[-1].year+1)+"-01-01",
+                                       freq='Y')
             event_name = time_array.strftime("%Y").tolist()
         
         if timestep == 'season':
-            # 1. Filter to only full March–Feb seasons
-        
-            # Find first March or later
-            for i_start, d in enumerate(dates0):
-                if d.month == 3:
-                    break
-        
-            # Find last February or earlier
-            for i_end in reversed(range(len(dates0))):
-                if dates0[i_end].month == 2:
-                    break
-        
-            # Slice valid dates and intensity
-            valid_dates0 = dates0[i_start:i_end+1]
-            valid_intensity = self.intensity[i_start:i_end+1, :]
-            valid_fraction = self.fraction[i_start:i_end+1, :]
-        
-            # 2. Assign March–Feb season years
-            season_years = []
-            for d in valid_dates0:
-                season_year = d.year if d.month >= 3 else d.year - 1
-                season_years.append(datetime.date(season_year, 3, 1).toordinal())
-        
-            dates = season_years
-        
-            # 3. Create time steps and labels
-            start_year = valid_dates0[0].year if valid_dates0[0].month >= 3 else valid_dates0[0].year - 1
-            end_year = valid_dates0[-1].year if valid_dates0[-1].month >= 3 else valid_dates0[-1].year - 1
-        
-            feb_days = [calendar.monthrange(y + 1, 2)[1] for y in range(start_year, end_year+1)]
-            time_array = pd.to_datetime([f"{y + 1}-02-{day}" for y, day in zip(range(start_year, end_year+1), feb_days)])
-            event_name = [f"{y}-{y+1}" for y in range(start_year, end_year+1)]
+            
+            [valid_dates0, season_years, 
+             time_array, event_name, 
+             list_valid_m] = WildFire._seasonal_assignment(dates0, 
+                                                            [self.intensity])#, 
+                                                            # self.fraction])
         
             # 4. Replace haz.intensity and fraction with trimmed version for aggregation
-            self.intensity = valid_intensity
-            self.fraction = valid_fraction
+            self.intensity = list_valid_m[0]
+            # self.fraction = list_valid_m[1]
     
             
         elif timestep == 'month': 
             dates = [datetime.date(date.year, date.month, 1).toordinal() for date in dates0]
-            time_array = pd.date_range(start=str(dates0[0].year)+"-01-01", end=str(dates0[-1].year+1)+"-01-01",
+            time_array = pd.date_range(start=str(dates0[0].year)+"-01-01", 
+                                       end=str(dates0[-1].year+1)+"-01-01",
                           freq='M')
             event_name = time_array.strftime("%Y-%m").tolist()
             
@@ -311,19 +331,22 @@ class WildFire(Hazard):
         all_unique_tstp = np.append(unique_idx, (len(dates)-1))
     
         new_intensity = []
-        new_fraction = []
+        # new_fraction = []
         nr_tstp = len(unique_idx)
         for idx in range(nr_tstp):
+            # new_intensity.append(sp.sparse.csr_matrix(np.max(self.intensity[
+            #     all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
             new_intensity.append(sp.sparse.csr_matrix(np.max(self.intensity[
                 all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
-            new_fraction.append(sp.sparse.csr_matrix(np.sum(self.fraction[
-                all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
+            # new_fraction.append(sp.sparse.csr_matrix(np.sum(self.fraction[
+            #     all_unique_tstp[idx]:all_unique_tstp[idx+1],:],axis=0)))
         
         intensity2 = sp.sparse.vstack(new_intensity).tocsr()
-        fraction2 = sp.sparse.vstack(new_fraction).tocsr()
+        # fraction2 = sp.sparse.vstack(new_fraction).tocsr()
         
         haz_year = cls.create_wf_haz(intensity2, self.centroids, time_array, 
-                                         fraction=fraction2, units='', 
+                                         # fraction=fraction2, 
+                                         units='', 
                                          event_name=event_name)
         
         if filename is not None:
