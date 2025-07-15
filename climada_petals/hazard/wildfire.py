@@ -50,8 +50,8 @@ AREA_MODIS_TILE = LENGTH_MODIS_TILE**2
 
 DATA_DIR = Path("Data").absolute()
 
-def input_dir(data_dir=DATA_DIR, instrument='MODIS'):
-    input_dir_path = data_dir / instrument / 'Input'
+def input_dir(data_dir=DATA_DIR):
+    input_dir_path = data_dir / 'Input'
     input_dir_path.mkdir(parents=True, exist_ok=True)
     return input_dir_path
 
