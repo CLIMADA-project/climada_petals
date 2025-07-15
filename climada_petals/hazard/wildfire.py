@@ -50,8 +50,8 @@ AREA_MODIS_TILE = LENGTH_MODIS_TILE**2
 
 DATA_DIR = Path("Data").absolute()
 
-def input_dir(data_dir=DATA_DIR):
-    input_dir_path = data_dir / 'Input'
+def input_dir(data_dir=DATA_DIR, instrument='MODIS'):
+    input_dir_path = data_dir / instrument / 'Input'
     input_dir_path.mkdir(parents=True, exist_ok=True)
     return input_dir_path
 
@@ -65,13 +65,13 @@ def output_dir(data_dir=DATA_DIR):
     output_dir_path.mkdir(parents=True, exist_ok=True)
     return output_dir_path
 
-def input_dir_hs(data_dir=DATA_DIR):
-    input_dir_hs = input_dir(data_dir) / 'Hotspots'
+def input_dir_hs(data_dir=DATA_DIR, instrument='MODIS'):
+    input_dir_hs = input_dir(data_dir) / instrument / 'Hotspots'
     return input_dir_hs
 
-def hotspot_csv_file(resolution, data_dir):
+def hotspot_csv_file(resolution, data_dir, instrument='MODIS'):
     rounded_resolution = np.round(int(resolution))
-    hotspot_csv = calc_dir(data_dir) / f'HS_assigned_{rounded_resolution}km.csv'
+    hotspot_csv = calc_dir(data_dir) / f'{instrument}-HS_assigned-centroids_{rounded_resolution}km.csv'
     return hotspot_csv
 
 
