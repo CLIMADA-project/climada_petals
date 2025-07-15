@@ -22,6 +22,7 @@ Define WildFire class.
 __all__ = ['WildFire']
 
 import logging
+import pathlib
 import numpy as np
 from scipy import sparse
 import os
@@ -30,26 +31,33 @@ from scipy.sparse import lil_matrix
 import datetime
 import scipy as sp
 from scipy.sparse import dok_matrix
-import xarray as xr
 import calendar
 from tqdm import tqdm
 
 from climada.hazard.base import Hazard
 import climada.util.dates_times as u_dates
 from climada.util import coordinates as u_coord
+
+from climada.util.constants import ONE_LAT_KM
 from climada.util.api_client import Client
 
 LENGTH_MODIS_TILE = 0.46331271653 #km documentation:463.31271653m
 AREA_MODIS_TILE = LENGTH_MODIS_TILE**2
 
+def get_hotspot_csv(resolution):
+    rounded_resolution = np.round(resolution)
+    HOTSPOT_CSV = f'HS_assigned{rounded_resolution}km.csv'
+    return HOTSPOT_CSV
+
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.info("The wildfire module has been updated. The former module described"
-"in Lüthi et al. (2021) has been depracted. To reproduce data with"
-"the previous calculation, use CLIMADA v6.0.1 or less.")
+"in Lüthi et al. (2021) has been depracated. To reproduce data with"
+"the previous methods, use CLIMADA v6.0.1 or less.")
 
 HAZ_TYPE = 'WF'
 """ Hazard type acronym for Wild Fire"""
+
 
 class WildFire(Hazard):
 
@@ -65,7 +73,7 @@ class WildFire(Hazard):
     
     
     @classmethod
-    def create_wf_haz(intensity, centroids, dates, units='', event_name=None):
+    def create_wf_haz(intensity, centroids, dates, event_name=None, units=''):
         #dates as datetime.datetime object
        
         n_ev, n_centroids = intensity.shape
@@ -93,8 +101,7 @@ class WildFire(Hazard):
     
     """HOTSPOT-BASED HAZARD SET"""
     @staticmethod
-    def assign_HS_2_centroids(HS_directory, centroids, 
-                              output_csv='HS_assigned.csv', **kwargs):
+    def assign_HS_2_centroids(HS_directory, centroids=None, output_dir=pathlib.Path().resolve()):
         """
         Create one CSV file with all hotspot detections. Add one column with the
         centroid closest to each detection. 
@@ -105,18 +112,21 @@ class WildFire(Hazard):
             Parent directory with all hotspot CSVs.
         centroids : Centroid
             CLIMADA centroid object to map the hotspots on.
-        output_csv : str, optional
-            Name for the output CSV. The default is 'HS_assigned.csv'.
-        **kwargs: dict, optional
-            Keyword arguments to be passed on to match_coordinates; e.g. 
-            distance threshold (default 100km).
 
         Returns
         -------
         None.
 
         """
-    
+        
+        if centroids is None:
+            client = Client()
+            centroids =  client.get_centroids(extent=(-180, 180, -90, 90))
+        
+        resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
+        threshold = resolution*2
+        hotspot_csv = output_dir / get_hotspot_csv(resolution)
+        
         target_coord = centroids.coord
         target = np.ascontiguousarray(target_coord, dtype='float64')
     
@@ -129,7 +139,7 @@ class WildFire(Hazard):
             # Get coordinates
             coords_hs = np.vstack((df['latitude'], df['longitude'])).T
             coords = np.ascontiguousarray(coords_hs, dtype='float64')
-            assigned_coord = u_coord.match_coordinates(coords, target, **kwargs)
+            assigned_coord = u_coord.match_coordinates(coords, target, threshold=threshold)
             
             # Extract relevant columns
             dataframe = df[['frp', 'acq_date']]
@@ -140,10 +150,10 @@ class WildFire(Hazard):
             
             if idx == 0:
                 # Create CSV file
-                dataframe.to_csv(output_csv, index=False)
+                dataframe.to_csv(hotspot_csv, index=False)
             else:
                 # Append to the CSV file
-                dataframe.to_csv(output_csv, mode='a', header=False, index=False)
+                dataframe.to_csv(hotspot_csv, mode='a', header=False, index=False)
             
             pass
     
@@ -233,10 +243,23 @@ class WildFire(Hazard):
     
 
     @classmethod
-    def create_FRP_hazard(cls, output_csv, target_centroids, temporal_scale='month', 
-                       aggregation='percentile', percentile=95):
-
-        dataframe = pd.read_csv(output_csv)
+    def create_FRP_hazard(cls, centroids=None, data_dir=pathlib.Path().resolve(), 
+                          temporal_scale='month', aggregation='percentile', 
+                          percentile=95):
+        
+        if centroids is None:
+            client = Client()
+            centroids =  client.get_centroids(extent=(-180, 180, -90, 90))
+        
+        resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
+        hotspot_csv = data_dir / get_hotspot_csv(resolution)
+        
+        if not hotspot_csv.is_file():
+            HS_directory = input(f"{hotspot_csv} doesn't exist. Enter directory to MODIS hotspot" 
+                            "data to create the file: ")
+            WildFire.assign_HS_2_centroids(HS_directory, centroids)
+        
+        dataframe = pd.read_csv(hotspot_csv)
         dataframe['acq_date'] = pd.to_datetime(dataframe['acq_date'])
         
         if temporal_scale == 'month':
@@ -267,7 +290,7 @@ class WildFire(Hazard):
             grouped_percentile = dataframe.groupby(group_by)['frp'].agg(
                 'sum').reset_index()
             
-        matrix_hazard = lil_matrix((len(time_array), target_centroids.lat.size))
+        matrix_hazard = lil_matrix((len(time_array), centroids.lat.size))
         
         if temporal_scale == 'month':
             matrix_hazard[(grouped_percentile.year-start_year)*12+grouped_percentile.month-1 , 
@@ -278,8 +301,8 @@ class WildFire(Hazard):
     
 
         final_intensity = sparse.csr_matrix(matrix_hazard)
-        haz_fre = cls.create_wf_haz(final_intensity, target_centroids, 
-                                    time_array, 'MW', event_name)
+        haz_fre = cls.create_wf_haz(final_intensity, centroids, 
+                                    time_array, event_name, 'MW')
         
         return haz_fre
 
@@ -348,9 +371,10 @@ class WildFire(Hazard):
         fraction2[fraction2.fraction>1] = 1
         
         haz_year = cls.create_wf_haz(intensity2, self.centroids, time_array, 
-                                         fraction=fraction2, 
-                                         units='', 
-                                         event_name=event_name)
+                                     event_name=event_name,
+                                    # fraction=fraction2, 
+                                    units='', 
+                                    )
         
         if filename is not None:
             haz_year.write_hdf5(filename)
@@ -409,12 +433,13 @@ class WildFire(Hazard):
             
         new_intensity2 = new_intensity.tocsr()
         
-        haz_new_coord = cls.create_wf_haz(new_intensity2, target_centr, self.event_name, units)
+        haz_new_coord = cls.create_wf_haz(new_intensity2, target_centr, self.date, units)
         
         return haz_new_coord
     
     
     def resample_to_fraction(self, target_centr, threshold, nr_chunks=200):
+    
         
         cls = self.__class__
         
@@ -428,8 +453,10 @@ class WildFire(Hazard):
         # nr_cells = dok_matrix((haz.intensity.shape[0], target_centr.lat.size))
         nr_cells = dok_matrix((1, target_centr.lat.size))
         
-        for i in range(nr_chunks):
-            print(i, 'of', nr_chunks)
+        # for i in range(nr_chunks):
+        for i in tqdm(range(nr_chunks), total=nr_chunks, desc="Processing"):
+            
+            # print(i, 'of', nr_chunks)
             
             if i <= nr_chunks-2:
                 start_coord = self.centroids.coord[n_cent_chunk*i: n_cent_chunk*(i+1), :]
@@ -464,7 +491,7 @@ class WildFire(Hazard):
         # Perform element-wise division
         fraction = csr_fires.multiply(csr_cells.power(-1))
     
-        haz_new_coord = cls.create_wf_haz(fraction, target_centr, self.event_name, units='')
+        haz_new_coord = cls.create_wf_haz(fraction, target_centr, self.date, units='')
         
         return haz_new_coord
 
