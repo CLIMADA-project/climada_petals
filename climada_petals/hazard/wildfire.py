@@ -71,7 +71,7 @@ def input_dir_hs(data_dir=DATA_DIR, instrument='MODIS'):
 
 def hotspot_csv_file(resolution, data_dir, instrument='MODIS'):
     rounded_resolution = np.round(int(resolution))
-    hotspot_csv = calc_dir(data_dir) / f'{instrument}-HS_assigned-centroids_{rounded_resolution}km.csv'
+    hotspot_csv = calc_dir(data_dir) / f'{instrument}-HS_assigned-centroids-{rounded_resolution}km.csv'
     return hotspot_csv
 
 
