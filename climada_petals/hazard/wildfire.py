@@ -277,7 +277,7 @@ class WildFire(Hazard):
             centroids =  client.get_centroids(extent=(-180, 180, -90, 90))
         
         resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
-        hotspot_csv = hotspot_csv_file(resolution)
+        hotspot_csv = hotspot_csv_file(resolution, data_dir)
         
         if not hotspot_csv.is_file():
             WildFire.assign_HS_2_centroids(data_dir, centroids)
