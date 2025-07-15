@@ -70,7 +70,7 @@ def input_dir_hs(data_dir=DATA_DIR):
     return input_dir_hs
 
 def hotspot_csv_file(resolution, data_dir):
-    rounded_resolution = np.round(resolution)
+    rounded_resolution = np.round(int(resolution))
     hotspot_csv = calc_dir(data_dir) / f'HS_assigned_{rounded_resolution}km.csv'
     return hotspot_csv
 
