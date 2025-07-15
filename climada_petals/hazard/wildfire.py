@@ -46,7 +46,7 @@ AREA_MODIS_TILE = LENGTH_MODIS_TILE**2
 
 def get_hotspot_csv(resolution):
     rounded_resolution = np.round(resolution)
-    HOTSPOT_CSV = f'HS_assigned{rounded_resolution}km.csv'
+    HOTSPOT_CSV = f'HS_assigned_{rounded_resolution}km.csv'
     return HOTSPOT_CSV
 
 
