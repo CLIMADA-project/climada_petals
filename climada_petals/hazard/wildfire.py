@@ -23,6 +23,7 @@ __all__ = ['WildFire']
 
 import logging
 import pathlib
+from pathlib import Path
 import numpy as np
 from scipy import sparse
 import os
@@ -44,10 +45,34 @@ from climada.util.api_client import Client
 LENGTH_MODIS_TILE = 0.46331271653 #km documentation:463.31271653m
 AREA_MODIS_TILE = LENGTH_MODIS_TILE**2
 
-def get_hotspot_csv(resolution):
+
+"""PATHS FOR HAZARD CREATION"""
+
+DATA_DIR = Path("Data").absolute()
+
+def input_dir(data_dir=DATA_DIR):
+    input_dir_path = data_dir / 'Input'
+    input_dir_path.mkdir(parents=True, exist_ok=True)
+    return input_dir_path
+
+def calc_dir(data_dir=DATA_DIR):
+    calc_dir_path = data_dir / 'Calc'
+    calc_dir_path.mkdir(parents=True, exist_ok=True)
+    return calc_dir_path
+
+def output_dir(data_dir=DATA_DIR):
+    output_dir_path = data_dir / 'Output'
+    output_dir_path.mkdir(parents=True, exist_ok=True)
+    return output_dir_path
+
+def input_dir_hs(data_dir=DATA_DIR):
+    input_dir_hs = input_dir(data_dir) / 'Hotspots'
+    return input_dir_hs
+
+def hotspot_csv_file(resolution, data_dir):
     rounded_resolution = np.round(resolution)
-    HOTSPOT_CSV = f'HS_assigned_{rounded_resolution}km.csv'
-    return HOTSPOT_CSV
+    hotspot_csv = calc_dir(data_dir) / f'HS_assigned_{rounded_resolution}km.csv'
+    return hotspot_csv
 
 
 LOGGER = logging.getLogger(__name__)
@@ -101,14 +126,14 @@ class WildFire(Hazard):
     
     """HOTSPOT-BASED HAZARD SET"""
     @staticmethod
-    def assign_HS_2_centroids(HS_directory, centroids=None, output_dir=pathlib.Path().resolve()):
+    def assign_HS_2_centroids(data_dir=DATA_DIR, centroids=None):
         """
         Create one CSV file with all hotspot detections. Add one column with the
         centroid closest to each detection. 
 
         Parameters
         ----------
-        HS_directory : str
+        data_dir : str
             Parent directory with all hotspot CSVs.
         centroids : Centroid
             CLIMADA centroid object to map the hotspots on.
@@ -125,12 +150,12 @@ class WildFire(Hazard):
         
         resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
         threshold = resolution*2
-        hotspot_csv = output_dir / get_hotspot_csv(resolution)
+        hotspot_csv = hotspot_csv_file(resolution, data_dir)
         
         target_coord = centroids.coord
         target = np.ascontiguousarray(target_coord, dtype='float64')
-    
-        csv_file_paths = WildFire._get_csv_file_paths(HS_directory)
+        
+        csv_file_paths = WildFire._get_csv_file_paths(input_dir_hs(data_dir))
                 
         for idx, file in tqdm(enumerate(csv_file_paths), total=len(csv_file_paths), desc="Processing"):
 
@@ -243,7 +268,7 @@ class WildFire(Hazard):
     
 
     @classmethod
-    def create_FRP_hazard(cls, centroids=None, data_dir=pathlib.Path().resolve(), 
+    def create_FRP_hazard(cls, centroids=None, data_dir=DATA_DIR, 
                           temporal_scale='month', aggregation='percentile', 
                           percentile=95):
         
@@ -252,12 +277,10 @@ class WildFire(Hazard):
             centroids =  client.get_centroids(extent=(-180, 180, -90, 90))
         
         resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
-        hotspot_csv = data_dir / get_hotspot_csv(resolution)
+        hotspot_csv = hotspot_csv_file(resolution)
         
         if not hotspot_csv.is_file():
-            HS_directory = input(f"{hotspot_csv} doesn't exist. Enter directory to MODIS hotspot" 
-                            "data to create the file: ")
-            WildFire.assign_HS_2_centroids(HS_directory, centroids)
+            WildFire.assign_HS_2_centroids(data_dir, centroids)
         
         dataframe = pd.read_csv(hotspot_csv)
         dataframe['acq_date'] = pd.to_datetime(dataframe['acq_date'])
