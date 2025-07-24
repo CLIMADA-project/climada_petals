@@ -24,6 +24,7 @@ __all__ = ['WildFire']
 import logging
 import pathlib
 from pathlib import Path
+import tempfile
 import numpy as np
 from scipy import sparse
 import os
@@ -39,7 +40,8 @@ from climada.hazard.base import Hazard
 import climada.util.dates_times as u_dates
 from climada.util import coordinates as u_coord
 
-from climada.util.constants import ONE_LAT_KM
+from climada.util.constants import SYSTEM_DIR, ONE_LAT_KM
+DATA_DIR = SYSTEM_DIR / 'WildFire'
 from climada.util.api_client import Client
 
 LENGTH_MODIS_TILE = 0.46331271653 #km documentation:463.31271653m
@@ -48,36 +50,36 @@ AREA_MODIS_TILE = LENGTH_MODIS_TILE**2
 
 """PATHS FOR HAZARD CREATION"""
 
-DATA_DIR = Path("Data").absolute()
+
 
 def input_dir(data_dir=DATA_DIR):
     input_dir_path = data_dir / 'Input'
     input_dir_path.mkdir(parents=True, exist_ok=True)
     return input_dir_path
 
-def calc_dir(data_dir=DATA_DIR):
-    calc_dir_path = data_dir / 'Calc'
-    calc_dir_path.mkdir(parents=True, exist_ok=True)
-    return calc_dir_path
+# def calc_dir(data_dir=SYSTEM_DIR):
+#     calc_dir_path = data_dir / 'Calc'
+#     calc_dir_path.mkdir(parents=True, exist_ok=True)
+#     return calc_dir_path
 
 def output_dir(data_dir=DATA_DIR):
     output_dir_path = data_dir / 'Output'
     output_dir_path.mkdir(parents=True, exist_ok=True)
     return output_dir_path
 
-def input_dir_hs(data_dir=DATA_DIR, instrument='MODIS'):
-    input_dir_hs = input_dir(data_dir) / instrument / 'Hotspots'
+def input_dir_hs(data_dir=DATA_DIR): #, instrument='MODIS'
+    input_dir_hs = input_dir(data_dir) / 'Hotspots'
     return input_dir_hs
 
-def hotspot_csv_file(resolution, data_dir, instrument='MODIS'):
-    rounded_resolution = np.round(int(resolution))
-    hotspot_csv = calc_dir(data_dir) / f'{instrument}-HS_assigned-centroids-{rounded_resolution}km.csv'
-    return hotspot_csv
+# def hotspot_csv_file(resolution, data_dir, instrument='MODIS'):
+#     rounded_resolution = np.round(int(resolution))
+#     hotspot_csv = calc_dir(data_dir) / f'{instrument}-HS_assigned-centroids-{rounded_resolution}km.csv'
+#     return hotspot_csv
 
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.info("The wildfire module has been updated. The former module described"
-"in Lüthi et al. (2021) has been depracated. To reproduce data with"
+"in Lüthi et al. (2021) has been depracated. To reproduce data with "
 "the previous methods, use CLIMADA v6.0.1 or less.")
 
 HAZ_TYPE = 'WF'
@@ -126,7 +128,7 @@ class WildFire(Hazard):
     
     """HOTSPOT-BASED HAZARD SET"""
     @staticmethod
-    def assign_HS_2_centroids(data_dir=DATA_DIR, centroids=None):
+    def _assign_HS_2_centroids(data_dir, centroids, threshold):
         """
         Create one CSV file with all hotspot detections. Add one column with the
         centroid closest to each detection. 
@@ -144,20 +146,18 @@ class WildFire(Hazard):
 
         """
         
-        if centroids is None:
-            client = Client()
-            centroids =  client.get_centroids(extent=(-180, 180, -90, 90))
-        
-        resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
-        threshold = resolution*2
-        hotspot_csv = hotspot_csv_file(resolution, data_dir)
+        # hotspot_csv = hotspot_csv_file(resolution, data_dir)
+        temp_file = tempfile.NamedTemporaryFile(mode='w+', suffix='.csv', delete=False)
+        hotspot_csv_path = temp_file.name
+        temp_file.close()
         
         target_coord = centroids.coord
         target = np.ascontiguousarray(target_coord, dtype='float64')
         
         csv_file_paths = WildFire._get_csv_file_paths(input_dir_hs(data_dir))
                 
-        for idx, file in tqdm(enumerate(csv_file_paths), total=len(csv_file_paths), desc="Processing"):
+        for idx, file in tqdm(enumerate(csv_file_paths), total=len(csv_file_paths), 
+                              desc="Processing original hotspot data"):
 
             df = pd.read_csv(file)
             
@@ -175,12 +175,12 @@ class WildFire(Hazard):
             
             if idx == 0:
                 # Create CSV file
-                dataframe.to_csv(hotspot_csv, index=False)
+                dataframe.to_csv(hotspot_csv_path, index=False)
             else:
                 # Append to the CSV file
-                dataframe.to_csv(hotspot_csv, mode='a', header=False, index=False)
-            
-            pass
+                dataframe.to_csv(hotspot_csv_path, mode='a', header=False, index=False)
+        
+        return hotspot_csv_path
     
     @staticmethod
     def _get_csv_file_paths(directory):
@@ -230,18 +230,16 @@ class WildFire(Hazard):
 
     @staticmethod
     def _seasonal_assignment(dates, list_sparse_m):
+        
         # 1. Filter to only full March–Feb seasons
-    
         # Find first March or later
         for i_start, d in enumerate(dates):
             if d.month == 3:
                 break
-    
         # Find last February or earlier
         for i_end in reversed(range(len(dates))):
             if dates[i_end].month == 2:
                 break
-    
         # Slice valid dates and intensity
         valid_dates0 = dates[i_start:i_end+1]
         list_valid_m = []
@@ -259,7 +257,6 @@ class WildFire(Hazard):
         # 3. Create time steps and labels
         start_year = valid_dates0[0].year if valid_dates0[0].month >= 3 else valid_dates0[0].year - 1
         end_year = valid_dates0[-1].year if valid_dates0[-1].month >= 3 else valid_dates0[-1].year - 1
-    
         feb_days = [calendar.monthrange(y + 1, 2)[1] for y in range(start_year, end_year+1)]
         time_array = pd.to_datetime([f"{y + 1}-02-{day}" for y, day in zip(range(start_year, end_year+1), feb_days)])
         event_name = [f"{y}-{y+1}" for y in range(start_year, end_year+1)]
@@ -268,7 +265,7 @@ class WildFire(Hazard):
     
 
     @classmethod
-    def create_FRP_hazard(cls, centroids=None, data_dir=DATA_DIR, 
+    def create_FRP_hazard(cls, data_dir=DATA_DIR, centroids=None, threshold=None,  
                           temporal_scale='month', aggregation='percentile', 
                           percentile=95):
         
@@ -276,13 +273,18 @@ class WildFire(Hazard):
             client = Client()
             centroids =  client.get_centroids(extent=(-180, 180, -90, 90))
         
-        resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
-        hotspot_csv = hotspot_csv_file(resolution, data_dir)
+        if threshold is None:
+            resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
+            threshold = resolution*2
         
-        if not hotspot_csv.is_file():
-            WildFire.assign_HS_2_centroids(data_dir, centroids)
+        # resolution = centroids.get_meta()['transform'][0]*ONE_LAT_KM #at equator
+        # hotspot_csv = hotspot_csv_file(resolution, data_dir)
         
-        dataframe = pd.read_csv(hotspot_csv)
+        # if not hotspot_csv.is_file():
+        
+        hotspot_csv_path = cls._assign_HS_2_centroids(data_dir, centroids, threshold)
+        
+        dataframe = pd.read_csv(hotspot_csv_path)
         dataframe['acq_date'] = pd.to_datetime(dataframe['acq_date'])
         
         if temporal_scale == 'month':
@@ -316,7 +318,7 @@ class WildFire(Hazard):
         matrix_hazard = lil_matrix((len(time_array), centroids.lat.size))
         
         if temporal_scale == 'month':
-            matrix_hazard[(grouped_percentile.year-start_year)*12+grouped_percentile.month-1 , 
+            matrix_hazard[(grouped_percentile.year-start_year)*12+grouped_percentile.month-1, 
                           grouped_percentile.centroid] = grouped_percentile.frp
         elif temporal_scale == 'season':
             matrix_hazard[(grouped_percentile.year-start_year), 
@@ -326,6 +328,9 @@ class WildFire(Hazard):
         final_intensity = sparse.csr_matrix(matrix_hazard)
         haz_fre = cls.create_wf_haz(final_intensity, centroids, 
                                     time_array, event_name, 'MW')
+        
+        if os.path.isfile(hotspot_csv_path):
+            os.remove(hotspot_csv_path)
         
         return haz_fre
 
