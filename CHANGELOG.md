@@ -35,6 +35,8 @@ Updated:
 
 ### Removed
 
+- Removed code of the copernicus interface module [#142](https://github.com/CLIMADA-project/climada_petals/pull/142), including code added in [#150](https://github.com/CLIMADA-project/climada_petals/pull/150), [#151](https://github.com/CLIMADA-project/climada_petals/pull/151) and [#156](https://github.com/CLIMADA-project/climada_petals/pull/156). The module has been moved to a separate [repository](https://github.com/DahyannAraya/copernicus-seasonal-forecast-tools).
+
 ## 6.0.1
 
 Release date: 2025-03-03
