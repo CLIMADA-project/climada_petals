@@ -602,7 +602,7 @@ def regrid(
     flood = flood_maps.isel(return_period=-1).to_dataset(name="data")
     flood["mask"] = xr.where(~np.isnan(flood["data"]), 1, 0).astype(np.int8)
 
-    # Perform regridding
+    # Build regridder
     if regridder is None:
         regridder = xe.Regridder(
             rp,
@@ -614,8 +614,11 @@ def regrid(
             # unmapped_to_nan=False,
         )
 
+    # Set chunksizes
+    chunksizes = {dim: np.max(sizes) for dim, sizes in return_period.chunksizes.items()}
+
     return_period_regridded = (
-        regridder(return_period)
+        regridder(return_period, output_chunks=chunksizes)
         .rename(return_period.name)
         .drop_vars("return_period", errors="ignore")
     )
