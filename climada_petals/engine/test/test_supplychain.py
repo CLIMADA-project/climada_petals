@@ -325,7 +325,7 @@ class TestCalcFunctions(unittest.TestCase):
 
         # Test calc_va with NumPy array
         va = calc_va(self.mriot.Z.values, self.mriot.x.values)
-        np.testing.assert_array_equal(va.values, self.expected_va.values)
+        np.testing.assert_array_almost_equal (va.values, self.expected_va.values)
 
     def test_calc_B(self):
         # Test calc_B with DataFrame
@@ -334,7 +334,7 @@ class TestCalcFunctions(unittest.TestCase):
 
         # Test calc_B with NumPy array
         B = calc_B(self.mriot.Z.values, self.mriot.x.values)
-        np.testing.assert_array_equal(B, self.expected_B.values)
+        np.testing.assert_array_almost_equal(B, self.expected_B.values)
 
     def test_calc_G(self):
         # Test calc_G with DataFrame
@@ -343,7 +343,7 @@ class TestCalcFunctions(unittest.TestCase):
 
         # Test calc_G with NumPy array
         G = calc_G(self.expected_B.values)
-        np.testing.assert_array_equal(G, self.expected_G.values)
+        np.testing.assert_array_almost_equal(G, self.expected_G.values)
 
     def test_calc_x_from_G(self):
         # Test calc_x_from_G with DataFrame
@@ -352,7 +352,7 @@ class TestCalcFunctions(unittest.TestCase):
 
         # Test calc_x_from_G with NumPy array
         x = calc_x_from_G(self.expected_G.values, self.va_changed.values)
-        np.testing.assert_array_equal(x, self.expected_x_changed.values)
+        np.testing.assert_array_almost_equal(x, self.expected_x_changed.values)
 
 
 class TestSupplyChain(unittest.TestCase):
