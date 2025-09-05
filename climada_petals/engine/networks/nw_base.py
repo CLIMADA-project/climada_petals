@@ -122,6 +122,18 @@ class Network:
 
         return Network(edges=edges, nodes=nodes)
 
+    def to_graph(self, network, directed=False):
+        """
+        network : instance of networks.nw_base.Network
+        """
+        self.directed = directed
+
+        if not network.edges.empty:
+            self.graph = self._from_es(
+                gdf_edges=network.edges, gdf_nodes=network.nodes)
+        else:
+            self.graph = self._from_vs(
+                gdf_nodes=network.nodes)
 
 class Graph():
     """
