@@ -346,9 +346,6 @@ def build_oecd_from_csv(
     mrio_csv: str, year: int | None = None, remove_attributes: bool = True
 ) -> pymrio.IOSystem:
     """This parsing function is put on hold while https://github.com/IndEcol/pymrio/issues/157 is not addressed"""
-    raise ValueError(
-        "Waiting for https://github.com/IndEcol/pymrio/issues/157 to be addressed"
-    )
     mrio_path = pathlib.Path(mrio_csv)
     mrio_pym = pymrio.parse_oecd(path=mrio_path, year=year)
     LOGGER.info("Removing unnecessary IOSystem attributes")
