@@ -291,7 +291,6 @@ class TestBuildEoraFromZip(unittest.TestCase):
         )
 
 
-@pytest.mark.skip(reason="Waiting for OECD23 parsing fix on pymrio's side")
 class TestBuildOECDFromCSV(unittest.TestCase):
 
     def setUp(self):
