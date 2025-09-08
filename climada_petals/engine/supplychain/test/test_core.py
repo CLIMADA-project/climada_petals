@@ -13,739 +13,580 @@ from pymrio import IOSystem
 from scipy import sparse
 
 
-@pytest.fixture
-def mriot_data():
-    return {
-        "name": "Test_MRIOT",
-        "sectors": ["A", "B", "C"],
-        "regions": ["X", "Y"],
-        "monetary_factor": 1_000,
-    }
+class TestDirectShock_inits(TestCase):
+    def setUp(self):
+        self.mriot_data = {
+            "name": "Test_MRIOT",
+            "sectors": ["A", "B", "C"],
+            "regions": ["X", "Y"],
+            "monetary_factor": 1_000,
+        }
+
+        lat = np.array([1, 3])
+        lon = np.array([1.5, 3.5])
+        exp = Exposures(crs=DEF_CRS, lat=lat, lon=lon, value=np.array([150.0, 80.0]))
+        #exp.gdf = MagicMock() # Mock the gdf attribute
+        exp.gdf["region_id"] = [840, 608] # USA, PHL (ROW)
+
+        imp = Impact(
+            event_id=np.arange(2) + 10,
+            event_name=np.arange(2),
+            date=np.arange(2),
+            coord_exp=np.vstack([lon, lat]).T,
+            crs=DEF_CRS,
+            unit="USD",
+            eai_exp=np.array([6, 4.33]),
+            at_event=np.array([55, 35]),
+            frequency=np.array([1 / 6, 1 / 30]),
+            frequency_unit="1/month",
+            aai_agg=10.34,
+            imp_mat=sparse.csr_matrix(np.array([[30, 25], [30, 5]])),
+        )
+
+        mriot_mock_1 = MagicMock()
+        mriot_mock_1.name = "Test_MRIOT"
+        mriot_mock_1.get_sectors.return_value = ["Agriculture", "Industry", "Service"]
+        mriot_mock_1.get_regions.return_value = ["USA", "ROW", "FRA"]
+        mriot_mock_1.monetary_factor = 1_000
+
+        self.exp = exp
+        self.imp = imp
+        self.mriot_dummy_exp = mriot_mock_1
+
+        self.mock_mriot = MagicMock()
+        self.mock_mriot.name = "Test_MRIOT"
+        self.mock_mriot.get_sectors.return_value = ["A", "B", "C"]
+        self.mock_mriot.get_regions.return_value = ["X", "Y", "Z"]
+        self.mock_mriot.monetary_factor = 1_000
+
+        self.mock_empty_mriot = MagicMock()
+        self.mock_empty_mriot.name = "Empty_MRIOT"
+        self.mock_empty_mriot.get_sectors.return_value = []
+        self.mock_empty_mriot.get_regions.return_value = []
+        self.mock_empty_mriot.monetary_factor = 1_000
+
+        self.mock_mriot_missing_attrs = MagicMock()
+        self.mock_mriot_missing_attrs.name = "Incomplete_MRIOT"
+        self.mock_mriot_missing_attrs.get_sectors.return_value = ["A", "B"]
+        # In this case, we simulate the missing attributes
+        del self.mock_mriot_missing_attrs.get_regions
+        del self.mock_mriot_missing_attrs.monetary_factor
+
+        index = pd.MultiIndex.from_tuples(
+            [("X", "A"), ("X", "B"), ("Y", "C")], names=["region", "sector"]
+        )
+        self.valid_exposure_assets = pd.Series([100, 200, 300], index=index, name="value")
+
+        index_imp = ["event_1", "event_2"]
+        columns = pd.MultiIndex.from_tuples(
+            [("X", "A"), ("X", "B"), ("Y", "C")], names=["region", "sector"]
+        )
+        data = [[10, 20, 30], [40, 50, 60]]
+        self.valid_impacted_assets = pd.DataFrame(data, index=index_imp, columns=columns)
+
+        self.event_dates = np.array([737175, 737220])
+
+        sample_exposure_assets = pd.Series(
+            [100, 200],
+            index=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B")], names=["region", "sector"]
+            ),
+        )
+        sample_impacted_assets = pd.DataFrame(
+            [[10, 20]],
+            index=["event_1"],
+            columns=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B")], names=["region", "sector"]
+            ),
+        )
+        sample_event_dates = np.array([3])
+        self.sample_exposure_assets = sample_exposure_assets
+        self.sample_impacted_assets = sample_impacted_assets
+        self.sample_event_dates = sample_event_dates
+
+        self.mismatch_exposure_assets = pd.Series(
+            [100, 200],
+            index=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B")], names=["region", "sector"]
+            ),
+        )
+        self.mismatch_impacted_assets = pd.DataFrame(
+            [[10, 20]],
+            index=["event_1", "event_2"],
+            columns=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B")], names=["region", "sector"]
+            ),
+        )
+        self.mismatch_event_dates = np.array([3])
+
+        self.edge_case_exposure_assets = pd.Series(
+            [100, 0, np.nan],
+            index=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B"), ("Z", "C")], names=["region", "sector"]
+            ),
+        )
+        self.edge_case_impacted_assets = pd.DataFrame(
+            [[10, 20, np.nan]],
+            index=["event_1"],
+            columns=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B"), ("Z", "C")], names=["region", "sector"]
+            ),
+        )
+        self.edge_case_event_dates = np.array([3])
+
+        self.mismatched_index_exposure_assets = pd.Series(
+            [100, 200],
+            index=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B")], names=["region", "sector"]
+            ),
+        )
+        self.mismatched_index_impacted_assets = pd.DataFrame(
+            [[10, 20, 30]],
+            index=["event_1"],
+            columns=pd.MultiIndex.from_tuples(
+                [("X", "A"), ("Y", "B"), ("Z", "C")], names=["region", "sector"]
+            ),
+        )
+        self.mismatched_index_event_dates = np.array([3])
+
+    def test_directshock__init__(self):
+        # Initialize the DirectShocksSetinstance
+        shock = DirectShocksSet(
+            mriot_name=self.mriot_data["name"],
+            mriot_sectors=self.mriot_data["sectors"],
+            mriot_regions=self.mriot_data["regions"],
+            exposure_assets=self.valid_exposure_assets,
+            impacted_assets=self.valid_impacted_assets,
+            event_dates=self.event_dates,
+            monetary_factor=self.mriot_data["monetary_factor"],
+            shock_name="Test_Shock",
+        )
+
+        # Assertions
+        assert shock.mriot_name == self.mriot_data["name"]
+        assert shock.mriot_sectors == self.mriot_data["sectors"]
+        assert shock.mriot_regions == self.mriot_data["regions"]
+        assert shock.name == "Test_Shock"
+        assert shock.monetary_factor == self.mriot_data["monetary_factor"]
+
+        # Ensure _thin_to_wide transformation is applied correctly
+
+        pd.testing.assert_series_equal(
+            shock.exposure_assets,
+            _thin_to_wide(self.valid_exposure_assets, shock.mriot_industries),
+        )
+        pd.testing.assert_frame_equal(
+            shock.impacted_assets,
+            _thin_to_wide(
+                self.valid_impacted_assets, self.valid_impacted_assets.index, shock.mriot_industries
+            ),
+        )
+        # Check event dates
+        assert np.array_equal(shock.event_dates, self.event_dates)
 
 
-@pytest.fixture
-def dummy_exp_imp_mriot():
-    "Generate dummy exposure and impacts"
-    lat = np.array([1, 3])
-    lon = np.array([1.5, 3.5])
-    exp = Exposures(crs=DEF_CRS, lat=lat, lon=lon, value=np.array([150.0, 80.0]))
-
-    exp.gdf["region_id"] = [840, 608]  # USA, PHL (ROW)
-
-    imp = Impact(
-        event_id=np.arange(2) + 10,
-        event_name=np.arange(2),
-        date=np.arange(2),
-        coord_exp=np.vstack([lon, lat]).T,
-        crs=DEF_CRS,
-        unit="USD",
-        eai_exp=np.array([6, 4.33]),
-        at_event=np.array([55, 35]),
-        frequency=np.array([1 / 6, 1 / 30]),
-        frequency_unit="1/month",
-        aai_agg=10.34,
-        imp_mat=sparse.csr_matrix(np.array([[30, 25], [30, 5]])),
-    )
-
-    mriot = MagicMock()
-    mriot.name = "Test_MRIOT"
-    mriot.get_sectors.return_value = ["Agriculture", "Industry", "Service"]
-    mriot.get_regions.return_value = ["USA", "ROW", "FRA"]
-    mriot.monetary_factor = 1_000
-
-    return exp, imp, mriot
+    def test_directshock__init__missmatched(self):
+        exposure_assets, impacted_assets, event_dates = self.mismatched_index_exposure_assets, self.mismatched_index_impacted_assets, self.mismatched_index_event_dates
+        with pytest.warns(
+            UserWarning,
+            match="Some impacted assets do not have a corresponding exposure value",
+        ):
+            DirectShocksSet._init_with_mriot(
+                mriot=self.mock_mriot,
+                exposure_assets=exposure_assets,
+                impacted_assets=impacted_assets,
+                event_dates=event_dates,
+                shock_name="Test_Shock",
+            )
 
 
-@pytest.fixture
-def mock_mriot():
-    """Fixture to create a standard mock MRIOT with necessary attributes."""
-    mriot = MagicMock()
-    mriot.name = "Test_MRIOT"
-    mriot.get_sectors.return_value = ["A", "B", "C"]
-    mriot.get_regions.return_value = ["X", "Y", "Z"]
-    mriot.monetary_factor = 1_000
-    return mriot
+    def test_directshock__init___invalid_inputs(self):
+        # Invalid exposure_assets (not a Series)
+        with pytest.raises(ValueError, match="Exposure assets must be a pandas Series"):
+            DirectShocksSet(
+                mriot_name=self.mriot_data["name"],
+                mriot_sectors=self.mriot_data["sectors"],
+                mriot_regions=self.mriot_data["regions"],
+                exposure_assets={"X": 100},  # Invalid type
+                impacted_assets=pd.DataFrame(),
+                event_dates=self.event_dates,
+                monetary_factor=self.mriot_data["monetary_factor"],
+            )
+
+        # Invalid impacted_assets (not a DataFrame)
+        with pytest.raises(ValueError, match="Impacted assets must be a pandas DataFrame"):
+            DirectShocksSet(
+                mriot_name=self.mriot_data["name"],
+                mriot_sectors=self.mriot_data["sectors"],
+                mriot_regions=self.mriot_data["regions"],
+                exposure_assets=pd.Series(),
+                impacted_assets={"event_1": 10},  # Invalid type
+                event_dates=self.event_dates,
+                monetary_factor=self.mriot_data["monetary_factor"],
+            )
+
+        # Mismatched indices
+        invalid_exposure_assets = pd.Series([100], index=[("Z", "A")], name="value")
+        with pytest.raises(
+            ValueError, match="Exposure assets indices do not match MRIOT industries"
+        ):
+            DirectShocksSet(
+                mriot_name=self.mriot_data["name"],
+                mriot_sectors=self.mriot_data["sectors"],
+                mriot_regions=self.mriot_data["regions"],
+                exposure_assets=invalid_exposure_assets,
+                impacted_assets=pd.DataFrame(),
+                event_dates=self.event_dates,
+                monetary_factor=self.mriot_data["monetary_factor"],
+            )
+
+        # Create a DataFrame with rows as event IDs and columns as (region, sector)
+        index = ["event_1", "event_2"]
+        columns = pd.MultiIndex.from_tuples(
+            [("X", "A"), ("X", "B"), ("Z", "C")], names=["region", "sector"]
+        )
+        data = [[10, 20, 30], [40, 50, 60]]
+        invalid_impacted_assets = pd.DataFrame(data, index=index, columns=columns)
+        with pytest.raises(
+            ValueError, match="Impacted assets columns do not match MRIOT industries"
+        ):
+            DirectShocksSet(
+                mriot_name=self.mriot_data["name"],
+                mriot_sectors=self.mriot_data["sectors"],
+                mriot_regions=self.mriot_data["regions"],
+                exposure_assets=pd.Series(),
+                impacted_assets=invalid_impacted_assets,
+                event_dates=self.event_dates,
+                monetary_factor=self.mriot_data["monetary_factor"],
+            )
+
+        exposure_assets, impacted_assets, event_dates = self.mismatch_exposure_assets, self.mismatch_impacted_assets, self.mismatch_event_dates
+        with pytest.raises(ValueError, match="Number of events mismatch"):
+            DirectShocksSet(
+                mriot_name=self.mriot_data["name"],
+                mriot_sectors=self.mriot_data["sectors"],
+                mriot_regions=self.mriot_data["regions"],
+                exposure_assets=exposure_assets,
+                impacted_assets=impacted_assets,
+                event_dates=event_dates,
+                monetary_factor=self.mriot_data["monetary_factor"],
+            )
 
 
-@pytest.fixture
-def mock_empty_mriot():
-    """Fixture for an MRIOT with empty sectors and regions."""
-    mriot = MagicMock()
-    mriot.name = "Empty_MRIOT"
-    mriot.get_sectors.return_value = []
-    mriot.get_regions.return_value = []
-    mriot.monetary_factor = 1_000
-    return mriot
+    def test_init_with_mriot_valid(self):
+        exposure_assets, impacted_assets, event_dates = self.sample_exposure_assets, self.sample_impacted_assets, self.sample_event_dates
 
-
-@pytest.fixture
-def mock_mriot_missing_attrs():
-    """Fixture for an MRIOT missing attributes."""
-    mriot = MagicMock()
-    mriot.name = "Incomplete_MRIOT"
-    mriot.get_sectors.return_value = ["A", "B"]
-    # Missing get_regions and monetary_factor
-    del mriot.get_regions
-    del mriot.monetary_factor
-    return mriot
-
-
-@pytest.fixture
-def valid_exposure_assets():
-    # Create a Series with a MultiIndex for (region, sector)
-    index = pd.MultiIndex.from_tuples(
-        [("X", "A"), ("X", "B"), ("Y", "C")], names=["region", "sector"]
-    )
-    return pd.Series([100, 200, 300], index=index, name="value")
-
-
-@pytest.fixture
-def valid_impacted_assets():
-    # Create a DataFrame with rows as event IDs and columns as (region, sector)
-    index = ["event_1", "event_2"]
-    columns = pd.MultiIndex.from_tuples(
-        [("X", "A"), ("X", "B"), ("Y", "C")], names=["region", "sector"]
-    )
-    data = [[10, 20, 30], [40, 50, 60]]
-    return pd.DataFrame(data, index=index, columns=columns)
-
-
-@pytest.fixture
-def event_dates():
-    return np.array([737175, 737220])
-
-
-@pytest.fixture
-def sample_assets():
-    """Fixture for sample exposure and impacted assets."""
-    exposure_assets = pd.Series(
-        [100, 200],
-        index=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B")], names=["region", "sector"]
-        ),
-    )
-    impacted_assets = pd.DataFrame(
-        [[10, 20]],
-        index=["event_1"],
-        columns=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B")], names=["region", "sector"]
-        ),
-    )
-    event_dates = np.array([3])
-    return exposure_assets, impacted_assets, event_dates
-
-
-@pytest.fixture
-def sample_assets_dates_missmatch():
-    """Fixture for sample exposure and impacted assets."""
-    exposure_assets = pd.Series(
-        [100, 200],
-        index=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B")], names=["region", "sector"]
-        ),
-    )
-    impacted_assets = pd.DataFrame(
-        [[10, 20]],
-        index=["event_1", "event_2"],
-        columns=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B")], names=["region", "sector"]
-        ),
-    )
-    event_dates = np.array([3])
-    return exposure_assets, impacted_assets, event_dates
-
-
-@pytest.fixture
-def edge_case_assets():
-    """Test assets including NaN and division by zero scenarios."""
-    exposure_assets = pd.Series(
-        [100, 0, np.nan],
-        index=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B"), ("Z", "C")], names=["region", "sector"]
-        ),
-    )
-    impacted_assets = pd.DataFrame(
-        [[10, 20, np.nan]],
-        index=["event_1"],
-        columns=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B"), ("Z", "C")], names=["region", "sector"]
-        ),
-    )
-    event_dates = np.array([3])
-    return exposure_assets, impacted_assets, event_dates
-
-
-@pytest.fixture
-def mismatched_assets():
-    """Assets with mismatched indices."""
-    exposure_assets = pd.Series(
-        [100, 200],
-        index=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B")], names=["region", "sector"]
-        ),
-    )
-    impacted_assets = pd.DataFrame(
-        [[10, 20, 30]],
-        index=["event_1"],
-        columns=pd.MultiIndex.from_tuples(
-            [("X", "A"), ("Y", "B"), ("Z", "C")], names=["region", "sector"]
-        ),
-    )
-    event_dates = np.array([3])
-    return exposure_assets, impacted_assets, event_dates
-
-
-def test_directshock__init__(
-    mriot_data, valid_exposure_assets, valid_impacted_assets, event_dates
-):
-    # Initialize the DirectShocksSetinstance
-    shock = DirectShocksSet(
-        mriot_name=mriot_data["name"],
-        mriot_sectors=mriot_data["sectors"],
-        mriot_regions=mriot_data["regions"],
-        exposure_assets=valid_exposure_assets,
-        impacted_assets=valid_impacted_assets,
-        event_dates=event_dates,
-        monetary_factor=mriot_data["monetary_factor"],
-        shock_name="Test_Shock",
-    )
-
-    # Assertions
-    assert shock.mriot_name == mriot_data["name"]
-    assert shock.mriot_sectors == mriot_data["sectors"]
-    assert shock.mriot_regions == mriot_data["regions"]
-    assert shock.name == "Test_Shock"
-    assert shock.monetary_factor == mriot_data["monetary_factor"]
-
-    # Ensure _thin_to_wide transformation is applied correctly
-
-    pd.testing.assert_series_equal(
-        shock.exposure_assets,
-        _thin_to_wide(valid_exposure_assets, shock.mriot_industries),
-    )
-    pd.testing.assert_frame_equal(
-        shock.impacted_assets,
-        _thin_to_wide(
-            valid_impacted_assets, valid_impacted_assets.index, shock.mriot_industries
-        ),
-    )
-    # Check event dates
-    assert np.array_equal(shock.event_dates, event_dates)
-
-
-def test_directshock__init__missmatched(mismatched_assets, mock_mriot):
-    exposure_assets, impacted_assets, event_dates = mismatched_assets
-    with pytest.warns(
-        UserWarning,
-        match="Some impacted assets do not have a corresponding exposure value",
-    ):
-        DirectShocksSet._init_with_mriot(
-            mriot=mock_mriot,
+        # Call the _init_with_mriot method
+        shock = DirectShocksSet._init_with_mriot(
+            mriot=self.mock_mriot,
             exposure_assets=exposure_assets,
             impacted_assets=impacted_assets,
             event_dates=event_dates,
             shock_name="Test_Shock",
         )
 
-
-def test_directshock__init___invalid_inputs(
-    mriot_data, event_dates, sample_assets_dates_missmatch
-):
-    # Invalid exposure_assets (not a Series)
-    with pytest.raises(ValueError, match="Exposure assets must be a pandas Series"):
-        DirectShocksSet(
-            mriot_name=mriot_data["name"],
-            mriot_sectors=mriot_data["sectors"],
-            mriot_regions=mriot_data["regions"],
-            exposure_assets={"X": 100},  # Invalid type
-            impacted_assets=pd.DataFrame(),
-            event_dates=event_dates,
-            monetary_factor=mriot_data["monetary_factor"],
+        # Assertions
+        assert shock.mriot_name == self.mock_mriot.name
+        assert shock.mriot_sectors == self.mock_mriot.get_sectors()
+        assert shock.mriot_regions == self.mock_mriot.get_regions()
+        assert shock.monetary_factor == self.mock_mriot.monetary_factor
+        assert shock.name == "Test_Shock"
+        pd.testing.assert_series_equal(
+            shock.exposure_assets, _thin_to_wide(exposure_assets, shock.mriot_industries)
         )
-
-    # Invalid impacted_assets (not a DataFrame)
-    with pytest.raises(ValueError, match="Impacted assets must be a pandas DataFrame"):
-        DirectShocksSet(
-            mriot_name=mriot_data["name"],
-            mriot_sectors=mriot_data["sectors"],
-            mriot_regions=mriot_data["regions"],
-            exposure_assets=pd.Series(),
-            impacted_assets={"event_1": 10},  # Invalid type
-            event_dates=event_dates,
-            monetary_factor=mriot_data["monetary_factor"],
+        pd.testing.assert_frame_equal(
+            shock.impacted_assets,
+            _thin_to_wide(
+                impacted_assets, shock.impacted_assets.index, shock.mriot_industries
+            ),
         )
+        np.testing.assert_array_equal(shock.event_dates, event_dates)
 
-    # Mismatched indices
-    invalid_exposure_assets = pd.Series([100], index=[("Z", "A")], name="value")
-    with pytest.raises(
-        ValueError, match="Exposure assets indices do not match MRIOT industries"
-    ):
-        DirectShocksSet(
-            mriot_name=mriot_data["name"],
-            mriot_sectors=mriot_data["sectors"],
-            mriot_regions=mriot_data["regions"],
-            exposure_assets=invalid_exposure_assets,
-            impacted_assets=pd.DataFrame(),
-            event_dates=event_dates,
-            monetary_factor=mriot_data["monetary_factor"],
-        )
 
-    # Create a DataFrame with rows as event IDs and columns as (region, sector)
-    index = ["event_1", "event_2"]
-    columns = pd.MultiIndex.from_tuples(
-        [("X", "A"), ("X", "B"), ("Z", "C")], names=["region", "sector"]
-    )
-    data = [[10, 20, 30], [40, 50, 60]]
-    invalid_impacted_assets = pd.DataFrame(data, index=index, columns=columns)
-    with pytest.raises(
-        ValueError, match="Impacted assets columns do not match MRIOT industries"
-    ):
-        DirectShocksSet(
-            mriot_name=mriot_data["name"],
-            mriot_sectors=mriot_data["sectors"],
-            mriot_regions=mriot_data["regions"],
-            exposure_assets=pd.Series(),
-            impacted_assets=invalid_impacted_assets,
-            event_dates=event_dates,
-            monetary_factor=mriot_data["monetary_factor"],
-        )
+    def test_init_with_mriot_empty(self):
+        exposure_assets, impacted_assets, event_dates = self.sample_exposure_assets, self.sample_impacted_assets, self.sample_event_dates
 
-    exposure_assets, impacted_assets, event_dates = sample_assets_dates_missmatch
-    with pytest.raises(ValueError, match="Number of events mismatch"):
-        DirectShocksSet(
-            mriot_name=mriot_data["name"],
-            mriot_sectors=mriot_data["sectors"],
-            mriot_regions=mriot_data["regions"],
+        with pytest.raises(ValueError):
+            shock = DirectShocksSet._init_with_mriot(
+                mriot=self.mock_empty_mriot,
+                exposure_assets=exposure_assets,
+                impacted_assets=impacted_assets,
+                event_dates=event_dates,
+                shock_name="Empty_Shock",
+            )
+
+
+    def test_init_with_mriot_missing_attributes(self):
+        exposure_assets, impacted_assets, event_dates = self.sample_exposure_assets, self.sample_impacted_assets, self.sample_event_dates
+
+
+        # Call the _init_with_mriot method and expect AttributeError
+        with pytest.raises(AttributeError):
+            DirectShocksSet._init_with_mriot(
+                mriot=self.mock_mriot_missing_attrs,
+                exposure_assets=exposure_assets,
+                impacted_assets=impacted_assets,
+                event_dates=event_dates,
+                shock_name="Incomplete_Shock",
+            )
+
+
+    def test_relative_impact_correct_calculation(self):
+        exposure_assets, impacted_assets, event_dates = self.sample_exposure_assets, self.sample_impacted_assets, self.sample_event_dates
+
+        shock = DirectShocksSet._init_with_mriot(
+            mriot=self.mock_mriot,
             exposure_assets=exposure_assets,
             impacted_assets=impacted_assets,
             event_dates=event_dates,
-            monetary_factor=mriot_data["monetary_factor"],
+            shock_name="Test_Shock",
         )
-
-
-def test_init_with_mriot_valid(mock_mriot, sample_assets):
-    exposure_assets, impacted_assets, event_dates = sample_assets
-
-    # Call the _init_with_mriot method
-    shock = DirectShocksSet._init_with_mriot(
-        mriot=mock_mriot,
-        exposure_assets=exposure_assets,
-        impacted_assets=impacted_assets,
-        event_dates=event_dates,
-        shock_name="Test_Shock",
-    )
-
-    # Assertions
-    assert shock.mriot_name == mock_mriot.name
-    assert shock.mriot_sectors == mock_mriot.get_sectors()
-    assert shock.mriot_regions == mock_mriot.get_regions()
-    assert shock.monetary_factor == mock_mriot.monetary_factor
-    assert shock.name == "Test_Shock"
-    pd.testing.assert_series_equal(
-        shock.exposure_assets, _thin_to_wide(exposure_assets, shock.mriot_industries)
-    )
-    pd.testing.assert_frame_equal(
-        shock.impacted_assets,
-        _thin_to_wide(
+        exposure_assets = _thin_to_wide(exposure_assets, shock.mriot_industries)
+        impacted_assets = _thin_to_wide(
             impacted_assets, shock.impacted_assets.index, shock.mriot_industries
-        ),
-    )
-    np.testing.assert_array_equal(shock.event_dates, event_dates)
-
-
-def test_init_with_mriot_empty(mock_empty_mriot, sample_assets):
-    exposure_assets, impacted_assets, event_dates = sample_assets
-    with pytest.raises(ValueError):
-        shock = DirectShocksSet._init_with_mriot(
-            mriot=mock_empty_mriot,
-            exposure_assets=exposure_assets,
-            impacted_assets=impacted_assets,
-            event_dates=event_dates,
-            shock_name="Empty_Shock",
         )
-
-
-def test_init_with_mriot_missing_attributes(mock_mriot_missing_attrs, sample_assets):
-
-    exposure_assets, impacted_assets, event_dates = sample_assets
-
-    # Call the _init_with_mriot method and expect AttributeError
-    with pytest.raises(AttributeError):
-        DirectShocksSet._init_with_mriot(
-            mriot=mock_mriot_missing_attrs,
-            exposure_assets=exposure_assets,
-            impacted_assets=impacted_assets,
-            event_dates=event_dates,
-            shock_name="Incomplete_Shock",
+        # Compute relative impact
+        expected = impacted_assets.div(exposure_assets, axis=1).fillna(0.0) * (
+            exposure_assets > 0
         )
+        result = shock.relative_impact
+        pd.testing.assert_frame_equal(result, expected, check_dtype=True)
 
 
-def test_relative_impact_correct_calculation(sample_assets, mock_mriot):
-    exposure_assets, impacted_assets, event_dates = sample_assets
-    shock = DirectShocksSet._init_with_mriot(
-        mriot=mock_mriot,
-        exposure_assets=exposure_assets,
-        impacted_assets=impacted_assets,
-        event_dates=event_dates,
-        shock_name="Test_Shock",
-    )
-    exposure_assets = _thin_to_wide(exposure_assets, shock.mriot_industries)
-    impacted_assets = _thin_to_wide(
-        impacted_assets, shock.impacted_assets.index, shock.mriot_industries
-    )
-    # Compute relative impact
-    expected = impacted_assets.div(exposure_assets, axis=1).fillna(0.0) * (
-        exposure_assets > 0
-    )
-    result = shock.relative_impact
-    pd.testing.assert_frame_equal(result, expected, check_dtype=True)
-
-
-def test_relative_impact_edge_cases(edge_case_assets, mock_mriot):
-    exposure_assets, impacted_assets, event_dates = edge_case_assets
-    shock = DirectShocksSet._init_with_mriot(
-        mriot=mock_mriot,
-        exposure_assets=exposure_assets,
-        impacted_assets=impacted_assets,
-        event_dates=event_dates,
-        shock_name="Test_Shock",
-    )
-    exposure_assets = _thin_to_wide(exposure_assets, shock.mriot_industries)
-    impacted_assets = _thin_to_wide(
-        impacted_assets, shock.impacted_assets.index, shock.mriot_industries
-    )
-
-    # Expected: division handles 0 and NaN
-    expected = impacted_assets.div(exposure_assets, axis=1).fillna(0.0).replace(
-        [np.inf, -np.inf], 0
-    ) * (exposure_assets > 0)
-    result = shock.relative_impact
-    pd.testing.assert_frame_equal(result, expected)
-
-
-def test_relative_impact_mismatched_indices(mismatched_assets, mock_mriot):
-    exposure_assets, impacted_assets, event_dates = mismatched_assets
-    with pytest.warns(
-        UserWarning,
-        match="Some impacted assets do not have a corresponding exposure value",
-    ):
+    def test_relative_impact_edge_cases(self):
+        exposure_assets, impacted_assets, event_dates = self.edge_case_exposure_assets, self.edge_case_impacted_assets, self.edge_case_event_dates
         shock = DirectShocksSet._init_with_mriot(
-            mriot=mock_mriot,
+            mriot=self.mock_mriot,
             exposure_assets=exposure_assets,
             impacted_assets=impacted_assets,
             event_dates=event_dates,
             shock_name="Test_Shock",
         )
+        exposure_assets = _thin_to_wide(exposure_assets, shock.mriot_industries)
+        impacted_assets = _thin_to_wide(
+            impacted_assets, shock.impacted_assets.index, shock.mriot_industries
+        )
 
-    exposure_assets = _thin_to_wide(exposure_assets, shock.mriot_industries)
-    impacted_assets = _thin_to_wide(
-        impacted_assets, shock.impacted_assets.index, shock.mriot_industries
-    )
-    expected = (
-        impacted_assets.div(exposure_assets, axis=1)
-        .replace([np.inf, -np.inf], 0)
-        .reindex_like(impacted_assets)
-    )
-    expected = expected.fillna(0.0)
-    result = shock.relative_impact
-    pd.testing.assert_frame_equal(result, expected)
+        # Expected: division handles 0 and NaN
+        expected = impacted_assets.div(exposure_assets, axis=1).fillna(0.0).replace(
+            [np.inf, -np.inf], 0
+        ) * (exposure_assets > 0)
+        result = shock.relative_impact
+        pd.testing.assert_frame_equal(result, expected)
 
 
-# We just need to test that the methods and functions are correctly called, as this is a unittest
-@patch("climada_petals.engine.supplychain.core.translate_exp_to_regions")
-@patch("climada_petals.engine.supplychain.core.translate_exp_to_sectors")
-@patch("climada_petals.engine.supplychain.core.DirectShocksSet.from_assets_and_imp")
-def test_from_exp_and_imp(
-    mock_from_assets_and_imp,
-    mock_translate_exp_to_sectors,
-    mock_translate_exp_to_regions,
-):
-    # Mock inputs
-    mock_mriot = MagicMock(spec=IOSystem)
-    mock_mriot.name = "TestMRIOT"
-    mock_exposure = MagicMock(spec=Exposures)
-    mock_impact = MagicMock(spec=Impact)
-    mock_impact.date = np.array([723000])
-    shock_name = "TestShock"
-    affected_sectors = ["sector1", "sector2"]
-    impact_distribution = None
-    exp_value_col = "value"
+    def test_relative_impact_mismatched_indices(self):
+        exposure_assets, impacted_assets, event_dates = self.mismatched_index_exposure_assets, self.mismatched_index_impacted_assets, self.mismatched_index_event_dates
+        with pytest.warns(
+            UserWarning,
+            match="Some impacted assets do not have a corresponding exposure value",
+        ):
+            shock = DirectShocksSet._init_with_mriot(
+                mriot=self.mock_mriot,
+                exposure_assets=exposure_assets,
+                impacted_assets=impacted_assets,
+                event_dates=event_dates,
+                shock_name="Test_Shock",
+            )
 
-    # Mock function outputs
-    mock_exp_translated = MagicMock(spec=pd.DataFrame)
-    mock_translate_exp_to_regions.return_value = mock_exp_translated
-
-    mock_exposure_assets = MagicMock(spec=pd.Series)
-    mock_translate_exp_to_sectors.return_value = mock_exposure_assets
-
-    # Call the method
-    DirectShocksSet.from_exp_and_imp(
-        mriot=mock_mriot,
-        exposure=mock_exposure,
-        impact=mock_impact,
-        affected_sectors=affected_sectors,
-        impact_distribution=impact_distribution,
-        shock_name=shock_name,
-        exp_value_col=exp_value_col,
-    )
-
-    # Assertions
-    mock_translate_exp_to_regions.assert_called_once_with(
-        mock_exposure, mriot_name="TestMRIOT", custom_mriot=False
-    )
-    mock_translate_exp_to_sectors.assert_called_once_with(
-        mock_exp_translated,
-        affected_sectors=affected_sectors,
-        mriot=mock_mriot,
-        value_col=exp_value_col,
-    )
-    mock_from_assets_and_imp.assert_called_once_with(
-        mriot=mock_mriot,
-        exposure_assets=mock_exposure_assets,
-        impact=mock_impact,
-        shock_name=shock_name,
-        affected_sectors=affected_sectors,
-        impact_distribution=impact_distribution,
-        custom_mriot=False
-    )
+        exposure_assets = _thin_to_wide(exposure_assets, shock.mriot_industries)
+        impacted_assets = _thin_to_wide(
+            impacted_assets, shock.impacted_assets.index, shock.mriot_industries
+        )
+        expected = (
+            impacted_assets.div(exposure_assets, axis=1)
+            .replace([np.inf, -np.inf], 0)
+            .reindex_like(impacted_assets)
+        )
+        expected = expected.fillna(0.0)
+        result = shock.relative_impact
+        pd.testing.assert_frame_equal(result, expected)
 
 
-@patch("climada_petals.engine.supplychain.core.DirectShocksSet._init_with_mriot")
-@patch("climada_petals.engine.supplychain.core.translate_imp_to_regions")
-@patch("climada_petals.engine.supplychain.core.distribute_reg_impact_to_sectors")
-def test_from_assets_and_imp(
-    mock_distribute_reg_impact_to_sectors,
-    mock_translate_imp_to_regions,
-    mock_init_with_mriot,
-):
-    # This methods actually does some things that need to be checked
-    # We don't want to check the functions called so we define what
-    # they should return with mock objects and check the rest of the code
+    # We just need to test that the methods and functions are correctly called, as this is a unittest
+    @patch("climada_petals.engine.supplychain.core.translate_exp_to_regions")
+    @patch("climada_petals.engine.supplychain.core.translate_exp_to_sectors")
+    @patch("climada_petals.engine.supplychain.core.DirectShocksSet.from_assets_and_imp")
+    def test_from_exp_and_imp(
+            self,
+        mock_from_assets_and_imp,
+        mock_translate_exp_to_sectors,
+        mock_translate_exp_to_regions,
+    ):
+        # Mock inputs
+        mock_mriot = MagicMock(spec=IOSystem)
+        mock_mriot.name = "TestMRIOT"
+        mock_exposure = MagicMock(spec=Exposures)
+        mock_impact = MagicMock(spec=Impact)
+        mock_impact.date = np.array([723000])
+        shock_name = "TestShock"
+        affected_sectors = ["sector1", "sector2"]
+        impact_distribution = None
+        exp_value_col = "value"
 
-    # data for mock object returns
-    sectors = ["sector1", "sector2"]
-    regions = ["FRA", "JPN", "USA"]
-    wrong_regions = ["FRX", "JPX", "USX"]
-    impacted_regions = ["JPN", "USA"]
-    production_vector = pd.DataFrame(
-        [[4.0], [12.0], [20.0], [60.0], [10.0], [90.0]],
-        index=pd.MultiIndex.from_product([regions, sectors]),
-        columns=["indout"],
-    )
+        # Mock function outputs
+        mock_exp_translated = MagicMock(spec=pd.DataFrame)
+        mock_translate_exp_to_regions.return_value = mock_exp_translated
 
-    # Only for impacted
-    production_distribution = pd.Series(
-        {
-            ("JPN", "sector1"): 0.25,
-            ("JPN", "sector2"): 0.75,
-            ("USA", "sector1"): 0.1,
-            ("USA", "sector2"): 0.9,
-        }
-    )
-    production_distribution.name = "indout"
-    event_dates = np.array([723000, 50408])
-    event_index = [249, 3869]
-    shock_name = "TestShock"
-    regional_impact = pd.DataFrame.from_dict(
-        {
-            "index": event_index,
-            "columns": regions,
-            "data": [[0.0, 100.0, 50.0], [0.0, 0.0, 10.0]],
-            "index_names": [None],
-            "column_names": [None],
-        },
-        orient="tight",
-    )
-    regional_impact_no_zeros = pd.DataFrame.from_dict(
-        {
-            "index": event_index,
-            "columns": impacted_regions,
-            "data": [[100.0, 50.0], [0.0, 10.0]],
-            "index_names": [None],
-            "column_names": [None],
-        },
-        orient="tight",
-    )
-    region_translated_imp = pd.DataFrame.from_dict(
-        {
-            "index": event_index,
-            "columns": impacted_regions,
-            "data": [[100, 50.0], [0.0, 10.0]],
-            "index_names": ["event_id"],
-            "column_names": ["region_mriot"],
-        },
-        orient="tight",
-    )
-    sector_distributed_impact_case1 = pd.DataFrame.from_dict(
-        {
-            "index": event_index,
-            "columns": [
-                ("JPN", "sector1"),
-                ("JPN", "sector2"),
-                ("USA", "sector1"),
-                ("USA", "sector2"),
-            ],
-            "data": [[250.0, 750.0, 50.0, 450.00000000000006], [0.0, 0.0, 10.0, 90.0]],
-            "index_names": ["event_id"],
-            "column_names": ["region", "sector"],
-        },
-        orient="tight",
-    )
-    impact_distribution_case2 = pd.Series(
-        {
-            ("JPN", "sector1"): 20.0,
-            ("USA", "sector1"): 10.0,
-        }
-    )
-    impact_distribution_case2.name = "indout"
+        mock_exposure_assets = MagicMock(spec=pd.Series)
+        mock_translate_exp_to_sectors.return_value = mock_exposure_assets
 
-    impact_distribution_case3_ext = {
-        "sector1": 0.2,
-        "sector2": 0.8,
-    }
-    impact_distribution_case3_intern = pd.Series(
-        {
+        # Call the method
+        DirectShocksSet.from_exp_and_imp(
+            mriot=mock_mriot,
+            exposure=mock_exposure,
+            impact=mock_impact,
+            affected_sectors=affected_sectors,
+            impact_distribution=impact_distribution,
+            shock_name=shock_name,
+            exp_value_col=exp_value_col,
+        )
+
+        # Assertions
+        mock_translate_exp_to_regions.assert_called_once_with(
+            mock_exposure, mriot_name="TestMRIOT", custom_mriot=False
+        )
+        mock_translate_exp_to_sectors.assert_called_once_with(
+            mock_exp_translated,
+            affected_sectors=affected_sectors,
+            mriot=mock_mriot,
+            value_col=exp_value_col,
+        )
+        mock_from_assets_and_imp.assert_called_once_with(
+            mriot=mock_mriot,
+            exposure_assets=mock_exposure_assets,
+            impact=mock_impact,
+            shock_name=shock_name,
+            affected_sectors=affected_sectors,
+            impact_distribution=impact_distribution,
+            custom_mriot=False
+        )
+
+
+    @patch("climada_petals.engine.supplychain.core.DirectShocksSet._init_with_mriot")
+    @patch("climada_petals.engine.supplychain.core.translate_imp_to_regions")
+    @patch("climada_petals.engine.supplychain.core.distribute_reg_impact_to_sectors")
+    def test_from_assets_and_imp(
+        self,
+        mock_distribute_reg_impact_to_sectors,
+        mock_translate_imp_to_regions,
+        mock_init_with_mriot,
+    ):
+        # This methods actually does some things that need to be checked
+        # We don't want to check the functions called so we define what
+        # they should return with mock objects and check the rest of the code
+
+        # data for mock object returns
+        sectors = ["sector1", "sector2"]
+        regions = ["FRA", "JPN", "USA"]
+        wrong_regions = ["FRX", "JPX", "USX"]
+        impacted_regions = ["JPN", "USA"]
+        production_vector = pd.DataFrame(
+            [[4.0], [12.0], [20.0], [60.0], [10.0], [90.0]],
+            index=pd.MultiIndex.from_product([regions, sectors]),
+            columns=["indout"],
+        )
+
+        # Only for impacted
+        production_distribution = pd.Series(
+            {
+                ("JPN", "sector1"): 0.25,
+                ("JPN", "sector2"): 0.75,
+                ("USA", "sector1"): 0.1,
+                ("USA", "sector2"): 0.9,
+            }
+        )
+        production_distribution.name = "indout"
+        event_dates = np.array([723000, 50408])
+        event_index = [249, 3869]
+        shock_name = "TestShock"
+        regional_impact = pd.DataFrame.from_dict(
+            {
+                "index": event_index,
+                "columns": regions,
+                "data": [[0.0, 100.0, 50.0], [0.0, 0.0, 10.0]],
+                "index_names": [None],
+                "column_names": [None],
+            },
+            orient="tight",
+        )
+        regional_impact_no_zeros = pd.DataFrame.from_dict(
+            {
+                "index": event_index,
+                "columns": impacted_regions,
+                "data": [[100.0, 50.0], [0.0, 10.0]],
+                "index_names": [None],
+                "column_names": [None],
+            },
+            orient="tight",
+        )
+        region_translated_imp = pd.DataFrame.from_dict(
+            {
+                "index": event_index,
+                "columns": impacted_regions,
+                "data": [[100, 50.0], [0.0, 10.0]],
+                "index_names": ["event_id"],
+                "column_names": ["region_mriot"],
+            },
+            orient="tight",
+        )
+        sector_distributed_impact_case1 = pd.DataFrame.from_dict(
+            {
+                "index": event_index,
+                "columns": [
+                    ("JPN", "sector1"),
+                    ("JPN", "sector2"),
+                    ("USA", "sector1"),
+                    ("USA", "sector2"),
+                ],
+                "data": [[250.0, 750.0, 50.0, 450.00000000000006], [0.0, 0.0, 10.0, 90.0]],
+                "index_names": ["event_id"],
+                "column_names": ["region", "sector"],
+            },
+            orient="tight",
+        )
+        impact_distribution_case2 = pd.Series(
+            {
+                ("JPN", "sector1"): 20.0,
+                ("USA", "sector1"): 10.0,
+            }
+        )
+        impact_distribution_case2.name = "indout"
+
+        impact_distribution_case3_ext = {
             "sector1": 0.2,
             "sector2": 0.8,
         }
-    )
-
-    impact_distribution_case4 = pd.Series(
-        {
-            ("JPN", "sector1"): 0.2,
-            ("JPN", "sector2"): 0.8,
-            ("USA", "sector1"): 0.1,
-            ("USA", "sector2"): 0.9,
-        }
-    )
-    impact_distribution_case5 = "wrong"
-
-    # Mock objects and setting their return when needed
-    mock_mriot = MagicMock(spec=IOSystem)
-    mock_mriot.name = "TestMRIOT"
-    mock_mriot.x = production_vector
-    mock_mriot.get_sectors.return_value = sectors
-    mock_impact = MagicMock(spec=Impact)
-    mock_impact.date = event_dates
-    mock_exposure_assets = MagicMock(spec=pd.Series)
-    mock_impact.impact_at_reg.return_value = regional_impact
-    mock_translate_imp_to_regions.return_value = region_translated_imp
-    mock_distribute_reg_impact_to_sectors.return_value = sector_distributed_impact_case1
-
-    # Calling the method
-    DirectShocksSet.from_assets_and_imp(
-        mock_mriot,
-        mock_exposure_assets,
-        mock_impact,
-        shock_name,
-        affected_sectors="all",
-        impact_distribution=None,
-    )
-
-    # Check that impact_at_reg was called
-    mock_impact.impact_at_reg.assert_called()
-
-    # We can't used assert_called_with() with dataframe due to
-    # dataframe == dataframe raising an error, thus we compare the argument
-    # directly
-
-    # we check that translate_imp_to_regions was called with
-    # the impact_at_reg() filtered to non zero values and the mriot
-    pd.testing.assert_frame_equal(
-        mock_translate_imp_to_regions.call_args[0][0], regional_impact_no_zeros
-    )
-    assert mock_translate_imp_to_regions.call_args[0][1] == mock_mriot
-
-    # We then check that distribute_reg_impact_to_sectors was called
-    # with the return from translate_imp_to_regions and
-    # with the correct impact distribution (based on production due to None).
-    pd.testing.assert_frame_equal(
-        mock_distribute_reg_impact_to_sectors.call_args[0][0], region_translated_imp
-    )
-    pd.testing.assert_series_equal(
-        mock_distribute_reg_impact_to_sectors.call_args[0][1], production_vector.loc[impacted_regions,"indout"]
-    )
-
-    # Finally we check that _init_with_mriot was called
-    # with the return from distribute_reg_impact_to_sectors
-    # and the correct arguments.
-    mock_init_with_mriot.assert_called_once_with(
-        mriot=mock_mriot,
-        exposure_assets=mock_exposure_assets,
-        impacted_assets=sector_distributed_impact_case1,
-        event_dates=mock_impact.date,
-        shock_name=shock_name,
-    )
-
-    # Case 2
-    # Now test selection of sectors
-    mock_distribute_reg_impact_to_sectors.reset_mock()
-    DirectShocksSet.from_assets_and_imp(
-        mock_mriot,
-        mock_exposure_assets,
-        mock_impact,
-        shock_name,
-        affected_sectors="sector1",
-        impact_distribution=None,
-    )
-    pd.testing.assert_series_equal(
-        mock_distribute_reg_impact_to_sectors.call_args[0][1], impact_distribution_case2
-    )
-
-    # Case 3
-    # Now test with dict
-    mock_distribute_reg_impact_to_sectors.reset_mock()
-    DirectShocksSet.from_assets_and_imp(
-        mock_mriot,
-        mock_exposure_assets,
-        mock_impact,
-        shock_name,
-        affected_sectors="all",
-        impact_distribution=impact_distribution_case3_ext,
-    )
-    pd.testing.assert_series_equal(
-        mock_distribute_reg_impact_to_sectors.call_args[0][1],
-        impact_distribution_case3_intern,
-    )
-
-    # Case 4
-    # Now test with series
-    mock_distribute_reg_impact_to_sectors.reset_mock()
-    DirectShocksSet.from_assets_and_imp(
-        mock_mriot,
-        mock_exposure_assets,
-        mock_impact,
-        shock_name,
-        affected_sectors="all",
-        impact_distribution=impact_distribution_case4,
-    )
-    pd.testing.assert_series_equal(
-        mock_distribute_reg_impact_to_sectors.call_args[0][1], impact_distribution_case4
-    )
-
-    # Case 5
-    # Now test with wrong type
-    with pytest.raises(
-        ValueError, match="Impact_distribution could not be converted to a Series"
-    ):
-        DirectShocksSet.from_assets_and_imp(
-            mock_mriot,
-            mock_exposure_assets,
-            mock_impact,
-            shock_name,
-            affected_sectors="all",
-            impact_distribution=impact_distribution_case5,
+        impact_distribution_case3_intern = pd.Series(
+            {
+                "sector1": 0.2,
+                "sector2": 0.8,
+            }
         )
 
-    # Case 6
-    # Now test with incompatible mriot / affected
-    mock_mriot = MagicMock(spec=IOSystem)
-    mock_mriot.x = pd.DataFrame(
-        [[4.0], [6.0], [20.0], [60.0], [10.0], [90.0]],
-        index=pd.MultiIndex.from_product([wrong_regions, sectors]),
-        columns=["indout"],
-    )
-    with pytest.raises(KeyError):
+        impact_distribution_case4 = pd.Series(
+            {
+                ("JPN", "sector1"): 0.2,
+                ("JPN", "sector2"): 0.8,
+                ("USA", "sector1"): 0.1,
+                ("USA", "sector2"): 0.9,
+            }
+        )
+        impact_distribution_case5 = "wrong"
+
+        # Mock objects and setting their return when needed
+        mock_mriot = MagicMock(spec=IOSystem)
+        mock_mriot.name = "TestMRIOT"
+        mock_mriot.x = production_vector
+        mock_mriot.get_sectors.return_value = sectors
+        mock_impact = MagicMock(spec=Impact)
+        mock_impact.date = event_dates
+        mock_exposure_assets = MagicMock(spec=pd.Series)
+        mock_impact.impact_at_reg.return_value = regional_impact
+        mock_translate_imp_to_regions.return_value = region_translated_imp
+        mock_distribute_reg_impact_to_sectors.return_value = sector_distributed_impact_case1
+
+        # Calling the method
         DirectShocksSet.from_assets_and_imp(
             mock_mriot,
             mock_exposure_assets,
@@ -755,97 +596,210 @@ def test_from_assets_and_imp(
             impact_distribution=None,
         )
 
+        # Check that impact_at_reg was called
+        mock_impact.impact_at_reg.assert_called()
 
-def test_combine_event_dates_valid():
-    event_dates = [
-        pd.Series({"event1": 10, "event2": 20}),
-        pd.Series({"event2": 20, "event3": 30}),
-    ]
-    expected = pd.Series({"event1": 10, "event2": 20, "event3": 30})
-    result = DirectShocksSet._combine_event_dates(event_dates)
-    pd.testing.assert_series_equal(result, expected)
+        # We can't used assert_called_with() with dataframe due to
+        # dataframe == dataframe raising an error, thus we compare the argument
+        # directly
+
+        # we check that translate_imp_to_regions was called with
+        # the impact_at_reg() filtered to non zero values and the mriot
+        pd.testing.assert_frame_equal(
+            mock_translate_imp_to_regions.call_args[0][0], regional_impact_no_zeros
+        )
+        assert mock_translate_imp_to_regions.call_args[0][1] == mock_mriot
+
+        # We then check that distribute_reg_impact_to_sectors was called
+        # with the return from translate_imp_to_regions and
+        # with the correct impact distribution (based on production due to None).
+        pd.testing.assert_frame_equal(
+            mock_distribute_reg_impact_to_sectors.call_args[0][0], region_translated_imp
+        )
+        pd.testing.assert_series_equal(
+            mock_distribute_reg_impact_to_sectors.call_args[0][1], production_vector.loc[impacted_regions,"indout"]
+        )
+
+        # Finally we check that _init_with_mriot was called
+        # with the return from distribute_reg_impact_to_sectors
+        # and the correct arguments.
+        mock_init_with_mriot.assert_called_once_with(
+            mriot=mock_mriot,
+            exposure_assets=mock_exposure_assets,
+            impacted_assets=sector_distributed_impact_case1,
+            event_dates=mock_impact.date,
+            shock_name=shock_name,
+        )
+
+        # Case 2
+        # Now test selection of sectors
+        mock_distribute_reg_impact_to_sectors.reset_mock()
+        DirectShocksSet.from_assets_and_imp(
+            mock_mriot,
+            mock_exposure_assets,
+            mock_impact,
+            shock_name,
+            affected_sectors="sector1",
+            impact_distribution=None,
+        )
+        pd.testing.assert_series_equal(
+            mock_distribute_reg_impact_to_sectors.call_args[0][1], impact_distribution_case2
+        )
+
+        # Case 3
+        # Now test with dict
+        mock_distribute_reg_impact_to_sectors.reset_mock()
+        DirectShocksSet.from_assets_and_imp(
+            mock_mriot,
+            mock_exposure_assets,
+            mock_impact,
+            shock_name,
+            affected_sectors="all",
+            impact_distribution=impact_distribution_case3_ext,
+        )
+        pd.testing.assert_series_equal(
+            mock_distribute_reg_impact_to_sectors.call_args[0][1],
+            impact_distribution_case3_intern,
+        )
+
+        # Case 4
+        # Now test with series
+        mock_distribute_reg_impact_to_sectors.reset_mock()
+        DirectShocksSet.from_assets_and_imp(
+            mock_mriot,
+            mock_exposure_assets,
+            mock_impact,
+            shock_name,
+            affected_sectors="all",
+            impact_distribution=impact_distribution_case4,
+        )
+        pd.testing.assert_series_equal(
+            mock_distribute_reg_impact_to_sectors.call_args[0][1], impact_distribution_case4
+        )
+
+        # Case 5
+        # Now test with wrong type
+        with pytest.raises(
+            ValueError, match="Impact_distribution could not be converted to a Series"
+        ):
+            DirectShocksSet.from_assets_and_imp(
+                mock_mriot,
+                mock_exposure_assets,
+                mock_impact,
+                shock_name,
+                affected_sectors="all",
+                impact_distribution=impact_distribution_case5,
+            )
+
+        # Case 6
+        # Now test with incompatible mriot / affected
+        mock_mriot = MagicMock(spec=IOSystem)
+        mock_mriot.x = pd.DataFrame(
+            [[4.0], [6.0], [20.0], [60.0], [10.0], [90.0]],
+            index=pd.MultiIndex.from_product([wrong_regions, sectors]),
+            columns=["indout"],
+        )
+        with pytest.raises(KeyError):
+            DirectShocksSet.from_assets_and_imp(
+                mock_mriot,
+                mock_exposure_assets,
+                mock_impact,
+                shock_name,
+                affected_sectors="all",
+                impact_distribution=None,
+            )
 
 
-def test_combine_event_dates_conflicting():
-    event_dates = [
-        pd.Series({"event1": 10, "event2": 20}),
-        pd.Series({"event2": 30, "event3": 40}),
-    ]
-    with pytest.raises(ValueError, match="Conflicting values"):
-        DirectShocksSet._combine_event_dates(event_dates)
+    def test_combine_event_dates_valid(self):
+        event_dates = [
+            pd.Series({"event1": 10, "event2": 20}),
+            pd.Series({"event2": 20, "event3": 30}),
+        ]
+        expected = pd.Series({"event1": 10, "event2": 20, "event3": 30})
+        result = DirectShocksSet._combine_event_dates(event_dates)
+        pd.testing.assert_series_equal(result, expected)
 
 
-def test_merge_imp_assets_empty_list():
-    """Test merging an empty list of DataFrames."""
-    with pytest.raises(ValueError):
-        DirectShocksSet._merge_imp_assets([])
+    def test_combine_event_dates_conflicting(self):
+        event_dates = [
+            pd.Series({"event1": 10, "event2": 20}),
+            pd.Series({"event2": 30, "event3": 40}),
+        ]
+        with pytest.raises(ValueError, match="Conflicting values"):
+            DirectShocksSet._combine_event_dates(event_dates)
 
 
-def test_merge_imp_assets_single_dataframe():
-    """Test merging a single DataFrame should return the same DataFrame."""
-    df = pd.DataFrame({"A": [1, 2]}, index=["Industry1", "Industry2"], dtype=float)
-    result = DirectShocksSet._merge_imp_assets([df])
-    pd.testing.assert_frame_equal(result, df)
+    def test_merge_imp_assets_empty_list(self):
+        """Test merging an empty list of DataFrames."""
+        with pytest.raises(ValueError):
+            DirectShocksSet._merge_imp_assets([])
 
 
-def test_merge_imp_assets_identical_dataframes():
-    """Test merging two identical DataFrames should result in doubled values."""
-    df1 = pd.DataFrame({"A": [1, 2]}, index=["Industry1", "Industry2"], dtype=float)
-    df2 = df1.copy()
-    expected = pd.DataFrame(
-        {"A": [2, 4]}, index=["Industry1", "Industry2"], dtype=float
-    )
-    result = DirectShocksSet._merge_imp_assets([df1, df2])
-    pd.testing.assert_frame_equal(result, expected)
+    def test_merge_imp_assets_single_dataframe(self):
+        """Test merging a single DataFrame should return the same DataFrame."""
+        df = pd.DataFrame({"A": [1, 2]}, index=["Industry1", "Industry2"], dtype=float)
+        result = DirectShocksSet._merge_imp_assets([df])
+        pd.testing.assert_frame_equal(result, df)
 
 
-def test_merge_imp_assets_different_indexes():
-    """Test merging DataFrames with different industry indexes should result in NaN filled with 0s."""
-    df1 = pd.DataFrame({"A": [1, 2]}, index=["Industry1", "Industry2"], dtype=float)
-    df2 = pd.DataFrame({"A": [3, 4]}, index=["Industry3", "Industry4"], dtype=float)
-    expected = pd.DataFrame(
-        {"A": [1, 2, 3, 4]},
-        index=["Industry1", "Industry2", "Industry3", "Industry4"],
-        dtype=float,
-    )
-    result = DirectShocksSet._merge_imp_assets([df1, df2])
-    pd.testing.assert_frame_equal(result, expected)
+    def test_merge_imp_assets_identical_dataframes(self):
+        """Test merging two identical DataFrames should result in doubled values."""
+        df1 = pd.DataFrame({"A": [1, 2]}, index=["Industry1", "Industry2"], dtype=float)
+        df2 = df1.copy()
+        expected = pd.DataFrame(
+            {"A": [2, 4]}, index=["Industry1", "Industry2"], dtype=float
+        )
+        result = DirectShocksSet._merge_imp_assets([df1, df2])
+        pd.testing.assert_frame_equal(result, expected)
 
 
-def test_merge_imp_assets_multiple_columns():
-    """Test merging DataFrames with multiple columns should sum matching columns only."""
-    df1 = pd.DataFrame(
-        {"A": [1, 2], "B": [3, 4]}, index=["Industry1", "Industry2"], dtype=float
-    )
-    df2 = pd.DataFrame(
-        {"A": [5, 6], "C": [7, 8]}, index=["Industry1", "Industry2"], dtype=float
-    )
-    expected = pd.DataFrame(
-        {
-            "A": [6, 8],  # A columns sum up
-            "B": [3, 4],  # B only appears in df1
-            "C": [7, 8],  # C only appears in df2
-        },
-        index=["Industry1", "Industry2"],
-        dtype=float,
-    )
-    result = DirectShocksSet._merge_imp_assets([df1, df2])
-    pd.testing.assert_frame_equal(result, expected)
+    def test_merge_imp_assets_different_indexes(self):
+        """Test merging DataFrames with different industry indexes should result in NaN filled with 0s."""
+        df1 = pd.DataFrame({"A": [1, 2]}, index=["Industry1", "Industry2"], dtype=float)
+        df2 = pd.DataFrame({"A": [3, 4]}, index=["Industry3", "Industry4"], dtype=float)
+        expected = pd.DataFrame(
+            {"A": [1, 2, 3, 4]},
+            index=["Industry1", "Industry2", "Industry3", "Industry4"],
+            dtype=float,
+        )
+        result = DirectShocksSet._merge_imp_assets([df1, df2])
+        pd.testing.assert_frame_equal(result, expected)
 
 
-def test_merge_imp_assets_with_missing_values():
-    """Test merging DataFrames with missing values should treat NaNs as 0."""
-    df1 = pd.DataFrame(
-        {"A": [1, np.nan]}, index=["Industry1", "Industry2"], dtype=float
-    )
-    df2 = pd.DataFrame(
-        {"A": [np.nan, 4]}, index=["Industry1", "Industry2"], dtype=float
-    )
-    expected = pd.DataFrame(
-        {"A": [1, 4]}, index=["Industry1", "Industry2"], dtype=float
-    )
-    result = DirectShocksSet._merge_imp_assets([df1, df2])
-    pd.testing.assert_frame_equal(result, expected)
+    def test_merge_imp_assets_multiple_columns(self):
+        """Test merging DataFrames with multiple columns should sum matching columns only."""
+        df1 = pd.DataFrame(
+            {"A": [1, 2], "B": [3, 4]}, index=["Industry1", "Industry2"], dtype=float
+        )
+        df2 = pd.DataFrame(
+            {"A": [5, 6], "C": [7, 8]}, index=["Industry1", "Industry2"], dtype=float
+        )
+        expected = pd.DataFrame(
+            {
+                "A": [6, 8],  # A columns sum up
+                "B": [3, 4],  # B only appears in df1
+                "C": [7, 8],  # C only appears in df2
+            },
+            index=["Industry1", "Industry2"],
+            dtype=float,
+        )
+        result = DirectShocksSet._merge_imp_assets([df1, df2])
+        pd.testing.assert_frame_equal(result, expected)
+
+
+    def test_merge_imp_assets_with_missing_values(self):
+        """Test merging DataFrames with missing values should treat NaNs as 0."""
+        df1 = pd.DataFrame(
+            {"A": [1, np.nan]}, index=["Industry1", "Industry2"], dtype=float
+        )
+        df2 = pd.DataFrame(
+            {"A": [np.nan, 4]}, index=["Industry1", "Industry2"], dtype=float
+        )
+        expected = pd.DataFrame(
+            {"A": [1, 4]}, index=["Industry1", "Industry2"], dtype=float
+        )
+        result = DirectShocksSet._merge_imp_assets([df1, df2])
+        pd.testing.assert_frame_equal(result, expected)
 
 
 class TestDirectShockCombine(TestCase):

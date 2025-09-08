@@ -42,29 +42,24 @@ from climada_petals.engine.supplychain.mriot_handling import (
     parse_wiod_v2016,
 )
 
+class TestLexicoReindex(unittest.TestCase):
+    def test_lexico_reindex(self):
+        example_mriot = pymrio.load_test().calc_all()
+        sorted_mriot = lexico_reindex(example_mriot)
 
-@pytest.fixture
-def example_mriot():
-    # Create an example pymrio.IOSystem for testing
-    return pymrio.load_test().calc_all()
-
-
-def test_lexico_reindex(example_mriot):
-    sorted_mriot = lexico_reindex(example_mriot)
-
-    # Check if matrices Z, Y, x, and A are sorted
-    pd.testing.assert_frame_equal(
-        sorted_mriot.Z, example_mriot.Z.sort_index(axis=0).sort_index(axis=1)
-    )
-    pd.testing.assert_frame_equal(
-        sorted_mriot.Y, example_mriot.Y.sort_index(axis=0).sort_index(axis=1)
-    )
-    pd.testing.assert_frame_equal(
-        sorted_mriot.x, example_mriot.x.sort_index(axis=0).sort_index(axis=1)
-    )
-    pd.testing.assert_frame_equal(
-        sorted_mriot.A, example_mriot.A.sort_index(axis=0).sort_index(axis=1)
-    )
+        # Check if matrices Z, Y, x, and A are sorted
+        pd.testing.assert_frame_equal(
+            sorted_mriot.Z, example_mriot.Z.sort_index(axis=0).sort_index(axis=1)
+        )
+        pd.testing.assert_frame_equal(
+            sorted_mriot.Y, example_mriot.Y.sort_index(axis=0).sort_index(axis=1)
+        )
+        pd.testing.assert_frame_equal(
+            sorted_mriot.x, example_mriot.x.sort_index(axis=0).sort_index(axis=1)
+        )
+        pd.testing.assert_frame_equal(
+            sorted_mriot.A, example_mriot.A.sort_index(axis=0).sort_index(axis=1)
+        )
 
 
 class TestBuildExio3FromZip(unittest.TestCase):
