@@ -227,7 +227,6 @@ class TestMethodsFirms(unittest.TestCase):
         wf.check()
 
         self.assertEqual(wf.haz_type, 'WFsingle')
-        self.assertEqual(wf.tag.description, [])
         self.assertEqual(wf.units, 'K')
         self.assertEqual(wf.centroids.size, 19454)
         self.assertTrue(np.allclose(wf.event_id, np.arange(1, 8)))
@@ -237,7 +236,7 @@ class TestMethodsFirms(unittest.TestCase):
         self.assertTrue(isinstance(wf.fraction, sparse.csr_matrix))
         self.assertEqual(wf.intensity.shape, (7, 19454))
         self.assertEqual(wf.fraction.shape, (7, 19454))
-        self.assertEqual(wf.fraction.max(), 1.0)
+        self.assertEqual(wf.fraction.nnz, 0)  # Zero everywhere means 1 everywhere
         self.assertAlmostEqual(wf.intensity[0, 16618], firms.loc[100].brightness)
         self.assertAlmostEqual(wf.intensity[1, 123], max(firms.loc[6721].brightness, firms.loc[6722].brightness))
         self.assertAlmostEqual(wf.intensity[2, :].max(), firms.loc[8105].brightness)
@@ -274,21 +273,26 @@ class TestMethodsFirms(unittest.TestCase):
         """ Test _firms_centroids_creation """
         wf = WildFire()
         firms = wf._clean_firms_df(TEST_FIRMS)
-        centroids = wf._firms_centroids_creation(firms, 0.375/ONE_LAT_KM, 1/2)
-        self.assertEqual(centroids.meta['width'], 144)
-        self.assertEqual(centroids.meta['height'], 138)
-        self.assertAlmostEqual(centroids.meta['transform'][0], 0.006749460043196544)
-        self.assertAlmostEqual(centroids.meta['transform'][1], 0.0)
-        self.assertTrue(centroids.meta['transform'][2]<= firms.longitude.min())
-        self.assertAlmostEqual(centroids.meta['transform'][3], 0.0)
-        self.assertAlmostEqual(centroids.meta['transform'][4], -centroids.meta['transform'][0])
-        self.assertTrue(centroids.meta['transform'][5] >= firms.latitude.max())
-        self.assertTrue(firms.latitude.max() <= centroids.total_bounds[3])
-        self.assertTrue(firms.latitude.min() >= centroids.total_bounds[1])
-        self.assertTrue(firms.longitude.max() <= centroids.total_bounds[2])
-        self.assertTrue(firms.longitude.min() >= centroids.total_bounds[0])
+        res_data = 0.375/ONE_LAT_KM
+        centr_res_factor = 1/2
+        centroids = wf._firms_centroids_creation(firms, res_data, centr_res_factor)
+        centroids_meta = centroids.get_meta()
+        self.assertEqual(centroids_meta['width'], 144)
+        self.assertEqual(centroids_meta['height'], 138)
+        self.assertAlmostEqual(centroids_meta['transform'][0], 0.006749460043196544)
+        self.assertAlmostEqual(centroids_meta['transform'][1], 0.0)
+        self.assertLessEqual(centroids_meta['transform'][2], firms.longitude.min())
+        self.assertAlmostEqual(centroids_meta['transform'][3], 0.0)
+        self.assertAlmostEqual(centroids_meta['transform'][4], -centroids_meta['transform'][0])
+        self.assertGreaterEqual(centroids_meta['transform'][5], firms.latitude.max())
+        # Meta pixel coordinates are shifted by half resolution to the pixel center lat/lon
+        pixel_center_shift = (res_data / centr_res_factor) / 2
+        self.assertLessEqual(firms.latitude.max(), centroids.total_bounds[3] + pixel_center_shift)
+        self.assertGreaterEqual(firms.latitude.min(), centroids.total_bounds[1] - pixel_center_shift)
+        self.assertLessEqual(firms.longitude.max(), centroids.total_bounds[2] + pixel_center_shift)
+        self.assertGreaterEqual(firms.longitude.min(), centroids.total_bounds[0] - pixel_center_shift)
         self.assertTrue(centroids.lat.size)
-        self.assertTrue(centroids.area_pixel.size)
+        self.assertTrue(centroids.get_area_pixel().size)
         self.assertTrue(centroids.on_land.size)
 
     def test_firms_resolution_pass(self):

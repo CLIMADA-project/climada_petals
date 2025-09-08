@@ -54,10 +54,10 @@ class WildFire(Hazard):
     consistency, we consider an event as a whole fire season. A fire season
     is defined as a whole year (Jan-Dec in the NHS, Jul-Jun in SHS). This allows
     consistent risk assessment across the globe and over time. Hazard for
-    which events refer to a fire season have the tag 'WFseason'.
+    which events refer to a fire season have the haz_type 'WFseason'.
 
     In order to perform concrete case studies or calibrate impact functions,
-    events can be displayed as single fires. In that case they have the tag
+    events can be displayed as single fires. In that case they have the haz_type
     'WFsingle'.
 
     Attributes
@@ -168,9 +168,6 @@ class WildFire(Hazard):
         res_data = haz._firms_resolution(df_firms)
         if not centroids:
             centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
-        else:
-            if not centroids.lat.any():
-                centroids.set_meta_to_lat_lon()
         res_centr = haz._centroids_resolution(centroids)
 
         # fire identification
@@ -259,9 +256,6 @@ class WildFire(Hazard):
         res_data = haz._firms_resolution(df_firms)
         if not centroids:
             centroids = haz._firms_centroids_creation(df_firms, res_data, centr_res_factor)
-        else:
-            if not centroids.coord.size:
-                centroids.set_meta_to_lat_lon()
 
         # define hemisphere
         if hemisphere is None:
@@ -324,12 +318,11 @@ class WildFire(Hazard):
         haz._set_frequency()
 
         # Following values are defined for each fire and centroid
-        haz.intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
+        intensity = sparse.lil_matrix(np.zeros((len(years), len(centroids.lat))))
         for idx, wf in enumerate(hist_fire_seasons):
-            haz.intensity[idx] = wf.intensity.max(axis=0)
-        haz.intensity = haz.intensity.tocsr()
-        haz.fraction = haz.intensity.copy()
-        haz.fraction.data.fill(1.0)
+            intensity[idx] = wf.intensity.max(axis=0)
+        haz.intensity = intensity.tocsr()
+        haz.fraction = sparse.csr_matrix(haz.intensity.shape)
 
         return haz
 
@@ -409,8 +402,7 @@ class WildFire(Hazard):
         new_intensity = new_intensity.tocsr()
         self.intensity = sparse.vstack([self.intensity, new_intensity],
                                        format='csr')
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     def combine_fires(self, event_id_merge=None, remove_rest=False,
                       probabilistic=False):
@@ -570,8 +562,7 @@ class WildFire(Hazard):
 
         # Following values are defined for each fire and centroid
         self.intensity = intensity_new.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
 
     #@staticmethod
@@ -606,7 +597,7 @@ class WildFire(Hazard):
                     df_firms_viirs = df_firms_viirs.drop(df_firms_viirs[ \
                         df_firms_viirs.confidence == 'l'].index)
                     df_firms_viirs = df_firms_viirs.rename(columns={'bright_ti4':'brightness'})
-                    temp = temp.append(df_firms_viirs, sort=True)
+                    temp = pd.concat([temp, df_firms_viirs], sort=True)
                     temp = temp.drop(columns=['bright_ti4'])
 
                 df_firms = temp
@@ -664,7 +655,6 @@ class WildFire(Hazard):
         centroids = Centroids.from_pnt_bounds((df_firms['longitude'].min(), \
             df_firms['latitude'].min(), df_firms['longitude'].max(), \
             df_firms['latitude'].max()), res=res_data/centr_res_factor)
-        centroids.set_meta_to_lat_lon()
         centroids.set_area_approx()
         centroids.set_on_land()
         centroids.empty_geometry_points()
@@ -684,14 +674,10 @@ class WildFire(Hazard):
         res_centr : float
             grid resolution of centroids
         """
-        if centroids.meta:
-            res_centr = abs(centroids.meta['transform'][4]), \
-                centroids.meta['transform'][0]
-        else:
-            res_centr, _ = u_coord.get_resolution(centroids.lat, centroids.lon)
+        res_centr = u_coord.get_resolution(centroids.lat, centroids.lon)
         if abs(abs(res_centr[0]) - abs(res_centr[1])) > 1.0e-6:
             raise ValueError('Centroids are not a regular raster')
-        return res_centr[0]
+        return abs(res_centr[0])
 
     def _firms_cons_days(self, df_firms):
         """ Compute clusters of consecutive days (temporal clusters).
@@ -910,12 +896,11 @@ class WildFire(Hazard):
         self._set_frequency()
 
         # Following values are defined for each fire and centroid
-        self.intensity = sparse.lil_matrix(np.zeros((num_ev, num_centr)))
+        intensity = sparse.lil_matrix(np.zeros((num_ev, num_centr)))
         for idx, ev_bright in enumerate(bright_list):
-            self.intensity[idx] = ev_bright
-        self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+            intensity[idx] = ev_bright
+        self.intensity = intensity.tocsr()
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     @staticmethod
     def _brightness_one_fire(df_firms, tree_centr, ev_id, res_centr, num_centr):

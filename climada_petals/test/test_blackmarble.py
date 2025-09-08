@@ -36,7 +36,9 @@ class Test2013(unittest.TestCase):
         ent = BlackMarble()
         with self.assertLogs('climada.util.finance', level='INFO') as cm:
             ent.set_countries(country_name, 2013, res_km=1)
-        self.assertIn('GDP ESP 2013: 1.356e+12.', cm.output[0])
+        gdp_esp = 1.362e+12  # the value is being revised sporadically by the world bank,
+                             # then this test must be updated
+        self.assertIn(f'GDP ESP 2013: {gdp_esp:.3e}.', cm.output[0])
         self.assertIn('Income group ESP 2013: 4.', cm.output[1])
 
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
@@ -45,17 +47,18 @@ class Test2013(unittest.TestCase):
                       cm.output[0])
         self.assertIn("Processing country Spain.", cm.output[1])
         self.assertIn("Generating resolution of approx 1 km.", cm.output[2])
-        self.assertTrue(np.isclose(ent.gdf.value.sum(), 1.355e+12 * (4 + 1), 0.001))
+        self.assertTrue(np.isclose(ent.value.sum(), gdp_esp * (4 + 1), 0.001))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
-        self.assertEqual(ent.meta['width'], 2699)
-        self.assertEqual(ent.meta['height'], 1938)
-        self.assertTrue(u_coord.equal_crs(ent.meta['crs'], 'epsg:4326'))
-        self.assertAlmostEqual(ent.meta['transform'][0], 0.008333333333333333)
-        self.assertAlmostEqual(ent.meta['transform'][1], 0)
-        self.assertAlmostEqual(ent.meta['transform'][2], -18.1625000000000)
-        self.assertAlmostEqual(ent.meta['transform'][3], 0)
-        self.assertAlmostEqual(ent.meta['transform'][4], -0.008333333333333333)
-        self.assertAlmostEqual(ent.meta['transform'][5], 43.79583333333333)
+        ent_meta = ent.derive_raster()  # TODO: speed up! this line alone may take 2 minutes to run
+        self.assertEqual(ent_meta['width'], 2699)
+        self.assertEqual(ent_meta['height'], 1938)
+        self.assertTrue(u_coord.equal_crs(ent_meta['crs'], 'epsg:4326'))
+        self.assertAlmostEqual(ent_meta['transform'][0], 0.008333333333333333)
+        self.assertAlmostEqual(ent_meta['transform'][1], 0)
+        self.assertAlmostEqual(ent_meta['transform'][2], -18.1625000000000)
+        self.assertAlmostEqual(ent_meta['transform'][3], 0)
+        self.assertAlmostEqual(ent_meta['transform'][4], -0.008333333333333333)
+        self.assertAlmostEqual(ent_meta['transform'][5], 43.79583333333333)
 
     def test_sint_maarten_pass(self):
         country_name = ['Sint Maarten']
@@ -72,7 +75,7 @@ class Test2013(unittest.TestCase):
                       cm.output[0])
         self.assertIn("Processing country Sint Maarten.", cm.output[1])
         self.assertIn("Generating resolution of approx 0.2 km.", cm.output[2])
-        self.assertTrue(np.isclose(ent.gdf.value.sum(), 1.023e+09 * (4 + 1), 0.001))
+        self.assertTrue(np.isclose(ent.value.sum(), 1.023e+09 * (4 + 1), 0.001))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
 
     def test_anguilla_pass(self):
@@ -80,8 +83,8 @@ class Test2013(unittest.TestCase):
         ent = BlackMarble()
         ent.set_countries(country_name, 2013, res_km=0.2)
         self.assertEqual(ent.ref_year, 2013)
-        self.assertEqual(["Anguilla 2013 GDP: 1.750e+08 income group: 3 \n"], ent.tag.description)
-        self.assertAlmostEqual(ent.gdf.value.sum(), 1.75e+08 * (3 + 1))
+        self.assertEqual("Anguilla 2013 GDP: 1.750e+08 income group: 3", ent.description)
+        self.assertAlmostEqual(ent.value.sum(), 1.75e+08 * (3 + 1))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
 
 class Test1968(unittest.TestCase):
@@ -91,7 +94,7 @@ class Test1968(unittest.TestCase):
         ent = BlackMarble()
         with self.assertLogs('climada.util.finance', level='INFO') as cm:
             ent.set_countries(country_name, 1968, res_km=0.5)
-        self.assertIn('GDP CHE 1968: 1.894e+10.', cm.output[0])
+        self.assertIn('GDP CHE 1968: 2.071e+10.', cm.output[0])
         self.assertIn('Income group CHE 1987: 4.', cm.output[1])
 
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
@@ -100,7 +103,7 @@ class Test1968(unittest.TestCase):
                       cm.output[0])
         self.assertTrue("Processing country Switzerland." in cm.output[-2])
         self.assertTrue("Generating resolution of approx 0.5 km." in cm.output[-1])
-        self.assertTrue(np.isclose(ent.gdf.value.sum(), 1.894e+10 * (4 + 1), 4))
+        self.assertTrue(np.isclose(ent.value.sum(), 1.894e+10 * (4 + 1), 4))
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
 
 class Test2012(unittest.TestCase):
@@ -114,17 +117,17 @@ class Test2012(unittest.TestCase):
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
             ent.set_countries(country_name, 2012, res_km=5.0)
         self.assertTrue('NOAA' in cm.output[-3])
-        size1 = ent.gdf.value.size
-        self.assertTrue(np.isclose(ent.gdf.value.sum(), 8.740e+11 * (3 + 1), 4))
+        size1 = ent.value.size
+        self.assertTrue(np.isclose(ent.value.sum(), 8.740e+11 * (3 + 1), 4))
 
         try:
             ent = BlackMarble()
             with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
                 ent.set_countries(country_name, 2012, res_km=5.0, from_hr=True)
                 self.assertTrue('NASA' in cm.output[-3])
-                size2 = ent.gdf.value.size
+                size2 = ent.value.size
                 self.assertTrue(size1 < size2)
-                self.assertTrue(np.isclose(ent.gdf.value.sum(), 8.740e+11 * (3 + 1), 4))
+                self.assertTrue(np.isclose(ent.value.sum(), 8.740e+11 * (3 + 1), 4))
         except TypeError:
             print('MemoryError caught')
             pass
@@ -133,8 +136,8 @@ class Test2012(unittest.TestCase):
         with self.assertLogs('climada_petals.entity.exposures.black_marble', level='INFO') as cm:
             ent.set_countries(country_name, 2012, res_km=5.0, from_hr=False)
         self.assertTrue('NOAA' in cm.output[-3])
-        self.assertTrue(np.isclose(ent.gdf.value.sum(), 8.740e+11 * (3 + 1), 4))
-        size3 = ent.gdf.value.size
+        self.assertTrue(np.isclose(ent.value.sum(), 8.740e+11 * (3 + 1), 4))
+        size3 = ent.value.size
         self.assertEqual(size1, size3)
         self.assertTrue(u_coord.equal_crs(ent.crs, 'epsg:4326'))
 
@@ -187,12 +190,11 @@ class BMFuncs(unittest.TestCase):
 
         self.assertEqual(np.unique(ent.gdf.region_id).size, 2)
         self.assertEqual(ent.ref_year, 2013)
-        [description] = ent.tag.description
-        self.assertIn('Switzerland 2013 GDP: ', description)
-        self.assertIn('Germany 2013 GDP: ', description)
-        self.assertIn('income group: 4', description)
-        [file_name] = ent.tag.file_name
-        self.assertIn('F182013.v4c_web.stable_lights.avg_vis.p',file_name)
+        self.assertEqual('F182013.v4c_web.stable_lights.avg_vis.p', ent.nightlight_file)
+        self.assertIn('Switzerland 2013 GDP: ', ent.description)
+        self.assertIn('Germany 2013 GDP: ', ent.description)
+        self.assertIn('income group: 4', ent.description)
+
 
 # Execute Tests
 if __name__ == "__main__":

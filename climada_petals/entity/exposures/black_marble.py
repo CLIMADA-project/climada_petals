@@ -23,6 +23,8 @@ __all__ = ['BlackMarble']
 
 import logging
 import math
+from pathlib import Path
+
 import numpy as np
 from numpy.polynomial.polynomial import polyval
 from scipy import ndimage
@@ -33,7 +35,6 @@ from climada.entity.exposures.base import Exposures, INDICATOR_IMPF
 from climada.entity.exposures.litpop import nightlight as nl_utils
 from climada.util.constants import SYSTEM_DIR, DEF_CRS
 from climada.util.finance import gdp, income_group
-from climada.util.tag import Tag
 import climada.util.coordinates as u_coord
 
 LOGGER = logging.getLogger(__name__)
@@ -57,6 +58,13 @@ class BlackMarble(Exposures):
     - 0 if country not found in UNSD.
     - -1 for water
     """
+
+    _metadata = Exposures._metadata + ['nightlight_file']
+
+    def __init__(self, *args, meta=None, nightlight_file=None, **kwargs):
+        super().__init__(*args, meta=meta, **kwargs)
+        meta = meta or {}
+        self.nightlight_file = Exposures._consolidate(meta, 'nightlight_file', nightlight_file)
 
     def set_countries(self, countries, ref_year=2016, res_km=None, from_hr=None,
                       admin_file='admin_0_countries', **kwargs):
@@ -102,30 +110,24 @@ class BlackMarble(Exposures):
 
         bkmrbl_list = []
 
-        description = ""
+        descr_lines = []
         for cntry_iso, cntry_val in cntry_info.items():
 
             bkmrbl_list.append(
                 self._set_one_country(cntry_val, nightlight, coord_nl, res_fact, res_km,
                                       cntry_admin1[cntry_iso], **kwargs).gdf)
-            description += ("{} {:d} GDP: {:.3e} income group: {:d} \n").\
-                format(cntry_val[1], cntry_val[3], cntry_val[4], cntry_val[5])
+            descr_lines.append(f"{cntry_val[1]} {cntry_val[3]:d}"
+                            f" GDP: {cntry_val[4]:.3e} income group: {cntry_val[5]:d}")
 
-        Exposures.__init__(
+        BlackMarble.__init__(
             self,
             data=Exposures.concat(bkmrbl_list).gdf,
             crs=DEF_CRS,
             ref_year=ref_year,
-            tag=Tag(file_name=fn_nl, description=description),
-            value_unit='USD'
+            value_unit='USD',
+            description="\n".join(descr_lines),
+            nightlight_file = Path(fn_nl).name,
         )
-
-        rows, cols, ras_trans = u_coord.pts_to_raster_meta(
-            (self.gdf.longitude.min(), self.gdf.latitude.min(),
-             self.gdf.longitude.max(), self.gdf.latitude.max()),
-            (coord_nl[0, 1], -coord_nl[0, 1])
-        )
-        self.meta = {'width': cols, 'height': rows, 'crs': self.crs, 'transform': ras_trans}
 
     @staticmethod
     def _set_one_country(cntry_info, nightlight, coord_nl, res_fact,
@@ -181,6 +183,7 @@ class BlackMarble(Exposures):
         exp_bkmrb.gdf[INDICATOR_IMPF] = 1
 
         return exp_bkmrb
+
 
 def country_iso_geom(countries, shp_file, admin_key=['ADMIN', 'ADM0_A3']):
     """ Get country ISO alpha_3, country id (defined as the United Nations
@@ -310,7 +313,7 @@ def get_nightlight(ref_year, cntry_info, res_km=None, from_hr=None):
                     str(nl_year))
         res_fact = DEF_RES_NASA_KM / res_km
         geom = [info[2] for info in cntry_info.values()]
-        geom = shapely.ops.cascaded_union(geom)
+        geom = shapely.unary_union(geom)
         req_files = nl_utils.get_required_nl_files(geom.bounds)
         files_exist = nl_utils.check_nl_local_file_exists(req_files,
                                                              SYSTEM_DIR, nl_year)
@@ -398,7 +401,7 @@ def _cut_admin1(nightlight, lat, lon, admin1_geom, coord_nl, on_land):
     on_land_reg (2d array of same size as previous with True values on land
     points)
     """
-    all_geom = shapely.ops.cascaded_union(admin1_geom)
+    all_geom = shapely.unary_union(admin1_geom)
 
     in_lat = (math.floor((all_geom.bounds[1] - lat[0, 0]) / coord_nl[0, 1]),
               math.ceil((all_geom.bounds[3] - lat[0, 0]) / coord_nl[0, 1]))
