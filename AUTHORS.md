@@ -27,3 +27,5 @@
 * Lukas Riedel
 * Samuel Juhel
 * Jere Lehtomaa
+* Valentin Gebhard
+* Dahyann Araya
