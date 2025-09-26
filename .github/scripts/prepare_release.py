@@ -120,7 +120,7 @@ def update_version(nvn):
 def update_pyproject(new_version_number):
     """Update the pyproject.toml file"""
     file_with_version = "pyproject.toml"
-    regex = r"(^version\s*=\s*[\'\"]).*([\'\"]\s*,\s*$)"
+    regex = r"(^version\s*=\s*[\'\"]).*([\'\"]\s*$)"
     return update_file(file_with_version, regex, new_version_number)
 
 
