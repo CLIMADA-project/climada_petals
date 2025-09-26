@@ -78,7 +78,7 @@ def update_version(nvn):
 def update_pyproject(new_version_number):
     """Update the pyproject.toml file"""
     file_with_version = "pyproject.toml"
-    regex = r"(^version\s*=\s*[\'\"]).*([\'\"]\s*,\s*$)"
+    regex = r"(^version\s*=\s*[\'\"]).*([\'\"]\s*$)"
     return update_file(file_with_version, regex, new_version_number)
 
 
@@ -110,7 +110,7 @@ def setup_devbranch():
     semver[-1] = f"{int(semver[-1]) + 1}-dev"
     dev_version = ".".join(semver)
 
-    update_setup(dev_version)
+    update_pyproject(dev_version)
     update_version(dev_version)
     update_changelog()
 
