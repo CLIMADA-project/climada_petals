@@ -6,6 +6,9 @@ River Flood from GloFAS River Discharge Data Module
 Main Module
 -----------
 
+This is the main user interface for the module.
+With it, you can perform most operations conveniently.
+
 .. automodule:: climada_petals.hazard.rf_glofas.river_flood_computation
     :members:
     :undoc-members:
@@ -14,6 +17,9 @@ Main Module
 -------------------------
 Transformation Operations
 -------------------------
+
+These are the underlying operations called by the main module.
+You can call them directly for advanced applications.
 
 .. automodule:: climada_petals.hazard.rf_glofas.transform_ops
     :members:
@@ -27,6 +33,11 @@ Helper Functions
 These are the functions exposed by the module.
 
 .. automodule:: climada_petals.hazard.rf_glofas.rf_glofas
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. automodule:: climada_petals.hazard.rf_glofas.flood_maps
     :members:
     :undoc-members:
     :show-inheritance:

@@ -45,7 +45,7 @@ Copernicus Data Store API Access
 Use Prepared Datasets
 ^^^^^^^^^^^^^^^^^^^^^
 
-The Gumbel distribution fit parameter data has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience: `Gumbel distribution fit parameters for historical GloFAS river discharge data (1979–2015) <https://doi.org/10.3929/ethz-b-000641667>`_
+The Gumbel distribution fit parameter data has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience: `Gumbel distribution fit parameters for historical GloFAS river discharge data (1979–2023)) <https://doi.org/10.3929/ethz-b-000726304>`_
 
 This dataset and the global flood hazard maps will be automatically downloaded when executing
 
@@ -61,7 +61,6 @@ your machine.
 After this step, you should have the following files in your ``<climada-dir>/data/river-flood-computation``:
 
 * ``gumbel-fit.nc``: A NetCDF file containing ``loc``, ``scale`` and ``samples`` variables with dimensions ``latitude`` and ``longitude`` on a grid matching the input discharge data (here: GloFAS).
-* ``flood-maps.nc``: A NetCDF file giving the ``flood_depth`` with dimensions ``latitude``, ``longitude``, and ``return_period``. The grid is allowed to differ from that of the discharge and the Gumbel fit parameters and is expected to have a higher resolution.
 * ``FLOPROS_shp_V1/FLOPROS_shp_V1.shp``: A shapefile containing flood protection standards for the entire world, encoded as return period against which the local measures are protecting against. 
 
 .. _compute:
@@ -128,11 +127,22 @@ The single steps are as follows:
 
         return_period = rf.return_period_resample(10, discharge)
 
+#. Loading the flood hazard maps matching the extent of the downloaded discharge data with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.load_flood_maps`:
+
+   .. code-block:: python
+
+        flood_maps = self.load_flood_maps(discharge, coarsening=3)
+    
+   This downloads the tiles of the flood hazard maps intersecting the downloaded discharge data.
+   The flood hazard maps have a very high resolution of 3 arc seconds (around 90 m at the equator).
+   This resolution is unfeasible for computations of larger-scale flood events on memory-limited hardware.
+   Therefore, a default coarsening is applied, raising the resolution to 21 arc seconds (``coarsening=7``).
+
 #. Regridding the return period onto the higher resolution grid of the flood hazard maps with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.regrid`:
 
    .. code-block:: python
 
-        return_period_regrid = rf.regrid(return_period)
+        return_period_regrid = rf.regrid(return_period, flood_maps=flood_maps)
 
 #. *Optional:* Applying the protection level with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.apply_protection`:
 
@@ -144,15 +154,15 @@ The single steps are as follows:
 
    .. code-block:: python
 
-        flood_depth = rf.flood_depth(return_period_regrid)
-        flood_depth_protect = rf.flood_depth(return_period_regrid_protect)
+        flood_depth = rf.flood_depth(return_period_regrid, flood_maps=flood_maps)
+        flood_depth_protect = rf.flood_depth(return_period_regrid_protect, flood_maps=flood_maps)
 
    If :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` was executed with ``apply_protection="both"`` (default), it will merge the data arrays for flood depth without protection applied and with protection applied, respectively, into a single dataset and return it.
 
 Passing Keyword-Arguments to ``compute``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you want to pass custom arguments to the methods called by :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` without calling each method individually, you can do so via the ``resample_kws`` and ``regrid_kws`` arguments.
+If you want to pass custom arguments to the methods called by :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` without calling each method individually, you can do so via the ``load_flood_maps_kws``, ``resample_kws`` and ``regrid_kws`` arguments.
 
 If you add ``resample_kws``, :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` will call :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period_resample` instead of :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period` and pass the mapping as keyword arguments.
 
@@ -160,9 +170,12 @@ Likewise, ``regrid_kws`` will be passed as keyword arguments to :py:meth:`~clima
 
 .. code-block:: python
 
+    import numpy as np
+
     ds_flood = rf.compute(
-        resample_kws=dict(num_bootstrap_samples=20, num_workers=4),
-        regrid_kws=dict(reuse_regridder=True)
+        load_flood_maps_kws={"coarsening": 3, "coarsen_agg": np.max},
+        resample_kws={"num_bootstrap_samples": 20, "num_workers": 4},
+        regrid_kws={"reuse_regridder": True},
     )
 
 Creating Hazards from the Data
