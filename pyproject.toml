@@ -22,7 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "boario",
-    "climada>=6.0",
+    "climada>=6.1",
     "cdsapi",
     "osm-flex",
     "pymrio",
