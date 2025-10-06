@@ -1,3 +1,24 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Tests for transform_ops.py
+"""
+
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock, DEFAULT
@@ -11,6 +32,7 @@ import xarray as xr
 import xarray.testing as xrt
 import geopandas as gpd
 from shapely.geometry import Polygon
+import pandas as pd
 
 from climada_petals.hazard.rf_glofas.transform_ops import (
     download_glofas_discharge,
@@ -59,10 +81,10 @@ class TestGlofasDownloadOps(unittest.TestCase):
         # Store some dummy data
         xr.DataArray(
             data=[0, 1, 2], dims=["x"], coords=dict(x=[0, 1, 2], time=0)
-        ).rename("dis24").to_netcdf(self.tempdir.name + "/file-1.nc")
+        ).rename("dis24").to_netcdf(self.tempdir.name + "/file-1.nc", engine="netcdf4")
         xr.DataArray(
             data=[10, 11, 12], dims=["x"], coords=dict(x=[0, 1, 2], time=1)
-        ).rename("dis24").to_netcdf(self.tempdir.name + "/file-2.nc")
+        ).rename("dis24").to_netcdf(self.tempdir.name + "/file-2.nc", engine="netcdf4")
 
         # Mock the 'glofas_request' function
         # NOTE: Need to patch the object where it is imported and used
@@ -75,6 +97,9 @@ class TestGlofasDownloadOps(unittest.TestCase):
             Path(self.tempdir.name, f"file-{num}.nc") for num in range(1, 3)
         ]
 
+        # Default datetime index consisting of only one date
+        self.dates = pd.DatetimeIndex(["2022-01-01"])
+
     def tearDown(self):
         """Clean up the temporary directory"""
         self.tempdir.cleanup()
@@ -85,11 +110,11 @@ class TestGlofasDownloadOps(unittest.TestCase):
         out_dir = Path(self.tempdir.name, "bla")
         ds = download_glofas_discharge(
             "forecast",
-            "2022-01-01",
-            None,
+            self.dates,
             42,
             out_dir,
             some_kwarg="foo",
+            open_mfdataset_kw={"engine": "netcdf4"},  # To read the test files
         )
 
         # Check directory
@@ -98,17 +123,32 @@ class TestGlofasDownloadOps(unittest.TestCase):
         # Check call
         self.glofas_request_mock.assert_called_once_with(
             product="forecast",
-            date_from="2022-01-01",
-            date_to=None,
             num_proc=42,
             output_dir=out_dir,
-            request_kw=dict(some_kwarg="foo"),
+            request_kw={"some_kwarg": "foo"},
+            requests=[{
+                "year": ["2022"],
+                "month": ["01"],
+                "day": ["01"],
+            }],
         )
 
         # Check return value
         npt.assert_array_equal(ds["time"].data, [0, 1])
         npt.assert_array_equal(ds["x"].data, [0, 1, 2])
         npt.assert_array_equal(ds.data, [[0, 1, 2], [10, 11, 12]])
+
+        # Check return only the file paths
+        files = download_glofas_discharge(
+            "forecast",
+            self.dates,
+            42,
+            out_dir,
+            open_mfdataset_kw=False,
+        )
+        self.assertListEqual(
+            files, [Path(self.tempdir.name, f"file-{num}.nc") for num in range(1, 3)]
+        )
 
     @patch(
         "climada_petals.hazard.rf_glofas.transform_ops.get_country_geometries",
@@ -123,19 +163,26 @@ class TestGlofasDownloadOps(unittest.TestCase):
         # Default: countries=None
         download_glofas_discharge(
             "forecast",
-            "2022-01-01",
-            None,
+            self.dates,
             42,
             self.tempdir.name,
+            open_mfdataset_kw=False,
         )
         get_country_geometries_mock.assert_not_called()
 
         # Assert that 'area' was not passed
-        self.assertEqual(self.glofas_request_mock.call_args.kwargs["request_kw"], {})
+        self.assertNotIn(
+            "area", self.glofas_request_mock.call_args.kwargs["request_kw"].keys()
+        )
 
         # Set only countries
         download_glofas_discharge(
-            "forecast", "2022-01-01", None, 42, self.tempdir.name, "Switzerland"
+            "forecast",
+            self.dates,
+            42,
+            self.tempdir.name,
+            "Switzerland",
+            open_mfdataset_kw=False,
         )
         get_country_geometries_mock.assert_called_once_with("CHE", extent=None)
         npt.assert_array_equal(
@@ -146,12 +193,12 @@ class TestGlofasDownloadOps(unittest.TestCase):
         # Set both countries and area
         download_glofas_discharge(
             "forecast",
-            "2022-01-01",
-            None,
+            self.dates,
             42,
             self.tempdir.name,
             countries=["Switzerland", "DEU"],
             area=[0, 1, 2, 3],
+            open_mfdataset_kw=False,
         )
 
         # Check country code translation and area order
@@ -168,7 +215,11 @@ class TestGlofasDownloadOps(unittest.TestCase):
         """Test the capabilities of the preprocessing"""
         # Simple addition
         ds = download_glofas_discharge(
-            "forecast", "2022-01-01", None, 1, preprocess=lambda x: x + 1
+            "forecast",
+            self.dates,
+            1,
+            preprocess=lambda x: x + 1,
+            open_mfdataset_kw={"engine": "netcdf4"},  # To read the test files
         )
         npt.assert_array_equal(ds["time"].data, [0, 1])
         npt.assert_array_equal(ds["x"].data, [0, 1, 2])
@@ -177,17 +228,119 @@ class TestGlofasDownloadOps(unittest.TestCase):
         # Maximum new concat dim
         ds = download_glofas_discharge(
             "forecast",
-            "2022-01-01",
-            None,
+            self.dates,
             1,
             preprocess=lambda x: x.max(dim="x").rename(time="year"),
-            open_mfdataset_kw=dict(concat_dim="year"),
+            open_mfdataset_kw=dict(concat_dim="year", engine="netcdf4"),
         )
         self.assertIn("year", ds.dims)
         self.assertNotIn("time", ds.dims)
         self.assertNotIn("x", ds.dims)
         npt.assert_array_equal(ds["year"].data, [0, 1])
         npt.assert_array_equal(ds.data, [2, 12])
+
+    @patch.multiple(
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader",
+        glofas_request_single=DEFAULT,
+        glofas_request_multiple=DEFAULT,
+        autospec=True,
+    )
+    def test_split_request(self, glofas_request_single, glofas_request_multiple):
+        """Check that requests are split correctly"""
+        glofas_request_single.return_value = self.glofas_request_mock.return_value[0]
+        glofas_request_multiple.return_value = self.glofas_request_mock.return_value
+        self.patch_glofas_request.stop()  # Stop mocking the top-level glofas_request
+
+        def reset_mocks():
+            glofas_request_single.reset_mock()
+            glofas_request_multiple.reset_mock()
+
+        download_glofas_discharge(
+            "historical",
+            self.dates,
+            42,
+            self.tempdir.name,
+            split_request=False,  # request_single should be called
+            open_mfdataset_kw=False,
+        )
+        glofas_request_multiple.assert_not_called()
+        self.assertDictEqual(
+            glofas_request_single.call_args.args[1],
+            glofas_request_single.call_args.args[1]
+            | {"hyear": ["2022"], "hmonth": ["01"], "hday": ["01"]},
+        )
+        reset_mocks()
+
+        download_glofas_discharge(
+            "historical",
+            pd.DatetimeIndex(["2000-01-01", "2001-02-02"]),
+            42,
+            self.tempdir.name,
+            split_request=True,  # request_multiple should be called
+            open_mfdataset_kw=False,
+        )
+        glofas_request_single.assert_not_called()
+        self.assertIs(len(glofas_request_multiple.call_args.args[1]), 2)  # Two requests
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][0],
+            glofas_request_multiple.call_args.args[1][0]
+            | {"hyear": ["2000"], "hmonth": ["01"], "hday": ["01"]},
+        )
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][1],
+            glofas_request_multiple.call_args.args[1][1]
+            | {"hyear": ["2001"], "hmonth": ["02"], "hday": ["02"]},
+        )
+        reset_mocks()
+
+        download_glofas_discharge(
+            "forecast",
+            pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2001-03-11"]),
+            42,
+            self.tempdir.name,
+            split_request=True,
+            open_mfdataset_kw=False,
+        )
+        glofas_request_single.assert_not_called()
+        self.assertEqual(
+            len(glofas_request_multiple.call_args.args[1]), 3
+        )  # 3 requests
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][0],
+            glofas_request_multiple.call_args.args[1][0]
+            | {"year": ["2000"], "month": ["01"], "day": ["10"]},
+        )
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][1],
+            glofas_request_multiple.call_args.args[1][1]
+            | {"year": ["2000"], "month": ["02"], "day": ["10"]},
+        )
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][2],
+            glofas_request_multiple.call_args.args[1][2]
+            | {"year": ["2001"], "month": ["03"], "day": ["11"]},
+        )
+        reset_mocks()
+
+        download_glofas_discharge(
+            "forecast",
+            pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2000-03-11"]),
+            42,
+            self.tempdir.name,
+            split_request="2M",
+            open_mfdataset_kw=False,
+        )
+        glofas_request_single.assert_not_called()
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][0],
+            glofas_request_multiple.call_args.args[1][0]
+            | {"year": ["2000", "2000"], "month": ["01", "02"], "day": ["10", "10"]},
+        )
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][1],
+            glofas_request_multiple.call_args.args[1][1]
+            | {"year": ["2000"], "month": ["03"], "day": ["11"]},
+        )
 
 
 class TestTransformOps(unittest.TestCase):
@@ -306,7 +459,9 @@ class TestTransformOps(unittest.TestCase):
         y = np.arange(20, 10, -1)
         z = np.linspace(0, 5, 11)
 
-        values = (x[:, None, None] * y[None, :, None] * z[None, None, :]).astype("float")
+        values = (x[:, None, None] * y[None, :, None] * z[None, None, :]).astype(
+            "float"
+        )
         discharge = xr.DataArray(values, coords=dict(longitude=x, latitude=y, time=z))
         gev = xr.DataArray(
             np.outer(x, y).astype("float"), coords=dict(longitude=x, latitude=y)
@@ -404,9 +559,9 @@ class TestTransformOps(unittest.TestCase):
             coords=dict(longitude=x, latitude=y),
         )
         da_coords = xr.DataArray(
-            data=values,
-            dims=["latitude", "longitude"],
-            coords=dict(longitude=x_diff, latitude=y_diff),
+            data=[values] * 3,
+            dims=["return_period", "latitude", "longitude"],
+            coords=dict(longitude=x_diff, latitude=y_diff, return_period=[1, 10, 100]),
         )
 
         xx_diff, yy_diff = np.meshgrid(x_diff, y_diff, indexing="xy")
@@ -421,20 +576,17 @@ class TestTransformOps(unittest.TestCase):
         da_result = interpolate_space(da_values, da_coords)
         _assert_result(da_result, da_expected)
 
-        # 'regrid'
+        # Nearest neighbor extrapolation
         da_values[2:, 2:] = np.nan
-        da_expected[2:, 2:] = [[2, 5], [1, 1]]  # Nearest neighbor extrapolation
+        da_expected[1:, 2:] = [[4, 5], [2, 5], [1, 1]]
 
+        # 'regrid'
         da_result = regrid(da_values, da_coords)
         _assert_result(
             da_result,
-            xr.DataArray(
-                data=expected_values,
-                dims=["latitude", "longitude"],
-                coords=dict(longitude=x_diff, latitude=y_diff),
-            ),
-            rtol=2e5,
-        )  # Regridding has lower accuracy
+            da_expected,
+            rtol=1e-3,  # Regridding has lower accuracy
+        )
 
     def test_apply_flopros(self):
         """Test 'apply_flopros' operation"""
