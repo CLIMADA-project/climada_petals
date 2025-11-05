@@ -626,6 +626,9 @@ def parse_mriot(
         ].clip(lower=0)
         mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
         mriot.A = pymrio.calc_A(mriot.Z, mriot.x)
+        mriot.L = pymrio.calc_L(mriot.A)
+        mriot.B = pymrio.calc_B(mriot.Z, mriot.x)
+        mriot.G = pymrio.calc_G(mriot.B)
 
     return mriot
 

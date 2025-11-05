@@ -914,7 +914,7 @@ class StaticIOModel(IndirectCostModel):
             ],
             axis=0,
         )
-        res = res.reset_index().sort_values(
+        res = res.reset_index("event_id").sort_values(
             ["event_id", "region", "sector", "method", "metric"]
         )[["event_id", "region", "sector", "method", "metric", "value"]]
         res.index = res.index.sort_values()
