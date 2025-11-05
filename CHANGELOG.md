@@ -16,6 +16,10 @@ Code freeze date: YYYY-MM-DD
 
 ### Fixed
 
+Fixed minor bugs in the supplychain module [[#187](https://github.com/CLIMADA-project/climada_petals/issues/187)]:
+    - An index name was not set that generated errors when merging results
+    - Attributes of the MRIOT (such as the G matrix) could be absent
+
 ### Deprecated
 
 ### Removed
