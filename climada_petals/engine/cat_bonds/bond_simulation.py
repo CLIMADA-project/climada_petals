@@ -6,8 +6,7 @@ LOGGER = logging.getLogger(__name__)
 
 class bond_simulation:
 
-    def __init__(self, subarea_calc, term, number_terms, premium):
-        self.premium = premium # place holder till we have variable premiums
+    def __init__(self, subarea_calc, term, number_terms):
         self.term = term
         self.simulated_years = number_terms * term
         self.subarea_calc = subarea_calc
@@ -140,7 +139,7 @@ class bond_simulation:
 
 
     '''Simulate over all terms of bond to derive returns'''
-    def init_return_simulation(self):
+    def init_return_simulation(self, premium):
         """
         Simulates the performance of a catastrophe bond over the simulation period, premiums and returns.
         This function models the bond's payouts, premiums, and returns over a series of simulated years.
@@ -161,13 +160,13 @@ class bond_simulation:
             losses = self.df_loss_month['losses'].iloc[i]
             months = self.df_loss_month['months'].iloc[i]
             if np.sum(losses) == 0:
-                prem_tmp = cur_nominal * self.premium
+                prem_tmp = cur_nominal * premium
                 premiums_tot.append(prem_tmp)
                 ncf_tot.append(prem_tmp)
             else:
                 ncf_tot_tmp = []
                 premiums_tot_tmp = []
-                prem_tmp = cur_nominal * self.premium / 12 * months[0]
+                prem_tmp = cur_nominal * premium / 12 * months[0]
                 premiums_tot_tmp.append(prem_tmp)
                 ncf_tot_tmp.append(prem_tmp)
                 for j in range(len(losses)):
@@ -181,11 +180,11 @@ class bond_simulation:
                         pass
                     if j + 1 < len(losses):
                         next_month = months[j+1]
-                        prem_tmp = ((cur_nominal * self.premium) / 12 * (next_month - month))
+                        prem_tmp = ((cur_nominal * premium) / 12 * (next_month - month))
                         premiums_tot_tmp.append(prem_tmp)
                         ncf_tot_tmp.append(prem_tmp - loss)
                     else:
-                        prem_tmp = ((cur_nominal * self.premium) / 12 * (12- month))
+                        prem_tmp = ((cur_nominal * premium) / 12 * (12- month))
                         premiums_tot_tmp.append(prem_tmp)
                         ncf_tot_tmp.append(prem_tmp - loss)
                 ncf_tot.append(np.sum(ncf_tot_tmp))
