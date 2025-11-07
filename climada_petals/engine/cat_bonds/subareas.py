@@ -8,6 +8,7 @@ from shapely.ops import unary_union
 from rasterio.features import shapes, rasterize
 from rasterio.transform import from_bounds
 from sklearn.neighbors import NearestNeighbors
+import cartopy.crs as ccrs
 
 import logging
 
@@ -61,7 +62,7 @@ class Subareas:
 
     def _build_subareas(self):
         """Calculate subareas and islands."""
-        self.subareas_gdf, self.exp_gdf = self._init_subareas()
+        self.subareas_gdf = self._init_subareas()
 
     # --- Properties with auto-rebuild ---
     @property
@@ -80,29 +81,40 @@ class Subareas:
         if self.subareas_gdf is None:
             raise ValueError("Subareas have not been generated yet.")
         else:
-            fig, ax = plt.subplots(figsize=(6.4, 4.8))
-            self.exp_gdf.plot(ax=ax, color="green", label="Exposure")
+            # Let plot_raster() create the correct cartopy GeoAxes
+            ax = self._exposure.plot_raster()
+
+            # Overlay subareas directly with the correct CRS transform
             self.subareas_gdf.plot(
-                ax=ax, facecolor="none", edgecolor="red", lw=2, label="Subarea"
+                ax=ax,
+                facecolor="none",
+                edgecolor="red",
+                lw=2,
+                transform=ccrs.PlateCarree(),  # CLIMADA rasters use this by default
+                zorder=5,
             )
-            handles = [
-                Line2D([0], [0], color="green", lw=4, label="Exposure"),
-                Line2D([0], [0], color="red", lw=2, label="Subareas"),
-            ]
+
+            xmin1, ymin1, xmax1, ymax1 = self._exposure.gdf.total_bounds
+            xmin2, ymin2, xmax2, ymax2 = self.subareas_gdf.total_bounds
+
+            xmin = min(xmin1, xmin2)
+            xmax = max(xmax1, xmax2)
+            ymin = min(ymin1, ymin2)
+            ymax = max(ymax1, ymax2)
+
+            # 4️⃣ Add padding (e.g. 10% wider and 5% taller)
+            pad_x = (xmax - xmin) * 0.1   # 10% horizontal padding
+            pad_y = (ymax - ymin) * 0.05  # 5% vertical padding
+
+            ax.set_extent(
+                [xmin - pad_x, xmax + pad_x, ymin - pad_y, ymax + pad_y],
+                crs=ccrs.PlateCarree()
+            )
+
+            # Add legend
+            handles = [Line2D([0], [0], color="red", lw=2, label="Subareas")]
             ax.legend(handles=handles, loc="upper right")
-            ax.tick_params(axis="both", which="major", labelsize=12)
-            ax.set_yticks(ax.get_yticks()[1:])
-            ax.set_xticks(ax.get_xticks())
-            xlabel = ax.get_xticks()
-            new_xlabel = []
-            for label in xlabel:
-                new_xlabel.append(str(round(-label, 1)) + "°W")
-            ax.set_xticklabels(new_xlabel)
-            ylabel = ax.get_yticks()
-            new_ylabel = []
-            for label in ylabel:
-                new_ylabel.append(str(round(-label, 1)) + "°S")
-            ax.set_yticklabels(new_ylabel)
+
             plt.show()
 
     def count_subareas(self):
@@ -128,7 +140,6 @@ class Subareas:
         exp_gdf : GeoDataFrame
             Geodataframe of the exposure perimeter.
         """
-        exp_crs = self._exposure.crs
         exp_gdf = self._create_exp_gdf()
         logging.info("Number of polygons in exposure perimeter: %d", len(exp_gdf))
         exp_gdf = exp_gdf.explode(ignore_index=True, index_parts=True)
@@ -139,7 +150,7 @@ class Subareas:
 
         subareas_gdf["subarea_letter"] = [chr(65 + i) for i in range(len(subareas_gdf))]
 
-        return subareas_gdf, exp_gdf
+        return subareas_gdf
 
     def _crop_grid_cells_to_polygon(self, exp_gdf):
 
@@ -200,7 +211,6 @@ class Subareas:
                     )
 
                     if grid_cell.intersects(polygon.geometry):
-                        #cell_cropped = grid_cell.intersection(polygon.geometry)
                         grid_cells.append(grid_cell)
 
             grid_gdf = gpd.GeoDataFrame(
@@ -276,6 +286,5 @@ class Subareas:
         merged_exp_gdf_sep = unary_union(exp_gdf_sep.geometry)
         exp_gdf = gpd.GeoDataFrame(geometry=[merged_exp_gdf_sep], crs=exp_gdf.crs)
         LOGGER.info("Exposure perimeter polygon created.")
-        exp_gdf.plot()
 
         return exp_gdf
