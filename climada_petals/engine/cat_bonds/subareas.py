@@ -182,7 +182,14 @@ class Subareas:
         # Loop through each polygon in the GeoDataFrame
         for idx, polygon in exp_gdf.iterrows():
             
+            # Pad the geometry bounds by 1% of width/height for better coverage
             minx, miny, maxx, maxy = polygon.geometry.bounds
+            pad_x = (maxx - minx) * 0.02
+            pad_y = (maxy - miny) * 0.02
+            minx -= pad_x
+            maxx += pad_x
+            miny -= pad_y
+            maxy += pad_y
 
             LOGGER.info(
                 f"Processing polygon with bounds: {minx}, {miny}, {maxx}, {maxy}"
