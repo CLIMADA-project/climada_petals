@@ -6,7 +6,8 @@ LOGGER = logging.getLogger(__name__)
 
 class bond_simulation:
 
-    def __init__(self, subarea_calc, term, number_terms):
+    def __init__(self, subarea_calc, term, number_terms, premium):
+        self.premium = premium # place holder till we have variable premiums
         self.term = term
         self.simulated_years = number_terms * term
         self.subarea_calc = subarea_calc
@@ -136,3 +137,64 @@ class bond_simulation:
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
         LOGGER.info(f'Attachment Probability = {att_prob}')
+
+
+    '''Simulate over all terms of bond to derive returns'''
+    def init_bond_simulation(self):
+        """
+        Simulates the performance of a catastrophe bond over the simulation period, premiums and returns.
+        This function models the bond's payouts, premiums, and returns over a series of simulated years.
+        It aggregates annual and total returns and computes Sharpe ratios.
+        Parameters
+        ----------
+            self: bond_simulation
+                An instance of the bond_simulation class containing monthly loss data, premium rate, and term. 
+        Returns
+        -------
+            investor_metrics (pd.DataFrame): DataFrame containing annual premiums, annual returns, total returns, and total premiums for the bond.
+        """
+
+        premiums_tot = []
+        ncf_tot = []
+        cur_nominal = 1
+        for i in range(len(self.df_loss_month)):
+            losses = self.df_loss_month['losses'].iloc[i]
+            months = self.df_loss_month['months'].iloc[i]
+            if np.sum(losses) == 0:
+                prem_tmp = cur_nominal * self.premium
+                premiums_tot.append(prem_tmp)
+                ncf_tot.append(prem_tmp)
+            else:
+                ncf_tot_tmp = []
+                premiums_tot_tmp = []
+                prem_tmp = cur_nominal * self.premium / 12 * months[0]
+                premiums_tot_tmp.append(prem_tmp)
+                ncf_tot_tmp.append(prem_tmp)
+                for j in range(len(losses)):
+                    loss = losses[j]
+                    month = months[j]
+                    cur_nominal -= loss
+                    if cur_nominal < 0:
+                        loss += cur_nominal
+                        cur_nominal = 0
+                    else:
+                        pass
+                    if j + 1 < len(losses):
+                        next_month = months[j+1]
+                        prem_tmp = ((cur_nominal * self.premium) / 12 * (next_month - month))
+                        premiums_tot_tmp.append(prem_tmp)
+                        ncf_tot_tmp.append(prem_tmp - loss)
+                    else:
+                        prem_tmp = ((cur_nominal * self.premium) / 12 * (12- month))
+                        premiums_tot_tmp.append(prem_tmp)
+                        ncf_tot_tmp.append(prem_tmp - loss)
+                ncf_tot.append(np.sum(ncf_tot_tmp))
+                premiums_tot.append(np.sum(premiums_tot_tmp))
+            if (i + 1) % self.term == 0:
+                cur_nominal = 1
+
+        sharpe_ratio = (np.mean(ncf_tot) / np.std(ncf_tot)) if np.std(ncf_tot) != 0 else np.nan
+    
+        self.investor_metrics = pd.DataFrame({'annual_premiums': np.array(premiums_tot), 'annual_returns': np.array(ncf_tot),
+                                               'total_returns': np.sum(np.array(ncf_tot)), 'total_premiums': np.sum(np.array(premiums_tot)),
+                                               'sharpe_ratio': sharpe_ratio})
