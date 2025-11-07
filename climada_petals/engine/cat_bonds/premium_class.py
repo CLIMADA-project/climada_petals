@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, minimize
 
 import logging
 
@@ -88,3 +88,77 @@ class premium_calculations:
         LOGGER.info(f'Fitted IBRD premium parameters: a={a}, k={k}, b={b}')
         self.ibrd_prem_rate = self.monoExp(self.bond_simulation_class.loss_metrics['EL_ann']*100, a, k, b) * self.bond_simulation_class.loss_metrics['EL_ann']
         LOGGER.info(f"Calculated IBRD premium rate: {self.ibrd_prem_rate}")
+        
+
+
+    ### BENCHMARK SHARPE RATIO PREMIUMS ###
+    '''Benchmark pricing function for single country bonds -> goes through all losses and determines required premium to achieve a certain target Sharpe ratio'''
+    def find_sharpe(self, premium, ann_losses, target_sharpe):
+        """
+        Calculates the squared difference between the Sharpe ratio of a cat bond cash flow and a target Sharpe ratio.
+        The function simulates the annual cash flows of a catastrophe bond investment, adjusting for losses and premium payments.
+        It computes the average return and standard deviation of the net cash flows, then calculates the Sharpe ratio and returns
+        the squared difference from the target Sharpe ratio.
+        Parameters
+        ----------
+            premium (float): The annual premium rate paid to the investor.
+            ann_losses (pd.DataFrame): DataFrame containing annual loss events, with columns 'losses' (list of loss amounts per event)
+                                      and 'months' (list of months when each event occurs).
+            target_sharpe (float): The target Sharpe ratio to compare against.
+        Returns
+        -------
+            float: The squared difference between the calculated Sharpe ratio and the target Sharpe ratio.
+        """
+
+        ncf = []
+        cur_nominal = 1
+        for i in range(len(ann_losses)):
+            losses = ann_losses['losses'].iloc[i]
+            months = ann_losses['months'].iloc[i]
+            if np.sum(losses) == 0:
+                ncf.append(cur_nominal * premium)
+            else:
+                ncf_pre_event = (cur_nominal * premium) / 12 * (months[0])
+                ncf_post_event = []
+                for j in range(len(losses)):
+                    loss = losses[j]
+                    month = months[j]
+                    cur_nominal -= loss
+                    if cur_nominal < 0:
+                        loss += cur_nominal
+                        cur_nominal = 0
+                    if j + 1 < len(losses):
+                        nex_month = months[j+1]
+                        ncf_post_event.append(((cur_nominal * premium) / 12 * (nex_month - month)) - loss)
+                    else:
+                        ncf_post_event.append(((cur_nominal * premium) / 12 * (12- month)) - loss)
+                ncf.append(ncf_pre_event + np.sum(ncf_post_event))
+            if (i + 1) % self.bond_simulation_class.term == 0:
+                cur_nominal = 1
+
+        avg_ret = np.mean(ncf)
+        sigma = np.std(ncf)
+        return (avg_ret / sigma - target_sharpe)**2
+
+
+    '''Benchmark pricing function for single country bonds -> wrapper function to call the optimization'''
+    def calc_benchmark_premium(self, target_sharpe):        
+        """
+        Calculates the initial premium required to achieve a target Sharpe ratio for a given set of annual losses.
+        This function uses numerical optimization to find the premium value that results in the desired Sharpe ratio,
+        given the annual losses and the risk-free rate.
+        Parameters
+        ----------
+        self: float
+            An instance of the premium_calculation class containing a dataframw with monthly losses.
+        target_sharpe: float 
+            Desired Sharpe ratio to be achieved.
+        Returns
+        -------
+            float: The optimal premium value that achieves the target Sharpe ratio.
+        """
+
+        result = minimize(lambda p: self.find_sharpe(p, self.bond_simulation_class.df_loss_month, target_sharpe), 
+                          x0=[0.05])
+        self.benchmark_prem_rate = result.x[0]
+
