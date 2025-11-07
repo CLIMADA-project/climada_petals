@@ -73,7 +73,7 @@ class Subarea_Calculations:
         exp_gdf = self.subareas.exposure.gdf
 
         # Perform a spatial join to associate each exposure point with calculated impact with a subarea
-        exp_to_admin = exp_gdf.sjoin(exp_gdf.subareas.subareas_gdf, how="left", predicate="within")
+        exp_to_admin = exp_gdf.sjoin(self.subareas.subareas_gdf, how="left", predicate="within")
         if exp_to_admin['subarea_letter'].isnull().any():
             LOGGER.warning("Some exposure points were not assigned to any subarea. Subareas may be to small.")
         # group each exposure point according to subarea letter
@@ -158,8 +158,8 @@ class Subarea_Calculations:
         """
 
         hazard = self.subareas.hazard.centroids.gdf
-        hazard = hazard.to_crs(self.subareas.crs)
-        centrs_to_sub = hazard.sjoin(self.subareas, how="left", predicate="intersects")
+        hazard = hazard.to_crs(self.subareas.subareas_gdf.crs)
+        centrs_to_sub = hazard.sjoin(self.subareas.subareas_gdf, how="left", predicate="intersects")
         agg_exp = centrs_to_sub.groupby("subarea_letter").apply(lambda x: x.index.tolist())
         
         int_sub = {
