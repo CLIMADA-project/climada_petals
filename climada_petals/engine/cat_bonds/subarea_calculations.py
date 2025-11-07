@@ -401,9 +401,8 @@ class Subarea_Calculations:
         else:
             self.principal, self.attachment = exhaustion_point, attachment_point
         self.results, self.opt_min_thresh, self.opt_max_thresh = self._calibrate_payout_fcts(parametric_index, self.principal, self.attachment, imp_subareas_evt)
-        pay_vs_dam = self._calc_pay_vs_dam(impact=imp, imp_subareas_evt=imp_subareas_evt, attachment=self.attachment, principal=self.principal, opt_min_thresh=self.opt_min_thresh, opt_max_thresh=self.opt_max_thresh, haz_int=parametric_index)
-        
-        return pay_vs_dam, self.principal
+        self.pay_vs_dam = self._calc_pay_vs_dam(impact=imp, imp_subareas_evt=imp_subareas_evt, attachment=self.attachment, principal=self.principal, opt_min_thresh=self.opt_min_thresh, opt_max_thresh=self.opt_max_thresh, haz_int=parametric_index)
+
     
 # this function calculates the payout for an event in a subarea -> defines the payout function
 def calc_payout(min_trig, max_trig, haz_int, max_pay):
