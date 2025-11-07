@@ -12,7 +12,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Subarea_Calculations:
-    def __init__(self, subareas, index_stat, exhaustion_point, attachment_point):
+    def __init__(self, subareas, index_stat):
 
         '''
         Attributes
@@ -39,8 +39,6 @@ class Subarea_Calculations:
 
         self.subareas = subareas
         self.index_stat = index_stat
-        self.exhaustion_point = exhaustion_point
-        self.attachment_point = attachment_point
 
         self.initial_guess_dict = {
             "TC": (30, 40)
@@ -84,7 +82,7 @@ class Subarea_Calculations:
 
         return imp, imp_subareas_evt
 
-    def _calc_attachment_principal(self, impact):
+    def _calc_attachment_principal(self, impact, attachment_point, exhaustion_point, attachment_point_method=None, exhaustion_point_method=None):
         """
         Initializes and calculates the attachment point and principal value for a CAT bond.
         The function determines the attachment point/principal amount based on either a protection return period
@@ -97,59 +95,48 @@ class Subarea_Calculations:
                 Instance of the Subarea_Calculations class.
             impact : climada.ImpactCalc
                 Impact calculation object containing results and methods.
+            attachment_point : float
+                The attachment point value for the CAT bond. Can be expressed as a monetary value, a share of total exposure, or a return period.
+            exhaustion_point : float
+                The exhaustion point value for the CAT bond. Can be expressed as a monetary value, a share of total exposure, or a return period.
+            attachment_point_method : str, optional
+                Method to interpret the attachment point. Options are 'Exposure_Share' or 'Return_Period'. If None, the attachment_point is treated as a monetary value.
+            exhaustion_point_method : str, optional
+                Method to interpret the exhaustion point. Options are 'Exposure_Share' or 'Return_Period'. If None, the exhaustion_point is treated as a monetary value.
 
         Returns
         ----------
-            exhaustion_point: float
-                The calculated exhaustion_point value for the CAT bond.
+            attachment: float
+                The calculated attachment point value for the CAT bond.
+            principal: float
+                The calculated principal value for the CAT bond.
         """
+
         tot_exp = self.subareas.exposure.gdf["value"].sum()
 
-        if isinstance(self.attachment_point, float):
-            attachment = self.attachment_point
-
-        elif isinstance(self.attachment_point, str):
-            if "Exp" in self.attachment_point:
-                self.attachment_point = float(self.attachment_point.split(" ")[0])
-                attachment = tot_exp * self.attachment_point
-            elif "RP" in self.attachment_point:
-                self.attachment_point = float(self.attachment_point.split(" ")[0])
-                attachment = impact.calc_freq_curve(self.attachment_point).impact
-            else:
-                raise ValueError(
-                    "Invalid attachment format. Use 'Exp' for exposure share or 'RP' for return period."
-                )
-
+        if attachment_point_method is None:
+            attachment = attachment_point
+        elif attachment_point_method == "Exposure_Share":
+            attachment = tot_exp * attachment_point
+        elif attachment_point_method == "Return_Period":
+            attachment = impact.calc_freq_curve(attachment_point).impact
         else:
             raise ValueError(
-                "Attachment must be a float or a string containing 'Exp' or 'RP'."
+                "Invalid attachment point method. Choose 'Exposure_Share' or 'Return_Period'."
             )
-
-        if isinstance(self.exhaustion_point, float):
-            principal = self.exhaustion_point
-
-        elif isinstance(self.exhaustion_point, str):
-            if "Exp" in self.exhaustion_point:
-                self.exhaustion_point = float(self.exhaustion_point.split(" ")[0])
-                principal = tot_exp * self.exhaustion_point
-            elif "RP" in self.exhaustion_point:
-                self.exhaustion_point = float(self.exhaustion_point.split(" ")[0])
-                principal = impact.calc_freq_curve(self.exhaustion_point).impact
-            else:
-                raise ValueError(
-                    "Invalid exhaustion point format. Use 'Exp' for exposure share or 'RP' for return period."
-                )
-
+        if exhaustion_point_method is None:
+            principal = exhaustion_point
+        elif exhaustion_point_method == "Exposure_Share":
+            principal = tot_exp * exhaustion_point
+        elif exhaustion_point_method == "Return_Period":
+            principal = impact.calc_freq_curve(exhaustion_point).impact
         else:
             raise ValueError(
-                "Exhaustion point must be a float or a string containing 'Exp' or 'RP'."
+                "Invalid exhaustion point method. Choose 'Exposure_Share' or 'Return_Period'."
             )
 
         LOGGER.info(
             f"The attachment point and the principal of the CAT bond is: {round(attachment, 3)} and {round(principal, 3)} [USD], respectively."
-        )
-        LOGGER.info(
-            f"Attachment point and principal as share of exposure: {round(attachment/tot_exp, 3)} and {round(principal/tot_exp, 3)}, respectively."
         )
 
         return principal, attachment
@@ -405,11 +392,14 @@ class Subarea_Calculations:
 
         return pay_dam_df
 
-    def create_pay_vs_dam(self):
+    def create_pay_vs_dam(self, attachment_point, exhaustion_point, methods_attachment_point=None, methods_exhaustion_point=None):
 
         imp, imp_subareas_evt = self._calc_impact() 
         parametric_index = self._calc_parametric_index()
-        self.principal, self.attachment = self._calc_attachment_principal(imp)
+        if methods_attachment_point is not None and methods_exhaustion_point is not None:
+            self.principal, self.attachment = self._calc_attachment_principal(imp, attachment_point, exhaustion_point, methods_attachment_point, methods_exhaustion_point)
+        else:
+            self.principal, self.attachment = exhaustion_point, attachment_point
         self.results, self.opt_min_thresh, self.opt_max_thresh = self._calibrate_payout_fcts(parametric_index, self.principal, self.attachment, imp_subareas_evt)
         pay_vs_dam = self._calc_pay_vs_dam(impact=imp, imp_subareas_evt=imp_subareas_evt, attachment=self.attachment, principal=self.principal, opt_min_thresh=self.opt_min_thresh, opt_max_thresh=self.opt_max_thresh, haz_int=parametric_index)
         
