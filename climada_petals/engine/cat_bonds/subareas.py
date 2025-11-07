@@ -33,8 +33,6 @@ class Subareas:
             Exposure object containing monetary data.
         resolution : float
             Resolution for grid cells to create subareas.
-        buffer_grid_size : int, optional
-            Size of the buffer around input country. Resulting geometry is used to derive subareas (in km; default is 5).
         crs : str, optional
             Coordinate reference system for spatial data (default: "EPSG:3857").
         subareas_gdf : geopandas.GeoDataFrame
@@ -50,14 +48,12 @@ class Subareas:
         vulnerability,
         exposure,
         resolution,
-        buffer_grid_size=5.0,
     ):
 
         self.hazard = hazard
         self.vulnerability = vulnerability
         self._exposure = exposure
         self._resolution = resolution
-        self._buffer_grid_size = buffer_grid_size
         self._build_subareas()
 
     def _build_subareas(self):
@@ -72,10 +68,6 @@ class Subareas:
     @property
     def resolution(self):
         return self._resolution
-
-    @property
-    def buffer_grid_size(self):
-        return self._buffer_grid_size
 
     def plot(self):
         if self.subareas_gdf is None:
