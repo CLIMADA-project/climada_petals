@@ -31,11 +31,9 @@ def init_bond_exp_loss(term, events_per_year, principal):
         The initial principal value of the bond.
     Returns
     -------
-    rel_losses : numpy.ndarray
+    rel_annual_losses : numpy.ndarray
         Array of relative losses per year (losses divided by principal).
-    att_prob : float
-        Probability of at least one payout occurring during the bond's term.
-    tot_loss : float
+    rel_term_loss : float
         Total relative loss over the bond's term (sum of losses divided by principal).
     rel_monthly_loss : pandas.DataFrame
         DataFrame with columns 'losses' and 'months', detailing the losses and their corresponding
