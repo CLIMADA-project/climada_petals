@@ -7,11 +7,8 @@ import logging
 from climada.engine import ImpactCalc
 
 # set logging basics
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
-for handler in logging.getLogger().handlers:
-    handler.setFormatter(formatter)
+LOGGER = logging.getLogger(__name__)
+
 
 
 class Subarea_Calculations:
@@ -40,12 +37,10 @@ class Subarea_Calculations:
             The statistic to calculate. Can either be a number to calculate percentile or the string 'mean' to calculate the average.
         '''
 
-        self.subareas = subareas.subareas_gdf
-        self.exposure = subareas.exposure
-        self.hazard = subareas.hazard
-        self.vulnerability = subareas.vulnerability
+        self.subareas = subareas
         self.index_stat = index_stat
         self.exhaustion_point = exhaustion_point
+        self.attachment_point = attachment_point
 
         self.initial_guess_dict = {
             "TC": (30, 40)
@@ -67,57 +62,27 @@ class Subarea_Calculations:
         -------
         imp : climada.ImpactCalc
             Impact calculation object containing results and methods.
-        imp_per_event : numpy.ndarray
-            Array of impact values per event for each exposure point.
         imp_subareas_evt : pandas.DataFrame
             DataFrame of aggregated impacts per subarea and event.
         """
 
         # perform impact calcualtion
-        imp = ImpactCalc(self.exposure, self.vulnerability, self.hazard).impact(
+        imp = ImpactCalc(self.subareas.exposure, self.subareas.vulnerability, self.subareas.hazard).impact(
             save_mat=True
         )
 
-        # save impact per exposure point
-        imp_per_event = imp.at_event
-
-        # save impact per exposure point
-        imp_per_exp = imp.imp_mat
-        exp_crs = self.exposure.gdf
+        # get exp gdf
+        exp_gdf = self.subareas.exposure.gdf
 
         # Perform a spatial join to associate each exposure point with calculated impact with a subarea
-        exp_to_admin = exp_crs.sjoin(self.subareas, how="left", predicate="within")
-
+        exp_to_admin = exp_gdf.sjoin(exp_gdf.subareas.subareas_gdf, how="left", predicate="within")
+        if exp_to_admin['subarea_letter'].isnull().any():
+            LOGGER.warning("Some exposure points were not assigned to any subarea. Subareas may be to small.")
         # group each exposure point according to subarea letter
-        agg_exp = exp_to_admin.groupby("subarea_letter").apply(
-            lambda x: x.index.tolist()
-        )
+        agg_exp = exp_to_admin.subarea_letter.to_list()
+        imp_subareas_evt = imp.impact_at_reg(agg_exp)
 
-        # Dictionary to store the impacts for each subarea
-        imp_subarea_csr = {}
-        # Loop through each subarea and its corresponding line numbers
-        for letter, line_numbers in agg_exp.items():
-            selected_values = imp_per_exp[
-                :, line_numbers
-            ]  # Select all impact values per subarea
-            imp_subarea_csr[letter] = (
-                selected_values  # Store them in dictionary per subarea
-            )
-        imp_subareas_evt = {}  # total damage for each event per subarea
-
-        # sum all impacts per subarea
-        for i in imp_subarea_csr:
-            imp_subareas_evt[i] = imp_subarea_csr[i].sum(
-                axis=1
-            )  # calculate sum of impacts per subarea
-            imp_subareas_evt[i] = [
-                matrix.item() for matrix in imp_subareas_evt[i]
-            ]  # single values per event are stored in 1:1 matrix -> only save value
-
-        # transform matrix to data frame
-        imp_subareas_evt = pd.DataFrame.from_dict(imp_subareas_evt)
-
-        return imp, imp_per_event, imp_subareas_evt
+        return imp, imp_subareas_evt
 
     def _calc_attachment_principal(self, impact):
         """
@@ -138,18 +103,18 @@ class Subarea_Calculations:
             exhaustion_point: float
                 The calculated exhaustion_point value for the CAT bond.
         """
-        tot_exp = self.exposure.gdf["value"].sum()
+        tot_exp = self.subareas.exposure.gdf["value"].sum()
 
-        if isinstance(self.attachment, float):
-            attachment = self.attachment
+        if isinstance(self.attachment_point, float):
+            attachment = self.attachment_point
 
-        elif isinstance(self.attachment, str):
-            if "Exp" in self.attachment:
-                self.attachment = float(self.attachment.split(" ")[0])
-                attachment = tot_exp * self.attachment
-            elif "RP" in self.attachment:
-                self.attachment = float(self.attachment.split(" ")[0])
-                attachment = impact.calc_freq_curve(self.attachment).impact
+        elif isinstance(self.attachment_point, str):
+            if "Exp" in self.attachment_point:
+                self.attachment_point = float(self.attachment_point.split(" ")[0])
+                attachment = tot_exp * self.attachment_point
+            elif "RP" in self.attachment_point:
+                self.attachment_point = float(self.attachment_point.split(" ")[0])
+                attachment = impact.calc_freq_curve(self.attachment_point).impact
             else:
                 raise ValueError(
                     "Invalid attachment format. Use 'Exp' for exposure share or 'RP' for return period."
@@ -180,16 +145,16 @@ class Subarea_Calculations:
                 "Exhaustion point must be a float or a string containing 'Exp' or 'RP'."
             )
 
-        logger.info(
+        LOGGER.info(
             f"The attachment point and the principal of the CAT bond is: {round(attachment, 3)} and {round(principal, 3)} [USD], respectively."
         )
-        logger.info(
+        LOGGER.info(
             f"Attachment point and principal as share of exposure: {round(attachment/tot_exp, 3)} and {round(principal/tot_exp, 3)}, respectively."
         )
 
         return principal, attachment
 
-    def _calc_index(self):
+    def _calc_parametric_index(self):
         """
         Calculates a specified statistic (mean, percentiles) for each events parametrix incex for each subarea.
 
@@ -205,26 +170,26 @@ class Subarea_Calculations:
                 The key to the dataframe is the hazard type (e.g., 'TC' for tropical cyclones).
         """
 
-        hazard = self.hazard.centroids.gdf
+        hazard = self.subareas.hazard.centroids.gdf
         hazard = hazard.to_crs(self.subareas.crs)
         centrs_to_sub = hazard.sjoin(self.subareas, how="left", predicate="intersects")
         agg_exp = centrs_to_sub.groupby("subarea_letter").apply(lambda x: x.index.tolist())
         
         int_sub = {
-            letter: [np.nan] * len(self.hazard.event_id) for letter in agg_exp.keys()
+            letter: [np.nan] * len(self.subareas.hazard.event_id) for letter in agg_exp.keys()
         }
 
-        int_sub["year"] = [0 for _ in range(len(self.hazard.event_id))]
-        int_sub["month"] = [0 for _ in range(len(self.hazard.event_id))]
+        int_sub["year"] = [0 for _ in range(len(self.subareas.hazard.event_id))]
+        int_sub["month"] = [0 for _ in range(len(self.subareas.hazard.event_id))]
 
         # Iterate over each event
-        for i in range(len(self.hazard.event_id)):
-            date = pd.to_datetime(self.hazard.get_event_date()[i])
+        for i in range(len(self.subareas.hazard.event_id)):
+            date = pd.to_datetime(self.subareas.hazard.get_event_date()[i])
             int_sub["year"][i] = date.year
             int_sub["month"][i] = date.month
             # For each subarea, calculate the desired statistic
             for letter, line_numbers in agg_exp.items():
-                selected_values = self.hazard.intensity[i, line_numbers]
+                selected_values = self.subareas.hazard.intensity[i, line_numbers]
                 if self.index_stat == "mean":
                     int_sub[letter][i] = selected_values.mean()
                 elif isinstance(self.index_stat, (int, float)):
@@ -238,7 +203,7 @@ class Subarea_Calculations:
         int_sub = pd.DataFrame.from_dict(int_sub)
 
         int_sub_dict = {}
-        int_sub_dict[self.hazard.haz_type] = int_sub
+        int_sub_dict[self.subareas.hazard.haz_type] = int_sub
 
         return int_sub_dict
 
@@ -351,7 +316,7 @@ class Subarea_Calculations:
 
     def _calc_pay_vs_dam(
         self,
-        imp_per_event,
+        impact,
         imp_subareas_evt,
         attachment,
         principal,
@@ -366,8 +331,8 @@ class Subarea_Calculations:
 
         Parameters
         ----------
-        imp_per_event : numpy.ndarray
-            Array of impact values per event for each exposure point.
+        impact : climada.ImpactCalc
+            Impact calculation object containing results and methods.
         imp_subareas_evt : pandas.DataFrame
             Damages per subarea and event used for payout calculations.
         attachment : float
@@ -392,6 +357,7 @@ class Subarea_Calculations:
         - The function relies on an external `_calc_payout` function for payout calculation.
         """
 
+        imp_per_event = impact.at_event
         imp_per_event_df = pd.DataFrame({"Damage": imp_per_event})
         imp_per_event_arr = np.array(imp_per_event_df)
         imp_per_event_arr[imp_per_event_arr < attachment] = 0
@@ -441,11 +407,11 @@ class Subarea_Calculations:
 
     def create_pay_vs_dam(self):
 
-        imp, imp_per_event, imp_subareas_evt = self._calc_impact() 
-        par_idx = self._calc_index()
-        self.principal, self.attachment = self._calc_attachment_principal(imp, )
-        self.results, self.opt_min_thresh, self.opt_max_thresh = self._calibrate_payout_fcts(par_idx, self.principal, self.attachment, imp_subareas_evt)
-        pay_vs_dam = self._calc_pay_vs_dam(imp_per_event=imp_per_event, imp_subareas_evt=imp_subareas_evt, attachment=self.attachment, principal=self.principal, opt_min_thresh=self.opt_min_thresh, opt_max_thresh=self.opt_max_thresh, haz_int=par_idx)
+        imp, imp_subareas_evt = self._calc_impact() 
+        parametric_index = self._calc_parametric_index()
+        self.principal, self.attachment = self._calc_attachment_principal(imp)
+        self.results, self.opt_min_thresh, self.opt_max_thresh = self._calibrate_payout_fcts(parametric_index, self.principal, self.attachment, imp_subareas_evt)
+        pay_vs_dam = self._calc_pay_vs_dam(impact=imp, imp_subareas_evt=imp_subareas_evt, attachment=self.attachment, principal=self.principal, opt_min_thresh=self.opt_min_thresh, opt_max_thresh=self.opt_max_thresh, haz_int=parametric_index)
         
         return pay_vs_dam, self.principal
     
