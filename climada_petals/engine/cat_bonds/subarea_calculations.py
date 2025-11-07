@@ -84,7 +84,6 @@ class Subarea_Calculations:
         # save impact per exposure point
         imp_per_exp = imp.imp_mat
         exp_crs = self.exposure.gdf
-        exp_crs = exp_crs.to_crs(self.subareas.crs)
 
         # Perform a spatial join to associate each exposure point with calculated impact with a subarea
         exp_to_admin = exp_crs.sjoin(self.subareas, how="left", predicate="within")
