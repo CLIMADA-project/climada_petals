@@ -4,11 +4,11 @@ import logging
 
 LOGGER = logging.getLogger(__name__)
 
-class bond_simulation:
+class sng_bond_simulation:
 
-    def __init__(self, subarea_calc, term, number_terms):
+    def __init__(self, subarea_calc, term, number_of_terms):
         self.term = term
-        self.simulated_years = number_terms * term
+        self.simulated_years = number_of_terms * term
         self.subarea_calc = subarea_calc
 
 
