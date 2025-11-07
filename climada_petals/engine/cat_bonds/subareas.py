@@ -217,7 +217,8 @@ class Subareas:
                         x1, y1, x2, y2
                     )
 
-                    if grid_cell.intersects(polygon.geometry):
+                    # Only keep grid cell if at least one exposure point is inside
+                    if any(p.within(grid_cell) for p in self.exposure.gdf.geometry):
                         grid_cells.append(grid_cell)
 
             grid_gdf = gpd.GeoDataFrame(
