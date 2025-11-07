@@ -32,9 +32,9 @@ class bond_simulation:
         Returns
         -------
         rel_annual_losses : numpy.ndarray
-            Array of relative losses per year (losses divided by principal).
-        rel_term_loss : float
-            Total relative loss over the bond's term (sum of losses divided by principal).
+            Array of relative payouts/losses per year (losses divided by principal).
+        term_loss : float
+            Total payout/investor loss over the bond's term.
         rel_monthly_loss : pandas.DataFrame
             DataFrame with columns 'losses' and 'months', detailing the losses and their corresponding
             months for each year.
@@ -44,6 +44,7 @@ class bond_simulation:
         rel_monthly_loss = pd.DataFrame(columns=['losses', 'months'])
         current_principal = self.subarea_calc.principal
 
+        summed_damages = 0
         for k in range(self.term):
 
             if events_per_year[k].empty:
@@ -56,6 +57,7 @@ class bond_simulation:
                 sum_payouts = []
                 for o in range(len(events_per_year[k])):
                     payout = events_per_year[k].loc[events_per_year[k].index[o], 'pay']
+                    summed_damages += events_per_year[k].loc[events_per_year[k].index[o], 'damage']
                     #If there are events in the year, sample that many payouts and the associated damages
                     if payout == 0 or current_principal == 0:
                         sum_payouts.append(0)
@@ -71,10 +73,10 @@ class bond_simulation:
 
             losses.append(np.sum(sum_payouts))
             rel_monthly_loss.loc[k] = [sum_payouts, months]
-        rel_term_loss = np.sum(losses) / self.subarea_calc.principal
+        summed_payouts = np.sum(losses)
         rel_annual_losses = np.array(losses) / self.subarea_calc.principal
         rel_monthly_loss['losses'] = rel_monthly_loss['losses'].apply(lambda x: [i / self.subarea_calc.principal for i in x])
-        return rel_annual_losses, rel_term_loss, rel_monthly_loss
+        return rel_annual_losses, rel_monthly_loss, summed_payouts, summed_damages
 
 
     '''Loop over all terms of bond to derive losses'''
@@ -98,18 +100,20 @@ class bond_simulation:
         """
 
         annual_losses = []
-        total_losses = []
+        total_payouts = 0
+        total_damages = 0
         list_loss_month = []
         min_year = self.subarea_calc.pay_vs_dam['year'].min()
         for i in range(self.simulated_years-self.term):
             events_per_year = []
             for j in range(self.term):
                 events_per_year.append(self.subarea_calc.pay_vs_dam[self.subarea_calc.pay_vs_dam['year'] == (min_year+i)+j])
-            annual_losses_per_term, term_loss, monthly_losses = self.init_bond_exp_loss(events_per_year)
+            annual_losses_per_term, monthly_losses, summed_payouts, summed_damages = self.init_bond_exp_loss(events_per_year)
             list_loss_month.append(monthly_losses)
 
             annual_losses.extend(annual_losses_per_term)
-            total_losses.append(term_loss)
+            total_payouts += summed_payouts
+            total_damages += summed_damages
 
         self.df_loss_month = pd.concat(list_loss_month, ignore_index=True)
 
@@ -117,7 +121,6 @@ class bond_simulation:
         exp_loss_ann = np.mean(annual_losses)
 
         annual_losses = pd.Series(annual_losses)
-        total_losses = pd.Series(total_losses)
 
         VaR_99_ann = annual_losses.quantile(0.99)
         VaR_95_ann = annual_losses.quantile(0.95)
@@ -130,8 +133,8 @@ class bond_simulation:
         else:
             ES_95_ann = annual_losses[annual_losses > VaR_95_ann].mean()
 
-        self.metrics = {'EL_ann': exp_loss_ann, 'AP_ann': att_prob, 'VaR_99_ann': VaR_99_ann, 'VaR_95_ann': VaR_95_ann,
-                   'ES_99_ann': ES_99_ann, 'ES_95_ann': ES_95_ann}
+        self.metrics = {'EL_ann': exp_loss_ann, 'AP_ann': att_prob, 'Tot_payout':total_payouts, 'Tot_damages': total_damages, 
+                        'VaR_99_ann': VaR_99_ann, 'VaR_95_ann': VaR_95_ann, 'ES_99_ann': ES_99_ann, 'ES_95_ann': ES_95_ann}
         
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
