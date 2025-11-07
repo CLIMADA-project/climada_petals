@@ -6,7 +6,7 @@ from scipy.optimize import curve_fit
 import logging
 
 # path to data folder
-DATA_DIR = (Path(__file__).parent.parent).joinpath('data/cat_bonds')
+DATA_DIR = (Path(__file__).parent.parent.parent).joinpath('data/cat_bonds')
 
 # setup logger 
 LOGGER = logging.getLogger(__name__)
