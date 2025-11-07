@@ -94,7 +94,7 @@ class bond_simulation:
         Returns
         -------
             df_loss_month (pd.DataFrame): DataFrame containing monthly loss data for all simulations.
-            metrics (dict): Dictionary containing expected loss, attachment probability, total payouts/damages, VaR and ES metrics at 95% and 99% confidence levels for annual losses.
+            loss_metrics (dict): Dictionary containing expected loss, attachment probability, total payouts/damages, VaR and ES metrics at 95% and 99% confidence levels for annual losses.
         """
 
         annual_losses = []
@@ -131,8 +131,8 @@ class bond_simulation:
         else:
             ES_95_ann = annual_losses[annual_losses > VaR_95_ann].mean()
 
-        self.metrics = {'EL_ann': exp_loss_ann, 'AP_ann': att_prob, 'Tot_payout':total_payouts, 'Tot_damages': total_damages, 
-                        'VaR_99_ann': VaR_99_ann, 'VaR_95_ann': VaR_95_ann, 'ES_99_ann': ES_99_ann, 'ES_95_ann': ES_95_ann}
+        self.loss_metrics = {'EL_ann': exp_loss_ann, 'AP_ann': att_prob, 'Tot_payout':total_payouts, 'Tot_damages': total_damages, 
+                             'VaR_99_ann': VaR_99_ann, 'VaR_95_ann': VaR_95_ann, 'ES_99_ann': ES_99_ann, 'ES_95_ann': ES_95_ann}
         
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
@@ -151,7 +151,7 @@ class bond_simulation:
                 An instance of the bond_simulation class containing monthly loss data, premium rate, and term. 
         Returns
         -------
-            investor_metrics (pd.DataFrame): DataFrame containing annual premiums, annual returns, total returns, and total premiums for the bond.
+            return_metrics (pd.DataFrame): DataFrame containing annual premiums, annual returns, total returns, and total premiums for the bond.
         """
 
         premiums_tot = []
@@ -195,6 +195,6 @@ class bond_simulation:
 
         sharpe_ratio = (np.mean(ncf_tot) / np.std(ncf_tot)) if np.std(ncf_tot) != 0 else np.nan
     
-        self.investor_metrics = pd.DataFrame({'annual_premiums': np.array(premiums_tot), 'annual_returns': np.array(ncf_tot),
-                                               'total_returns': np.sum(np.array(ncf_tot)), 'total_premiums': np.sum(np.array(premiums_tot)),
-                                               'sharpe_ratio': sharpe_ratio})
+        self.return_metrics = {'annual_premiums': np.array(premiums_tot), 'annual_returns': np.array(ncf_tot),
+                               'total_returns': np.sum(np.array(ncf_tot)) * self.subarea_calc.principal , 'total_premiums': np.sum(np.array(premiums_tot)) * self.subarea_calc.principal,
+                               'sharpe_ratio': sharpe_ratio}
