@@ -27,19 +27,25 @@ class premium_calculations:
         self.bond_simulation_class = bond_simulation_class
 
     ### CHATORO-PRICING ###
-    def chatoro_premium(self, peak_multi, investment_graded, hybrid_trigger, GCIndex=None, BBSpread=None):
+    def calc_chatoro_premium(self, peak_multi, investment_graded, hybrid_trigger, GCIndex=None, BBSpread=None):
         '''Linear regression formula to calculate the premium based on the regression model presented in Chatoro et al., 2022'''
 
         if GCIndex is None:
             GCIndex = 180 #Guy Carpenter Global Property Catastrophe Rate on Line Index (January, 2025)
+            LOGGER.info(f'Using default GCIndex value of {GCIndex}')
         else:
             pass
         if BBSpread is None:
             BBSpread = 1.6 #ICE BofA BB US High Yield Index Option-Adjusted Spread (January, 2025)
+            LOGGER.info(f'Using default BBSpread value of {BBSpread}')
         else:
             pass
 
-        self.chatoro_prem_rate = b_0 + b_1 * self.bond_simulation_class.loss_metrics['EL_ann'] + b_2 * peak_multi + b_3 * GCIndex + b_4 * BBSpread + b_5 * self.bond_simulation_class.term * 12 + b_6 * investment_graded + b_7 * hybrid_trigger
+        self.chatoro_prem_rate = (b_0 + b_1 * self.bond_simulation_class.loss_metrics['EL_ann'] * 100 + b_2 * peak_multi + 
+                                  b_3 * GCIndex + b_4 * BBSpread + b_5 * self.bond_simulation_class.term * 12 + 
+                                  b_6 * investment_graded + b_7 * hybrid_trigger) / 100
+        LOGGER.info(f'Calculated Chatoro premium rate: {self.chatoro_prem_rate}')
+        
 
 
     ### IBRD-PRICING ###
@@ -47,7 +53,7 @@ class premium_calculations:
         '''Exponential function to fit the risk multiple curve'''
         return a * np.exp(-k * x) + b
 
-    def init_prem_ibrd(self, peril=None, year=None):
+    def calc_ibrd_premium(self, peril=None, year=None):
         """
         Fits a monotonic exponential curve to catastrophe bond data for bonds issued by the World Bank to estimate premium parameters.
         This function loads IBRD bond data from an Excel file, optionally filters the data by peril type or issuing year,
@@ -81,3 +87,4 @@ class premium_calculations:
         a, k, b = params_prem_ibrd
         LOGGER.info(f'Fitted IBRD premium parameters: a={a}, k={k}, b={b}')
         self.ibrd_prem_rate = self.monoExp(self.bond_simulation_class.loss_metrics['EL_ann']*100, a, k, b) * self.bond_simulation_class.loss_metrics['EL_ann']
+        LOGGER.info(f"Calculated IBRD premium rate: {self.ibrd_prem_rate}")
