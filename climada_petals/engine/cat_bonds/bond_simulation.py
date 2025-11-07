@@ -15,7 +15,7 @@ class bond_simulation:
 
 
     '''Simulate one term of bond to derive losses'''
-    def init_bond_exp_loss(self, events_per_year):
+    def init_bond_loss(self, events_per_year):
         """
         Calculates the expected losses for a catastrophe bond over its term.
         This function simulates the bond's loss experience given a sequence of event data per year,
@@ -81,7 +81,7 @@ class bond_simulation:
 
 
     '''Loop over all terms of bond to derive losses'''
-    def init_exp_loss_att_prob_simulation(self):
+    def init_loss_simulation(self):
         """
         Simulates the bonds monthly losses, total payouts and damages, expected annual loss, attachment probability, and other metrics for a catastrophe bond over multiple years.
         This function processes a DataFrame of payout and damage events, simulates bond losses over a specified term,
@@ -106,7 +106,7 @@ class bond_simulation:
             events_per_year = []
             for j in range(self.term):
                 events_per_year.append(self.subarea_calc.pay_vs_dam[self.subarea_calc.pay_vs_dam['year'] == (min_year+i)+j])
-            annual_losses_per_term, monthly_losses, summed_payouts, summed_damages = self.init_bond_exp_loss(events_per_year)
+            annual_losses_per_term, monthly_losses, summed_payouts, summed_damages = self.init_bond_loss(events_per_year)
             list_loss_month.append(monthly_losses)
 
             annual_losses.extend(annual_losses_per_term)
@@ -140,7 +140,7 @@ class bond_simulation:
 
 
     '''Simulate over all terms of bond to derive returns'''
-    def init_bond_simulation(self):
+    def init_return_simulation(self):
         """
         Simulates the performance of a catastrophe bond over the simulation period, premiums and returns.
         This function models the bond's payouts, premiums, and returns over a series of simulated years.
