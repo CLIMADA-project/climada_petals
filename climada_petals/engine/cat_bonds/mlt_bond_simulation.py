@@ -20,10 +20,15 @@ class mlt_bond_simulation:
     def _prepare_data(self):
         self.pay_vs_dam_dic = {}
         self.principal_dic_cty = {}
+        min_year_list = []
         for idx, cty in enumerate(self.countries):
             self.pay_vs_dam_dic[cty] = self.subarea_calc[idx].pay_vs_dam
             self.principal_dic_cty[cty] = self.subarea_calc[idx].principal
+            min_year_list.append(self.subarea_calc[idx].pay_vs_dam['year'].min())
 
+        min_year = min(min_year_list)
+
+        return min_year
         
 
 
@@ -166,7 +171,7 @@ class mlt_bond_simulation:
 
         """
 
-        self._prepare_data()
+        min_year = self._prepare_data()
 
         annual_losses = []
         total_losses = []
@@ -182,10 +187,9 @@ class mlt_bond_simulation:
             for j in range(self.term):
                 events_per_cty = []  
                 for cty in self.countries:
-                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == (i + j)].copy()
+                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == (min_year+i)+j].copy()
                     events['country_code'] = cty
                     events_per_cty.append(events)  
-
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
                 events_per_year.append(year_events_df)
 
