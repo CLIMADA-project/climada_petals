@@ -126,15 +126,15 @@ class Network:
         """
         network : instance of networks.nw_base.Network
         """
-        self.directed = directed
+        #self.directed = directed
 
         if not self.edges.empty:
-            self.graph = self._from_es(
+            graph = self._from_es(
                 gdf_edges=self.edges, gdf_nodes=self.nodes)
         else:
-            self.graph = self._from_vs(
+            graph = self._from_vs(
                 gdf_nodes=self.nodes)
-
+        return graph
     def _remove_namecol(self, gdf_nodes):
         if gdf_nodes is not None:
             if hasattr(gdf_nodes, 'name'):
