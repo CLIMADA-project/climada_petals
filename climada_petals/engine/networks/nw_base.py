@@ -122,15 +122,35 @@ class Network:
 
         return Network(edges=edges, nodes=nodes)
 
-    def to_graph(self, network, directed=False):
+    def to_graph(self, directed=False):
         """
         network : instance of networks.nw_base.Network
         """
         self.directed = directed
 
-        if not network.edges.empty:
+        if not self.edges.empty:
             self.graph = self._from_es(
-                gdf_edges=network.edges, gdf_nodes=network.nodes)
+                gdf_edges=self.edges, gdf_nodes=self.nodes)
         else:
             self.graph = self._from_vs(
-                gdf_nodes=network.nodes)
+                gdf_nodes=self.nodes)
+
+    def _remove_namecol(self, gdf_nodes):
+        if gdf_nodes is not None:
+            if hasattr(gdf_nodes, 'name'):
+                gdf_nodes = gdf_nodes.drop('name', axis=1)
+        return gdf_nodes
+
+    def _from_es(self, gdf_edges, gdf_nodes=None):
+        return ig.Graph.DataFrame(
+            gdf_edges,
+            vertices=self._remove_namecol(gdf_nodes),
+            directed=self.directed)
+
+    def _from_vs(self, gdf_nodes):
+        gdf_nodes = self._remove_namecol(gdf_nodes)
+        vertex_attrs = gdf_nodes.to_dict('list')
+        return ig.Graph(
+            n=len(gdf_nodes),
+            vertex_attrs=vertex_attrs,
+            directed=self.directed)
