@@ -121,12 +121,12 @@ class GraphCalcs():
         """
 
         # select only those for which specified attrs apply
-        df_vs_target = _filter_vertices(self.graph, target_attrs)
+        df_vs_target = self._filter_vertices(target_attrs)
 
         # select only those for which specified attrs apply
-        df_vs_source = _filter_vertices(self.graph, source_attrs)
+        df_vs_source = self._filter_vertices(source_attrs)
 
-        v_ids_source, v_ids_target = _select_closest_k(
+        v_ids_source, v_ids_target = self._select_closest_k(
             df_vs_source, df_vs_target, dist_thresh, bidir, k)
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
@@ -153,7 +153,7 @@ class GraphCalcs():
         -------
         graph
         """
-        df_vs_target = _filter_vertices(self.graph, target_attrs)
+        df_vs_target = self._filter_vertices(target_attrs)
 
         vs_target = self.graph.vs[df_vs_target.index.values]
 
@@ -204,17 +204,16 @@ class GraphCalcs():
         """
 
         # subgraph containing only "allowed" elements
-        subgraph = _create_subgraph(
-            self.graph, source_attrs, target_attrs, via_attrs)
+        subgraph = self._create_subgraph(source_attrs, target_attrs, via_attrs)
 
         # mapping from subgraph to graph indices
-        subgraph_graph_vsdict = _get_subgraph2graph_vsdict(self.graph, subgraph)
+        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
 
         # select only those for which specified attrs apply
-        df_vs_target = _filter_vertices(subgraph, target_attrs)
+        df_vs_target = self._filter_vertices(subgraph, target_attrs)
 
         # select only those for which specified attrs apply
-        df_vs_source = _filter_vertices(subgraph, source_attrs)
+        df_vs_source = self._filter_vertices(subgraph, source_attrs)
 
         path_dists = subgraph.distances(
             source=df_vs_source.index.values, target=df_vs_target.index.values,
@@ -266,14 +265,14 @@ class GraphCalcs():
             del gdf_vs
 
             if not (gdf_vs_source.empty or gdf_vs_target.empty):
-                v_ids_source, v_ids_target = _select_closest_k(
+                v_ids_source, v_ids_target = self._select_closest_k(
                     gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k)
 
                 edge_geoms = make_edge_geometries(
                     self.graph.vs[v_ids_source]['geometry'],
                     self.graph.vs[v_ids_target]['geometry'])
 
-                friction = _calc_friction(edge_geoms, friction_surf)
+                friction = self._calc_friction(edge_geoms, friction_surf)
                 v_ids_source = np.array(v_ids_source)[friction<dur_thresh]
                 v_ids_target = np.array(v_ids_target)[friction<dur_thresh]
 
@@ -286,8 +285,7 @@ class GraphCalcs():
     # =============================================================================
     # Helper funcs for making links
     # =============================================================================
-    @staticmethod
-    def _filter_vertices(graph, attr_dict):
+    def _filter_vertices(self, attr_dict):
         """
         get vertices of graph to which given attributes apply
 
@@ -300,13 +298,12 @@ class GraphCalcs():
         df_vs : pd.Dataframe
         """
 
-        df_vs = graph.get_vertex_dataframe()
+        df_vs = self.graph.get_vertex_dataframe()
         for key, value in attr_dict.items():
             df_vs = df_vs[df_vs[key] == value]
         return df_vs
 
-    @staticmethod
-    def _filter_edges(graph, attr_dict):
+    def _filter_edges(self, attr_dict):
         """
         get edges of graph to which given attributes apply
 
@@ -319,7 +316,7 @@ class GraphCalcs():
         df_es : pd.Dataframe
         """
 
-        df_es = graph.get_edge_dataframe()
+        df_es = self.graph.get_edge_dataframe()
         for key, value in attr_dict.items():
             df_es = df_es[df_es[key] == value]
         return df_es
@@ -420,9 +417,9 @@ class GraphCalcs():
         """
 
         # select only those for which specified attrs apply
-        df_vs_source = _filter_vertices(self.graph, source_attrs)
-        df_vs_target = _filter_vertices(self.graph, target_attrs)
-        df_vs_via = _filter_vertices(self.graph, via_attrs)
+        df_vs_source = self._filter_vertices(source_attrs)
+        df_vs_target = self._filter_vertices(target_attrs)
+        df_vs_via = self._filter_vertices(via_attrs)
 
         vs_keep = np.concatenate((df_vs_source.index.values,
                                   df_vs_target.index.values,
@@ -440,9 +437,9 @@ class GraphCalcs():
         #graph_to_subgraph_esdict = {v: k for k, v in subgraph_graph_esdict.items()}
 
         # delete remaining edges that have wrong attributes
-        df_es_target = _filter_edges(subgraph, target_attrs)
-        df_es_source = _filter_edges(subgraph, source_attrs)
-        df_es_via = _filter_edges(subgraph, via_attrs)
+        df_es_target = self._filter_edges(subgraph, target_attrs)
+        df_es_source = self._filter_edges(subgraph, source_attrs)
+        df_es_via = self._filter_edges(subgraph, via_attrs)
 
         correct_edges = np.concatenate((df_es_target.index.values,
                                        df_es_source.index.values,
@@ -584,7 +581,7 @@ class GraphCalcs():
         v_seq_sub = subgraph.vs.select(ci_type_in=[source, target])
 
         #keep track of original ids
-        subgraph_graph_vsdict = _get_subgraph2graph_vsdict(self.graph, subgraph)
+        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
         #subgraph_graph_vsdict = _get_subgraph2graph_vsdict_old(graph, v_seq)
         v_seq_orig_id = [subgraph_graph_vsdict[v_id] for v_id in v_seq_sub.indices]
 
@@ -798,7 +795,7 @@ class GraphCalcs():
                          self.graph.vs.select(ci_type=f'{via_ci}')]
 
             # first check friction
-            friction = _calc_friction(edge_geoms, friction_surf)
+            friction = self._calc_friction(edge_geoms, friction_surf)
             bool_keep = friction < dur_thresh
 
             # then check shortest paths
@@ -807,7 +804,7 @@ class GraphCalcs():
 
             subgraph = self.graph.induced_subgraph(v_seq)
             #subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
-            subgraph_graph_vsdict = _get_subgraph2graph_vsdict(self.graph, subgraph)
+            subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
 
             graph_subgraph_vsdict = {int(v): int(k) for k,
                                      v in subgraph_graph_vsdict.items()}
@@ -843,7 +840,7 @@ class GraphCalcs():
         power_subgraph = self.graph.induced_subgraph(power_vs)
         power_subgraph.delete_edges(func_tot_lt=0.1)
 
-        subgraph_graph_vsdict = _get_subgraph2graph_vsdict(self.graph, power_vs)
+        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, power_vs)
 
         for cluster in power_subgraph.clusters(mode='weak'):
 
