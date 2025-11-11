@@ -126,7 +126,7 @@ class Network:
         """
         network : instance of networks.nw_base.Network
         """
-        #self.directed = directed
+        self.directed = directed
 
         if not self.edges.empty:
             graph = self._from_es(
