@@ -154,3 +154,21 @@ class Network:
             n=len(gdf_nodes),
             vertex_attrs=vertex_attrs,
             directed=self.directed)
+
+    def initialize_funcstates(self):
+        """
+        Initialize functional states for a new network
+        """
+        self.edges[['func_internal','func_tot']] = 1
+        self.nodes[['func_internal','func_tot']] = 1
+        self.edges['imp_dir'] = 0
+        self.nodes['imp_dir'] = 0
+
+    def initialize_capacity(self, source, target):
+        self.nodes[f'capacity_{source}_{target}'] = 0
+        self.nodes.loc[self.nodes['ci_type']==f'{source}',f'capacity_{source}_{target}'] = 1
+        self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
+
+    def initialize_supply(self, source):
+        self.nodes[f'actual_supply_{source}_people'] = 0
+        self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{source}_people'] = 1
