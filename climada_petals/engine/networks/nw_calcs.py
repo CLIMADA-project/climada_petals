@@ -865,6 +865,91 @@ class GraphCalcs():
     def return_network(self):
         return Network.from_graphs([self])
 
+class NetworkCalcs(GraphCalcs):
+    """Gathers wrapper for network preparation"""
+    def __init__(self, network, dep_table):
+        super(NetworkCalcs, self).__init__(network)
+        self.dep_table = dep_table
+
+    def setup_network(self, initiate=True):
+        """Wrapper function to set up a network."""
+
+        #network with all cis
+        cis_network = Network.from_nws(ci_data.values())
+        cis_network = ordered_network(cis_network)
+
+        cis_graph = Graph(cis_network, directed=False)
+        # create "missing physical structures" - needed for real world flows
+        # syntax: each target is connected to max k sources given constraints
+        cis_graph = link_vertices_closest_k(cis_graph,
+                                                        source_attrs={
+                                                            'ci_type': 'road'},
+                                                        target_attrs={
+                                                            'ci_type': 'people'},
+                                                        link_attrs={
+                                                            'ci_type': 'road'},
+                                                        dist_thresh=df_dependencies.loc[(df_dependencies.source=='road') &
+                                                                                        (df_dependencies.target=='people'),'thresh_dist'].values[0],
+
+                                                        bidir=True,
+                                                        k=df_dependencies.loc[(df_dependencies.source=='road') &
+                                                                                        (df_dependencies.target=='people'),'n_links'].values[0])#k
+
+        cis_graph = link_vertices_closest_k(cis_graph,
+                                                        source_attrs={
+                                                            'ci_type': 'road'},
+                                                        target_attrs={
+                                                            'ci_type': 'healthcare'},
+                                                        link_attrs={
+                                                            'ci_type': 'road'},
+                                                        dist_thresh=df_dependencies.loc[(df_dependencies.source=='healthcare') &
+                                                                                        (df_dependencies.target=='people'),'thresh_dist'].values[0],
+                                                        bidir=True,
+                                                        k=df_dependencies.loc[(df_dependencies.source=='road') &
+                                                                                        (df_dependencies.target=='healthcare'),'n_links'].values[0])
+
+        cis_network = cis_graph.return_network()
+
+        ##need to have all ids reset after new road edges have been added
+        cis_network = reset_ids(cis_network)
+        #update orig_id field (required for building subgraphes)
+        cis_network.edges['orig_id'] = cis_network.edges['id']
+        cis_network.nodes['orig_id'] = cis_network.nodes['id']
+        cis_network = ordered_network(cis_network)
+
+        #base state
+        #do it after build up of physical dependencies so that created edge also receive
+        #functionality states
+        if initiate:
+            cis_network = initialize_funcstates(cis_network)
+            for __, row in df_dependencies.iterrows():
+                cis_network = initialize_capacity(cis_network, row.source, row.target)
+            for __, row in df_dependencies[
+                df_dependencies['type_I']=='enduser'].iterrows():
+                cis_network = initialize_supply(cis_network, row.source)
+
+        return cis_network
+
+
+    def add_dependency(self, source, target, n_links, access_cnstr):
+        return
+
+
+    def dependencies_setup(self):
+        for i, row in self.dep_table.iterrows():
+            source = row['source']
+            target = row['target']
+            n_links = row['n_links']
+            access_cnstr = row['access_cnstr']
+            dep_type_I = row['type_I']
+            dep_type_II = row['type_II']
+            thresh_dist = row['thresh_dist']
+            thresh_dur = row['thresh_dur']
+            self.add_dependency(source, target, n_links, access_cnstr)
+
+
+
+
 #class Graph(GraphCalcs):
 #    """
 #    creates an igraph graph object
