@@ -122,12 +122,32 @@ class Network:
 
         return Network(edges=edges, nodes=nodes)
 
+    def update_network_from_graphs(self, graphs):
+        """
+        update network object from several graph objects
+        """
+        graph = ig.Graph(directed=graphs[0].directed)
+        for gra in graphs:
+            graph += gra.graph
+
+        edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
+            {'source': 'from_id', 'target': 'to_id'}, axis=1),
+            geometry='geometry', crs='EPSG:4326')
+        nodes = graph.get_vertex_dataframe()
+        if 'id' in nodes.columns:
+            nodes.pop('id')
+        nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
+            {'vertex ID': 'id'}, axis=1),
+            geometry='geometry', crs='EPSG:4326')
+
+        self.edges = edges
+        self.nodes = nodes
+
     def to_graph(self, directed=False):
         """
         network : instance of networks.nw_base.Network
         """
         self.directed = directed
-
         if not self.edges.empty:
             graph = self._from_es(
                 gdf_edges=self.edges, gdf_nodes=self.nodes)
