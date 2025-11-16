@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
+from utils_cat_bonds import multi_level_es
 
 LOGGER = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class sng_bond_simulation:
         This function simulates the bond's loss experience given a sequence of event data per year,
         tracking payouts, damages, remaining princpal value, and the timing of losses. It returns the relative
         losses per year, the total payouts and damages per term, and a DataFrame detailing losses and their corresponding months.
+
         Parameters
         ----------
         self : bond_simulation
@@ -79,60 +81,65 @@ class sng_bond_simulation:
         return rel_annual_losses, rel_monthly_loss, summed_payouts, summed_damages
 
 
-    '''Loop over all terms of bond to derive losses'''
-    def init_loss_simulation(self):
+    def init_loss_simulation(self, confidence_levels=[0.95, 0.99]):
         """
-        Simulates the bonds monthly losses, total payouts and damages, expected annual loss, attachment probability, and other metrics for a catastrophe bond over multiple years.
-        This function processes a DataFrame of payout and damage events, simulates bond losses over a specified term,
-        and computes risk metrics including Value-at-Risk (VaR) and Expected Shortfall (ES) at 95% and 99% confidence levels.
-        It returns the a DataFrame of monthly losses, and a dictionary of bond metrics.
-        Parameters
-        ----------
-            self: bond_simulation
-                An instance of the bond_simulation class containing a payout vs damage table, bond term, and number of simulated years.
+        Simulate losses, payouts, damages, and risk metrics for a catastrophe bond.
+
         Returns
         -------
-            df_loss_month (pd.DataFrame): DataFrame containing monthly loss data for all simulations.
-            loss_metrics (dict): Dictionary containing expected loss, attachment probability, total payouts/damages, VaR and ES metrics at 95% and 99% confidence levels for annual losses.
+        df_loss_month : pd.DataFrame
+            Monthly loss data for all simulations.
+        loss_metrics : dict
+            Expected loss, attachment probability, total payouts/damages,
+            VaR and ES metrics for given confidence levels.
         """
 
+        pay_vs_dam = self.subarea_calc.pay_vs_dam
+        min_year = pay_vs_dam['year'].min()
+
         annual_losses = []
+        list_loss_month = []
         total_payouts = 0
         total_damages = 0
-        list_loss_month = []
-        min_year = self.subarea_calc.pay_vs_dam['year'].min()
-        for i in range(self.simulated_years-self.term):
-            events_per_year = []
-            for j in range(self.term):
-                events_per_year.append(self.subarea_calc.pay_vs_dam[self.subarea_calc.pay_vs_dam['year'] == (min_year+i)+j])
-            annual_losses_per_term, monthly_losses, summed_payouts, summed_damages = self.init_bond_loss(events_per_year)
-            list_loss_month.append(monthly_losses)
 
-            annual_losses.extend(annual_losses_per_term)
+        # Iterate directly over year-starts
+        for start_year in range(min_year, min_year + self.simulated_years - self.term):
+
+            # Collect events for the full term (vectorized selection)
+            events_per_year = [
+                pay_vs_dam[pay_vs_dam['year'] == (start_year + offset)]
+                for offset in range(self.term)
+            ]
+
+            ann_losses_term, monthly_losses, summed_payouts, summed_damages = (
+                self.init_bond_loss(events_per_year)
+            )
+
+            annual_losses.extend(ann_losses_term)
+            list_loss_month.append(monthly_losses)
             total_payouts += summed_payouts
             total_damages += summed_damages
 
+        # Combine monthly losses
         self.df_loss_month = pd.concat(list_loss_month, ignore_index=True)
 
-        att_prob = sum(1 for x in annual_losses if x > 0) / len(annual_losses)
-        exp_loss_ann = np.mean(annual_losses)
-
         annual_losses = pd.Series(annual_losses)
+        exp_loss_ann = annual_losses.mean()
+        att_prob = (annual_losses > 0).mean()
 
-        VaR_99_ann = annual_losses.quantile(0.99)
-        VaR_95_ann = annual_losses.quantile(0.95)
-        if VaR_99_ann == 1:
-            ES_99_ann = 1
-        else:
-            ES_99_ann = annual_losses[annual_losses > VaR_99_ann].mean()
-        if VaR_95_ann == 1:
-            ES_95_ann = 1
-        else:
-            ES_95_ann = annual_losses[annual_losses > VaR_95_ann].mean()
+        # Save metrics
+        self.loss_metrics = {
+            'EL_ann': exp_loss_ann,
+            'AP_ann': att_prob,
+            'Tot_payout': total_payouts,
+            'Tot_damages': total_damages,
+        }
 
-        self.loss_metrics = {'EL_ann': exp_loss_ann, 'AP_ann': att_prob, 'Tot_payout':total_payouts, 'Tot_damages': total_damages, 
-                             'VaR_99_ann': VaR_99_ann, 'VaR_95_ann': VaR_95_ann, 'ES_99_ann': ES_99_ann, 'ES_95_ann': ES_95_ann}
-        
+        var_list, es_list = multi_level_es(annual_losses, confidence_levels)
+
+        for cl, var, es in zip(confidence_levels, var_list, es_list):
+            self.loss_metrics[f'VaR_{int(cl*100)}_ann'] = var
+            self.loss_metrics[f'ES_{int(cl*100)}_ann'] = es
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
         LOGGER.info(f'Attachment Probability = {att_prob}')
@@ -144,6 +151,7 @@ class sng_bond_simulation:
         Simulates the performance of a catastrophe bond over the simulation period, premiums and returns.
         This function models the bond's payouts, premiums, and returns over a series of simulated years.
         It aggregates annual and total returns and computes Sharpe ratios.
+
         Parameters
         ----------
             self: bond_simulation
