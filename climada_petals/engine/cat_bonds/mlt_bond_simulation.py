@@ -94,10 +94,7 @@ class mlt_bond_simulation:
 
                 sum_payouts = np.zeros(len(events))  
                 sum_damages = np.zeros(len(events)) 
-                for o in range(len(events)):
-                    payout = pay[o]
-                    cty = cties[o]
-                    damage = dam[o]
+                for payout, country, damage in zip(pay, countries, damages):
 
                     if payout == 0 or cur_nominal == 0 or cur_nom_cty[int(cty)] == 0:
                         event_payout = 0
