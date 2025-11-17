@@ -42,45 +42,64 @@ class sng_bond_simulation:
             The total summed damages over the bond's term.
         """
 
-        losses = []
-        rel_monthly_loss = pd.DataFrame(columns=['losses', 'months'])
-        current_principal = self.subarea_calc.principal
+        principal0 = self.subarea_calc.principal
+        principal = principal0
 
-        summed_damages = 0
-        for k in range(self.term):
+        # Use Python lists only for month-level output (tiny)
+        df_monthly = pd.DataFrame(columns=[
+            "losses", "months"]
+        )
+        annual_losses = pd.Series(0.0, index=range(self.term))
 
-            if events_per_year[k].empty:
-                sum_payouts = [0]
-                months = []
+        summed_damages = 0.0
+
+        for year, ev in enumerate(events_per_year):
+
+            # Extract arrays
+            months  = ev["month"].to_numpy()
+            pays    = ev["pay"].to_numpy()
+            damages = ev["damage"].to_numpy()
+
+            summed_damages += damages.sum()
+
+            # Running cumulative payout to detect exhaustion
+            cum = np.cumsum(pays)
+
+            # Identify first index where principal is exceeded
+            exhaust_idx = np.searchsorted(cum, principal, side="right")
+
+            if exhaust_idx == len(pays):
+                # principal never exhausted → no capping needed
+                payouts = pays.copy()
+                principal -= payouts.sum()
+
             else:
-                events_per_year[k] = events_per_year[k].sort_values(by='month')
-                months = events_per_year[k]['month'].tolist()
+                # principal exhausted at this index
+                payouts = np.zeros_like(pays, dtype=float)
 
-                sum_payouts = []
-                for o in range(len(events_per_year[k])):
-                    payout = events_per_year[k].loc[events_per_year[k].index[o], 'pay']
-                    summed_damages += events_per_year[k].loc[events_per_year[k].index[o], 'damage']
-                    #If there are events in the year, sample that many payouts and the associated damages
-                    if payout == 0 or current_principal == 0:
-                        sum_payouts.append(0)
-                    elif payout > 0:
-                        event_payout = payout 
-                        current_principal -= event_payout
-                        if current_principal < 0:
-                            event_payout += current_principal
-                            current_principal = 0
-                        else:
-                            pass
-                        sum_payouts.append(event_payout)
+                # All payouts before exhaustion are exact
+                if exhaust_idx > 0:
+                    payouts[:exhaust_idx] = pays[:exhaust_idx]
 
-            losses.append(np.sum(sum_payouts))
-            rel_monthly_loss.loc[k] = [sum_payouts, months]
-        summed_payouts = np.sum(losses)
-        rel_annual_losses = np.array(losses) / self.subarea_calc.principal
-        rel_monthly_loss['losses'] = rel_monthly_loss['losses'].apply(lambda x: [i / self.subarea_calc.principal for i in x])
-        return rel_annual_losses, rel_monthly_loss, summed_payouts, summed_damages
+                # Payout at exhaustion month: whatever principal remains
+                prev_cum = cum[exhaust_idx-1] if exhaust_idx > 0 else 0
+                payouts[exhaust_idx] = principal - prev_cum
 
+                # After that → principal is 0, so payouts remain 0
+                principal = 0.0
 
+            # Store relative losses and months
+            df_monthly.loc[year, "losses"] = payouts / principal0
+            df_monthly.loc[year, "months"] = months
+
+            # Sum for annual loss
+            annual_losses[year] = payouts.sum()
+
+        rel_annual_losses = annual_losses / principal0
+        summed_payouts = annual_losses.sum()
+
+        return rel_annual_losses, df_monthly, summed_payouts, summed_damages
+    
     def init_loss_simulation(self, confidence_levels=[0.95, 0.99]):
         """
         Simulate losses, payouts, damages, and risk metrics for a catastrophe bond.
@@ -107,7 +126,7 @@ class sng_bond_simulation:
 
             # Collect events for the full term (vectorized selection)
             events_per_year = [
-                pay_vs_dam[pay_vs_dam['year'] == (start_year + offset)]
+                pay_vs_dam[pay_vs_dam['year'] == (start_year + offset)].groupby(['month', 'year']).sum().reset_index().sort_values(by=['year','month'])
                 for offset in range(self.term)
             ]
 
@@ -143,6 +162,7 @@ class sng_bond_simulation:
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
         LOGGER.info(f'Attachment Probability = {att_prob}')
+
 
 
     '''Simulate over all terms of bond to derive returns'''
