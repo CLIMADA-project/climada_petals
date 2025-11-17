@@ -93,7 +93,7 @@ class premium_calculations:
 
     ### BENCHMARK SHARPE RATIO PREMIUMS ###
     '''Benchmark pricing function for single country bonds -> goes through all losses and determines required premium to achieve a certain target Sharpe ratio'''
-    def find_sharpe(self, premium, ann_losses, target_sharpe):
+    def find_sharpe(self, premium, monthly_losses, target_sharpe):
         """
         Calculates the squared difference between the Sharpe ratio of a cat bond cash flow and a target Sharpe ratio.
         The function simulates the annual cash flows of a catastrophe bond investment, adjusting for losses and premium payments.
@@ -102,7 +102,7 @@ class premium_calculations:
         Parameters
         ----------
             premium (float): The annual premium rate paid to the investor.
-            ann_losses (pd.DataFrame): DataFrame containing annual loss events, with columns 'losses' (list of loss amounts per event)
+            monthly_losses (pd.DataFrame): DataFrame containing monthly loss events per year, with columns 'losses' (list of loss amounts per event)
                                       and 'months' (list of months when each event occurs).
             target_sharpe (float): The target Sharpe ratio to compare against.
         Returns
@@ -112,9 +112,9 @@ class premium_calculations:
 
         ncf = []
         cur_nominal = 1
-        for i in range(len(ann_losses)):
-            losses = ann_losses['losses'].iloc[i]
-            months = ann_losses['months'].iloc[i]
+        for i in range(len(monthly_losses)):
+            losses = monthly_losses['losses'].iloc[i]
+            months = monthly_losses['months'].iloc[i]
             if np.sum(losses) == 0:
                 ncf.append(cur_nominal * premium)
             else:
