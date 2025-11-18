@@ -45,6 +45,9 @@ from climada.util.constants import ONE_LAT_KM
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
 
+#constants
+PHYSICAL_SOURCES = ['road', 'rail']
+
 class GraphCalcs():
     def __init__(self, network, directed=False):
         """
@@ -869,64 +872,49 @@ class NetworkCalcs(GraphCalcs):
     """Gathers wrapper for network preparation"""
     def __init__(self, network, dep_table):
         super(NetworkCalcs, self).__init__(network)
+        self.network = network
         self.dep_table = dep_table
 
-    def setup_network(self, initiate=True):
-        """Wrapper function to set up a network."""
+    def add_physical_links(self):
+        """Wrapper function to add physical links."""
 
-        #network with all cis
-        cis_network = Network.from_nws(ci_data.values())
-        cis_network = ordered_network(cis_network)
-
-        cis_graph = Graph(cis_network, directed=False)
         # create "missing physical structures" - needed for real world flows
         # syntax: each target is connected to max k sources given constraints
-        cis_graph = link_vertices_closest_k(cis_graph,
-                                                        source_attrs={
-                                                            'ci_type': 'road'},
-                                                        target_attrs={
-                                                            'ci_type': 'people'},
-                                                        link_attrs={
-                                                            'ci_type': 'road'},
-                                                        dist_thresh=df_dependencies.loc[(df_dependencies.source=='road') &
-                                                                                        (df_dependencies.target=='people'),'thresh_dist'].values[0],
+        physical_dependencies = self.dep_table.loc[
+            (self.dep_table['source'].isin(PHYSICAL_SOURCES))
+        ]
+        for i, row in physical_dependencies.iterrows():
+            self.link_vertices_closest_k(
+                                         source_attrs={
+                                             'ci_type': row['source']},
+                                         target_attrs={
+                                             'ci_type': row['target']},
+                                         link_attrs={
+                                             'ci_type': row['source']},
+                                         dist_thresh=row['thresh_dist'],
+                                         bidir=True,
+                                         k=row['n_links'])
 
-                                                        bidir=True,
-                                                        k=df_dependencies.loc[(df_dependencies.source=='road') &
-                                                                                        (df_dependencies.target=='people'),'n_links'].values[0])#k
-
-        cis_graph = link_vertices_closest_k(cis_graph,
-                                                        source_attrs={
-                                                            'ci_type': 'road'},
-                                                        target_attrs={
-                                                            'ci_type': 'healthcare'},
-                                                        link_attrs={
-                                                            'ci_type': 'road'},
-                                                        dist_thresh=df_dependencies.loc[(df_dependencies.source=='healthcare') &
-                                                                                        (df_dependencies.target=='people'),'thresh_dist'].values[0],
-                                                        bidir=True,
-                                                        k=df_dependencies.loc[(df_dependencies.source=='road') &
-                                                                                        (df_dependencies.target=='healthcare'),'n_links'].values[0])
-
-        cis_network = cis_graph.return_network()
+        ##TODO refactor the reformating of the network
+        self.network.update_network_from_graphs(self.graph)
 
         ##need to have all ids reset after new road edges have been added
-        cis_network = reset_ids(cis_network)
+        self.network = reset_ids(self.network)
         #update orig_id field (required for building subgraphes)
-        cis_network.edges['orig_id'] = cis_network.edges['id']
-        cis_network.nodes['orig_id'] = cis_network.nodes['id']
-        cis_network = ordered_network(cis_network)
+        self.network.edges['orig_id'] = self.network.edges['id']
+        self.network.nodes['orig_id'] = self.network.nodes['id']
+        self.network = ordered_network(self.network)
 
+    def initialize_base_state(self):
         #base state
         #do it after build up of physical dependencies so that created edge also receive
         #functionality states
-        if initiate:
-            cis_network = initialize_funcstates(cis_network)
-            for __, row in df_dependencies.iterrows():
-                cis_network = initialize_capacity(cis_network, row.source, row.target)
-            for __, row in df_dependencies[
-                df_dependencies['type_I']=='enduser'].iterrows():
-                cis_network = initialize_supply(cis_network, row.source)
+        self.initialize_funcstates()
+        for __, row in df_dependencies.iterrows():
+            cis_network = initialize_capacity(cis_network, row.source, row.target)
+        for __, row in df_dependencies[
+            df_dependencies['type_I']=='enduser'].iterrows():
+            cis_network = initialize_supply(cis_network, row.source)
 
         return cis_network
 
