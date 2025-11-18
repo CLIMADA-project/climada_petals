@@ -909,33 +909,62 @@ class NetworkCalcs(GraphCalcs):
         #base state
         #do it after build up of physical dependencies so that created edge also receive
         #functionality states
-        self.initialize_funcstates()
-        for __, row in df_dependencies.iterrows():
-            cis_network = initialize_capacity(cis_network, row.source, row.target)
-        for __, row in df_dependencies[
-            df_dependencies['type_I']=='enduser'].iterrows():
-            cis_network = initialize_supply(cis_network, row.source)
-
-        return cis_network
-
+        self.network.initialize_funcstates()
+        for __, row in self.dep_table.iterrows():
+            self.network.initialize_capacity(row['source'], row['target'])
+            if  row['type_I'] == 'enduser':
+                self.network.initialize_supply(row['source'])
 
     def add_dependency(self, source, target, n_links, access_cnstr):
         return
 
 
-    def dependencies_setup(self):
+    def setup_dependencies(self):
         for i, row in self.dep_table.iterrows():
-            source = row['source']
-            target = row['target']
-            n_links = row['n_links']
-            access_cnstr = row['access_cnstr']
-            dep_type_I = row['type_I']
-            dep_type_II = row['type_II']
-            thresh_dist = row['thresh_dist']
-            thresh_dur = row['thresh_dur']
-            self.add_dependency(source, target, n_links, access_cnstr)
-
-
+            link_cond = row['link_condition']
+            dependency_name = f'dependency_{row["source"]}_{row["target"]}'
+            if "distance" in link_cond:
+                self.link_vertices_shortest_paths(
+                    source_attrs={
+                        'ci_type': row['source']},
+                    target_attrs={
+                        'ci_type': row['target']},
+                    via_attrs={
+                        'ci_type': row['via_link'],
+                        'func_tot': 1
+                        },
+                    link_attrs={
+                        'ci_type': dependency_name},
+                    dist_thresh=row['thresh_dist'],
+                    bidir=row['bidir_link']
+                )
+                #self.add_dependency(source, target, n_links, access_cnstr)
+            elif "duration" in link_cond:
+                self.link_vertices_friction_surf(
+                    source_attrs={
+                        'ci_type': row['source']},
+                    target_attrs={
+                        'ci_type': row['target']},
+                    link_attrs={
+                        'ci_type': dependency_name},
+                    dist_thresh=row['thresh_dist'],
+                    bidir=row['bidir_link']
+                )
+            elif "edgecond" in link_cond:
+                self.link_vertices_edgecond(
+                    target_attrs={
+                        'ci_type': row['target']},
+                    edge_attrs={
+                        'ci_type': row['source'],
+                        'func_tot': 1
+                        },
+                    link_attrs={
+                        'ci_type': dependency_name},
+                    dist_thresh=row['thresh_dist'],
+                    bidir=row['bidir_link']
+                )
+            else:
+                raise NotImplementedError
 
 
 #class Graph(GraphCalcs):
