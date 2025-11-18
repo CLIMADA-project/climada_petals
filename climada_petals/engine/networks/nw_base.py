@@ -126,14 +126,14 @@ class Network:
         """
         update network object from several graph objects
         """
-        graph = ig.Graph(directed=graphs[0].directed)
-        for gra in graphs:
-            graph += gra.graph
+        #graph = ig.Graph(directed=graphs[0].directed)
+        #for gra in graphs:
+        #    graph += gra.graph
 
-        edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
+        edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
             {'source': 'from_id', 'target': 'to_id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
-        nodes = graph.get_vertex_dataframe()
+        nodes = graphs.get_vertex_dataframe()
         if 'id' in nodes.columns:
             nodes.pop('id')
         nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
