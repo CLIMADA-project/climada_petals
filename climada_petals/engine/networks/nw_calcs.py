@@ -641,35 +641,6 @@ class GraphCalcs():
         #delete large objects to avoid memory issues
         del capa_rec, func_capa, capa_suff, adj_sub, func_thresh, subgraph
         gc.collect()
-    #@profile
-    def cascade(self, df_dependencies, p_source='power_plant',
-                p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
-                  initial=False, friction_surf=None, criterion='both'):
-        """
-        entire cascade wrapper for internal state update, functional dependency iterations,
-        enduser dependency updates. CI-specific. Writing more generically does not
-        work atm, as there are too many CI-specific functionality assumptions.
-        """
-        delta = -1
-        cycles = 0
-        while delta != 0:
-            LOGGER.info(
-                f'Updating functional states. Current delta: {delta}')
-            func_states_vs, func_states_es = self._funcstates_sum()
-            self._update_internal_dependencies(
-                p_source=p_source, p_sink=p_sink, source_var=source_var, demand_var=demand_var)
-
-            self._update_functional_dependencies(df_dependencies)
-            func_states_vs2, func_states_es2 = self._funcstates_sum()
-            delta = max(abs(func_states_vs-func_states_vs2),
-                        abs(func_states_es-func_states_es2))
-            cycles += 1
-
-        LOGGER.info('Ended functional state update.' +
-                    ' Proceeding to end-user update.')
-        if (cycles > 1) or initial:
-            self._update_enduser_dependencies(
-                df_dependencies, friction_surf, criterion)
 
     def _funcstates_sum(self):
         """
@@ -994,40 +965,34 @@ class NetworkCalcs():
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
         self.graph_calc.invalidate()
-#class Graph(GraphCalcs):
-#    """
-#    creates an igraph graph object
-#    """
-#
-#    def __init__(self, network, directed=False):
-#        """
-#        network : instance of networks.nw_base.Network
-#        """
-#        self.directed = directed
-#
-#        if not network.edges.empty:
-#            self.graph = self._from_es(
-#                gdf_edges=network.edges, gdf_nodes=network.nodes)
-#        else:
-#            self.graph = self._from_vs(
-#                gdf_nodes=network.nodes)
-#
-#    def _remove_namecol(self, gdf_nodes):
-#        if gdf_nodes is not None:
-#            if hasattr(gdf_nodes, 'name'):
-#                gdf_nodes = gdf_nodes.drop('name', axis=1)
-#        return gdf_nodes
-#
-#    def _from_es(self, gdf_edges, gdf_nodes=None):
-#        return ig.Graph.DataFrame(
-#            gdf_edges,
-#            vertices=self._remove_namecol(gdf_nodes),
-#            directed=self.directed)
-#
-#    def _from_vs(self, gdf_nodes):
-#        gdf_nodes = self._remove_namecol(gdf_nodes)
-#        vertex_attrs = gdf_nodes.to_dict('list')
-#        return ig.Graph(
-#            n=len(gdf_nodes),
-#            vertex_attrs=vertex_attrs,
-#            directed=self.directed)
+
+
+    #@profile
+    def cascade(self, p_source='power_plant',
+                p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
+                  initial=False, friction_surf=None, criterion='both'):
+        """
+        entire cascade wrapper for internal state update, functional dependency iterations,
+        enduser dependency updates. CI-specific. Writing more generically does not
+        work atm, as there are too many CI-specific functionality assumptions.
+        """
+        delta = -1
+        cycles = 0
+        while delta != 0:
+            LOGGER.info(
+                f'Updating functional states. Current delta: {delta}')
+            func_states_vs, func_states_es = self.graph_calc._funcstates_sum()
+            self.graph_calc._update_internal_dependencies(
+                p_source=p_source, p_sink=p_sink, source_var=source_var, demand_var=demand_var)
+
+            self.graph_calc._update_functional_dependencies(self.dep_table)
+            func_states_vs2, func_states_es2 = self.graph_calc._funcstates_sum()
+            delta = max(abs(func_states_vs-func_states_vs2),
+                        abs(func_states_es-func_states_es2))
+            cycles += 1
+
+        LOGGER.info('Ended functional state update.' +
+                    ' Proceeding to end-user update.')
+        if (cycles > 1) or initial:
+            self.graph_calc._update_enduser_dependencies(
+                self.dep_table, friction_surf, criterion)
