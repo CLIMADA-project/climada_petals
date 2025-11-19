@@ -141,10 +141,10 @@ class GraphCalcs():
         """
 
         # select only those for which specified attrs apply
-        df_vs_target = self._filter_vertices(target_attrs)
+        df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
 
         # select only those for which specified attrs apply
-        df_vs_source = self._filter_vertices(source_attrs)
+        df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
 
         v_ids_source, v_ids_target = self._select_closest_k(
             df_vs_source, df_vs_target, dist_thresh, bidir, k)
@@ -173,7 +173,7 @@ class GraphCalcs():
         -------
         graph
         """
-        df_vs_target = self._filter_vertices(target_attrs)
+        df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
 
         vs_target = self.graph.vs[df_vs_target.index.values]
 
@@ -230,10 +230,10 @@ class GraphCalcs():
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
 
         # select only those for which specified attrs apply
-        df_vs_target = self._filter_vertices(subgraph, target_attrs)
+        df_vs_target = GraphCalcs._filter_vertices(subgraph, target_attrs)
 
         # select only those for which specified attrs apply
-        df_vs_source = self._filter_vertices(subgraph, source_attrs)
+        df_vs_source = GraphCalcs._filter_vertices(subgraph, source_attrs)
 
         path_dists = subgraph.distances(
             source=df_vs_source.index.values, target=df_vs_target.index.values,
@@ -305,7 +305,8 @@ class GraphCalcs():
     # =============================================================================
     # Helper funcs for making links
     # =============================================================================
-    def _filter_vertices(self, attr_dict):
+    @staticmethod
+    def _filter_vertices(graph, attr_dict):
         """
         get vertices of graph to which given attributes apply
 
@@ -318,12 +319,13 @@ class GraphCalcs():
         df_vs : pd.Dataframe
         """
 
-        df_vs = self.graph.get_vertex_dataframe()
+        df_vs = graph.get_vertex_dataframe()
         for key, value in attr_dict.items():
             df_vs = df_vs[df_vs[key] == value]
         return df_vs
 
-    def _filter_edges(self, attr_dict):
+    @staticmethod
+    def _filter_edges(graph, attr_dict):
         """
         get edges of graph to which given attributes apply
 
@@ -336,7 +338,7 @@ class GraphCalcs():
         df_es : pd.Dataframe
         """
 
-        df_es = self.graph.get_edge_dataframe()
+        df_es = graph.get_edge_dataframe()
         for key, value in attr_dict.items():
             df_es = df_es[df_es[key] == value]
         return df_es
@@ -437,9 +439,9 @@ class GraphCalcs():
         """
 
         # select only those for which specified attrs apply
-        df_vs_source = self._filter_vertices(source_attrs)
-        df_vs_target = self._filter_vertices(target_attrs)
-        df_vs_via = self._filter_vertices(via_attrs)
+        df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
+        df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
+        df_vs_via = GraphCalcs._filter_vertices(self.graph, via_attrs)
 
         vs_keep = np.concatenate((df_vs_source.index.values,
                                   df_vs_target.index.values,
@@ -457,9 +459,9 @@ class GraphCalcs():
         #graph_to_subgraph_esdict = {v: k for k, v in subgraph_graph_esdict.items()}
 
         # delete remaining edges that have wrong attributes
-        df_es_target = self._filter_edges(subgraph, target_attrs)
-        df_es_source = self._filter_edges(subgraph, source_attrs)
-        df_es_via = self._filter_edges(subgraph, via_attrs)
+        df_es_target = GraphCalcs._filter_edges(subgraph, target_attrs)
+        df_es_source = GraphCalcs._filter_edges(subgraph, source_attrs)
+        df_es_via = GraphCalcs._filter_edges(subgraph, via_attrs)
 
         correct_edges = np.concatenate((df_es_target.index.values,
                                        df_es_source.index.values,
@@ -984,12 +986,12 @@ class NetworkCalcs():
                         },
                     link_attrs={
                         'ci_type': dependency_name},
-                    dist_thresh=row['thresh_dist'],
                     bidir=row['bidir_link']
                 )
             else:
                 raise NotImplementedError
-
+        #update network
+        self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
         self.graph_calc.invalidate()
 #class Graph(GraphCalcs):
