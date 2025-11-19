@@ -49,11 +49,28 @@ LOGGER.setLevel('INFO')
 PHYSICAL_SOURCES = ['road', 'rail']
 
 class GraphCalcs():
-    def __init__(self, network, directed=False):
+    def __init__(self, parent, directed=False):
         """
         network : instance of networks.nw_base.Network
         """
-        self.graph = network.to_graph(directed=directed)
+        self.parent = parent #parent nw calc object
+        self._graph = None
+        self.directed = directed
+    @property
+    def network(self):
+        return self.parent.network
+
+    def build_graph(self):
+        self._graph = self.network.to_graph(directed=self.directed)
+        return self._graph
+    @property
+    def graph(self):
+        if self._graph is None:
+            return self.build_graph()
+        return self._graph
+
+    def invalidate(self):
+        self._graph = None
     # =============================================================================
     # Making links
     # =============================================================================
@@ -868,12 +885,17 @@ class GraphCalcs():
     def return_network(self):
         return Network.from_graphs([self])
 
-class NetworkCalcs(GraphCalcs):
+class NetworkCalcs():
     """Gathers wrapper for network preparation"""
     def __init__(self, network, dep_table):
-        super(NetworkCalcs, self).__init__(network)
         self.network = network
         self.dep_table = dep_table
+        self.graph_calc = GraphCalcs(parent=self)
+
+    @property
+    def graph(self):
+        """Convenience proxy"""
+        return self.graph_calc.graph
 
     def add_physical_links(self):
         """Wrapper function to add physical links."""
@@ -884,7 +906,7 @@ class NetworkCalcs(GraphCalcs):
             (self.dep_table['source'].isin(PHYSICAL_SOURCES))
         ]
         for i, row in physical_dependencies.iterrows():
-            self.link_vertices_closest_k(
+            self.graph_calc.link_vertices_closest_k(
                                          source_attrs={
                                              'ci_type': row['source']},
                                          target_attrs={
@@ -905,6 +927,8 @@ class NetworkCalcs(GraphCalcs):
         self.network.nodes['orig_id'] = self.network.nodes['id']
         self.network = ordered_network(self.network)
 
+        # Invalidate cached graph
+        self.graph_calc.invalidate()
     def initialize_base_state(self):
         #base state
         #do it after build up of physical dependencies so that created edge also receive
@@ -924,7 +948,7 @@ class NetworkCalcs(GraphCalcs):
             link_cond = row['link_condition']
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
             if "distance" in link_cond:
-                self.link_vertices_shortest_paths(
+                self.graph_calc.link_vertices_shortest_paths(
                     source_attrs={
                         'ci_type': row['source']},
                     target_attrs={
@@ -940,7 +964,7 @@ class NetworkCalcs(GraphCalcs):
                 )
                 #self.add_dependency(source, target, n_links, access_cnstr)
             elif "duration" in link_cond:
-                self.link_vertices_friction_surf(
+                self.graph_calc.link_vertices_friction_surf(
                     source_attrs={
                         'ci_type': row['source']},
                     target_attrs={
@@ -951,7 +975,7 @@ class NetworkCalcs(GraphCalcs):
                     bidir=row['bidir_link']
                 )
             elif "edgecond" in link_cond:
-                self.link_vertices_edgecond(
+                self.graph_calc.link_vertices_edgecond(
                     target_attrs={
                         'ci_type': row['target']},
                     edge_attrs={
@@ -966,7 +990,8 @@ class NetworkCalcs(GraphCalcs):
             else:
                 raise NotImplementedError
 
-
+        # Invalidate cached graph
+        self.graph_calc.invalidate()
 #class Graph(GraphCalcs):
 #    """
 #    creates an igraph graph object
