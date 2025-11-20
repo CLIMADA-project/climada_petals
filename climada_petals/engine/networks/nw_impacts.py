@@ -27,59 +27,107 @@ from climada.engine.impact_calc import ImpactCalc
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
+LINE_EXPOSURES = ['road', 'rail']
+
+## Exposures preparation
+def gdf_from_network(df_edges_or_nodes, ci_type):
+    return df_edges_or_nodes[df_edges_or_nodes['ci_type']==ci_type]
+def exposure_from_nodes(network, ci_type, value=1, tag=None):
+    """
+    Prepare an Exposures object from nodes of a network.
+
+    Parameters
+    ----------
+    network : Network
+        The network to get the nodes from.
+    ci_type : str
+        The type of the nodes to get.
+    value : int, optional
+        The value to assign to the exposure. Default is 1.
+    tag : str, optional
+        A tag to assign to the exposure. Default None yields tag as ci_type.
+
+    Returns
+    -------
+    Exposures
+        An Exposures object containing the nodes of the network as points with a value.
+
+    """
+    gdf = gdf_from_network(network.nodes, ci_type)
+    exp_pnt = Exposures(gdf)
+    exp_pnt.gdf['value'] = value
+    if tag is None:
+        tag = ci_type
+    exp_pnt.description = tag
+    exp_pnt.set_lat_lon()
+    exp_pnt.check()
+    return exp_pnt
+
+def exposure_from_edges(network, ci_type, res, disagg_val=1, disagg_met=u_lp.DisaggMethod.FIX,disagg_col=None, tag=None, **disagg_kwargs):
+    """
+    Prepare an Exposures object from edges of a network.
+
+    Parameters
+    ----------
+    network : Network
+        The network to get the edges from.
+    ci_type : str
+        The type of the edges to get.
+    res : int
+        The resolution at which to disagregate the edges.
+    disagg_val : int, optional
+        The value to assign to each exposure points upon disaggregation. Default is 1.
+    disagg_met : DisaggMethod, optional
+        The value assignement method to use for disaggregation. Default is DisaggMethod.FIX.
+    disagg_col : str, optional
+        The column from the edges data frame to use for value assignement. Default None yields no "value" colum originally present to be used.
+    tag : str, optional
+        A tag to assign to the exposure. Default None yields tag as ci_type.
+    **disagg_kwargs : dict
+        Additional keyword arguments to pass to the disaggregation function.
+
+    Returns
+    -------
+    Exposures
+        An Exposures object containing the edges of the network as points with a value.
+
+    """
+    gdf = gdf_from_network(network.edges, ci_type)
+    if not disagg_val:
+        gdf["value"] = gdf[disagg_col]
+
+    exp_line = Exposures(gdf)
+    exp_pnt = u_lp.exp_geom_to_pnt(exp_line, res=res, disagg_val=disagg_val, disagg_met=disagg_met,**disagg_kwargs)
+    if tag is None:
+        tag = ci_type
+    exp_pnt.description = tag
+    exp_pnt.set_lat_lon()
+    exp_pnt.check()
+    return exp_pnt
+
+#def make_network_exposures(self, ci_types=None, res_orig = 500):
+#    exp_list = []
+#    if ci_types is None:
+#        ci_types = self.network.nodes.ci_type.unique()
+#    for ci_type in ci_types:
+#        if ci_type in LINE_EXPOSURES:
+#            exp = exposure_from_edges(gdf_from_network(self.network.edges, 'road'),
+#                                           res=res_orig, disagg_val=disagg_val_road)
+#        elif ci_type == 'people':
+#            gdf_ppl = gdf_from_network(self.network.nodes, 'people')
+#            exp = exposure_from_nodes(gdf_ppl, value=gdf_ppl.counts)
+#        else:
+#            gdf = gdf_from_network(self.network.nodes, ci_type)
+#            exp = exposure_from_nodes(gdf)
+#        exp_list.append(exp)
+#    self.exposures = exp_list
 
 class NetworkImpactCalc():
     def __init__(self, impf_set, haz, network):
-        #super().__init__(exp, impf_set, haz)
         self.impf_set = impf_set
         self.haz = haz
         self.network = network
-    ## Exposures preparation
-    def gdf_from_network(df_edges_or_nodes, ci_type):
-        return df_edges_or_nodes[df_edges_or_nodes['ci_type']==ci_type]
-
-    def exposure_from_nodes(gdf, value=1, tag=None):
-        exp_pnt = Exposures(gdf)
-        exp_pnt.gdf['value'] = value
-        exp_pnt.description = tag if tag is not None else gdf.ci_type.iloc[0]
-
-        exp_pnt.set_lat_lon()
-        exp_pnt.check()
-        return exp_pnt
-
-    def exposure_from_edges(gdf, res, disagg_met=u_lp.DisaggMethod.FIX, disagg_val=1, tag=None):
-        exp_line = Exposures(gdf)
-        if not disagg_val:
-            disagg_val = res
-        exp_pnt = u_lp.exp_geom_to_pnt(exp_line, res=res, to_meters=True,
-                                       disagg_met=disagg_met, disagg_val=disagg_val)
-        exp_pnt.description = tag if tag is not None else gdf.ci_type.iloc[0]
-
-        exp_pnt.set_lat_lon()
-        exp_pnt.check()
-        return exp_pnt
-
-    def make_network_exposures(network, ci_types=None, res_orig = 500):
-        exp_list = []
-        if ci_types is None:
-            ci_types = network.nodes.ci_type.unique()
-        for ci_type in ci_types:
-            if ci_type == 'road':
-                gdf_roads = gdf_from_network(network.edges, 'road')
-                #assign value field as distance for disaggregation
-                gdf_roads['value'] = gdf_roads['distance']
-                disagg_val_road = None #use None to use value field as disag value
-                #disagg_val_road = res_orig # damage fraction on y-axis
-                exp = exposure_from_edges(gdf_from_network(network.edges, 'road'),
-                                               res=res_orig, disagg_val=disagg_val_road)
-            elif ci_type == 'people':
-                gdf_ppl = gdf_from_network(network.nodes, 'people')
-                exp = exposure_from_nodes(gdf_ppl, value=gdf_ppl.counts)
-            else:
-                gdf = gdf_from_network(network.nodes, ci_type)
-                exp = exposure_from_nodes(gdf)
-            exp_list.append(exp)
-        return exp_list
+        self.exposures = None
 
     ## Impact calcs
     def calc_point_impacts(haz, exp, impf_set):
