@@ -137,33 +137,34 @@ class NetworkImpactCalc():
         imp = imp.impact(save_mat=True)
         return imp
 
-    def impacts_to_network(imp, exp_tag, impf_thresh_set, ci_network_disr):
+    def impacts_to_network(imp, exp_tag, impf_thresh, network):
         """Assign impacts to network."""
         func_states = list(
-                map(int, imp.imp_mat.toarray().flatten()<=impf_thresh_set.getThresh(exp_tag)))
+                map(int, imp.imp_mat.toarray().flatten()<=impf_thresh)
+        )
 
-        if exp_tag == 'road':
-            ci_network_disr.edges.loc[ci_network_disr.edges.ci_type=='road',
+        if exp_tag in LINE_EXPOSURES:
+            network.edges.loc[network.edges.ci_type=='road',
                                       'func_internal'] = func_states
-            ci_network_disr.edges.loc[ci_network_disr.edges.ci_type=='road',
+            network.edges.loc[network.edges.ci_type=='road',
                                       'imp_dir'] = imp.imp_mat.toarray().flatten()
 
         else:
-            ci_network_disr.nodes.loc[
-                    ci_network_disr.nodes.ci_type==exp_tag, 'func_internal'] = func_states
-            ci_network_disr.nodes.loc[
-                    ci_network_disr.nodes.ci_type==exp_tag, 'imp_dir'] = imp.imp_mat.toarray().flatten()
+            network.nodes.loc[
+                    network.nodes.ci_type==exp_tag, 'func_internal'] = func_states
+            network.nodes.loc[
+                    network.nodes.ci_type==exp_tag, 'imp_dir'] = imp.imp_mat.toarray().flatten()
 
-        ci_network_disr.edges['func_tot'] = [np.min([func_internal, func_tot]) for
+        network.edges['func_tot'] = [np.min([func_internal, func_tot]) for
                                               func_internal, func_tot in zip(
-                                                  ci_network_disr.edges.func_internal,
-                                                  ci_network_disr.edges.func_tot)]
-        ci_network_disr.nodes['func_tot'] = [np.min([func_internal, func_tot]) for
+                                                  network.edges.func_internal,
+                                                  network.edges.func_tot)]
+        network.nodes['func_tot'] = [np.min([func_internal, func_tot]) for
                                              func_internal, func_tot in zip(
-                                                 ci_network_disr.nodes.func_internal,
-                                                 ci_network_disr.nodes.func_tot)]
+                                                 network.nodes.func_internal,
+                                                 network.nodes.func_tot)]
 
-        return ci_network_disr
+        return network
 
 
     def disrupt_network(self):
@@ -171,13 +172,13 @@ class NetworkImpactCalc():
         network_disr = cp.deepcopy(self.network)#create new network object
         for exp in self.exp_list:
             impf = self.impf_set.getImpf(exp.description)
-            impf_thresh_set = self.impf_thresh_set.getImpf(exp.description)
+            impf_thresh = self.impf_thresh_set.getThresh(exp.description)
             exp.gdf[f"impf_{self.haz.haz_type}"] = impf.id
             imp = NetworkImpactCalc.calc_point_impacts(self.haz, exp, ImpactFuncSet([impf]))
             if exp.description in LINE_EXPOSURES:#reaggregate impacts if originally disaggregated
                 imp = u_lp.impact_pnt_agg(imp, exp.gdf, u_lp.AggMethod.SUM)
             #propagate impacts to network
-            network_disr = NetworkImpactCalc.impacts_to_network(imp, exp.description, impf_thresh_set, network_disr)
+            network_disr = NetworkImpactCalc.impacts_to_network(imp, exp.description, impf_thresh, network_disr)
             del imp
             del exp
         #gc.collect()
