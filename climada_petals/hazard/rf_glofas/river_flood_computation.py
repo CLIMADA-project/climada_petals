@@ -671,9 +671,14 @@ class RiverFloodInundation:
         with _maybe_open_dataarray(
             r_period,
             self.cache_paths.return_period,
-            chunks=dict(
-                longitude=100, latitude=100, time=1, sample=1, number=1, step=1
-            ),
+            chunks={
+                "longitude": -1,
+                "latitude": -1,
+                "time": "auto",
+                "sample": "auto",
+                "number": "auto",
+                "step": "auto",
+            },
         ) as return_period_data:
             if flood_maps is None:
                 flood_maps = self.load_flood_maps(reference=return_period_data)
