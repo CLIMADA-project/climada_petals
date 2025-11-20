@@ -10,6 +10,22 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+### Added
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+## 6.1.0
+
+Release date: 2025-09-30
+
+### Dependency Changes
+
 Added:
 
 - `lxml` >=5 (was implicitly part of the dependency tree before)
@@ -30,8 +46,6 @@ Updated:
 ### Fixed
 
 - Add `lxml` as explicit dependency [#168](https://github.com/CLIMADA-project/climada_petals/pull/168)
-
-### Deprecated
 
 ### Removed
 
