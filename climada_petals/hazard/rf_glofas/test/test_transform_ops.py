@@ -618,7 +618,7 @@ class TestTransformOps(unittest.TestCase):
             data=[ones, ones * 10, ones * 100],
             dims=["return_period", "longitude", "latitude"],
             coords=dict(
-                return_period=[1, 10, 100],
+                return_period=np.array([1, 10, 100], dtype=np.int64),
                 longitude=np.arange(4),
                 latitude=np.arange(3),
             ),

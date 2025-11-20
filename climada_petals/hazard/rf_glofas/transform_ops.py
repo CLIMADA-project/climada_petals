@@ -725,7 +725,9 @@ def flood_depth(
 
     # Clip infinite return periods
     return_period = return_period.clip(
-        min=1, max=flood_maps["return_period"].max(), keep_attrs=True
+        min=1,
+        max=flood_maps["return_period"].max().astype(return_period.dtype),
+        keep_attrs=True,
     )
 
     # All but 'longitude' and 'latitude' are core dimensions for this operation
