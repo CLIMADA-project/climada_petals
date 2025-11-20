@@ -123,11 +123,12 @@ def exposure_from_edges(network, ci_type, res, disagg_val=1, disagg_met=u_lp.Dis
 #    self.exposures = exp_list
 
 class NetworkImpactCalc():
-    def __init__(self, impf_set, haz, network):
+    def __init__(self, impf_set, impf_thresh_set, haz, network, exp_list):
         self.impf_set = impf_set
+        self.impf_thresh_set = impf_thresh_set
         self.haz = haz
         self.network = network
-        self.exposures = None
+        self.exp_list = exp_list
 
     ## Impact calcs
     def calc_point_impacts(haz, exp, impf_set):
@@ -165,19 +166,20 @@ class NetworkImpactCalc():
         return ci_network_disr
 
 
-    def disrupt_network(network, haz, impf_thresh_set, ci_types=None, res_disagg=500):
+    def disrupt_network(self):
         """wrapper to disrupt network based on hazard and exposure data."""
-        network_disr = cp.deepcopy(network)
-        exp_list = make_network_exposures(network_disr, ci_types, res_orig=res_disagg)
-
-        for exp in exp_list:
-            impf = impf_thresh_set.getImpf(exp.description)
-            exp.gdf[f"impf_{haz.haz_type}"] = impf.id
-            imp = calc_point_impacts(haz, exp, ImpactFuncSet([impf]))
-            if exp.description in ['road']:
+        network_disr = cp.deepcopy(self.network)#create new network object
+        for exp in self.exp_list:
+            impf = self.impf_set.getImpf(exp.description)
+            impf_thresh_set = self.impf_thresh_set.getImpf(exp.description)
+            exp.gdf[f"impf_{self.haz.haz_type}"] = impf.id
+            imp = NetworkImpactCalc.calc_point_impacts(self.haz, exp, ImpactFuncSet([impf]))
+            if exp.description in LINE_EXPOSURES:#reaggregate impacts if originally disaggregated
                 imp = u_lp.impact_pnt_agg(imp, exp.gdf, u_lp.AggMethod.SUM)
-            network_disr = impacts_to_network(imp, exp.description, impf_thresh_set, network_disr)
+            #propagate impacts to network
+            network_disr = NetworkImpactCalc.impacts_to_network(imp, exp.description, impf_thresh_set, network_disr)
             del imp
             del exp
-        gc.collect()
+        #gc.collect()
+        ## TODO eventually concat impact matrices and return them?
         return network_disr
