@@ -378,6 +378,91 @@ class mlt_bond_simulation:
         self.ncf_tranches = pd.DataFrame(ncf)
         self.ncf_tranches['Total'] = self.ncf_tranches.sum(axis=1)
         self.prem_cty_df_tranches = pd.DataFrame(prem_cty_dic)
+
+
+    '''Calculates required nominal for multi-country bonds -> derives maximal loss over simulation period'''
+    def requ_nom(self):
+        """
+        Calculates the required nominal value for a multi-country catastrophe bond based on simulated event losses.
+        This function simulates event losses over a specified term for multiple countries, aggregates the losses,
+        and determines the maximum total loss across all simulation periods. The required nominal value is the
+        maximum loss observed, which can be used to set the bond's principal.
+        Args:
+            countries (list): List of country codes to include in the simulation.
+            pay_dam_df_dic (dict): Dictionary mapping country codes to pandas DataFrames containing event loss data.
+                Each DataFrame must have a 'year' column and relevant loss information.
+            nominal_dic_cty (dict): Dictionary mapping country codes to their respective nominal values.
+        Returns:
+            float: The required nominal value for the catastrophe bond, equal to the maximum simulated total loss.
+        """
+
+        total_losses = []
+
+        for i in range(self.simulated_years-self.term):
+            events_per_year = []
+            for j in range(self.term):
+                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == (i + j)].assign(country_code=cty) for cty in self.countries]
+
+                year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
+                events_per_year.append(year_events_df)
+
+            tot_loss = self.init_equ_nom_sim(events_per_year, self.principal_dic_cty)
+
+            total_losses.append(tot_loss)
+
+        requ_nominal = np.max(total_losses)
+
+        return requ_nominal
+    
+    '''derives losses for one term of bond'''
+    def init_equ_nom_sim(self, events_per_year, nominal_dic_cty):
+        """
+        Simulates total losses for a multi-country catastrophe bond over a specified term.
+        For each year in the bond's term, the function processes a list of event dataframes, each containing
+        payout amounts and country codes. It calculates the payouts for each event, ensuring that payouts do not
+        exceed the remaining nominal value for each country. The annual losses are accumulated, and the total loss
+        over the term is returned.
+        Parameters
+        ----------
+        events_per_year : list of pandas.DataFrame
+            A list where each element corresponds to a year and contains a DataFrame of events with columns
+            'pay' (payout amount) and 'country_code' (identifier for the country).
+        nominal_dic_cty : dict
+            Dictionary mapping country codes to their initial nominal values for the bond.
+        Returns
+        -------
+        tot_loss : float
+            The total loss over the bond's term, accounting for country-specific nominal limits.
+        """
+
+        ann_loss = np.zeros(self.term)
+        cur_nom_cty = nominal_dic_cty.copy()
+
+        for k in range(self.term):
+            if not events_per_year[k].empty:
+                events = events_per_year[k]
+                payouts = events['pay'].to_numpy()
+                cties = events['country_code'].to_numpy()
+
+                sum_payouts = np.zeros(len(events))
+
+                for idx, (payout, cty) in enumerate(zip(payouts, cties)):
+                    if payout == 0 or cur_nom_cty[cty] == 0:
+                        event_payout = 0
+                    else:
+                        event_payout = payout
+                        cur_nom_cty[cty] -= event_payout
+                        if cur_nom_cty[cty] < 0:
+                            event_payout += cur_nom_cty[cty]
+                            cur_nom_cty[cty] = 0
+                    sum_payouts[idx] = event_payout
+
+                ann_loss[k] = np.sum(sum_payouts)
+            else:
+                ann_loss[k] = 0
+
+        tot_loss = np.sum(ann_loss)
+        return tot_loss
     
 def allocate_single_payout(payout, nominals):
     """
