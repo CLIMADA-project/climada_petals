@@ -14,6 +14,7 @@ class mlt_bond_simulation:
         self.simulated_years = number_of_terms * term
         self.tranches = tranches
         self.subarea_calc = subarea_calc_list
+        self._prepare_data()
 
 
 
@@ -28,7 +29,7 @@ class mlt_bond_simulation:
 
         min_year = min(min_year_list)
 
-        return min_year
+        self.min_year = min_year
         
 
 
@@ -41,6 +42,7 @@ class mlt_bond_simulation:
         payouts and damages based on the provided nominal values and per-country nominal allocations. It tracks
         losses, damages, and payouts for each country and for the bond as a whole, and computes several summary
         statistics.
+
         Parameters
         ----------
         self: mlt_bond_simulation
@@ -50,6 +52,7 @@ class mlt_bond_simulation:
         events_per_year : list of pandas.DataFrame
             List of DataFrames, one per year of the bond's term, each containing event data with columns:
             'month', 'country_code', 'pay', and 'damage'.
+
         Returns
         -------
         rel_ann_bond_losses : list of floats
@@ -64,6 +67,7 @@ class mlt_bond_simulation:
         coverage_cty : dict
             Dictionary mapping country codes to their cumulative payout and damage over the bond's term:
             {country_code: {'payout': ..., 'damage': ...}, ...}.
+
         Notes
         -----
         - The function assumes that the term (number of years) is inferred from the length of `events_per_year`.
@@ -134,6 +138,7 @@ class mlt_bond_simulation:
         This function aggregates event data for multiple countries over a specified simulation period, computes annual and total losses,
         calculates risk metrics (Value-at-Risk and Expected Shortfall) at given confidence levels, and evaluates coverage and expected loss
         shares for each country. It also computes the probability that the bond is triggered (attachment probability) and can print summary statistics.
+
         Parameters
         ----------
         self: mlt_bond_simulation
@@ -142,6 +147,7 @@ class mlt_bond_simulation:
             The total principal value of the catastrophe bond.
         confidence_levels : list, optional
             List of confidence levels (floats between 0 and 1) for risk metrics calculation (default is [0.95, 0.99]).
+
         Returns
         -------
         df_loss_month : pandas.DataFrame
@@ -150,14 +156,13 @@ class mlt_bond_simulation:
             Dictionary containing expected annual loss, annual attachment probability, payout, damage, and risk metrics (VaR and ES) at specified confidence levels for annual losses.
         tot_coverage_cty : dict
             Dictionary mapping each country code to its total payout, damage, coverage ratio, annual expected loss, and share of annual expected loss.
+
         Notes
         -----
         - The function relies on the helper functions `init_bond_loss` and `multi_level_es` for loss simulation and risk metric calculation.
         - The function expects event data to be structured such that each country's DataFrame contains a 'year' and 'month' column for filtering events.
 
         """
-
-        min_year = self._prepare_data()
 
         annual_losses = []
         total_losses = []
@@ -173,7 +178,7 @@ class mlt_bond_simulation:
             for j in range(self.term):
                 events_per_cty = []  
                 for cty in self.countries:
-                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == (min_year+i)+j].copy()
+                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == (self.min_year+i)+j].copy()
                     events['country_code'] = cty
                     events_per_cty.append(events)  
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
@@ -230,6 +235,7 @@ class mlt_bond_simulation:
         This function calculates the premium payments, net cash flows, and premium allocations for the whole bond and all countries, 
         considering monthly losses and country exposure shares. It accounts for loss events, premium payments, 
         and risk-free rates, and distributes premiums according to country exposure shares represented by the country's Expected Marginal Loss.
+
         Parameters
         ----------
         self: mlt_bond_simulation
@@ -238,12 +244,14 @@ class mlt_bond_simulation:
             The annual premium rate for the bond.
         rf : float, optional
             Risk-free rate to be added to the premium (default is 0.0).
+
         Returns
         -------
         ncf : pandas.DataFrame
             DataFrame containing net cash flows for the bond.
         prem_cty_df : pandas.DataFrame
             DataFrame containing premium allocations for each country (based on their exposure share) and total premiums.
+
         Notes
         -----
         - The function resets the nominal value at the end of each term.
@@ -303,6 +311,7 @@ class mlt_bond_simulation:
         This function calculates the premium payments, net cash flows, and premium allocations for each tranche and country, 
         considering monthly losses, tranche structures, and country exposure shares. It accounts for loss events, premium payments, 
         and risk-free rates, and distributes premiums according to country exposure shares represented by the country's Expected Marginal Loss.
+
         Parameters
         ----------
         self: mlt_bond_simulation
@@ -311,12 +320,14 @@ class mlt_bond_simulation:
             List of annual premium rates for each tranche.
         rf : float, optional
             Risk-free rate to be added to the premium (default is 0.0).
+
         Returns
         -------
         ncf : pandas.DataFrame
             DataFrame containing net cash flows for each tranche and the total across all tranches for each period.
         prem_cty_df : pandas.DataFrame
             DataFrame containing premium allocations for each country (based on their exposure share), total premiums (if bond is priced as one), and alternative total premiums (if each tranche is priced seperately).
+
         Notes
         -----
         - The function resets the nominal value at the end of each term.
@@ -401,7 +412,7 @@ class mlt_bond_simulation:
         for i in range(self.simulated_years-self.term):
             events_per_year = []
             for j in range(self.term):
-                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == (i + j)].assign(country_code=cty) for cty in self.countries]
+                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == (self.min_year + i) + j].assign(country_code=cty) for cty in self.countries]
 
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
                 events_per_year.append(year_events_df)
@@ -421,6 +432,7 @@ class mlt_bond_simulation:
         payout amounts and country codes. It calculates the payouts for each event, ensuring that payouts do not
         exceed the remaining nominal value for each country. The annual losses are accumulated, and the total loss
         over the term is returned.
+
         Parameters
         ----------
         events_per_year : list of pandas.DataFrame
@@ -428,6 +440,7 @@ class mlt_bond_simulation:
             'pay' (payout amount) and 'country_code' (identifier for the country).
         nominal_dic_cty : dict
             Dictionary mapping country codes to their initial nominal values for the bond.
+
         Returns
         -------
         tot_loss : float
