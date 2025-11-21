@@ -410,9 +410,8 @@ class mlt_bond_simulation:
 
             total_losses.append(tot_loss)
 
-        requ_nominal = np.max(total_losses)
+        self.requ_principal = np.max(total_losses)
 
-        return requ_nominal
     
     '''derives losses for one term of bond'''
     def init_equ_nom_sim(self, events_per_year, nominal_dic_cty):
