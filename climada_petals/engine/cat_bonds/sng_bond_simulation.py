@@ -47,8 +47,10 @@ class sng_bond_simulation:
 
         # Use Python lists only for month-level output (tiny)
         df_monthly = pd.DataFrame(columns=[
-            "losses", "months"]
+            "losses", "months"], dtype=object
         )
+
+
         annual_losses = pd.Series(0.0, index=range(self.term))
 
         summed_damages = 0.0
@@ -61,22 +63,18 @@ class sng_bond_simulation:
             damages = ev["damage"].to_numpy()
 
             summed_damages += damages.sum()
-
             # Running cumulative payout to detect exhaustion
             cum = np.cumsum(pays)
 
             # Identify first index where principal is exceeded
             exhaust_idx = np.searchsorted(cum, principal, side="right")
-
             if exhaust_idx == len(pays):
                 # principal never exhausted → no capping needed
                 payouts = pays.copy()
                 principal -= payouts.sum()
-
             else:
                 # principal exhausted at this index
                 payouts = np.zeros_like(pays, dtype=float)
-
                 # All payouts before exhaustion are exact
                 if exhaust_idx > 0:
                     payouts[:exhaust_idx] = pays[:exhaust_idx]
@@ -87,10 +85,10 @@ class sng_bond_simulation:
 
                 # After that → principal is 0, so payouts remain 0
                 principal = 0.0
+            # Store relative losses and months as arrays for consistent indexing
+            df_monthly.loc[year, "losses"] = list(payouts / principal0)
+            df_monthly.loc[year, "months"] = list(months)
 
-            # Store relative losses and months
-            df_monthly.loc[year, "losses"] = payouts / principal0
-            df_monthly.loc[year, "months"] = months
 
             # Sum for annual loss
             annual_losses[year] = payouts.sum()
