@@ -32,7 +32,7 @@ LINE_EXPOSURES = ['road', 'rail']
 ## Exposures preparation
 def gdf_from_network(df_edges_or_nodes, ci_type):
     return df_edges_or_nodes[df_edges_or_nodes['ci_type']==ci_type]
-def exposure_from_nodes(network, ci_type, value=1, tag=None):
+def exposure_from_nodes(network, ci_type, value=None, value_col=None, tag=None):
     """
     Prepare an Exposures object from nodes of a network.
 
@@ -55,7 +55,10 @@ def exposure_from_nodes(network, ci_type, value=1, tag=None):
     """
     gdf = gdf_from_network(network.nodes, ci_type)
     exp_pnt = Exposures(gdf)
-    exp_pnt.gdf['value'] = value
+    if value:
+        exp_pnt.gdf['value'] = value
+    elif value_col:
+        exp_pnt.gdf['value'] = gdf[value_col]
     if tag is None:
         tag = ci_type
     exp_pnt.description = tag
