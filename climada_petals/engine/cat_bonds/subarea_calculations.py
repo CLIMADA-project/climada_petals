@@ -11,9 +11,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 
-class Subarea_Calculations:
+class SubareaCalculations:
     def __init__(self, subareas, index_stat):
-
         '''
         Attributes
         ----------

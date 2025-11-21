@@ -5,7 +5,7 @@ from utils_cat_bonds import multi_level_es
 
 LOGGER = logging.getLogger(__name__)
 
-class sng_bond_simulation:
+class SingleCountryBondSimulation:
 
     def __init__(self, subarea_calc, term, number_of_terms):
         self.term = term

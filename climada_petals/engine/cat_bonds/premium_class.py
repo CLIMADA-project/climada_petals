@@ -21,7 +21,7 @@ b_5 = -0.0239
 b_6 = -2.6742
 b_7 = 0.7057
 
-class premium_calculations:
+class PremiumCalculations:
 
     def __init__(self, bond_simulation_class):
         self.bond_simulation_class = bond_simulation_class

@@ -6,7 +6,7 @@ from utils_cat_bonds import multi_level_es
 
 LOGGER = logging.getLogger(__name__)
 
-class mlt_bond_simulation:
+class MultiCountryBondSimulation:
 
     def __init__(self, subarea_calc_list, countries_list, term, number_of_terms, tranches):
         self.countries = countries_list
