@@ -286,12 +286,11 @@ class mlt_bond_simulation:
                 premiums_tot.append(np.sum(premiums_tot_tmp))
             if (i + 1) % self.term == 0:
                 cur_nominal = 1
-
         prem_cty_dic = {country: [] for country in self.tot_coverage_cty}
         for country in prem_cty_dic:
-            prem_cty_dic[country] = premiums_tot * self.tot_coverage_cty[country]['share_EL']
+            prem_cty_dic[country] = np.array(premiums_tot) * self.tot_coverage_cty[country]['share_EL']
         prem_cty_dic['Total'] = premiums_tot
-
+        
         self.ncf = pd.DataFrame(ncf_tot, columns=['Total'])
         self.prem_cty_df = pd.DataFrame(prem_cty_dic)
 
@@ -326,64 +325,88 @@ class mlt_bond_simulation:
         - Losses are allocated to tranches in reverse order (from highest to lowest risk).
         """
 
-        ncf = {tranche['RP']: [] for _, tranche in self.tranches.iterrows()}
+        ncf = {str(tranche): [] for tranche in self.tranches}
         premiums_tot = []
-        ncf_tot = []
-        cur_nominal = 1
+        cur_nominal_tranches = self.tranches.copy()
         for i in range(len(self.df_loss_month)):
             losses = self.df_loss_month['losses'].iloc[i]
             months = self.df_loss_month['months'].iloc[i]
             if np.sum(losses) == 0:
                 prem_it_alt = 0
                 for k, tranche in enumerate(self.tranches):
-                    ncf[tranche['RP']].append(cur_nominal * tranche['nominal'] * premiums[k] + rf)
-                    prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k]
+                    ncf[str(tranche)].append(cur_nominal_tranches[k] * (premiums[k] + rf))
+                    prem_it_alt +=  cur_nominal_tranches[k] * premiums[k]
                 premiums_tot.append(prem_it_alt)
             else:
-                ncf_tmp = {tranche['RP']: [] for _, tranche in self.tranches.iterrows()}
+                ncf_tmp = {str(tranche): [] for tranche in self.tranches}
                 prem_it_alt = 0
                 premiums_tot_tmp = []
                 for k, tranche in enumerate(self.tranches):
-                    ncf_tmp[tranche['RP']].append(cur_nominal * tranche['nominal'] * (premiums[k] + rf) / 12 * months[0])
-                    prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k] / 12 * months[0]
+                    ncf_tmp[str(tranche)].append(cur_nominal_tranches[k] * (premiums[k] + rf) / 12 * months[0])
+                    prem_it_alt += cur_nominal_tranches[k] * premiums[k] / 12 * months[0]
                 premiums_tot_tmp.append(prem_it_alt)
+                losses_per_tranche = np.zeros(len(self.tranches))  # accumulate over all events in this period
                 for j in range(len(losses)):
                     loss = losses[j]
                     month = months[j]
-                    cur_nominal -= loss
-                    if cur_nominal < 0:
-                        loss += cur_nominal
-                        cur_nominal = 0
+                    cur_nominal_tranches, payout_per_tranche = allocate_single_payout(loss, cur_nominal_tranches)
+                    losses_per_tranche += payout_per_tranche
                     if j + 1 < len(losses):
                         nex_month = months[j+1]
                         prem_it_alt = 0
                         for k, tranche in enumerate(self.tranches):
-                            ncf_tmp[tranche['RP']].append(((cur_nominal * tranche['nominal'] * (premiums[k] + rf)) / 12 * (nex_month - month)))
-                            prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k] / 12 * (nex_month - month)
+                            ncf_tmp[str(tranche)].append(((cur_nominal_tranches[k] * (premiums[k] + rf)) / 12 * (nex_month - month)))
+                            prem_it_alt += cur_nominal_tranches[k] * premiums[k] / 12 * (nex_month - month)
                         premiums_tot_tmp.append(prem_it_alt)
                     else:
                         prem_it_alt = 0
                         for k, tranche in enumerate(self.tranches):
-                            ncf_tmp[tranche['RP']].append(((cur_nominal * tranche['nominal'] * (premiums[k] + rf)) / 12 * (12- month)))
-                            prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k] / 12 * (12- month)
+                            ncf_tmp[str(tranche)].append(((cur_nominal_tranches[k] * (premiums[k] + rf)) / 12 * (12- month)))
+                            prem_it_alt += cur_nominal_tranches[k] * premiums[k] / 12 * (12- month)
                         premiums_tot_tmp.append(prem_it_alt)
-                tmp_loss = np.sum(losses)
-                for _, tranche in self.tranches.iloc[::-1].iterrows():
-                    to_cover = tmp_loss - tranche['lower_bound']
-                    if to_cover < 0:
-                        to_cover = 0
-                    ncf[tranche['RP']].append(np.sum(ncf_tmp[tranche['RP']]) - to_cover)
-                    tmp_loss -= to_cover
                 premiums_tot.append(np.sum(premiums_tot_tmp))
+                for idx, tranche in enumerate(self.tranches):
+                    ncf[str(tranche)].append(np.sum(ncf_tmp[str(tranche)]) - losses_per_tranche[idx])
             if (i + 1) % self.term == 0:
-                cur_nominal = 1
+                cur_nominal_tranches = self.tranches.copy()
 
-        ncf['Total'] = ncf_tot
         prem_cty_dic = {country: [] for country in self.tot_coverage_cty}
         for country in prem_cty_dic:
             prem_cty_dic[country] = np.array(premiums_tot) * self.tot_coverage_cty[country]['share_EL']
         prem_cty_dic['Total'] = premiums_tot
 
-        ncf = pd.DataFrame(ncf)
-        prem_cty_df = pd.DataFrame(prem_cty_dic)
-        return ncf, prem_cty_df
+        self.ncf_tranches = pd.DataFrame(ncf)
+        self.ncf_tranches['Total'] = self.ncf_tranches.sum(axis=1)
+        self.prem_cty_df_tranches = pd.DataFrame(prem_cty_dic)
+    
+def allocate_single_payout(payout, nominals):
+    """
+    Vectorised allocation of one payout across tranche nominals (FIFO).
+    
+    Parameters
+    ----------
+    payout : float
+    nominals : 1D array of tranche nominal values
+
+    Returns
+    -------
+    alloc : array of size (T,)  -- how much each tranche pays
+    remaining_nominals : array -- leftover nominals after the payout
+    """
+
+    nominals = np.asarray(nominals, float)
+
+    # cumulative nominal capacity per tranche
+    cum_nom = np.cumsum(nominals)
+    cum_nom_prev = cum_nom - nominals
+
+    # intersection of [0, payout] with each tranche interval [cum_nom_prev, cum_nom]
+    payout_per_tranche = np.minimum(cum_nom, payout) - np.maximum(cum_nom_prev, 0)
+
+    # clip negative / unused intervals
+    payout_per_tranche = np.clip(payout_per_tranche, 0, None)
+
+    remaining_nominals = nominals - payout_per_tranche
+
+
+    return remaining_nominals, payout_per_tranche
