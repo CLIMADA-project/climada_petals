@@ -224,7 +224,7 @@ class mlt_bond_simulation:
 
 
     '''reduced function to derive returns of the bond -> was used to save time during calculation'''
-    def simulate_ncf_prem(self, premium, rf=0.0):
+    def init_return_simulation(self, premium, rf=0.0):
         """
         Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simiulation period.
         This function calculates the premium payments, net cash flows, and premium allocations for the whole bond and all countries, 
@@ -298,7 +298,7 @@ class mlt_bond_simulation:
 
   
     '''reduced function to derive returns of the bond -> was used to save time during calculation'''
-    def simulate_ncf_prem_tranches(self, premiums, rf=0.0):
+    def init_return_simulation_tranches(self, premiums, rf=0.0):
         """
         Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simiulation period.
         This function calculates the premium payments, net cash flows, and premium allocations for each tranche and country, 
