@@ -100,7 +100,7 @@ def exposure_from_edges(network, ci_type, res, disagg_val=1, disagg_met=u_lp.Dis
         gdf["value"] = gdf[disagg_col]
 
     exp_line = Exposures(gdf)
-    exp_pnt = u_lp.exp_geom_to_pnt(exp_line, res=res, disagg_val=disagg_val, disagg_met=disagg_met,**disagg_kwargs)
+    exp_pnt = u_lp.exp_geom_to_pnt(exp_line, res=res, disagg_val=disagg_val, disagg_met=disagg_met, to_meters=True, **disagg_kwargs)
     if tag is None:
         tag = ci_type
     exp_pnt.description = tag
@@ -173,6 +173,7 @@ class NetworkImpactCalc():
     def disrupt_network(self):
         """wrapper to disrupt network based on hazard and exposure data."""
         network_disr = cp.deepcopy(self.network)#create new network object
+        imp_dict = {}
         for exp in self.exp_list:
             impf = self.impf_set.getImpf(exp.description)
             impf_thresh = self.impf_thresh_set.getThresh(exp.description)
@@ -182,8 +183,7 @@ class NetworkImpactCalc():
                 imp = u_lp.impact_pnt_agg(imp, exp.gdf, u_lp.AggMethod.SUM)
             #propagate impacts to network
             network_disr = NetworkImpactCalc.impacts_to_network(imp, exp.description, impf_thresh, network_disr)
-            del imp
-            del exp
+            imp_dict[exp.description] = imp
         #gc.collect()
         ## TODO eventually concat impact matrices and return them?
-        return network_disr
+        return network_disr, imp_dict
