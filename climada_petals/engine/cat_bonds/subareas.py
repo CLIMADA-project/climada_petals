@@ -16,10 +16,6 @@ import logging
 LOGGER = logging.getLogger(__name__)
 
 
-# specify resultion to change exposure layer into country polygons
-#tc_bound_resolution = 1000
-
-
 class Subareas:
 
     '''Class to handle subareas for CAT bonds.
@@ -60,7 +56,7 @@ class Subareas:
         """Calculate subareas and islands."""
         self.subareas_gdf = self._init_subareas()
 
-    # --- Properties with auto-rebuild ---
+    # --- Properties ---
     @property
     def exposure(self):
         return self._exposure
@@ -94,8 +90,8 @@ class Subareas:
             ymin = min(ymin1, ymin2)
             ymax = max(ymax1, ymax2)
 
-            # 4️⃣ Add padding (e.g. 10% wider and 5% taller)
-            pad_x = (xmax - xmin) * 0.1   # 10% horizontal padding
+            # 4️⃣ Add padding (e.g. 5% wider and taller)
+            pad_x = (xmax - xmin) * 0.05   # 10% horizontal padding
             pad_y = (ymax - ymin) * 0.05  # 5% vertical padding
 
             ax.set_extent(
@@ -233,7 +229,7 @@ class Subareas:
             pd.concat(cropped_cells, ignore_index=True), crs=exp_gdf.crs
         )
         # Merge overlapping grid cells into single polygons
-        merged_grids = self.merge_overlapping_grids_nx(grids)
+        merged_grids = self._merge_overlapping_grids(grids)
         merged_grids.reset_index(drop=True, inplace=True)
         subareas = merged_grids[~merged_grids.is_empty]
         subareas = subareas.reset_index(drop=True)
@@ -301,60 +297,19 @@ class Subareas:
 
         return exp_gdf
 
-
-    def merge_overlapping_grids(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-
+    def _merge_overlapping_grids(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
-        Merges overlapping grid cells in a GeoDataFrame into single polygons.
-        
+        Merges overlapping grid cells in a GeoDataFrame into single polygons using NetworkX.
+
         Parameters
         ----------
-        gdf : geopandas.GeoDataFrame
-            GeoDataFrame containing grid cell geometries.
+            gdf (gpd.GeoDataFrame): GeoDataFrame containing grid cell geometries.
 
         Returns
         -------
-        merged_gdf : geopandas.GeoDataFrame
-            GeoDataFrame with overlapping grid cells merged into single polygons.
+            gpd.GeoDataFrame: GeoDataFrame with merged polygons.
         """
-      
-        LOGGER.info("Merging overlapping grid cells into single polygons.")
 
-        geoms = gdf.geometry.tolist()
-        to_delete = []
-        for idx, geom in enumerate(geoms):
-            for idx_inner, candidate in enumerate(geoms):
-                if idx >= idx_inner:
-                    continue
-                else:
-                    # Example grid cells
-                    cell1 = box(geom.bounds[0], geom.bounds[1], geom.bounds[2], geom.bounds[3])
-                    cell2 = box(candidate.bounds[0], candidate.bounds[1], candidate.bounds[2], candidate.bounds[3])
-                    is_contained_1 = cell1.contains(cell2)
-                    is_contained_2 = cell2.contains(cell1)
-                    if is_contained_1:
-                        to_delete.append(idx_inner)
-                        continue
-                    elif is_contained_2:
-                        geoms[idx] = geoms[idx_inner]
-                        to_delete.append(idx_inner)
-                        continue
-                    else:
-                        # Calculate intersection area
-                        overlap = cell1.intersection(cell2).area
-                        print("Overlapping area:", overlap)
-                        if overlap > 0:
-                            geoms[idx] = geoms[idx].union(geoms[idx_inner])
-                            to_delete.append(idx_inner)
-                            continue
-                        else:
-                            continue
-        geoms = [geom for i, geom in enumerate(geoms) if i not in to_delete]
-        merged_gdf = gpd.GeoDataFrame(geometry=geoms, crs=gdf.crs)
-        LOGGER.info("Merging completed.")
-        return merged_gdf
-                    
-    def merge_overlapping_grids_nx(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         LOGGER.info("Merging overlapping grid cells into single polygons.")
 
         geoms = gdf.geometry.tolist()
