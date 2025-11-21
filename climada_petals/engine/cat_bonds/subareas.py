@@ -9,6 +9,7 @@ from rasterio.features import shapes, rasterize
 from rasterio.transform import from_bounds
 from sklearn.neighbors import NearestNeighbors
 import cartopy.crs as ccrs
+import networkx as nx
 
 import logging
 
@@ -174,7 +175,7 @@ class Subareas:
         # Loop through each polygon in the GeoDataFrame
         for idx, polygon in exp_gdf.iterrows():
             
-            # Pad the geometry bounds by 1% of width/height for better coverage
+            # Pad the geometry bounds by 2% of width/height for better coverage
             minx, miny, maxx, maxy = polygon.geometry.bounds
             pad_x = (maxx - minx) * 0.02
             pad_y = (maxy - miny) * 0.02
@@ -186,6 +187,16 @@ class Subareas:
             LOGGER.info(
                 f"Processing polygon with bounds: {minx}, {miny}, {maxx}, {maxy}"
             )
+            if maxx - minx < self._resolution or maxy - miny < self._resolution:
+                LOGGER.info(
+                    "Polygon smaller than resolution; adding polygon bounding box."
+                )
+                # Add a rectangle (bounding box) with 2% buffer around the polygon
+                buffered_bbox = box(minx, miny, maxx, maxy)
+                cropped_cells.append(
+                    gpd.GeoDataFrame(geometry=[buffered_bbox], crs=exp_gdf.crs)
+                )
+                continue
 
             num_cells_x = int((maxx - minx) / self._resolution) + 1
             num_cells_y = int((maxy - miny) / self._resolution) + 1
@@ -222,8 +233,10 @@ class Subareas:
         grids = gpd.GeoDataFrame(
             pd.concat(cropped_cells, ignore_index=True), crs=exp_gdf.crs
         )
-        grids.reset_index(drop=True, inplace=True)
-        subareas = grids[~grids.is_empty]
+        # Merge overlapping grid cells into single polygons
+        merged_grids = self.merge_overlapping_grids_nx(grids)
+        merged_grids.reset_index(drop=True, inplace=True)
+        subareas = merged_grids[~merged_grids.is_empty]
         subareas = subareas.reset_index(drop=True)
 
         LOGGER.info("Subareas created.")
@@ -288,3 +301,91 @@ class Subareas:
         LOGGER.info("Exposure perimeter polygon created.")
 
         return exp_gdf
+
+
+    def merge_overlapping_grids(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+
+        """
+        Merges overlapping grid cells in a GeoDataFrame into single polygons.
+        
+        Parameters
+        ----------
+        gdf : geopandas.GeoDataFrame
+            GeoDataFrame containing grid cell geometries.
+
+        Returns
+        -------
+        merged_gdf : geopandas.GeoDataFrame
+            GeoDataFrame with overlapping grid cells merged into single polygons.
+        """
+      
+        LOGGER.info("Merging overlapping grid cells into single polygons.")
+
+        geoms = gdf.geometry.tolist()
+        to_delete = []
+        for idx, geom in enumerate(geoms):
+            for idx_inner, candidate in enumerate(geoms):
+                if idx >= idx_inner:
+                    continue
+                else:
+                    # Example grid cells
+                    cell1 = box(geom.bounds[0], geom.bounds[1], geom.bounds[2], geom.bounds[3])
+                    cell2 = box(candidate.bounds[0], candidate.bounds[1], candidate.bounds[2], candidate.bounds[3])
+                    is_contained_1 = cell1.contains(cell2)
+                    is_contained_2 = cell2.contains(cell1)
+                    if is_contained_1:
+                        to_delete.append(idx_inner)
+                        continue
+                    elif is_contained_2:
+                        geoms[idx] = geoms[idx_inner]
+                        to_delete.append(idx_inner)
+                        continue
+                    else:
+                        # Calculate intersection area
+                        overlap = cell1.intersection(cell2).area
+                        print("Overlapping area:", overlap)
+                        if overlap > 0:
+                            geoms[idx] = geoms[idx].union(geoms[idx_inner])
+                            to_delete.append(idx_inner)
+                            continue
+                        else:
+                            continue
+        geoms = [geom for i, geom in enumerate(geoms) if i not in to_delete]
+        merged_gdf = gpd.GeoDataFrame(geometry=geoms, crs=gdf.crs)
+        LOGGER.info("Merging completed.")
+        return merged_gdf
+                    
+    def merge_overlapping_grids_nx(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        LOGGER.info("Merging overlapping grid cells into single polygons.")
+
+        geoms = gdf.geometry.tolist()
+        # Step 1: Remove polygons strictly within others
+        to_remove = set()
+        for i, geom in enumerate(geoms):
+            for j, candidate in enumerate(geoms):
+                if i == j or j in to_remove:
+                    continue
+                if geom.within(candidate):
+                    to_remove.add(i)
+                elif candidate.within(geom):
+                    to_remove.add(j)
+        geoms_filtered = [geom for i, geom in enumerate(geoms) if i not in to_remove]
+
+        # Step 2: Merge polygons that overlap with positive area
+        G = nx.Graph()
+        G.add_nodes_from(range(len(geoms_filtered)))
+        for i, geom in enumerate(geoms_filtered):
+            for j, candidate in enumerate(geoms_filtered):
+                if i >= j:
+                    continue
+                if geom.intersection(candidate).area > 1e-9:
+                    G.add_edge(i, j)
+
+        merged_polys = [
+            gpd.GeoSeries([geoms_filtered[idx] for idx in comp]).unary_union
+            for comp in nx.connected_components(G)
+        ]
+
+        merged_gdf = gpd.GeoDataFrame(geometry=merged_polys, crs=gdf.crs)
+        LOGGER.info("Merging completed.")
+        return merged_gdf
