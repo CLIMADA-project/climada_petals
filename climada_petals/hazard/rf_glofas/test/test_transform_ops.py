@@ -126,11 +126,13 @@ class TestGlofasDownloadOps(unittest.TestCase):
             num_proc=42,
             output_dir=out_dir,
             request_kw={"some_kwarg": "foo"},
-            requests=[{
-                "year": ["2022"],
-                "month": ["01"],
-                "day": ["01"],
-            }],
+            requests=[
+                {
+                    "year": ["2022"],
+                    "month": ["01"],
+                    "day": ["01"],
+                }
+            ],
         )
 
         # Check return value
@@ -616,7 +618,7 @@ class TestTransformOps(unittest.TestCase):
             data=[ones, ones * 10, ones * 100],
             dims=["return_period", "longitude", "latitude"],
             coords=dict(
-                return_period=[1, 10, 100],
+                return_period=np.array([1, 10, 100], dtype=np.int64),
                 longitude=np.arange(4),
                 latitude=np.arange(3),
             ),
@@ -646,6 +648,15 @@ class TestTransformOps(unittest.TestCase):
         self.assertEqual(da_result.name, "Flood Depth")
         # NOTE: Single point precision, so reduce the decimal accuracy
         xrt.assert_allclose(da_result, da_return_period.clip(1, 100))
+
+        # Check 2D array
+        da_return_period_2d = xr.DataArray(
+            data=values[..., 0, 0],
+            dims=["longitude", "latitude"],
+            coords=dict(longitude=x, latitude=y),
+        ).astype(np.float32)
+        da_result = flood_depth(da_return_period_2d, da_flood_maps)
+        xrt.assert_allclose(da_result, da_return_period_2d.clip(1, 100))
 
         # Check NaN shortcut
         da_flood_maps = xr.DataArray(

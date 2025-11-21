@@ -615,6 +615,7 @@ def regrid(
         )
 
     # Set chunksizes
+    return_period = return_period.unify_chunks()
     chunksizes = {dim: np.max(sizes) for dim, sizes in return_period.chunksizes.items()}
 
     return_period_regridded = (
@@ -724,13 +725,22 @@ def flood_depth(
 
     # Clip infinite return periods
     return_period = return_period.clip(
-        min=1, max=flood_maps["return_period"].max(), keep_attrs=True
+        min=1,
+        max=flood_maps["return_period"].max().astype(return_period.dtype),
+        keep_attrs=True,
     )
 
     # All but 'longitude' and 'latitude' are core dimensions for this operation
     core_dims = list(return_period.dims)
     core_dims.remove("longitude")
     core_dims.remove("latitude")
+
+    # Expand dimensions if we have no core dims
+    needs_expand = not bool(core_dims)
+    expand_dim = "_expand"
+    if needs_expand:
+        core_dims.append(expand_dim)
+        return_period = return_period.expand_dims(expand_dim)
 
     # Define input array layout
     # NOTE: This depends on the actual core dimensions put in, so we have to do this
@@ -789,6 +799,8 @@ def flood_depth(
     )
     if isinstance(out, xr.DataArray):
         out = out.rename("Flood Depth")
+    if needs_expand:
+        out = out.squeeze(dim=expand_dim, drop=True)
     return out
 
 
