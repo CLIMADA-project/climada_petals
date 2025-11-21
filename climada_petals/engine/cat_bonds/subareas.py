@@ -55,9 +55,8 @@ class Subareas:
         self.vulnerability = vulnerability
         self._exposure = exposure
         self._resolution = resolution
-        self._build_subareas()
 
-    def _build_subareas(self):
+    def build_subareas(self):
         """Calculate subareas and islands."""
         self.subareas_gdf = self._init_subareas()
 
