@@ -381,7 +381,7 @@ class mlt_bond_simulation:
 
 
     '''Calculates required nominal for multi-country bonds -> derives maximal loss over simulation period'''
-    def requ_nom(self):
+    def init_required_principal(self):
         """
         Calculates the required nominal value for a multi-country catastrophe bond based on simulated event losses.
         This function simulates event losses over a specified term for multiple countries, aggregates the losses,
@@ -406,7 +406,7 @@ class mlt_bond_simulation:
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
                 events_per_year.append(year_events_df)
 
-            tot_loss = self.init_equ_nom_sim(events_per_year, self.principal_dic_cty)
+            tot_loss = self._init_equ_nom_sim(events_per_year, self.principal_dic_cty)
 
             total_losses.append(tot_loss)
 
@@ -414,7 +414,7 @@ class mlt_bond_simulation:
 
     
     '''derives losses for one term of bond'''
-    def init_equ_nom_sim(self, events_per_year, nominal_dic_cty):
+    def _init_equ_nom_sim(self, events_per_year, nominal_dic_cty):
         """
         Simulates total losses for a multi-country catastrophe bond over a specified term.
         For each year in the bond's term, the function processes a list of event dataframes, each containing
