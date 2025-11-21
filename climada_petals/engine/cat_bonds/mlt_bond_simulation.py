@@ -74,67 +74,56 @@ class mlt_bond_simulation:
         loss_month_data = []
         cur_nominal = principal
         cur_nom_cty = self.principal_dic_cty.copy() 
-        tot_damage = []
+        sum_damages = 0.0
         rel_ann_cty_losses = {country: np.zeros(self.term) for country in self.countries}  
         coverage_cty = {}
         for code in self.countries:
             coverage_cty[code] = {'payout': 0, 'damage': 0}
-
+        
         for k in range(self.term):
-            cty_losses_event = {country: [] for country in self.countries}
-            cty_damages_event = {country: [] for country in self.countries}
-            sum_payouts = np.zeros(len(events_per_year[k]))
 
             if not events_per_year[k].empty:
                 events = events_per_year[k].sort_values(by='month')
                 months = events['month'].to_numpy()
-                cties = events['country_code'].to_numpy()
+                countries = events['country_code'].to_numpy()
                 pay = events['pay'].to_numpy()
-                dam = events['damage'].to_numpy()
+                damages = events['damage'].to_numpy()
+                sum_damages += np.sum(damages)
 
                 sum_payouts = np.zeros(len(events))  
-                sum_damages = np.zeros(len(events)) 
-                for payout, country, damage in zip(pay, countries, damages):
+                for payout, country, damage, idx in zip(pay, countries, damages, range(len(events))):
 
-                    if payout == 0 or cur_nominal == 0 or cur_nom_cty[int(cty)] == 0:
+                    if payout == 0 or cur_nominal == 0 or cur_nom_cty[int(country)] == 0:
                         event_payout = 0
                     else:
                         event_payout = payout
-                        cur_nom_cty[int(cty)] -= event_payout
-                        if cur_nom_cty[int(cty)] < 0:
-                            event_payout += cur_nom_cty[int(cty)]
-                            cur_nom_cty[int(cty)] = 0
+                        cur_nom_cty[int(country)] -= event_payout
+                        if cur_nom_cty[int(country)] < 0:
+                            event_payout += cur_nom_cty[int(country)]
+                            cur_nom_cty[int(country)] = 0
                         cur_nominal -= event_payout
                         if cur_nominal < 0:
                             event_payout += cur_nominal
                             cur_nominal = 0
 
-                    sum_payouts[o] = event_payout
-                    sum_damages[o] = damage
-                    cty_losses_event[cty].append(event_payout)
-                    cty_damages_event[cty].append(damage)
-                losses = np.sum(sum_payouts)
-                damages = np.sum(sum_damages)
-                for cty, cty_loss in cty_losses_event.items():
-                    rel_ann_cty_losses[cty][k] = np.sum(cty_loss)
-                    coverage_cty[cty]['payout'] += sum(cty_losses_event[cty])
-                    coverage_cty[cty]['damage'] += sum(cty_damages_event[cty])
+                    sum_payouts[idx] = event_payout
+                    coverage_cty[country]['payout'] += event_payout
+                    coverage_cty[country]['damage'] += damage
+                    rel_ann_cty_losses[country][k] += event_payout / principal
+
             else:
-                losses = 0
-                damages = 0
+                sum_payouts = 0
                 months = []
 
-            ann_loss[k] = losses
-            tot_damage.append(damages)
+            ann_loss[k] = np.sum(sum_payouts)
             loss_month_data.append((sum_payouts, months))
 
         rel_bond_monthly_losses = pd.DataFrame(loss_month_data, columns=['losses', 'months'])
 
         rel_ann_bond_losses = list(np.array(ann_loss) / principal)
-        for key in rel_ann_cty_losses.keys():
-            rel_ann_cty_losses[key] = rel_ann_cty_losses[key] / principal 
         rel_bond_monthly_losses['losses'] = rel_bond_monthly_losses['losses'].values / principal
-        coverage_tot = {'payout': np.sum(ann_loss), 'damage': np.sum(tot_damage)}
+        coverage_tot = {'payout': np.sum(ann_loss), 'damage': sum_damages}
+
         return rel_ann_bond_losses, rel_ann_cty_losses, rel_bond_monthly_losses, coverage_tot, coverage_cty
 
 
@@ -177,7 +166,7 @@ class mlt_bond_simulation:
         coverage = {'payout': 0, 'damage': 0}
         self.tot_coverage_cty = {}
         for cty in self.countries:
-            self.tot_coverage_cty[cty] = {'payout': [], 'damage': [], 'coverage': [], 'EL': 0, 'share_EL': 0}
+            self.tot_coverage_cty[cty] = {'payout': 0.0, 'damage': 0.0, 'coverage': 0.0, 'EL': 0, 'share_EL': 0}
 
         for i in range(self.simulated_years-self.term):
             events_per_year = []
@@ -198,8 +187,8 @@ class mlt_bond_simulation:
             coverage['damage'] += coverage_tot['damage']
 
             for key in coverage_cty.keys():
-                self.tot_coverage_cty[key]['payout'].append(coverage_cty[key]['payout'])
-                self.tot_coverage_cty[key]['damage'].append(coverage_cty[key]['damage'])
+                self.tot_coverage_cty[key]['payout'] += coverage_cty[key]['payout']
+                self.tot_coverage_cty[key]['damage'] += coverage_cty[key]['damage']
 
             for key in rel_ann_cty_losses:
                 ann_cty_losses[key].extend(rel_ann_cty_losses[key])
@@ -212,15 +201,11 @@ class mlt_bond_simulation:
         annual_losses = pd.Series(annual_losses)
         total_losses = pd.Series(total_losses)
 
-        risk_metrics_annual = multi_level_es(annual_losses, confidence_levels)
+        var_list, es_list = multi_level_es(annual_losses, confidence_levels)
 
         for key in self.tot_coverage_cty.keys():
-            self.tot_coverage_cty[key]['payout'] = sum(self.tot_coverage_cty[key]['payout'])
-            self.tot_coverage_cty[key]['damage'] = sum(self.tot_coverage_cty[key]['damage'])
             self.tot_coverage_cty[key]['coverage'] = self.tot_coverage_cty[key]['payout'] / self.tot_coverage_cty[key]['damage']
             self.tot_coverage_cty[key]['EL'] = np.mean(ann_cty_losses[key])
-
-        for key in self.tot_coverage_cty:
             self.tot_coverage_cty[key]['share_EL'] = self.tot_coverage_cty[key]['EL'] / exp_loss_ann
         
 
@@ -228,14 +213,177 @@ class mlt_bond_simulation:
         self.loss_metrics = {'EL_ann': exp_loss_ann,
                              'AP_ann': att_prob_ann,
                              'Payout': coverage['payout'], 
-                             'Damage': coverage['damage'], 
-                             'VaR_99_ann': risk_metrics_annual[0.99]['VaR'], 
-                             'VaR_95_ann': risk_metrics_annual[0.95]['VaR'], 
-                             'ES_99_ann': risk_metrics_annual[0.99]['ES'], 
-                             'ES_95_ann': risk_metrics_annual[0.95]['ES']}
+                             'Damage': coverage['damage']}
+        
+        for cl, var, es in zip(confidence_levels, var_list, es_list):
+            self.loss_metrics[f'VaR_{int(cl*100)}_ann'] = var
+            self.loss_metrics[f'ES_{int(cl*100)}_ann'] = es
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
         LOGGER.info(f'Attachment Probability = {att_prob_ann}')
 
 
+    '''reduced function to derive returns of the bond -> was used to save time during calculation'''
+    def simulate_ncf_prem(self, premium, rf=0.0):
+        """
+        Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simiulation period.
+        This function calculates the premium payments, net cash flows, and premium allocations for the whole bond and all countries, 
+        considering monthly losses and country exposure shares. It accounts for loss events, premium payments, 
+        and risk-free rates, and distributes premiums according to country exposure shares represented by the country's Expected Marginal Loss.
+        Parameters
+        ----------
+        self: mlt_bond_simulation
+            Class instance of mlt_bond_simulation containing monthly loss data, country exposure shares, and the term of the bond.
+        premium : float
+            The annual premium rate for the bond.
+        rf : float, optional
+            Risk-free rate to be added to the premium (default is 0.0).
+        Returns
+        -------
+        ncf : pandas.DataFrame
+            DataFrame containing net cash flows for the bond.
+        prem_cty_df : pandas.DataFrame
+            DataFrame containing premium allocations for each country (based on their exposure share) and total premiums.
+        Notes
+        -----
+        - The function resets the nominal value at the end of each term.
+        - Premiums and cash flows are calculated monthly, accounting for loss events and remaining nominal.
+        """
+
+        premiums_tot = []
+        ncf_tot = []
+        cur_nominal = 1
+        for i in range(len(self.df_loss_month)):
+            losses = self.df_loss_month['losses'].iloc[i]
+            months = self.df_loss_month['months'].iloc[i]
+            if np.sum(losses) == 0:
+                premiums_tot.append(cur_nominal * premium)
+                ncf_tmp = cur_nominal * (premium + rf)
+                ncf_tot.append(ncf_tmp)
+            else:
+                ncf_tot_tmp = []
+                premiums_tot_tmp = []
+                premiums_tot_tmp.append(cur_nominal * premium / 12 * months[0])
+                prem_pre_tmp = cur_nominal * (premium + rf) / 12 * months[0]
+                ncf_tot_tmp.append(prem_pre_tmp)
+                for j in range(len(losses)):
+                    loss = losses[j]
+                    month = months[j]
+                    cur_nominal -= loss
+                    if cur_nominal < 0:
+                        loss += cur_nominal
+                        cur_nominal = 0
+                    if j + 1 < len(losses):
+                        nex_month = months[j+1]
+                        premiums_tot_tmp.append(cur_nominal * premium / 12 * (nex_month - month))
+                        prem_tmp = ((cur_nominal * (premium + rf)) / 12 * (nex_month - month))
+                        ncf_tot_tmp.append(prem_tmp - loss)
+                    else:
+                        premiums_tot_tmp.append(cur_nominal * premium / 12 * (12 - month))
+                        prem_tmp = ((cur_nominal * (premium + rf)) / 12 * (12- month))
+                        ncf_tot_tmp.append(prem_tmp - loss)
+                ncf_tot.append(np.sum(ncf_tot_tmp))
+                premiums_tot.append(np.sum(premiums_tot_tmp))
+            if (i + 1) % self.term == 0:
+                cur_nominal = 1
+
+        prem_cty_dic = {country: [] for country in self.tot_coverage_cty}
+        for country in prem_cty_dic:
+            prem_cty_dic[country] = premiums_tot * self.tot_coverage_cty[country]['share_EL']
+        prem_cty_dic['Total'] = premiums_tot
+
+        self.ncf = pd.DataFrame(ncf_tot, columns=['Total'])
+        self.prem_cty_df = pd.DataFrame(prem_cty_dic)
+
+
   
+    '''reduced function to derive returns of the bond -> was used to save time during calculation'''
+    def simulate_ncf_prem_tranches(self, premiums, rf=0.0):
+        """
+        Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simiulation period.
+        This function calculates the premium payments, net cash flows, and premium allocations for each tranche and country, 
+        considering monthly losses, tranche structures, and country exposure shares. It accounts for loss events, premium payments, 
+        and risk-free rates, and distributes premiums according to country exposure shares represented by the country's Expected Marginal Loss.
+        Parameters
+        ----------
+        self: mlt_bond_simulation
+            Class instance of mlt_bond_simulation containing monthly loss data, country exposure shares, tranche structures, and the term of the bond.
+        premiums : float
+            List of annual premium rates for each tranche.
+        rf : float, optional
+            Risk-free rate to be added to the premium (default is 0.0).
+        Returns
+        -------
+        ncf : pandas.DataFrame
+            DataFrame containing net cash flows for each tranche and the total across all tranches for each period.
+        prem_cty_df : pandas.DataFrame
+            DataFrame containing premium allocations for each country (based on their exposure share), total premiums (if bond is priced as one), and alternative total premiums (if each tranche is priced seperately).
+        Notes
+        -----
+        - The function resets the nominal value at the end of each term.
+        - Premiums and cash flows are calculated monthly, accounting for loss events and remaining nominal.
+        - Alternative premium calculation is provided for country-level allocation.
+        - Losses are allocated to tranches in reverse order (from highest to lowest risk).
+        """
+
+        ncf = {tranche['RP']: [] for _, tranche in self.tranches.iterrows()}
+        premiums_tot = []
+        ncf_tot = []
+        cur_nominal = 1
+        for i in range(len(self.df_loss_month)):
+            losses = self.df_loss_month['losses'].iloc[i]
+            months = self.df_loss_month['months'].iloc[i]
+            if np.sum(losses) == 0:
+                prem_it_alt = 0
+                for k, tranche in enumerate(self.tranches):
+                    ncf[tranche['RP']].append(cur_nominal * tranche['nominal'] * premiums[k] + rf)
+                    prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k]
+                premiums_tot.append(prem_it_alt)
+            else:
+                ncf_tmp = {tranche['RP']: [] for _, tranche in self.tranches.iterrows()}
+                prem_it_alt = 0
+                premiums_tot_tmp = []
+                for k, tranche in enumerate(self.tranches):
+                    ncf_tmp[tranche['RP']].append(cur_nominal * tranche['nominal'] * (premiums[k] + rf) / 12 * months[0])
+                    prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k] / 12 * months[0]
+                premiums_tot_tmp.append(prem_it_alt)
+                for j in range(len(losses)):
+                    loss = losses[j]
+                    month = months[j]
+                    cur_nominal -= loss
+                    if cur_nominal < 0:
+                        loss += cur_nominal
+                        cur_nominal = 0
+                    if j + 1 < len(losses):
+                        nex_month = months[j+1]
+                        prem_it_alt = 0
+                        for k, tranche in enumerate(self.tranches):
+                            ncf_tmp[tranche['RP']].append(((cur_nominal * tranche['nominal'] * (premiums[k] + rf)) / 12 * (nex_month - month)))
+                            prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k] / 12 * (nex_month - month)
+                        premiums_tot_tmp.append(prem_it_alt)
+                    else:
+                        prem_it_alt = 0
+                        for k, tranche in enumerate(self.tranches):
+                            ncf_tmp[tranche['RP']].append(((cur_nominal * tranche['nominal'] * (premiums[k] + rf)) / 12 * (12- month)))
+                            prem_it_alt += cur_nominal * tranche['nominal'] * premiums[k] / 12 * (12- month)
+                        premiums_tot_tmp.append(prem_it_alt)
+                tmp_loss = np.sum(losses)
+                for _, tranche in self.tranches.iloc[::-1].iterrows():
+                    to_cover = tmp_loss - tranche['lower_bound']
+                    if to_cover < 0:
+                        to_cover = 0
+                    ncf[tranche['RP']].append(np.sum(ncf_tmp[tranche['RP']]) - to_cover)
+                    tmp_loss -= to_cover
+                premiums_tot.append(np.sum(premiums_tot_tmp))
+            if (i + 1) % self.term == 0:
+                cur_nominal = 1
+
+        ncf['Total'] = ncf_tot
+        prem_cty_dic = {country: [] for country in self.tot_coverage_cty}
+        for country in prem_cty_dic:
+            prem_cty_dic[country] = np.array(premiums_tot) * self.tot_coverage_cty[country]['share_EL']
+        prem_cty_dic['Total'] = premiums_tot
+
+        ncf = pd.DataFrame(ncf)
+        prem_cty_df = pd.DataFrame(prem_cty_dic)
+        return ncf, prem_cty_df
