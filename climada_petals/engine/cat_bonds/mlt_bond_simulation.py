@@ -34,7 +34,7 @@ class mlt_bond_simulation:
 
 
     '''Simulate one term of bond to derive losses'''
-    def init_bond_loss(self, events_per_year, principal):
+    def _init_bond_loss(self, events_per_year, principal):
         '''
         Simulates the expected losses and payouts for a multi-country catastrophe bond over its term.
         This function iterates over each year (term) and processes event data for each country, calculating
@@ -179,7 +179,7 @@ class mlt_bond_simulation:
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
                 events_per_year.append(year_events_df)
 
-            rel_ann_bond_losses, rel_ann_cty_losses, rel_bond_monthly_losses, coverage_tot, coverage_cty = self.init_bond_loss(events_per_year, principal)
+            rel_ann_bond_losses, rel_ann_cty_losses, rel_bond_monthly_losses, coverage_tot, coverage_cty = self._init_bond_loss(events_per_year, principal)
 
             list_loss_month.append(rel_bond_monthly_losses)
             annual_losses.extend(rel_ann_bond_losses)
