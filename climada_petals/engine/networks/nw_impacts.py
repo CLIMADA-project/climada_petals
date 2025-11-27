@@ -164,8 +164,8 @@ class NetworkImpactCalc():
         network_disr = cp.deepcopy(self.network)#create new network object
         imp_dict = {}
         for exp in self.exp_list:
-            impf = self.impf_set.getImpf(exp.description)
-            impf_thresh = self.impf_thresh_set.getThresh(exp.description)
+            impf = self.impf_set.get_func(haz_type=self.haz.haz_type, fun_id=exp.description)
+            impf_thresh = self.impf_thresh_set.get(exp.description)
             exp.gdf[f"impf_{self.haz.haz_type}"] = impf.id
             imp = NetworkImpactCalc.calc_point_impacts(self.haz, exp, ImpactFuncSet([impf]))
             #propagate impacts to network
