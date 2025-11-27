@@ -1,4 +1,3 @@
-'''Risk pooling optimization functions adapted from Ciullo et al., 2022'''
 import numpy as np
 from math import comb
 from pymoo.core.problem import ElementwiseProblem
@@ -11,22 +10,21 @@ from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.optimize import minimize
 from pymoo.operators.repair.rounding import RoundingRepair
 
-def process_n(n, cntry_names, sng_ann_losses, principal_sng_dic, n_opt_rep=100):
+def process_n(n, countries, cls_bond_simulations, n_opt_rep=100):
     """
     Runs risk concentration minimization for a given number of pools using a genetic algorithm,
     processes the optimization results, and generates convergence plots.
+
     Parameters
     ----------
     n : int
         Number of pools to optimize.
-    cntry_names : list of str
-        List of country names corresponding to the columns in the loss data.
-    sng_ann_losses : pandas.DataFrame
-        Dataframe of annual loss data for each country.
-    principal_sng_dic : dict
-        Principal values for each country.
+    cls_bond_simulations : list
+        List of SingleCountryBondSimulation instances for each country, containing the principals and 
+        monthly losses.
     n_opt_rep : int, optional
         Number of optimization repetitions for seed analysis (default is 100).
+
     Returns
     -------
     country_allocation : pandas.DataFrame
@@ -34,21 +32,27 @@ def process_n(n, cntry_names, sng_ann_losses, principal_sng_dic, n_opt_rep=100):
     algorithm_result: pymoo.core.result.Result
         Result object from the optimization containing details of the optimization process.
     """
-    opt_rep = range(0,n_opt_rep,1)
-    df_losses = pd.DataFrame(sng_ann_losses)
 
-    ### TRANSFROM PRINCIPAL VALUES TO LIST ###
-    principal_sng = principal_sng_dic.set_index('Key').loc[cntry_names, 'Value'].tolist()
+    annual_losses_dic_cty = {}
+    principal_sng = []
+    for idx, cty in enumerate(countries):
+        annual_losses_dic_cty[cty] = cls_bond_simulations[idx].df_loss_month['losses'].apply(lambda x: sum(x) if len(x) > 0 else 0)
+        principal_sng.append(cls_bond_simulations[idx].subarea_calc.principal)
+    df_losses = pd.DataFrame(annual_losses_dic_cty)
+
+    opt_rep = range(0,n_opt_rep,1)
 
     ### CALCULATE ALPHA FOR RISK CONCENTRATION OPTIMIZATION ###
-    RT = len(df_losses[cntry_names[0]])
+    RT = len(df_losses[countries[0]])
     alpha = 1-1/RT 
     
     bools = df_losses >= np.quantile(df_losses, alpha, axis=0)
 
     risk_concentration = 1.0
     # Loop through repetitions for seed analysis
+    print(opt_rep)
     for index in opt_rep:
+        print(f"Starting optimization repetition {index+1}/{n_opt_rep}...")
         # Define Problem and Algorithm (same as inside the loop)
         problem = PoolOptimizationFixedNumber(principal_sng, df_losses, bools, alpha, n, calc_pool_conc)
         algorithm = GA(
@@ -65,6 +69,7 @@ def process_n(n, cntry_names, sng_ann_losses, principal_sng_dic, n_opt_rep=100):
         # Process results (same code as inside the loop)
         x = res_reg.X
         risk_concentration_new = res_reg.F
+        print(f"Optimization repetition {index+1}/{n_opt_rep}, Risk Concentration: {risk_concentration_new}")
         if risk_concentration_new is not None and risk_concentration is not None and risk_concentration_new < risk_concentration:
             algorithm_result = res_reg
             risk_concentration = risk_concentration_new
@@ -73,11 +78,11 @@ def process_n(n, cntry_names, sng_ann_losses, principal_sng_dic, n_opt_rep=100):
             x = [rank_dict[value] for value in x]
 
             # Add to dump dataframe
-            country_allocation = pd.DataFrame(columns=[cntry_names, 'min_conc'])
-            country_allocation = pd.DataFrame([x], columns=cntry_names)
+            country_allocation = pd.DataFrame(columns=[countries, 'min_conc'])
+            country_allocation = pd.DataFrame([x], columns=countries)
             country_allocation['min_conc'] = pd.DataFrame([res_reg.F], columns=['min_conc'])
 
-        return country_allocation, algorithm_result
+    return country_allocation, algorithm_result
 
 
 
