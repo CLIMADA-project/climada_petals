@@ -55,19 +55,42 @@ def test_create_exp_gdf_returns_single_polygon():
 
     return exposure, result
 
-def _crop_grid_cells_to_polygon(exp_gdf, exposure):
+def test_crop_grid_cells_to_polygon(exp_gdf, exposure):
     resolution = 1.0
     subareas_gdf = subareas._crop_grid_cells_to_polygon(resolution, exp_gdf, exposure)
 
     assert not subareas_gdf.empty, "Subareas GeoDataFrame should not be empty."
     subareas_gdf.plot()
-    assert len(subareas_gdf) == 20, "There should be 20 subareas created."
+    assert len(subareas_gdf) == 16, "There should be 16 subareas created."
     subareas_union = subareas_gdf.unary_union
     assert all(
         subareas_union.contains(geom) for geom in exp_gdf.geometry
     ), "Exposure should be within the exposure perimeter polygon."
 
+def test_merge_overlapping_grids():
+    # Create a GeoDataFrame with overlapping grid cells
+    polygon_over = [
+        Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),
+        Polygon([(1, 1), (3, 1), (3, 3), (1, 3)]),
+        Polygon([(4, 4), (5, 4), (5, 5), (4, 5)])
+    ]
+    gdf_over = gpd.GeoDataFrame(geometry=polygon_over, crs="EPSG:4326")
+
+    merged_gdf = subareas._merge_overlapping_grids(gdf_over)
+
+    assert len(merged_gdf) == 2, "There should be 2 merged polygons."
+
+    polygon_not_over = [
+        Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
+        Polygon([(2, 2), (3, 2), (3, 3), (2, 3)]),
+        Polygon([(4, 4), (5, 4), (5, 5), (4, 5)])
+    ]
+    gdf_not_over = gpd.GeoDataFrame(geometry=polygon_not_over, crs="EPSG:4326")
+    merged_gdf_not_over = subareas._merge_overlapping_grids(gdf_not_over)
+    assert len(merged_gdf_not_over) == 3, "There should be 3 polygons as there are no overlaps."
+
 
 if __name__ == "__main__":
     exposure, exp_gdf = test_create_exp_gdf_returns_single_polygon()
-    _crop_grid_cells_to_polygon(exp_gdf, exposure)
+    test_crop_grid_cells_to_polygon(exp_gdf, exposure)
+    test_merge_overlapping_grids()
