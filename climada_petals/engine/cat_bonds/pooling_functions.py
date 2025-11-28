@@ -79,7 +79,78 @@ def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100
             country_allocation = pd.DataFrame([x], columns=countries)
             country_allocation['min_conc'] = pd.DataFrame([res_reg.F], columns=['min_conc'])
 
-    # Optionally, you can return pool_dict as well if needed
+    return country_allocation, algorithm_result
+
+
+def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simulations, n_opt_rep=100):
+    """
+    Runs risk concentration minimization for pools with a maximum principal constraint using a genetic algorithm,
+    processes the optimization results, and generates convergence plots.
+
+    Parameters
+    ----------
+    maximum_principal : float
+        Maximum principal allowed per pool.
+    cls_bond_simulations : list
+        List of SingleCountryBondSimulation instances for each country, containing the principals and 
+        monthly losses.
+    n_opt_rep : int, optional
+        Number of optimization repetitions for seed analysis (default is 100).
+    
+    Returns
+    -------
+    country_allocation : pandas.DataFrame
+        DataFrame containing a optimal country allocation for the minimum concentration solution.
+    algorithm_result: pymoo.core.result.Result
+        Result object from the optimization containing details of the optimization process.
+    """
+    
+    annual_losses_dic_cty = {}
+    principal_sng = []
+    for idx, cty in enumerate(countries):
+        annual_losses_dic_cty[cty] = cls_bond_simulations[idx].df_loss_month['losses'].apply(lambda x: sum(x) if len(x) > 0 else 0)
+        principal_sng.append(cls_bond_simulations[idx].subarea_calc.principal)
+    df_losses = pd.DataFrame(annual_losses_dic_cty)
+
+    opt_rep = range(0,n_opt_rep,1)
+
+    ### CALCULATE ALPHA FOR RISK CONCENTRATION OPTIMIZATION ###
+    RT = len(df_losses[countries[0]])
+    alpha = 1-1/RT 
+    
+    bools = df_losses >= np.quantile(df_losses, alpha, axis=0)
+
+    risk_concentration = 1.0
+    # Loop through repetitions for seed analysis
+    for index in opt_rep:
+        # Define Problem and Algorithm (same as inside the loop)
+        problem = PoolOptimizationMaximumPrincipal(principal_sng, maximum_principal, df_losses, bools, alpha, len(countries), calc_pool_conc)
+        algorithm = GA(
+            pop_size=2000,
+            sampling=IntegerRandomSampling(),
+            crossover=HalfUniformCrossover(),
+            mutation=PolynomialMutation(repair=RoundingRepair()),
+            eliminate_duplicates=True,
+        )
+
+        # Solve the problem
+        res_reg = minimize(problem, algorithm, verbose=False, save_history=True)
+
+        # Process results (same code as inside the loop)
+        x = res_reg.X
+        risk_concentration_new = res_reg.F
+        if risk_concentration_new is not None and risk_concentration is not None and risk_concentration_new < risk_concentration:
+            algorithm_result = res_reg
+            risk_concentration = risk_concentration_new
+            sorted_unique = sorted(set(x))
+            rank_dict = {value: rank + 1 for rank, value in enumerate(sorted_unique)}
+            x = [rank_dict[value] for value in x]
+
+            # Add to dump dataframe
+            country_allocation = pd.DataFrame(columns=[countries, 'min_conc'])
+            country_allocation = pd.DataFrame([x], columns=countries)
+            country_allocation['min_conc'] = pd.DataFrame([res_reg.F], columns=['min_conc'])
+
     return country_allocation, algorithm_result
 
 
