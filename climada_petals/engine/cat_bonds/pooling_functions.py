@@ -10,7 +10,7 @@ from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.optimize import minimize
 from pymoo.operators.repair.rounding import RoundingRepair
 
-def process_n(n, countries, cls_bond_simulations, n_opt_rep=100):
+def process_n(number_pools, countries, cls_bond_simulations, n_opt_rep=100):
     """
     Runs risk concentration minimization for a given number of pools using a genetic algorithm,
     processes the optimization results, and generates convergence plots.
@@ -50,11 +50,9 @@ def process_n(n, countries, cls_bond_simulations, n_opt_rep=100):
 
     risk_concentration = 1.0
     # Loop through repetitions for seed analysis
-    print(opt_rep)
     for index in opt_rep:
-        print(f"Starting optimization repetition {index+1}/{n_opt_rep}...")
         # Define Problem and Algorithm (same as inside the loop)
-        problem = PoolOptimizationFixedNumber(principal_sng, df_losses, bools, alpha, n, calc_pool_conc)
+        problem = PoolOptimizationFixedNumber(principal_sng, df_losses, bools, alpha, number_pools, calc_pool_conc)
         algorithm = GA(
             pop_size=2000,
             sampling=IntegerRandomSampling(),
@@ -69,7 +67,6 @@ def process_n(n, countries, cls_bond_simulations, n_opt_rep=100):
         # Process results (same code as inside the loop)
         x = res_reg.X
         risk_concentration_new = res_reg.F
-        print(f"Optimization repetition {index+1}/{n_opt_rep}, Risk Concentration: {risk_concentration_new}")
         if risk_concentration_new is not None and risk_concentration is not None and risk_concentration_new < risk_concentration:
             algorithm_result = res_reg
             risk_concentration = risk_concentration_new
@@ -82,6 +79,7 @@ def process_n(n, countries, cls_bond_simulations, n_opt_rep=100):
             country_allocation = pd.DataFrame([x], columns=countries)
             country_allocation['min_conc'] = pd.DataFrame([res_reg.F], columns=['min_conc'])
 
+    # Optionally, you can return pool_dict as well if needed
     return country_allocation, algorithm_result
 
 

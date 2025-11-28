@@ -34,7 +34,7 @@ class MultiCountryBondSimulation:
 
 
     @classmethod
-    def simulate_bond_pool_n(cls, country_dictionary, term, number_of_terms, principal, n, n_opt_rep=100):
+    def simulate_bond_pool_n(cls, country_dictionary, term, number_of_terms, principal, number_pools, n_opt_rep=100):
         """
         Class method to create an instance of MultiCountryBondSimulation and run the loss simulation.
 
@@ -62,7 +62,7 @@ class MultiCountryBondSimulation:
         """
         countries_list = list(country_dictionary.keys())
         cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
-        pool_allocation, algorithm_result = pf.process_n(n, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
+        pool_allocation, algorithm_result = pf.process_n(number_pools, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
         pool_dict = {}
         for cty in countries_list:
             if pool_dict.get(pool_allocation[cty][0]) is None:
