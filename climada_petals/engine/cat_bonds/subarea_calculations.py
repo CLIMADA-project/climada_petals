@@ -12,7 +12,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class SubareaCalculations:
-    def __init__(self, subareas, index_stat):
+    def __init__(self, subareas, index_stat, intitial_guess=None):
         '''
         Attributes
         ----------
@@ -34,12 +34,17 @@ class SubareaCalculations:
             it is treated as a monetary value.
         self.index_stat: str or float
             The statistic to calculate. Can either be a number to calculate percentile or the string 'mean' to calculate the average.
+        self.initial_guess: tuple, optional
+            A tuple containing the initial guess for the minimum and maximum trigger thresholds used in the payout function optimization.
+            Will be calculated as the 30th and 60th percentiles of the hazard intensity data if not provided.
         '''
 
         self.subareas = subareas
         self.index_stat = index_stat
-
-        self.initial_guess = (np.percentile(subareas.hazard.intensity.data, 30), np.percentile(subareas.hazard.intensity.data, 60))
+        if intitial_guess is not None:
+            self.initial_guess = intitial_guess
+        else:
+            self.initial_guess = (np.percentile(subareas.hazard.intensity.data, 30), np.percentile(subareas.hazard.intensity.data, 60))
 
     def _calc_impact(self):
         """
