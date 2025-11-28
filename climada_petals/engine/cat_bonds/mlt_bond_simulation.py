@@ -3,17 +3,16 @@ import numpy as np
 import logging
 
 from utils_cat_bonds import multi_level_es, allocate_single_payout
+import pooling_functions as pf
 
 LOGGER = logging.getLogger(__name__)
 
 class MultiCountryBondSimulation:
 
-    def __init__(self, subarea_calc_list, countries_list, term, number_of_terms, tranches):
-        self.countries = countries_list
+    def __init__(self, country_dictionary, term, number_of_terms):
+        self.country_dictionary = country_dictionary
         self.term = term
         self.simulated_years = number_of_terms * term
-        self.tranches = tranches
-        self.subarea_calc = subarea_calc_list
         self._prepare_data()
 
 
@@ -21,16 +20,63 @@ class MultiCountryBondSimulation:
     def _prepare_data(self):
         self.pay_vs_dam_dic = {}
         self.principal_dic_cty = {}
+        self.countries = list(self.country_dictionary.keys())
         min_year_list = []
-        for idx, cty in enumerate(self.countries):
-            self.pay_vs_dam_dic[cty] = self.subarea_calc[idx].pay_vs_dam
-            self.principal_dic_cty[cty] = self.subarea_calc[idx].principal
-            min_year_list.append(self.subarea_calc[idx].pay_vs_dam['year'].min())
+        for cty, bond_sim_class in self.country_dictionary.items():
+            self.pay_vs_dam_dic[cty] = bond_sim_class.subarea_calc.pay_vs_dam
+            self.principal_dic_cty[cty] = bond_sim_class.subarea_calc.principal
+            min_year_list.append(bond_sim_class.subarea_calc.pay_vs_dam['year'].min())
 
         min_year = min(min_year_list)
 
         self.min_year = min_year
         
+
+
+    @classmethod
+    def simulate_bond_pool_n(cls, country_dictionary, term, number_of_terms, principal, n, n_opt_rep=100):
+        """
+        Class method to create an instance of MultiCountryBondSimulation and run the loss simulation.
+
+        Parameters
+        ----------
+        n : int
+            Number of countries to include in the pool.
+        subarea_calc_list : list
+            List of subarea_calc instances for each country.
+        countries_list : list
+            List of country codes.
+        term : int
+            Term of the bond in years.
+        number_of_terms : int
+            Number of terms to simulate.
+        tranches : list
+            List of tranche nominal values.
+        principal : float
+            Total principal value of the bond.
+
+        Returns
+        -------
+        bond_simulation : MultiCountryBondSimulation
+            Instance of MultiCountryBondSimulation with simulated losses.
+        """
+        countries_list = list(country_dictionary.keys())
+        cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
+        pool_allocation, algorithm_result = pf.process_n(n, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
+        pool_dict = {}
+        for cty in countries_list:
+            if pool_dict.get(pool_allocation[cty][0]) is None:
+                pool_dict[pool_allocation[cty][0]] = []
+            pool_dict[pool_allocation[cty][0]].append(cty)
+
+        mlt_bond_simulation_dic = {}
+        for key, countries in pool_dict:
+            LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
+            pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
+            mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
+            mlt_bond_simulation_dic[key].init_loss_simulation(principal)
+
+        return mlt_bond_simulation_dic[key], pool_allocation, algorithm_result
 
 
 
@@ -305,7 +351,7 @@ class MultiCountryBondSimulation:
 
   
     '''reduced function to derive returns of the bond -> was used to save time during calculation'''
-    def init_return_simulation_tranches(self, premiums, rf=0.0):
+    def init_return_simulation_tranches(self, premiums, tranches, rf=0.0):
         """
         Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simiulation period.
         This function calculates the premium payments, net cash flows, and premium allocations for each tranche and country, 
@@ -336,27 +382,27 @@ class MultiCountryBondSimulation:
         - Losses are allocated to tranches in reverse order (from highest to lowest risk).
         """
 
-        ncf = {str(tranche): [] for tranche in self.tranches}
+        ncf = {str(tranche): [] for tranche in tranches}
         premiums_tot = []
-        cur_nominal_tranches = self.tranches.copy()
+        cur_nominal_tranches = tranches.copy()
         for i in range(len(self.df_loss_month)):
             losses = self.df_loss_month['losses'].iloc[i]
             months = self.df_loss_month['months'].iloc[i]
             if np.sum(losses) == 0:
                 prem_it_alt = 0
-                for k, tranche in enumerate(self.tranches):
+                for k, tranche in enumerate(tranches):
                     ncf[str(tranche)].append(cur_nominal_tranches[k] * (premiums[k] + rf))
                     prem_it_alt +=  cur_nominal_tranches[k] * premiums[k]
                 premiums_tot.append(prem_it_alt)
             else:
-                ncf_tmp = {str(tranche): [] for tranche in self.tranches}
+                ncf_tmp = {str(tranche): [] for tranche in tranches}
                 prem_it_alt = 0
                 premiums_tot_tmp = []
-                for k, tranche in enumerate(self.tranches):
+                for k, tranche in enumerate(tranches):
                     ncf_tmp[str(tranche)].append(cur_nominal_tranches[k] * (premiums[k] + rf) / 12 * months[0])
                     prem_it_alt += cur_nominal_tranches[k] * premiums[k] / 12 * months[0]
                 premiums_tot_tmp.append(prem_it_alt)
-                losses_per_tranche = np.zeros(len(self.tranches))  # accumulate over all events in this period
+                losses_per_tranche = np.zeros(len(tranches))  # accumulate over all events in this period
                 for j in range(len(losses)):
                     loss = losses[j]
                     month = months[j]
@@ -365,21 +411,21 @@ class MultiCountryBondSimulation:
                     if j + 1 < len(losses):
                         nex_month = months[j+1]
                         prem_it_alt = 0
-                        for k, tranche in enumerate(self.tranches):
+                        for k, tranche in enumerate(tranches):
                             ncf_tmp[str(tranche)].append(((cur_nominal_tranches[k] * (premiums[k] + rf)) / 12 * (nex_month - month)))
                             prem_it_alt += cur_nominal_tranches[k] * premiums[k] / 12 * (nex_month - month)
                         premiums_tot_tmp.append(prem_it_alt)
                     else:
                         prem_it_alt = 0
-                        for k, tranche in enumerate(self.tranches):
+                        for k, tranche in enumerate(tranches):
                             ncf_tmp[str(tranche)].append(((cur_nominal_tranches[k] * (premiums[k] + rf)) / 12 * (12- month)))
                             prem_it_alt += cur_nominal_tranches[k] * premiums[k] / 12 * (12- month)
                         premiums_tot_tmp.append(prem_it_alt)
                 premiums_tot.append(np.sum(premiums_tot_tmp))
-                for idx, tranche in enumerate(self.tranches):
+                for idx, tranche in enumerate(tranches):
                     ncf[str(tranche)].append(np.sum(ncf_tmp[str(tranche)]) - losses_per_tranche[idx])
             if (i + 1) % self.term == 0:
-                cur_nominal_tranches = self.tranches.copy()
+                cur_nominal_tranches = tranches.copy()
 
         prem_cty_dic = {country: [] for country in self.tot_coverage_cty}
         for country in prem_cty_dic:
