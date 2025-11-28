@@ -145,7 +145,6 @@ class Subareas:
         """
         exp_gdf = _create_exp_gdf(exposure)
         logging.info("Number of polygons in exposure perimeter: %d", len(exp_gdf))
-        exp_gdf = exp_gdf.explode(ignore_index=True, index_parts=True)
         subareas_gdf = _crop_grid_cells_to_polygon(resolution, exp_gdf, exposure)
         subareas_gdf["subarea_letter"] = [chr(65 + i) for i in range(len(subareas_gdf))]
 
@@ -288,7 +287,7 @@ def _create_exp_gdf(exposure):
     polygons = [shape(geom) for geom, value in shapes_gen if value > 0]
     exp_gdf_sep = gpd.GeoDataFrame(geometry=polygons, crs=exp_gdf.crs)
     merged_exp_gdf_sep = unary_union(exp_gdf_sep.geometry)
-    exp_gdf = gpd.GeoDataFrame(geometry=[merged_exp_gdf_sep], crs=exp_gdf.crs)
+    exp_gdf = gpd.GeoDataFrame(geometry=[merged_exp_gdf_sep], crs=exp_gdf.crs).explode(ignore_index=True, index_parts=True)
     LOGGER.info("Exposure perimeter polygon created.")
 
     return exp_gdf
