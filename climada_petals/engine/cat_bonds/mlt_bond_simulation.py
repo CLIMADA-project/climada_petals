@@ -79,7 +79,7 @@ class MultiCountryBondSimulation:
             mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
             mlt_bond_simulation_dic[key].init_loss_simulation(principal)
 
-        return mlt_bond_simulation_dic[key], pool_allocation, algorithm_result
+        return mlt_bond_simulation_dic, pool_allocation, algorithm_result
 
 
 
