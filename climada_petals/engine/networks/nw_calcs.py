@@ -75,7 +75,7 @@ class GraphCalcs():
     # Making links
     # =============================================================================
 
-    def link_clusters(self, dist_thresh=np.inf, metres=True, link_attrs=None):
+    def link_clusters(self, ci_type=None, dist_thresh=np.inf, link_attrs=None):
         """
         link nodes from different clusters to their nearest nodes in other
         clusters to generate one connected graph.
@@ -94,6 +94,8 @@ class GraphCalcs():
         """
 
         gdf_vs = self.graph.get_vertex_dataframe()
+        if ci_type is not None:#filter to ci_type
+            gdf_vs = gdf_vs[gdf_vs.ci_type==ci_type]
         gdf_vs['membership'] = self.graph.connected_components().membership
 
         v_ids_source = []
@@ -869,6 +871,15 @@ class NetworkCalcs():
     def graph(self):
         """Convenience proxy"""
         return self.graph_calc.graph
+
+    def merge_clusters(self, max_iter, ci_type=None, dist_thresh=30000):
+        iter_count = 0
+        #dist_thresh = cntry_shape.area / nclusters
+        while (nclusters>1) and (iter_count<max_iter):
+            n_clusters = self.graph_calc.link_clusters(dist_thresh=dist_thresh, ci_type=ci_type, link_attrs={'ci_type':ci_type})
+            iter_count+=1
+
+        LOGGER.info(print(f'Number of clusters in the road networks: {len(graph_rd.graph.connected_components())}'))
 
     def add_physical_links(self):
         """Wrapper function to add physical links."""
