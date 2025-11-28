@@ -33,9 +33,8 @@ class Subareas:
         crs : str, optional
             Coordinate reference system for spatial data (default: "EPSG:3857").
         subareas_gdf : geopandas.GeoDataFrame
-            GeoDataFrame containing the subareas as polygons.
-        exp_gdf : geopandas.GeoDataFrame
-            GeoDataFrame containing the exposure perimeter as a polygon.
+            GeoDataFrame containing the subareas as polygons. Needs to contain the whole exposure. If no column subarea_letter is given it will be added. 
+            If None, subareas will be generated based on the exposure perimeter and resolution.
     '''
     
 
@@ -73,6 +72,7 @@ class Subareas:
             gdf["subarea_letter"] = [chr(65 + i) for i in range(len(gdf))]
             logging.info("Added 'subarea_letter' column to GeoDataFrame.")
         subareas_gdf = gdf.crs_convert(exposure.gdf.crs)
+        logging.info("Converted GeoDataFrame to match exposure CRS.")
         return cls(hazard, vulnerability, exposure, subareas_gdf)
 
     # --- Properties ---
