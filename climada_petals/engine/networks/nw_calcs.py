@@ -75,7 +75,7 @@ class GraphCalcs():
     # Making links
     # =============================================================================
 
-    def link_clusters(self, ci_type=None, dist_thresh=np.inf, link_attrs=None):
+    def link_clusters(self, dist_thresh=np.inf, link_attrs=None):
         """
         link nodes from different clusters to their nearest nodes in other
         clusters to generate one connected graph.
@@ -94,8 +94,8 @@ class GraphCalcs():
         """
 
         gdf_vs = self.graph.get_vertex_dataframe()
-        if ci_type is not None:#filter to ci_type
-            gdf_vs = gdf_vs[gdf_vs.ci_type==ci_type]
+        #if ci_type is not None:#filter to ci_type
+        #    gdf_vs = gdf_vs[gdf_vs.ci_type==ci_type]
         gdf_vs['membership'] = self.graph.connected_components().membership
 
         v_ids_source = []
@@ -124,6 +124,7 @@ class GraphCalcs():
             self._edges_from_vlists(
                 v_ids_source, v_ids_target, link_attrs)
 
+        #self.invalidate()
     def link_vertices_closest_k(self, source_attrs, target_attrs, link_attrs=None,
                                 dist_thresh=np.inf, bidir=False, k=5):
         """
@@ -153,7 +154,7 @@ class GraphCalcs():
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
 
-
+        #self.invalidate()
     def link_vertices_edgecond(self, target_attrs, edge_attrs, link_attrs,
                                bidir=False):
         """
@@ -200,6 +201,7 @@ class GraphCalcs():
             self._edges_from_vlists([edge.target for edge in pot_edges],
                                [edge.source for edge in pot_edges], link_attrs)
 
+        #self.invalidate()
     def link_vertices_shortest_paths(self, source_attrs, target_attrs, via_attrs,
                                      link_attrs, dist_thresh=10e6, criterion='distance',
                                      k=1, bidir=False):
@@ -276,6 +278,7 @@ class GraphCalcs():
             if bidir:
                self._edges_from_vlists(v_ids_target, v_ids_source, link_attrs)
 
+        #self.invalidate()
     def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf,
                                         link_name=None, dist_thresh=None,
                                         bidir=False, k=5, dur_thresh=None):
@@ -303,6 +306,7 @@ class GraphCalcs():
 
                 self._edges_from_vlists(list(v_ids_source), list(v_ids_target), {'ci_type': link_name})
 
+            #self.invalidate()
 
     # =============================================================================
     # Helper funcs for making links
@@ -872,14 +876,25 @@ class NetworkCalcs():
         """Convenience proxy"""
         return self.graph_calc.graph
 
-    def merge_clusters(self, max_iter, ci_type=None, dist_thresh=30000):
+    def merge_clusters(self, ci_type, max_iter, dist_thresh=30000):
         iter_count = 0
+        n_clusters = len(self.graph_calc.graph.connected_components())
+        LOGGER.info(print(f'Number of clusters in the network before merging: {n_clusters}'))
         #dist_thresh = cntry_shape.area / nclusters
-        while (nclusters>1) and (iter_count<max_iter):
-            n_clusters = self.graph_calc.link_clusters(dist_thresh=dist_thresh, ci_type=ci_type, link_attrs={'ci_type':ci_type})
+        while (n_clusters>1) and (iter_count<max_iter):
+            self.graph_calc.link_clusters(dist_thresh=dist_thresh, link_attrs={'ci_type':ci_type})
             iter_count+=1
+            self.network.update_network_from_graphs(self.graph)
+            self.network = reset_ids(self.network)
+            self.graph_calc.invalidate()
+        n_clusters = len(self.graph_calc.graph.connected_components())
+        LOGGER.info(print(f'Number of clusters in the network after merging: {n_clusters}'))
 
-        LOGGER.info(print(f'Number of clusters in the road networks: {len(graph_rd.graph.connected_components())}'))
+        #update orig_id field (required for building subgraphes)
+        self.network.edges['orig_id'] = self.network.edges['id']
+        self.network.nodes['orig_id'] = self.network.nodes['id']
+        self.network = ordered_network(self.network)
+
 
     def add_physical_links(self):
         """Wrapper function to add physical links."""
