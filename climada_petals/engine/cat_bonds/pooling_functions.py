@@ -10,7 +10,7 @@ from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.optimize import minimize
 from pymoo.operators.repair.rounding import RoundingRepair
 
-def process_n(number_pools, countries, cls_bond_simulations, n_opt_rep=100):
+def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100):
     """
     Runs risk concentration minimization for a given number of pools using a genetic algorithm,
     processes the optimization results, and generates convergence plots.
