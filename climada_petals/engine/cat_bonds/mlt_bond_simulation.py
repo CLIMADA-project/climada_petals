@@ -81,6 +81,54 @@ class MultiCountryBondSimulation:
             LOGGER.info(f"Completed loss simulation for pool {key}.")
 
         return mlt_bond_simulation_dic, pool_allocation, algorithm_result
+    
+    @classmethod
+    def simulate_bond_max_principal_pool(cls, country_dictionary, term, number_of_terms, principal, maximum_principal, n_opt_rep=100):
+        """
+        Class method to create an instance of MultiCountryBondSimulation and run the loss simulation.
+
+        Parameters
+        ----------
+        n : int
+            Number of countries to include in the pool.
+        subarea_calc_list : list
+            List of subarea_calc instances for each country.
+        countries_list : list
+            List of country codes.
+        term : int
+            Term of the bond in years.
+        number_of_terms : int
+            Number of terms to simulate.
+        tranches : list
+            List of tranche nominal values.
+        principal : float
+            Total principal value of the bond.
+
+        Returns
+        -------
+        bond_simulation : MultiCountryBondSimulation
+            Instance of MultiCountryBondSimulation with simulated losses.
+        """
+        LOGGER.info(f"Starting pooling optimization for pools with a maximum principal of {maximum_principal} and {len(country_dictionary)} countries.")
+        countries_list = list(country_dictionary.keys())
+        cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
+        pool_allocation, algorithm_result = pf.process_maximum_principal_pools(maximum_principal, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
+        pool_dict = {}
+        for cty in countries_list:
+            if pool_dict.get(pool_allocation[cty][0]) is None:
+                pool_dict[pool_allocation[cty][0]] = []
+            pool_dict[pool_allocation[cty][0]].append(cty)
+        LOGGER.info("Completed pooling optimization.")
+
+        mlt_bond_simulation_dic = {}
+        for key, countries in pool_dict.items():
+            LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
+            pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
+            mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
+            mlt_bond_simulation_dic[key].init_loss_simulation(principal)
+            LOGGER.info(f"Completed loss simulation for pool {key}.")
+
+        return mlt_bond_simulation_dic, pool_allocation, algorithm_result
 
 
 
