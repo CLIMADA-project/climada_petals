@@ -265,7 +265,7 @@ def _create_exp_gdf(exposure):
     coords = np.vstack((exp_gdf.geometry.x, exp_gdf.geometry.y)).T
     nbrs = NearestNeighbors(n_neighbors=2).fit(coords)
     distances, _ = nbrs.kneighbors(coords)
-    res = distances[:, 1].mean()
+    res = distances[:, 1].mean() * 1.2  
     LOGGER.info(f"Approximate resolution: {res} CRS units")
     width = max(int((maxx - minx) / res), 1)
     height = max(int((maxy - miny) / res),1)
