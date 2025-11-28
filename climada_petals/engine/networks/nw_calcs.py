@@ -935,7 +935,6 @@ class NetworkCalcs():
                     dist_thresh=row['thresh_dist'],
                     bidir=row['bidir_link']
                 )
-                #self.add_dependency(source, target, n_links, access_cnstr)
             elif "duration" in link_cond:
                 self.graph_calc.link_vertices_friction_surf(
                     source_attrs={
