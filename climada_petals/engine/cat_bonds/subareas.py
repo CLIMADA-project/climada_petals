@@ -58,6 +58,22 @@ class Subareas:
         subareas_gdf = cls._init_subareas(exposure, resolution)
 
         return cls(hazard, vulnerability, exposure, subareas_gdf)
+    
+    @classmethod
+    def from_geodataframe(cls, hazard, vulnerability, exposure, gdf):
+        """Create Subareas instance from existing GeoDataFrame."""
+        if (gdf.geometry.type != 'Polygon').any():
+            raise ValueError("All geometries in the GeoDataFrame must be of type 'Polygon'.")
+        exp_gdf = _create_exp_gdf(exposure)
+        logging.info("Number of polygons in exposure perimeter: %d", len(exp_gdf))
+        if gdf.contains(exp_gdf.unary_union).all() is False:
+            raise ValueError("The provided GeoDataFrame does not fully cover the exposure perimeter.")
+        if 'subarea_letter' not in gdf.columns:
+            gdf = gdf.copy()
+            gdf["subarea_letter"] = [chr(65 + i) for i in range(len(gdf))]
+            logging.info("Added 'subarea_letter' column to GeoDataFrame.")
+        subareas_gdf = gdf.crs_convert(exposure.gdf.crs)
+        return cls(hazard, vulnerability, exposure, subareas_gdf)
 
     # --- Properties ---
     @property
