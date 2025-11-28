@@ -2,12 +2,12 @@ import pandas as pd
 import numpy as np
 import logging
 
-from utils_cat_bonds import multi_level_es, allocate_single_payout
-import pooling_functions as pf
+from .utils_cat_bonds import multi_level_es, allocate_single_payout
+from .pooling_functions import process_maximum_principal_pools, process_n_pools
 
 LOGGER = logging.getLogger(__name__)
 
-class MultiCountryBondSimulation:
+class MultiCountryBond:
 
     def __init__(self, country_dictionary, term, number_of_terms):
         self.country_dictionary = country_dictionary
@@ -66,7 +66,7 @@ class MultiCountryBondSimulation:
         LOGGER.info(f"Starting pooling optimization for {number_pools} pools and {len(country_dictionary)} countries.")
         countries_list = list(country_dictionary.keys())
         cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
-        pool_allocation, algorithm_result = pf.process_n_pools(number_pools, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
+        pool_allocation, algorithm_result = process_n_pools(number_pools, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
         pool_dict = {}
         for cty in countries_list:
             if pool_dict.get(pool_allocation[cty][0]) is None:
@@ -118,7 +118,7 @@ class MultiCountryBondSimulation:
         LOGGER.info(f"Starting pooling optimization for pools with a maximum principal of {maximum_principal} and {len(country_dictionary)} countries.")
         countries_list = list(country_dictionary.keys())
         cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
-        pool_allocation, algorithm_result = pf.process_maximum_principal_pools(maximum_principal, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
+        pool_allocation, algorithm_result = process_maximum_principal_pools(maximum_principal, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
         pool_dict = {}
         for cty in countries_list:
             if pool_dict.get(pool_allocation[cty][0]) is None:

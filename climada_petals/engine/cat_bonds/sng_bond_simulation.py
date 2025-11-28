@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
-from utils_cat_bonds import multi_level_es
+from .utils_cat_bonds import multi_level_es
 
 LOGGER = logging.getLogger(__name__)
 

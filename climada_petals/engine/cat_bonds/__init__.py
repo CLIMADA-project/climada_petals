@@ -20,5 +20,3 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 import logging
 
 LOGGER = logging.getLogger(__name__)
-
-from cat_bonds import *
