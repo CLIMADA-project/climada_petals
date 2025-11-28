@@ -36,30 +36,33 @@ class MultiCountryBondSimulation:
     @classmethod
     def simulate_bond_pool_n(cls, country_dictionary, term, number_of_terms, principal, number_pools, n_opt_rep=100):
         """
-        Class method to create an instance of MultiCountryBondSimulation and run the loss simulation.
+        Class method to optimize pool allocation using a fixed number of pools, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
         Parameters
         ----------
-        n : int
-            Number of countries to include in the pool.
-        subarea_calc_list : list
-            List of subarea_calc instances for each country.
-        countries_list : list
-            List of country codes.
+        country_dictionary : dict
+            Dictionary mapping country codes to their bond simulation instances.
         term : int
             Term of the bond in years.
         number_of_terms : int
             Number of terms to simulate.
-        tranches : list
-            List of tranche nominal values.
         principal : float
             Total principal value of the bond.
+        number_pools : int
+            Number of pools to create.
+        n_opt_rep : int, optional
+            Number of optimization repetitions (default is 100).
 
         Returns
         -------
-        bond_simulation : MultiCountryBondSimulation
-            Instance of MultiCountryBondSimulation with simulated losses.
+        mlt_bond_simulation_dic : dict
+            Dictionary mapping pool identifiers to their MultiCountryBondSimulation instances.
+        pool_allocation : dataframe
+            Dataframe mapping country codes to their assigned pool.
+        algorithm_result : object
+            Result object from the pooling optimization algorithm.
         """
+
         LOGGER.info(f"Starting pooling optimization for {number_pools} pools and {len(country_dictionary)} countries.")
         countries_list = list(country_dictionary.keys())
         cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
@@ -85,30 +88,33 @@ class MultiCountryBondSimulation:
     @classmethod
     def simulate_bond_max_principal_pool(cls, country_dictionary, term, number_of_terms, principal, maximum_principal, n_opt_rep=100):
         """
-        Class method to create an instance of MultiCountryBondSimulation and run the loss simulation.
+        Class method to optimize pool allocation using a maximum principal, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
         Parameters
         ----------
-        n : int
-            Number of countries to include in the pool.
-        subarea_calc_list : list
-            List of subarea_calc instances for each country.
-        countries_list : list
-            List of country codes.
+        country_dictionary : dict
+            Dictionary mapping country codes to their bond simulation instances.
         term : int
             Term of the bond in years.
         number_of_terms : int
             Number of terms to simulate.
-        tranches : list
-            List of tranche nominal values.
         principal : float
             Total principal value of the bond.
-
+        maximum_principal : float
+            Maximum principal allowed per pool.
+        n_opt_rep : int, optional
+            Number of optimization repetitions (default is 100).
+        
         Returns
         -------
-        bond_simulation : MultiCountryBondSimulation
-            Instance of MultiCountryBondSimulation with simulated losses.
+        mlt_bond_simulation_dic : dict
+            Dictionary mapping pool identifiers to their MultiCountryBondSimulation instances.
+        pool_allocation : dataframe
+            Dataframe mapping country codes to their assigned pool.
+        algorithm_result : object
+            Result object from the pooling optimization algorithm.
         """
+
         LOGGER.info(f"Starting pooling optimization for pools with a maximum principal of {maximum_principal} and {len(country_dictionary)} countries.")
         countries_list = list(country_dictionary.keys())
         cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
@@ -416,6 +422,8 @@ class MultiCountryBondSimulation:
             Class instance of mlt_bond_simulation containing monthly loss data, country exposure shares, tranche structures, and the term of the bond.
         premiums : float
             List of annual premium rates for each tranche.
+        tranches : list
+            List of share of principal values for each tranche.
         rf : float, optional
             Risk-free rate to be added to the premium (default is 0.0).
 
@@ -496,11 +504,9 @@ class MultiCountryBondSimulation:
         This function simulates event losses over a specified term for multiple countries, aggregates the losses,
         and determines the maximum total loss across all simulation periods. The required nominal value is the
         maximum loss observed, which can be used to set the bond's principal.
-        Args:
-            countries (list): List of country codes to include in the simulation.
-            pay_dam_df_dic (dict): Dictionary mapping country codes to pandas DataFrames containing event loss data.
-                Each DataFrame must have a 'year' column and relevant loss information.
-            nominal_dic_cty (dict): Dictionary mapping country codes to their respective nominal values.
+        Parameters:
+            self: MultiCountryBondSimulation
+                An instance of the MultiCountryBondSimulation class containing country data and simulation parameters.
         Returns:
             float: The required nominal value for the catastrophe bond, equal to the maximum simulated total loss.
         """
