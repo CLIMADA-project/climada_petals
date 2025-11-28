@@ -39,9 +39,7 @@ class SubareaCalculations:
         self.subareas = subareas
         self.index_stat = index_stat
 
-        self.initial_guess_dict = {
-            "TC": (30, 40)
-        }  # initial guess for wind speed in m/s
+        self.initial_guess = (np.percentile(subareas.hazard.intensity.data, 30), np.percentile(subareas.hazard.intensity.data, 60))
 
     def _calc_impact(self):
         """
@@ -277,7 +275,7 @@ class SubareaCalculations:
             # Perform optimization for each subarea
             result = minimize(
                 self._objective_fct,
-                self.initial_guess_dict[hazard_type],
+                self.initial_guess,
                 args=(haz_int[hazard_type].iloc[:, [subarea, -1]], damages, principal),
                 method="COBYLA",
                 options={"maxiter": 100000},
