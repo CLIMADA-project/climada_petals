@@ -65,12 +65,15 @@ class MultiCountryBondSimulation:
         pool_allocation, algorithm_result = pf.process_n_pools(number_pools, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
         pool_dict = {}
         for cty in countries_list:
+            print(cty)
             if pool_dict.get(pool_allocation[cty][0]) is None:
                 pool_dict[pool_allocation[cty][0]] = []
             pool_dict[pool_allocation[cty][0]].append(cty)
+            print(pool_dict)
 
         mlt_bond_simulation_dic = {}
-        for key, countries in pool_dict:
+        for key, countries in pool_dict.items():
+            print(key, countries)
             LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
             pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
             mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
