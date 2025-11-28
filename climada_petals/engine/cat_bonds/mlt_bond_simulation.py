@@ -60,16 +60,16 @@ class MultiCountryBondSimulation:
         bond_simulation : MultiCountryBondSimulation
             Instance of MultiCountryBondSimulation with simulated losses.
         """
+        LOGGER.info(f"Starting pooling optimization for {number_pools} pools and {len(country_dictionary)} countries.")
         countries_list = list(country_dictionary.keys())
         cls_bond_simulation = [country_dictionary[cty] for cty in countries_list]
         pool_allocation, algorithm_result = pf.process_n_pools(number_pools, countries_list, cls_bond_simulation, n_opt_rep=n_opt_rep)
         pool_dict = {}
         for cty in countries_list:
-            print(cty)
             if pool_dict.get(pool_allocation[cty][0]) is None:
                 pool_dict[pool_allocation[cty][0]] = []
             pool_dict[pool_allocation[cty][0]].append(cty)
-            print(pool_dict)
+        LOGGER.info("Completed pooling optimization.")
 
         mlt_bond_simulation_dic = {}
         for key, countries in pool_dict.items():
@@ -78,6 +78,7 @@ class MultiCountryBondSimulation:
             pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
             mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
             mlt_bond_simulation_dic[key].init_loss_simulation(principal)
+            LOGGER.info(f"Completed loss simulation for pool {key}.")
 
         return mlt_bond_simulation_dic, pool_allocation, algorithm_result
 
