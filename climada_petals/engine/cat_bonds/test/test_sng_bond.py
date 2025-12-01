@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from scipy import sparse
 import logging
 from climada_petals.engine.cat_bonds.sng_bond_simulation import SingleCountryBondSimulation
 
@@ -71,9 +70,60 @@ def test_init_loss_simulation():
     assert "VaR_95_ann" in metrics
     assert "ES_95_ann" in metrics
 
+def test_init_return_simulation():
+    sub = DummySubareaCalc(principal=100)
+    sim = SingleCountryBondSimulation(subarea_calc=sub, term=3, number_of_terms=2)
+
+    # Create simple df_loss_month:
+    # Year 0: no losses → full premium
+    # Year 1: one loss at month 3 of size 0.20
+    sim.df_loss_month = pd.DataFrame({
+        "losses": [[0.0], [0.25, 0.25], [0.5], [0.25, 0.25], [0.5], [0.2]],
+        "months": [[1], [3, 12], [1], [3, 12], [1], [1]]
+    })
+
+    sim.init_return_simulation(premium=0.1)
+
+    out = sim.return_metrics
+    # First Term:
+    # Year 0 premium: 100 * 0.1 = 10
+    # Year 1 premium:
+    #   - first premium: month 3: 100 * 0.1/12 * 3 = 2.5
+    #   - loss at month 3: 0.25 * 100 = 25 → new nominal = 75
+    #   - second premium: month 3 to 12: 75 * 0.1/12 * 9 = 5.625
+    #   - loss at month 12: 0.25 * 100 = 25 → new nominal = 50
+    # Total prem year 1 = 8.125
+    # Year 2 premium: 
+    #   - first premium month 1: 50 * 0.1/12 * 1 = 0.4167
+    #   - loss at month 1: 0.5 * 100 = 50 → new nominal = 0
+    #   - premium for rest of year = 0
+    # Total premium year 2: 0.4167
+
+    # Second term: 
+    # Year 0 premium:
+    #   - first premium: month 3: 100 * 0.1/12 * 3 = 2.5
+    #   - loss at month 3: 0.25 * 100 = 25 → new nominal = 75
+    #   - second premium: month 3 to 12: 75 * 0.1/12 * 9 = 5.625
+    #   - loss at month 12: 0.25 * 100 = 25 → new nominal = 50
+    # Total prem year 0 = 8.125
+    # Year 1 premium: 
+    #   - first premium month 1: 50 * 0.1/12 * 1 = 0.4167
+    #   - loss at month 1: 0.5 * 100 = 50 → new nominal = 0
+    #   - premium for rest of year = 0
+    # Total premium year 2: 0.4167
+    # Year 3 premium: 
+    # Total premium year 3: 0 (as principal is depleted)
+    assert np.allclose(out["annual_premiums"], [10/100, 8.125/100, 0.4167/100, 8.125/100, 0.4167/100, 0], atol=1e-3)
+
+    # Returns:
+    # Premiums - losses
+    assert np.allclose(out["annual_returns"], [10/100, (8.125/100)-0.5, 0.4167/100-0.5, (8.125/100)-0.5, 0.4167/100-0.5, 0], atol=1e-3)
+
 
 if __name__ == "__main__":
     test_init_bond_loss()
     LOGGER.info("test_init_bond_loss passed")
     test_init_loss_simulation()
     LOGGER.info("test_init_loss_simulation passed")
+    test_init_return_simulation()
+    LOGGER.info("test_init_return_simulation passed")
