@@ -370,7 +370,7 @@ class SubareaCalculations:
             pay_dam_df.loc[i, "damage"] = tot_dam
             pay_dam_df.loc[i, "year"] = int(haz_int[hazard_type]["year"][i])
             pay_dam_df.loc[i, "month"] = int(haz_int[hazard_type]["month"][i])
-            for j in range(len(haz_int[hazard_type].columns) - 3):
+            for j in range(len(haz_int[hazard_type].columns) - 2):
                 sub_hazint = haz_int[hazard_type].iloc[:, [j, -1]]
                 max_dam = np.max(imp_subareas_evt.iloc[:, j])
                 if max_dam < principal:
