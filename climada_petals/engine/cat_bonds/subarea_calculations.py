@@ -71,11 +71,8 @@ class SubareaCalculations:
             save_mat=True
         )
 
-        # get exp gdf
-        exp_gdf = self.subareas.exposure.gdf
-
         # Perform a spatial join to associate each exposure point with calculated impact with a subarea
-        exp_to_admin = exp_gdf.sjoin(self.subareas.subareas_gdf, how="left", predicate="within")
+        exp_to_admin = self.subareas.exposure.gdf.sjoin(self.subareas.subareas_gdf, how="left", predicate="within")
         if exp_to_admin['subarea_letter'].isnull().any():
             LOGGER.warning("Some exposure points were not assigned to any subarea. Subareas may be to small.")
         # group each exposure point according to subarea letter
@@ -126,6 +123,7 @@ class SubareaCalculations:
             raise ValueError(
                 "Invalid attachment point method. Choose 'Exposure_Share' or 'Return_Period'."
             )
+        
         if exhaustion_point_method is None:
             principal = exhaustion_point
         elif exhaustion_point_method == "Exposure_Share":
