@@ -66,7 +66,7 @@ class PremiumCalculations:
             Peril type to filter the bonds (e.g., 'Earthquake', 'Flood'). If None, no filtering by peril is applied.
         year : list or int, optional
             Issuing year(s) to filter the bonds. If None, no filtering by year is applied.
-            
+
         Returns
         -------
         ibrd_prem_rate : float
