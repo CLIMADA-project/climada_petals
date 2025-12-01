@@ -59,12 +59,14 @@ class PremiumCalculations:
         This function loads IBRD bond data from an Excel file, optionally filters the data by peril type or issuing year,
         and fits a monotonic exponential function to the relationship between expected loss and risk multiple.
         The fitted parameters are returned. Optionally, the function can generate and save a plot of the fit.
+
         Parameters
         ----------
         peril : str, optional
             Peril type to filter the bonds (e.g., 'Earthquake', 'Flood'). If None, no filtering by peril is applied.
         year : list or int, optional
             Issuing year(s) to filter the bonds. If None, no filtering by year is applied.
+            
         Returns
         -------
         ibrd_prem_rate : float
@@ -99,12 +101,14 @@ class PremiumCalculations:
         The function simulates the annual cash flows of a catastrophe bond investment, adjusting for losses and premium payments.
         It computes the average return and standard deviation of the net cash flows, then calculates the Sharpe ratio and returns
         the squared difference from the target Sharpe ratio.
+
         Parameters
         ----------
             premium (float): The annual premium rate paid to the investor.
             monthly_losses (pd.DataFrame): DataFrame containing monthly loss events per year, with columns 'losses' (list of loss amounts per event)
                                       and 'months' (list of months when each event occurs).
             target_sharpe (float): The target Sharpe ratio to compare against.
+
         Returns
         -------
             float: The squared difference between the calculated Sharpe ratio and the target Sharpe ratio.
@@ -147,12 +151,14 @@ class PremiumCalculations:
         Calculates the initial premium required to achieve a target Sharpe ratio for a given set of annual losses.
         This function uses numerical optimization to find the premium value that results in the desired Sharpe ratio,
         given the annual losses and the risk-free rate.
+
         Parameters
         ----------
         self: float
             An instance of the premium_calculation class containing a dataframw with monthly losses.
         target_sharpe: float 
             Desired Sharpe ratio to be achieved.
+
         Returns
         -------
             float: The optimal premium value that achieves the target Sharpe ratio.
