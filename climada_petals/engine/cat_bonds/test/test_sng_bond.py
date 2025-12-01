@@ -3,11 +3,6 @@ import numpy as np
 import logging
 from climada_petals.engine.cat_bonds.sng_bond_simulation import SingleCountryBondSimulation
 
-class DummySubareaCalc:
-    def __init__(self, principal=100):
-        self.principal = principal
-        self.pay_vs_dam = pd.DataFrame()  # DataFrame to be set in tests
-
 logging.basicConfig(
      format="{asctime} - {levelname} - {message}",
      style="{",
@@ -15,6 +10,11 @@ logging.basicConfig(
      level=logging.INFO,
  )
 LOGGER = logging.getLogger(__name__)
+
+class DummySubareaCalc:
+    def __init__(self, principal=100):
+        self.principal = principal
+        self.pay_vs_dam = pd.DataFrame()  # DataFrame to be set in tests
 
 def test_init_bond_loss():
     sub = DummySubareaCalc(principal=100)
