@@ -139,7 +139,7 @@ def test_calc_pay_vs_dam_expected():
         imp, imp_sub, attachment=0, principal=50,
         opt_min_thresh=min_t, opt_max_thresh=max_t, haz_int=haz_int
     )
-    LOGGER.info(df)
+
     # event 0: no payouts → 0
     assert df.loc[0,"pay"] == 30
     # event 1: A pays 30 + B pays 40 → capped at principal = 50
@@ -147,6 +147,28 @@ def test_calc_pay_vs_dam_expected():
     # year/month copied
     assert df["year"].tolist() == [2000, 2000]
     assert df["month"].tolist() == [1, 2]
+
+def test_objective_fct_expected():
+
+    class Dummy:
+        pass
+
+    s = subarea_calculations.SubareaCalculations(subareas=Dummy(), index_stat="mean", intitial_guess=(0, 1))
+
+    damages = np.array([0, 10, 20])
+    haz_int = pd.DataFrame({
+        "A": np.array([0, 1, 2]), 
+        "year": [2000, 2000, 2000],
+        "month": [1, 1, 1]
+    })
+
+    # principal less than max_dam → max_pay = principal
+    principal = 20
+
+    out = s._objective_fct((0, 2), haz_int, damages, principal)
+
+    # expected = (0-0)^2 + (10-10)^2 + (20-20)^2 = 0 + 25 + 25 = 0
+    assert out == 0
 
 
 if __name__ == "__main__":
@@ -158,3 +180,5 @@ if __name__ == "__main__":
     LOGGER.info("test_calc_parametric_index passed")
     test_calc_pay_vs_dam_expected()
     LOGGER.info("test_calc_pay_vs_dam_expected passed")
+    test_objective_fct_expected()
+    LOGGER.info("test_objective_fct_expected passed")
