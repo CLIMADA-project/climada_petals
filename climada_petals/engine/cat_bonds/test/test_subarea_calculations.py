@@ -71,7 +71,7 @@ def test_calc_attachment_principal_expected():
     assert attachment_rp == 50
     assert principal_rp == 200
 
-def test_calc_parametric_index_mean():
+def test_calc_parametric_index():
     centroids = Centroids(lat=np.array([0, 1, 3, 4]), lon=np.array([0, 1, 3, 4]))
     hazard_dummy = Hazard(haz_type="TC",
                           event_id=np.array([0, 1]),
@@ -101,9 +101,60 @@ def test_calc_parametric_index_mean():
     assert df["year"].tolist() == [1917, 1917]
     assert df["month"].tolist() == [10, 10]
 
+    subareas_calc_dummy_2 = subarea_calculations.SubareaCalculations(
+        subareas=subareas_dummy, index_stat=50
+    )
+
+    out_2 = subareas_calc_dummy_2._calc_parametric_index()
+
+    df_2 = out_2["TC"]
+
+    # For mean, event 0: mean(10,20)=15; event1: mean(30,40)=35
+    assert df_2["A"].tolist() == [15, 35]
+    assert df_2["B"].tolist() == [30, 20]
+
+def test_calc_pay_vs_dam_expected():
+
+    class DummyImpact:
+        at_event = np.array([10, 70])  # event damages
+
+    imp = DummyImpact()
+
+    imp_sub = pd.DataFrame({"A": [0, 30], "B": [5, 40]})
+
+    haz_int = {"TC": pd.DataFrame({
+        "A": [1, 2],
+        "B": [3, 4],
+        "year": [2000, 2000],
+        "month": [1, 2]
+    })}
+
+    s = subarea_calculations.SubareaCalculations(subareas=None, index_stat="mean", intitial_guess=[1,2])
+
+    # thresholds
+    min_t = np.array([1, 0])
+    max_t = np.array([2, 4])
+    
+    df = s._calc_pay_vs_dam(
+        imp, imp_sub, attachment=0, principal=50,
+        opt_min_thresh=min_t, opt_max_thresh=max_t, haz_int=haz_int
+    )
+    LOGGER.info(df)
+    # event 0: no payouts → 0
+    assert df.loc[0,"pay"] == 30
+    # event 1: A pays 30 + B pays 40 → capped at principal = 50
+    assert df.loc[1,"pay"] == 50
+    # year/month copied
+    assert df["year"].tolist() == [2000, 2000]
+    assert df["month"].tolist() == [1, 2]
+
 
 if __name__ == "__main__":
     test_calc_payout_basic()
+    LOGGER.info("test_calc_payout_basic passed")
     test_calc_attachment_principal_expected()
-    test_calc_parametric_index_mean()
-    print("All tests passed.")
+    LOGGER.info("test_calc_attachment_principal_expected passed")
+    test_calc_parametric_index()
+    LOGGER.info("test_calc_parametric_index passed")
+    test_calc_pay_vs_dam_expected()
+    LOGGER.info("test_calc_pay_vs_dam_expected passed")
