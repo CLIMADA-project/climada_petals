@@ -9,10 +9,8 @@ class SingleCountryBondSimulation:
 
     def __init__(self, subarea_calc, term, number_of_terms):
         self.term = term
-        self.simulated_years = number_of_terms * term
+        self.number_of_terms = number_of_terms
         self.subarea_calc = subarea_calc
-
-
 
     '''Simulate one term of bond to derive losses'''
     def init_bond_loss(self, events_per_year):
@@ -118,10 +116,8 @@ class SingleCountryBondSimulation:
         list_loss_month = []
         total_payouts = 0
         total_damages = 0
-
         # Iterate directly over year-starts
-        for start_year in range(min_year, min_year + self.simulated_years - self.term):
-
+        for start_year in range(min_year, min_year + self.number_of_terms):
             # Collect events for the full term (vectorized selection)
             events_per_year = [
                 pay_vs_dam[pay_vs_dam['year'] == (start_year + offset)].groupby(['month', 'year']).sum().reset_index().sort_values(by=['year','month'])
@@ -138,6 +134,7 @@ class SingleCountryBondSimulation:
             total_damages += summed_damages
 
         # Combine monthly losses
+        LOGGER.info(list_loss_month)
         self.df_loss_month = pd.concat(list_loss_month, ignore_index=True)
 
         annual_losses = pd.Series(annual_losses)
