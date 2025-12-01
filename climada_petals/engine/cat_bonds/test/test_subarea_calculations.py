@@ -1,0 +1,109 @@
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+from climada_petals.engine.cat_bonds import subarea_calculations
+from climada.hazard import Hazard
+from climada.hazard.centroids import Centroids
+from scipy import sparse
+from shapely.geometry import Polygon
+import logging
+logging.basicConfig(
+     format="{asctime} - {levelname} - {message}",
+     style="{",
+     datefmt="%Y-%m-%d %H:%M",
+     level=logging.INFO,
+ )
+LOGGER = logging.getLogger(__name__)
+
+def test_calc_payout_basic():
+    """Test basic functionality of calc_payout function."""
+
+    haz_int = pd.DataFrame({"intensity": [0, 5, 10, 15, 20]})
+    min_trig = 5
+    max_trig = 15
+    max_pay = 100
+
+    payouts = subarea_calculations.calc_payout(min_trig, max_trig, haz_int, max_pay)
+
+    # Expected:
+    # intensity < 5 → 0
+    # 5 → 0
+    # 10 → 50
+    # ≥ 15 → 100
+    assert np.allclose(payouts, [0, 0, 50, 100, 100])
+
+def test_calc_attachment_principal_expected():
+
+    class DummyImpact:
+        def calc_freq_curve(self, rp):
+            return type("obj", (), {"impact": rp * 10})  # simple mapping
+
+    class Dummy:
+        exposure = type("exp", (), {"gdf": {"value": pd.Series([100, 300])}})
+        pass
+
+    dummy = Dummy()
+
+    s = subarea_calculations.SubareaCalculations(dummy, index_stat="mean", intitial_guess=[1,2])
+
+    imp = DummyImpact()
+
+    # Exposure share: 0.1 → 40, 0.5 → 200
+    principal, attachment = s._calc_attachment_principal(
+        imp,
+        attachment_point=0.1,
+        exhaustion_point=0.5,
+        attachment_point_method="Exposure_Share",
+        exhaustion_point_method="Exposure_Share",
+    )
+
+    assert attachment == 40
+    assert principal == 200
+
+    # Return period method (rp→impact=rp*10)
+    principal_rp, attachment_rp = s._calc_attachment_principal(
+        imp,
+        attachment_point=5,
+        exhaustion_point=20,
+        attachment_point_method="Return_Period",
+        exhaustion_point_method="Return_Period",
+    )
+    assert attachment_rp == 50
+    assert principal_rp == 200
+
+def test_calc_parametric_index_mean():
+    centroids = Centroids(lat=np.array([0, 1, 3, 4]), lon=np.array([0, 1, 3, 4]))
+    hazard_dummy = Hazard(haz_type="TC",
+                          event_id=np.array([0, 1]),
+                          event_name=["evt1", "evt2"],
+                          date=np.array([700101, 700102]),
+                          intensity=sparse.csr_matrix(np.array([[10, 20, 20, 40], [30, 40, 0, 40]])),
+                          centroids=centroids,
+                          units="m/s")
+
+    class DummySubareas:
+        hazard = hazard_dummy
+        d = {'subarea_letter': ['A', 'B'], 'geometry': [Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]), Polygon([(3, 3), (5, 3), (5, 5), (3, 5)])]}
+        subareas_gdf = gpd.GeoDataFrame(d, crs="EPSG:4326")
+    
+    subareas_dummy = DummySubareas()
+    subareas_calc_dummy = subarea_calculations.SubareaCalculations(
+        subareas=subareas_dummy, index_stat="mean"
+    )
+
+    out = subareas_calc_dummy._calc_parametric_index()
+
+    df = out["TC"]
+
+    # For mean, event 0: mean(10,20)=15; event1: mean(30,40)=35
+    assert df["A"].tolist() == [15, 35]
+    assert df["B"].tolist() == [30, 20]
+    assert df["year"].tolist() == [1917, 1917]
+    assert df["month"].tolist() == [10, 10]
+
+
+if __name__ == "__main__":
+    test_calc_payout_basic()
+    test_calc_attachment_principal_expected()
+    test_calc_parametric_index_mean()
+    print("All tests passed.")
