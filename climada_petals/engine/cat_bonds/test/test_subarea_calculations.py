@@ -170,7 +170,6 @@ def test_objective_fct_expected():
     # expected = (0-0)^2 + (10-10)^2 + (20-20)^2 = 0 + 25 + 25 = 0
     assert out == 0
 
-
 if __name__ == "__main__":
     test_calc_payout_basic()
     LOGGER.info("test_calc_payout_basic passed")
