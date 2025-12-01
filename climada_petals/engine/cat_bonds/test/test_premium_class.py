@@ -19,69 +19,35 @@ class DummyBondSim:
         self.df_loss_month = df_loss_month
 
 
-# ---------------------------------------------------------
-# TEST SHARPE OPTIMIZATION
-# ---------------------------------------------------------
-
-def test_find_sharpe_single_loss_event():
+def test_find_sharpe():
     """
     Validate net cash flow logic. 
     1 year, 1 loss in June, simple numbers.
     """
     df = pd.DataFrame({
-        "losses": [[0.2]],
-        "months": [[6]]
+        "losses": [[0], [0], [0], [0], [0], [0.1]],
+        "months": [[], [], [], [], [] , [1]]
     })
-
-    bond = DummyBondSim(EL_ann=0.02, term=1, df_loss_month=df)
+    LOGGER.info(df)
+    dummy_el = 0.1
+    bond = DummyBondSim(EL_ann=dummy_el, term=1, df_loss_month=df)
     pc = PremiumCalculations(bond)
+    manual_premium = 0.1
+    # manually compute NCF with premium=0.1:
+    # Year 1-5: 
+    #   - NCF: 0.1
+    # Year 6: 
+    #   - Pre-event NCF: (1.0 * 0.1)/12 * 1 = 0.008333333333333333
+    #   - Post-event NCF: (0.8 * 0.1)/12 * (12 - 1) - 0.1 = -0.0175
+    #   NCF = 0.008333333333333333 - 0.0175 = -0.009166666666666668
+    NCF_manual = [0.1, 0.1, 0.1, 0.1, 0.1, -0.009166666666666668]
+    manual_sharpe = (np.mean(NCF_manual) / np.std(NCF_manual))
 
-    # manually compute NCF:
-    # Pre-event premium: (1 * p)/12 * 6
-    # Post-event premium: (0.8 * p)/12 * (12 - 6) - 0.2 loss
-    # NCF = p/2 + (0.8p/2 - 0.2) = 0.9p - 0.2
-    p = 0.05
-    expected_ncf = 0.9 * p - 0.2
+    pc.calc_benchmark_premium(target_sharpe=manual_sharpe)
 
-    sharpe = pc.find_sharpe(premium=p, monthly_losses=df, target_sharpe=0)
-
-    # extracted NCF from method
-    ncf = []
-    cur_nominal = 1
-    losses = [0.2]
-    months = [6]
-    ncf_pre = (cur_nominal * p) / 12 * 6
-    cur_nominal -= 0.2
-    ncf_post = (cur_nominal * p) / 12 * 6 - 0.2
-    manual_list = [ncf_pre + ncf_post]
-
-    manual_sharpe = (np.mean(manual_list) / np.std(manual_list + [manual_list[0] * 1.0001]))**2  # std>0
-
-    assert np.isclose(sharpe, manual_sharpe, rtol=1e-6)  # just ensure valid number
-    assert np.isclose(expected_ncf, manual_list[0], rtol=1e-6)
-
-
-def test_calc_benchmark_premium_converges():
-    """
-    Test that optimization finds higher premium when losses > 0.
-    """
-
-    df = pd.DataFrame({
-        "losses": [[0.1], [0.2], [0.0]],
-        "months": [[3], [6], [0]]
-    })
-
-    bond = DummyBondSim(EL_ann=0.02, term=1, df_loss_month=df)
-    pc = PremiumCalculations(bond)
-
-    pc.calc_benchmark_premium(target_sharpe=0.2)
-
-    assert pc.benchmark_prem_rate > 0
-    assert pc.benchmark_prem_rate < 1.0  # sanity bound
+    assert np.isclose(np.array(pc.benchmark_prem_rate), np.array(manual_premium), rtol=1e-6) 
 
 
 if __name__ == "__main__":
-    test_calc_benchmark_premium_converges()
-    LOGGER.info("test_calc_benchmark_premium_converges passed")
-    test_find_sharpe_single_loss_event()
-    LOGGER.info("test_find_sharpe_single_loss_event passed")
+    test_find_sharpe()
+    LOGGER.info("test_find_sharpe passed")
