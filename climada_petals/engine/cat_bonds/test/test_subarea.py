@@ -68,7 +68,6 @@ def test_crop_grid_cells_to_polygon(exp_gdf, exposure):
     ), "Exposure should be within the exposure perimeter polygon."
 
 def test_merge_overlapping_grids():
-    # Create a GeoDataFrame with overlapping grid cells
     polygon_over = [
         Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),
         Polygon([(1, 1), (3, 1), (3, 3), (1, 3)]),
