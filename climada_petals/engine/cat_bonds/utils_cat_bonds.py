@@ -10,7 +10,8 @@ def multi_level_es(losses, confidence_levels):
     - confidence_levels: list of floats, confidence levels (e.g., [0.95, 0.99])
 
     Returns:
-    - risk_metrics: dict, VaR and ES values keyed by confidence level
+    - var_list: list, list of VaR values in the order of given confidence levels
+    -es_list: list, list of ES values in the order of given confidence levels
     """
 
     # Compute VaR and ES
