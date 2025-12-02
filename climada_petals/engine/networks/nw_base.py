@@ -30,6 +30,10 @@ LOGGER = logging.getLogger(__name__)
 
 class Network:
 
+    # map methods
+    plot_infra = infra_plot
+    plot_pop = population_plot
+
     def __init__(self,
                  edges=gpd.GeoDataFrame(),
                  nodes=gpd.GeoDataFrame()):
@@ -60,10 +64,6 @@ class Network:
 
         self.edges = edges
         self.nodes = nodes
-
-        # map methods
-        self.plot_infra = infra_plot
-        self.plot_pop = population_plot
 
     def reproject(self, crs):
         """
