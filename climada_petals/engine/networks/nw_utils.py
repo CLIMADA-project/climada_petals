@@ -63,27 +63,27 @@ def _format_plot(ax, crs):
 def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
     plot_df = self.nodes[self.nodes.ci_type=="people"]
     if axes is None:
-        f, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
+        fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
-        f = axes.figure
+        fig = axes.get_figure()
     axes.scatter(plot_df.geometry.x, plot_df.geometry.y,
                                s=plot_df['value'], label="population",
                                transform=projection, alpha=0.5, color="grey",**kwargs)
-    return f, axes
+    return fig, axes
 
 def infra_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**kwargs):
     """Infrastructure plots"""
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
     if axes is None:
-        f, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
+        fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
-        f = axes.figure
+        fig = axes.get_figure()
     colors = kwargs.pop("colors", mpl.cm.tab20.colors)
     for i, ci_type in enumerate(ci_types):
         color = colors[i]
         if ci_type == 'people':
-            population_plot(self, axes=axes, projection=projection, zorder=0, **kwargs)
+            fig, axes = population_plot(self, axes=axes, projection=projection, zorder=0, **kwargs)
         elif ci_type in LINE_EXPOSURES:
             plot_df = self.edges[self.edges.ci_type==ci_type]
             plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, zorder=1, **kwargs)
@@ -93,7 +93,31 @@ def infra_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),*
     axes.legend()
     #format_plot(axes, crs=crs)
     #f.suptitle(title ,fontweight="bold",y=0.92)
-    return axes
+    return fig, axes
+
+def _get_dependencies(self, ci_types):
+    dep_list = [dep for dep in self.edges.ci_type for ci_type in ci_types if "dependency_" in dep and ci_type in dep]
+    return np.unique(dep_list)
+
+
+def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**kwargs):
+    """dependencies plots"""
+    if not ci_types:
+        ci_types = self.nodes.ci_type.unique()
+    if axes is None:
+        fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
+    else:
+        fig = axes.figure
+    dependencies = _get_dependencies(self, ci_types)
+    colors = kwargs.pop("colors", mpl.cm.tab20.colors)
+    for i, dep in enumerate(dependencies):
+        color = colors[i]
+        plot_df = self.edges[self.edges.ci_type==dep]
+        plot_df.plot(ax=axes, color=color, transform=projection, label=dep, alpha=0.5, zorder=10, **kwargs)
+    axes.legend()
+    #format_plot(axes, crs=crs)
+    #f.suptitle(title ,fontweight="bold",y=0.92)
+    return fig, axes
 # =============================================================================
 # Spatial analysis util functions
 # =============================================================================

@@ -23,7 +23,7 @@ import logging
 import geopandas as gpd
 import igraph as ig
 import pandas as pd
-from climada_petals.engine.networks.nw_utils import infra_plot, population_plot
+from climada_petals.engine.networks.nw_utils import infra_plot, population_plot, dep_plot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +33,7 @@ class Network:
     # map methods
     plot_infra = infra_plot
     plot_pop = population_plot
+    plot_dep = dep_plot
 
     def __init__(self,
                  edges=gpd.GeoDataFrame(),
