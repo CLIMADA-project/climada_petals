@@ -81,15 +81,15 @@ def infra_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),*
         f = axes.figure
     colors = kwargs.pop("colors", mpl.cm.tab20.colors)
     for i, ci_type in enumerate(ci_types):
-      color = colors[i]
-      if ci_type in LINE_EXPOSURES:
-          plot_df = self.edges[self.edges.ci_type==ci_type]
-          plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, zorder=1, **kwargs)
-      elif ci_type == 'people':
-          continue
-      else:
-          plot_df = self.nodes[self.nodes.ci_type==ci_type]
-          plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, markersize=200, marker="*",**kwargs)
+        color = colors[i]
+        if ci_type == 'people':
+            population_plot(self, axes=axes, projection=projection, zorder=0, **kwargs)
+        elif ci_type in LINE_EXPOSURES:
+            plot_df = self.edges[self.edges.ci_type==ci_type]
+            plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, zorder=1, **kwargs)
+        else:
+            plot_df = self.nodes[self.nodes.ci_type==ci_type]
+            plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, markersize=200, marker="*",**kwargs)
     axes.legend()
     #format_plot(axes, crs=crs)
     #f.suptitle(title ,fontweight="bold",y=0.92)
