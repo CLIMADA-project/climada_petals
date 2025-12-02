@@ -37,6 +37,9 @@ import cartopy.crs as ccrs
 from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
 
+# Critical infrastructure charactersitics constants
+LINE_EXPOSURES = ['road', 'rail']
+
 # Energy conversion factors
 TJ_TO_GWH = 0.277778
 HRS_PER_YEAR = 8760

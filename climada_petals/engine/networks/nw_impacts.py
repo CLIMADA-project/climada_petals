@@ -23,11 +23,10 @@ import copy as cp
 import climada.util.lines_polys_handler as u_lp
 from climada.entity import Exposures, ImpactFunc, ImpactFuncSet
 from climada.engine.impact_calc import ImpactCalc
-
+from climada_petals.engine.networks.nw_utils import LINE_EXPOSURES
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel('INFO')
-LINE_EXPOSURES = ['road', 'rail']
 
 ## Exposures preparation
 def gdf_from_network(df_edges_or_nodes, ci_type):
