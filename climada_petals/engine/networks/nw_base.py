@@ -23,6 +23,7 @@ import logging
 import geopandas as gpd
 import igraph as ig
 import pandas as pd
+from climada_petals.engine.networks.nw_utils import infra_plot, population_plot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -59,6 +60,10 @@ class Network:
 
         self.edges = edges
         self.nodes = nodes
+
+        # map methods
+        self.plot_infra = infra_plot
+        self.plot_pop = population_plot
 
     def reproject(self, crs):
         """

@@ -30,6 +30,9 @@ import urllib.request
 import requests
 import time
 import copy as cp
+from matplotlib import pyplot as plt
+import matplotlib as mpl
+import cartopy.crs as ccrs
 
 from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
@@ -40,6 +43,54 @@ HRS_PER_YEAR = 8760
 
 LOGGER = logging.getLogger(__name__)
 
+# =============================================================================
+# Plots
+# =============================================================================
+def _format_plot(ax, crs):
+    """formatting for all plots"""
+    ctx.add_basemap(ax, source=BASEMAPS["osm"]["providers"][1],crs=crs, attribution_size=rc["font.size"]/2)
+    gl = ax.gridlines(draw_labels=False, dms=True)
+    gl.xlabels_top = False
+    gl.ylabels_left = False
+    gl.xlines = False
+    gl.ylines = False
+    ax.legend(loc='upper left')#fontsize=30,
+    add_scalebar(ax, crs)
+
+def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
+    plot_df = self.nodes[self.nodes.ci_type=="people"]
+    if axes is None:
+        f, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
+    else:
+        f = axes.figure
+    axes.scatter(plot_df.geometry.x, plot_df.geometry.y,
+                               s=plot_df['value'], label="population",
+                               transform=projection, alpha=0.5, color="grey",**kwargs)
+    return f, axes
+
+def infra_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**kwargs):
+    """Infrastructure plots"""
+    if not ci_types:
+        ci_types = self.nodes.ci_type.unique()
+    if axes is None:
+        f, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
+    else:
+        f = axes.figure
+    colors = kwargs.pop("colors", mpl.cm.tab20.colors)
+    for i, ci_type in enumerate(ci_types):
+      color = colors[i]
+      if ci_type in LINE_EXPOSURES:
+          plot_df = self.edges[self.edges.ci_type==ci_type]
+          plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, zorder=1, **kwargs)
+      elif ci_type == 'people':
+          continue
+      else:
+          plot_df = self.nodes[self.nodes.ci_type==ci_type]
+          plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, markersize=200, marker="*",**kwargs)
+    axes.legend()
+    #format_plot(axes, crs=crs)
+    #f.suptitle(title ,fontweight="bold",y=0.92)
+    return axes
 # =============================================================================
 # Spatial analysis util functions
 # =============================================================================
