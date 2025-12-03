@@ -711,7 +711,7 @@ class GraphCalcs():
                 LOGGER.warning(
                     'Road access condition for CI-CI deps not yet implemented')
 
-        self._propagate_check_fail(row.source, row.target, row.thresh_func)
+            self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
 
     def _update_enduser_dependencies(self, df_dependencies,
@@ -1021,3 +1021,8 @@ class NetworkCalcs():
         if (cycles > 1) or initial:
             self.graph_calc._update_enduser_dependencies(
                 self.dep_table, friction_surf, criterion)
+
+        #update network
+        self.network.update_network_from_graphs(self.graph)
+        # Invalidate cached graph
+        self.graph_calc.invalidate()
