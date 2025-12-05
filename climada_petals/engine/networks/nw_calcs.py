@@ -590,6 +590,33 @@ class GraphCalcs():
 
             return friction.eai_exp
 
+    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link):
+        if "distance" in link_condition:
+            self.link_vertices_shortest_paths(
+                source_attrs=source_attrs,
+                target_attrs=target_attrs,
+                via_attrs=via_attrs,
+                link_attrs=link_attrs,
+                dist_thresh=dist_thresh,
+                bidir=bidir_link
+            )
+        elif "duration" in link_condition:
+            self.link_vertices_friction_surf(
+                source_attrs=source_attrs,
+                target_attrs=target_attrs,
+                link_attrs=link_attrs,
+                dist_thresh=dist_thresh,
+                bidir=bidir_link
+            )
+        elif "edgecond" in link_condition:
+            self.link_vertices_edgecond(
+                target_attrs=target_attrs,
+                edge_attrs=source_attrs,
+                link_attrs=link_attrs,
+                bidir=bidir_link
+            )
+        else:
+            raise NotImplementedError
 
     # =============================================================================
     # Propagation functions
@@ -715,7 +742,7 @@ class GraphCalcs():
 
 
     def _update_enduser_dependencies(self, df_dependencies,
-                                     friction_surf, criterion='both'):
+                                     friction_surf, rerouting=True):
 
         for __, row in df_dependencies[
                 df_dependencies['type_I'] == 'enduser'].iterrows():
@@ -723,15 +750,43 @@ class GraphCalcs():
             dependency_name = f'dependency_{row.source}_{row.target}'
 
             if row.access_cnstr:
+                # if the service requires physical access we recompute the accesses
                 LOGGER.info(
                     f'Re-calculating paths from {row.source} to {row.target}')
-                if (row.source == 'road'):  # separate checking algorithm for road access
+
+                if rerouting:
+                    # if we allow rerouting, recompute dependencies from scratch
                     self.graph.delete_edges(
-                        ci_type=f'dependency_{row.source}_{row.target}')
-                    self.link_vertices_edgecond(target_attrs={'ci_type':row.target},
-                                                   edge_attrs={'ci_type':row.source, 'func_tot':1},
-                                                   link_attrs={'ci_type':dependency_name},
-                                                   )
+                            ci_type=dependency_name)
+                    self._calc_dependencies(
+                        source_attrs={
+                            'ci_type': row['source'],
+                            'func_tot': 1},
+                        target_attrs={
+                            'ci_type': row['target']},
+                        via_attrs={
+                            'ci_type': row['via_link'],
+                            'func_tot': 1},
+                        link_attrs={
+                            'ci_type': dependency_name},
+                        link_condition=row['link_condition'],
+                        dist_thresh=row['thresh_dist'],
+                        bidir_link=row['bidir_link']
+                    )
+                else:
+                    self.recheck_access(row.source, row.target, via_ci=row.via_link,
+                                        friction_surf=friction_surf, dist_thresh=row.thresh_dist,
+                                        dur_thresh=row.thresh_dur, criterion=row.link_condition,
+                                        link_name=dependency_name,
+                                        bidir=row.bidir_link)
+                    # if we don't allow rerouting, we recheck the access condition
+                #if (row.source == 'road'):  # separate checking algorithm for road access
+                #    self.graph.delete_edges(
+                #        ci_type=f'dependency_{row.source}_{row.target}')
+                #    self.link_vertices_edgecond(target_attrs={'ci_type':row.target},
+                #                                   edge_attrs={'ci_type':row.source, 'func_tot':1},
+                #                                   link_attrs={'ci_type':dependency_name},
+                #                                   )
                 #elif row.n_links == 1:  # those need to be re-checked on their fixed s-t
     #
                 #    graph = recheck_access(graph, row.source, row.target, via_ci='road',
@@ -740,29 +795,29 @@ class GraphCalcs():
                 #                        link_name=dependency_name,
                 #                        bidir=False)
 
-                else:
-                    # the re-checking takes much longer than checking completely
-                    # from scratch, hence check from scratch.
-                    self.graph.delete_edges(
-                        ci_type=f'dependency_{row.source}_{row.target}')
-                    if criterion in ["both", "duration"]:
-                        starttime = timeit.default_timer()
-                        self.link_vertices_friction_surf(row.source, row.target, friction_surf,
-                                                         link_name=dependency_name,
-                                                         dist_thresh=row.thresh_dur*83.33,
-                                                         k=row.n_links, bidir=False, dur_thresh=row.thresh_dur)
-                        print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
-                        ) - starttime)
-                    if criterion in ["both", "distance"]:
-                        starttime = timeit.default_timer()
-                        self.link_vertices_shortest_paths(source_attrs={'ci_type': row.source,'func_tot':1},
-                                                             target_attrs={'ci_type': row.target},
-                                                             via_attrs={'ci_type': 'road','func_tot':1},
-                                                             link_attrs={'ci_type': dependency_name},
-                                                             dist_thresh=row.thresh_dist, criterion='distance',
-                                                             k=row.n_links, bidir=False)
-                        print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
-                        ) - starttime)
+                #else:
+                #    # the re-checking takes much longer than checking completely
+                #    # from scratch, hence check from scratch.
+                #    self.graph.delete_edges(
+                #        ci_type=f'dependency_{row.source}_{row.target}')
+                #    if criterion in ["both", "duration"]:
+                #        starttime = timeit.default_timer()
+                #        self.link_vertices_friction_surf(row.source, row.target, friction_surf,
+                #                                         link_name=dependency_name,
+                #                                         dist_thresh=row.thresh_dur*83.33,
+                #                                         k=row.n_links, bidir=False, dur_thresh=row.thresh_dur)
+                #        print(f"Time for recalculating friction from {row.source} to {row.target} :", timeit.default_timer(
+                #        ) - starttime)
+                #    if criterion in ["both", "distance"]:
+                #        starttime = timeit.default_timer()
+                #        self.link_vertices_shortest_paths(source_attrs={'ci_type': row.source,'func_tot':1},
+                #                                             target_attrs={'ci_type': row.target},
+                #                                             via_attrs={'ci_type': 'road','func_tot':1},
+                #                                             link_attrs={'ci_type': dependency_name},
+                #                                             dist_thresh=row.thresh_dist, criterion='distance',
+                #                                             k=row.n_links, bidir=False)
+                #        print(f"Time for recalculating paths from {row.source} to {row.target} :", timeit.default_timer(
+                #        ) - starttime)
 
             self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
@@ -944,48 +999,22 @@ class NetworkCalcs():
 
     def setup_dependencies(self):
         for i, row in self.dep_table.iterrows():
-            link_cond = row['link_condition']
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
-            if "distance" in link_cond:
-                self.graph_calc.link_vertices_shortest_paths(
-                    source_attrs={
-                        'ci_type': row['source']},
-                    target_attrs={
-                        'ci_type': row['target']},
-                    via_attrs={
-                        'ci_type': row['via_link'],
-                        'func_tot': 1
-                        },
-                    link_attrs={
-                        'ci_type': dependency_name},
-                    dist_thresh=row['thresh_dist'],
-                    bidir=row['bidir_link']
-                )
-            elif "duration" in link_cond:
-                self.graph_calc.link_vertices_friction_surf(
-                    source_attrs={
-                        'ci_type': row['source']},
-                    target_attrs={
-                        'ci_type': row['target']},
-                    link_attrs={
-                        'ci_type': dependency_name},
-                    dist_thresh=row['thresh_dist'],
-                    bidir=row['bidir_link']
-                )
-            elif "edgecond" in link_cond:
-                self.graph_calc.link_vertices_edgecond(
-                    target_attrs={
-                        'ci_type': row['target']},
-                    edge_attrs={
-                        'ci_type': row['source'],
-                        'func_tot': 1
-                        },
-                    link_attrs={
-                        'ci_type': dependency_name},
-                    bidir=row['bidir_link']
-                )
-            else:
-                raise NotImplementedError
+            self.graph_calc._calc_dependencies(
+                source_attrs={
+                    'ci_type': row['source'],
+                    'func_tot': 1},
+                target_attrs={
+                    'ci_type': row['target']},
+                via_attrs={
+                    'ci_type': row['via_link'],
+                    'func_tot': 1},
+                link_attrs={
+                    'ci_type': dependency_name},
+                link_condition=row['link_condition'],
+                dist_thresh=row['thresh_dist'],
+                bidir_link=row['bidir_link']
+            )
         #update network
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
@@ -995,7 +1024,7 @@ class NetworkCalcs():
     #@profile
     def cascade(self, p_source='power_plant',
                 p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
-                  initial=False, friction_surf=None, criterion='both'):
+                  initial=False, friction_surf=None, rerouting=True):
         """
         entire cascade wrapper for internal state update, functional dependency iterations,
         enduser dependency updates. CI-specific. Writing more generically does not
@@ -1020,7 +1049,7 @@ class NetworkCalcs():
                     ' Proceeding to end-user update.')
         if (cycles > 1) or initial:
             self.graph_calc._update_enduser_dependencies(
-                self.dep_table, friction_surf, criterion)
+                self.dep_table, friction_surf, rerouting=rerouting)
 
         #update network
         self.network.update_network_from_graphs(self.graph)
