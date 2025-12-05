@@ -590,7 +590,7 @@ class GraphCalcs():
 
             return friction.eai_exp
 
-    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link):
+    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link, friction_surf=None):
         if "distance" in link_condition:
             self.link_vertices_shortest_paths(
                 source_attrs=source_attrs,
@@ -602,9 +602,10 @@ class GraphCalcs():
             )
         elif "duration" in link_condition:
             self.link_vertices_friction_surf(
-                source_attrs=source_attrs,
-                target_attrs=target_attrs,
-                link_attrs=link_attrs,
+                source_ci=source_attrs,
+                target_ci=target_attrs,
+                friction_surf=friction_surf,
+                link_name=link_attrs,
                 dist_thresh=dist_thresh,
                 bidir=bidir_link
             )
@@ -820,6 +821,95 @@ class GraphCalcs():
                 #        ) - starttime)
 
             self._propagate_check_fail(row.source, row.target, row.thresh_func)
+
+
+    def _check_access(self, df_dependencies, friction_surf, rerouting=True):
+        """Updated version of update end-user dependencies."""
+        for __, row in df_dependencies[
+                df_dependencies['type_I'] == 'enduser'].iterrows():
+
+            dependency_name = f'dependency_{row.source}_{row.target}'
+
+            #1 check access to former source
+            #check access
+            es_access_base = self.graph.es.select(ci_type=dependency_name)
+
+            es_access_base_func_source = es_access_base.select(func_tot_gt=0)
+
+            #ppl having access to ci in base state
+            ppl_former_access = [edge.target for edge in es_access_base]
+
+            #ppl having access to ci in new state
+            ppl_former_access_source_func = [edge.target for edge in es_access_base_func_source]
+
+            #2 check access to former target
+            ##edges that need to be rechecked
+            #es_recheck = [edge for edge, bool_check in zip(es_check_base, es_access_base)
+            #            if bool_check]
+
+            #recalc dependencies
+            self.graph.delete_edges(
+                            ci_type=dependency_name)
+            self._calc_dependencies(
+                        source_attrs={
+                            'ci_type': row['source'],
+                            'func_tot': 1},
+                        target_attrs={
+                            'ci_type': row['target']},
+                        via_attrs={
+                            'ci_type': row['via_link'],
+                            'func_tot': 1},
+                        link_attrs={
+                            'ci_type': dependency_name},
+                        link_condition=row['link_condition'],
+                        dist_thresh=row['thresh_dist'],
+                        bidir_link=row['bidir_link']
+                    )
+            ### NEED TO CHECK THAT INDICES DO NOT CHANGE WITHIN CALC_DEPENDENCIES
+            #check if base access is still available
+            es_access_new = self.graph.es.select(
+                ci_type=dependency_name)
+            ppl_still_access = [edge.target for edge in es_access_new if edge.target in ppl_former_access_source_func]
+            self.graph.vs[ppl_still_access][f'access_state_{row.source}_people'] = "access undisrupted"
+
+            #2 check access to new source
+            ppl_new_access = [edge.target for edge in es_access_new if edge not in es_access_base]
+            self.graph.vs[ppl_new_access][f'access_state_{row.source}_people'] = "access new source"
+
+            #3 check if could have access if links where not broken
+            if row.access_cnstr:
+                ## TODO do recheck only on end users who have their base access disrupted
+                #only need to do it for rows which require physical access
+                self._calc_dependencies(
+                        source_attrs={
+                            'ci_type': row['source'],
+                            'func_tot': 1},
+                        target_attrs={
+                            'ci_type': row['target']},
+                        via_attrs={
+                            'ci_type': row['via_link']},
+                        link_attrs={
+                            'ci_type': "new_"+dependency_name},
+                        link_condition=row['link_condition'],
+                        dist_thresh=row['thresh_dist'],
+                        bidir_link=row['bidir_link']
+                    )
+
+
+                #ppl having access to their base ci
+                ppl_no_access_physical = [edge.target for edge in self.graph.es.select(
+                    ci_type="new_"+dependency_name)]
+                self.graph.vs[ppl_no_access_physical][f'access_state_{row.source}_people'] = "disrupted access via"
+                self.graph.delete_edges(
+                            ci_type="new_"+dependency_name)
+
+            #4 mark disrupted access for failed sources
+            ppl_disrupted_access = [ppl_node for ppl_node in ppl_access_base if ppl_node not in ppl_no_access_physical
+                                    and ppl_node not in ppl_new_access and ppl_node not in ppl_still_access]
+
+            self.graph.vs[ppl_disrupted_access][f'access_state_{row.source}_people'] = "disrupted access source"
+
+
 
 
     def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
@@ -1048,8 +1138,9 @@ class NetworkCalcs():
         LOGGER.info('Ended functional state update.' +
                     ' Proceeding to end-user update.')
         if (cycles > 1) or initial:
-            self.graph_calc._update_enduser_dependencies(
-                self.dep_table, friction_surf, rerouting=rerouting)
+            self.graph_calc._check_access(self.dep_table, friction_surf=friction_surf, rerouting=rerouting)
+            #self.graph_calc._update_enduser_dependencies(
+            #    self.dep_table, friction_surf, rerouting=rerouting)
 
         #update network
         self.network.update_network_from_graphs(self.graph)
