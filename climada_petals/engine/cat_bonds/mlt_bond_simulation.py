@@ -277,12 +277,12 @@ class MultiCountryBond:
         for cty in self.countries:
             self.tot_coverage_cty[cty] = {'payout': 0.0, 'damage': 0.0, 'coverage': 0.0, 'EL': 0, 'share_EL': 0}
 
-        for i in range(self.min_year, self.min_year + self.number_of_terms):
+        for start_year in range(self.min_year, self.min_year + self.number_of_terms):
             events_per_year = []
             for j in range(self.term):
                 events_per_cty = []  
                 for cty in self.countries:
-                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == (self.min_year+i)+j].copy()
+                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == start_year+j].copy()
                     events['country_code'] = cty
                     events_per_cty.append(events)  
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
@@ -513,10 +513,10 @@ class MultiCountryBond:
 
         total_losses = []
 
-        for i in range(self.min_year, self.min_year + self.number_of_terms):
+        for start_year in range(self.min_year, self.min_year + self.number_of_terms):
             events_per_year = []
             for j in range(self.term):
-                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == (self.min_year + i) + j].assign(country_code=cty) for cty in self.countries]
+                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == start_year + j].assign(country_code=cty) for cty in self.countries]
 
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
                 events_per_year.append(year_events_df)
