@@ -1,15 +1,9 @@
 import numpy as np
 import pandas as pd
-import logging
 from climada_petals.engine.cat_bonds.premium_class import PremiumCalculations  
 
-logging.basicConfig(
-     format="{asctime} - {levelname} - {message}",
-     style="{",
-     datefmt="%Y-%m-%d %H:%M",
-     level=logging.INFO,
- )
-LOGGER = logging.getLogger(__name__)
+from climada_petals.util.config import LOGGER
+
 
 class DummyBondSim:
     """Minimum mock needed for PremiumCalculations."""
@@ -28,7 +22,6 @@ def test_find_sharpe():
         "losses": [[0], [0], [0], [0], [0], [0.1]],
         "months": [[], [], [], [], [] , [1]]
     })
-    LOGGER.info(df)
     dummy_el = 0.1
     bond = DummyBondSim(EL_ann=dummy_el, term=1, df_loss_month=df)
     pc = PremiumCalculations(bond)

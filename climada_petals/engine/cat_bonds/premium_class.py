@@ -3,13 +3,11 @@ import numpy as np
 from pathlib import Path
 from scipy.optimize import curve_fit, minimize
 
-import logging
+from climada_petals.util.config import LOGGER
 
 # path to data folder
 DATA_DIR = (Path(__file__).parent.parent.parent).joinpath('data/cat_bonds')
 
-# setup logger 
-LOGGER = logging.getLogger(__name__)
 
 # regression coefficients for chatoro premium calculation (extracted from Chatoro et al., 2022)
 b_0 = -0.5907

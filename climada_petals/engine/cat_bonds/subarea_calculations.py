@@ -1,13 +1,12 @@
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
-import logging
 
 # import climada modules
 from climada.engine import ImpactCalc
 
-# set logging basics
-LOGGER = logging.getLogger(__name__)
+from climada_petals.util.config import LOGGER
+
 
 
 

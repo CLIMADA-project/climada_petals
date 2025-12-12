@@ -1,15 +1,9 @@
 import geopandas as gpd
 from shapely.geometry import Point, MultiPolygon, Polygon
-import logging
 from climada_petals.engine.cat_bonds import subareas
 
-logging.basicConfig(
-     format="{asctime} - {levelname} - {message}",
-     style="{",
-     datefmt="%Y-%m-%d %H:%M",
-     level=logging.INFO,
- )
-LOGGER = logging.getLogger(__name__)
+from climada_petals.util.config import LOGGER
+
 
 
 class DummyExposure:

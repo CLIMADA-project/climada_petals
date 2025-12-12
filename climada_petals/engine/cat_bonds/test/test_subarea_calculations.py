@@ -6,14 +6,8 @@ from climada.hazard import Hazard
 from climada.hazard.centroids import Centroids
 from scipy import sparse
 from shapely.geometry import Polygon
-import logging
-logging.basicConfig(
-     format="{asctime} - {levelname} - {message}",
-     style="{",
-     datefmt="%Y-%m-%d %H:%M",
-     level=logging.INFO,
- )
-LOGGER = logging.getLogger(__name__)
+from climada_petals.util.config import LOGGER
+
 
 def test_calc_payout_basic():
     """Test basic functionality of calc_payout function."""

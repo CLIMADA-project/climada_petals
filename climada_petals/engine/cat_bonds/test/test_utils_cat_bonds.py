@@ -1,15 +1,9 @@
 import pandas as pd
 import numpy as np
-import logging
 from climada_petals.engine.cat_bonds import utils_cat_bonds
 
-logging.basicConfig(
-     format="{asctime} - {levelname} - {message}",
-     style="{",
-     datefmt="%Y-%m-%d %H:%M",
-     level=logging.INFO,
- )
-LOGGER = logging.getLogger(__name__)
+from climada_petals.util.config import LOGGER
+
 
 def test_multi_level_es_basic():
     losses = pd.Series([0, 1, 2, 3, 4, 5])
@@ -53,6 +47,57 @@ def test_multi_level_es_no_tail_losses():
 
     # ES must be 1
     assert es_list[0] == 1
+
+
+def test_allocate_single_payout_partial_first_tranche():
+    nominals = np.array([100, 100, 100])
+    payout = 30
+
+    remaining, alloc = utils_cat_bonds.allocate_single_payout(payout, nominals)
+
+    assert np.allclose(alloc, [30, 0, 0])
+    assert np.allclose(remaining, [70, 100, 100])
+
+
+def test_allocate_single_payout_exact_first_tranche():
+    nominals = np.array([50, 100])
+    payout = 50
+
+    remaining, alloc = utils_cat_bonds.allocate_single_payout(payout, nominals)
+
+    assert np.allclose(alloc, [50, 0])
+    assert np.allclose(remaining, [0, 100])
+
+
+def test_allocate_single_payout_spans_multiple_tranches():
+    nominals = np.array([50, 100, 200])
+    payout = 180  # eats all of tranche 1 and 2, 30 of tranche 3
+
+    remaining, alloc = utils_cat_bonds.allocate_single_payout(payout, nominals)
+
+    assert np.allclose(alloc, [50, 100, 30])
+    assert np.allclose(remaining, [0, 0, 170])
+
+
+def test_allocate_single_payout_larger_than_all_nominals():
+    nominals = np.array([40, 40])
+    payout = 200  # everything wiped
+
+    remaining, alloc = utils_cat_bonds.allocate_single_payout(payout, nominals)
+
+    assert np.allclose(alloc, [40, 40])
+    assert np.allclose(remaining, [0, 0])
+
+
+def test_allocate_single_payout_zero_payout():
+    nominals = np.array([50, 100])
+    payout = 0
+
+    remaining, alloc = utils_cat_bonds.allocate_single_payout(payout, nominals)
+
+    assert np.allclose(alloc, [0, 0])
+    assert np.allclose(remaining, nominals)
+
 
 if __name__ == "__main__":
     test_multi_level_es_basic()

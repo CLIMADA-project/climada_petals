@@ -11,9 +11,8 @@ from sklearn.neighbors import NearestNeighbors
 import cartopy.crs as ccrs
 import networkx as nx
 
-import logging
+from climada_petals.util.config import LOGGER
 
-LOGGER = logging.getLogger(__name__)
 
 
 class Subareas:

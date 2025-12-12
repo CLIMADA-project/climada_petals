@@ -1,15 +1,8 @@
 import pandas as pd
 import numpy as np
-import logging
 from climada_petals.engine.cat_bonds.sng_bond_simulation import SingleCountryBondSimulation
+from climada_petals.util.config import LOGGER
 
-logging.basicConfig(
-     format="{asctime} - {levelname} - {message}",
-     style="{",
-     datefmt="%Y-%m-%d %H:%M",
-     level=logging.INFO,
- )
-LOGGER = logging.getLogger(__name__)
 
 class DummySubareaCalc:
     def __init__(self, principal=100):

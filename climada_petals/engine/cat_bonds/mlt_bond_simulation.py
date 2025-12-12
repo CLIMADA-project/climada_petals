@@ -1,11 +1,11 @@
 import pandas as pd
 import numpy as np
-import logging
 
 from .utils_cat_bonds import multi_level_es, allocate_single_payout
 from .pooling_functions import process_maximum_principal_pools, process_n_pools
 
-LOGGER = logging.getLogger(__name__)
+from climada_petals.util.config import LOGGER
+
 
 class MultiCountryBond:
 
