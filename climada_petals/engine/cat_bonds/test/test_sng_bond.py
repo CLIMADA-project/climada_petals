@@ -3,8 +3,6 @@ import numpy as np
 from climada_petals.engine.cat_bonds.sng_bond_simulation import SingleCountryBondSimulation
 from climada_petals.util.config import LOGGER
 import unittest
-from unittest.mock import MagicMock
-
 
 class TestSingleCountryBond(unittest.TestCase):
     def setUp(self):
