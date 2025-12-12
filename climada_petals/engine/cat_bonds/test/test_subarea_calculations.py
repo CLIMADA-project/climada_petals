@@ -10,7 +10,6 @@ from climada_petals.util.config import LOGGER
 import unittest
 from unittest.mock import MagicMock
 from scipy.optimize import OptimizeResult
-from climada.engine import ImpactCalc
 
 class TestSubareaCalculations(unittest.TestCase):
 
