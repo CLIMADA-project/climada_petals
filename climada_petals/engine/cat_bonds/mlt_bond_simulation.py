@@ -12,7 +12,7 @@ class MultiCountryBond:
     def __init__(self, country_dictionary, term, number_of_terms):
         self.country_dictionary = country_dictionary
         self.term = term
-        self.simulated_years = number_of_terms * term
+        self.number_of_terms = number_of_terms
         self._prepare_data()
 
 
@@ -277,7 +277,7 @@ class MultiCountryBond:
         for cty in self.countries:
             self.tot_coverage_cty[cty] = {'payout': 0.0, 'damage': 0.0, 'coverage': 0.0, 'EL': 0, 'share_EL': 0}
 
-        for i in range(self.simulated_years-self.term):
+        for i in range(self.min_year, self.min_year + self.number_of_terms):
             events_per_year = []
             for j in range(self.term):
                 events_per_cty = []  
@@ -513,7 +513,7 @@ class MultiCountryBond:
 
         total_losses = []
 
-        for i in range(self.simulated_years-self.term):
+        for i in range(self.min_year, self.min_year + self.number_of_terms):
             events_per_year = []
             for j in range(self.term):
                 events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == (self.min_year + i) + j].assign(country_code=cty) for cty in self.countries]
