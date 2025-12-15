@@ -139,7 +139,7 @@ def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simul
         # Process results (same code as inside the loop)
         x = res_reg.X
         risk_concentration_new = res_reg.F
-        if risk_concentration_new is not None and risk_concentration is not None and risk_concentration_new < risk_concentration:
+        if risk_concentration_new is not None and risk_concentration is not None and risk_concentration_new <= risk_concentration:
             algorithm_result = res_reg
             risk_concentration = risk_concentration_new
             sorted_unique = sorted(set(x))
