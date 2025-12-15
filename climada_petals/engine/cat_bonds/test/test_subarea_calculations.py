@@ -6,7 +6,6 @@ from climada.hazard import Hazard
 from climada.hazard.centroids import Centroids
 from scipy import sparse
 from shapely.geometry import Polygon
-from climada_petals.util.config import LOGGER
 import unittest
 from unittest.mock import MagicMock
 from scipy.optimize import OptimizeResult

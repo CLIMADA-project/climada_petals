@@ -1,10 +1,8 @@
 import unittest
 import pandas as pd
 import numpy as np
-from unittest.mock import MagicMock
 
 from climada_petals.engine.cat_bonds.mlt_bond_simulation import MultiCountryBond
-from climada_petals.util.config import LOGGER
 
 # ================================
 # MOCK CLASS FOR COUNTRY BOND SIM

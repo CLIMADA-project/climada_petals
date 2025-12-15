@@ -2,7 +2,6 @@ import geopandas as gpd
 from shapely.geometry import Point, MultiPolygon, Polygon
 from climada_petals.engine.cat_bonds import subareas
 
-from climada_petals.util.config import LOGGER
 import unittest
 from unittest.mock import MagicMock
 
