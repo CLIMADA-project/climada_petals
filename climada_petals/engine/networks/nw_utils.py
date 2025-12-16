@@ -31,6 +31,7 @@ import requests
 import time
 import copy as cp
 from matplotlib import pyplot as plt
+from matplotlib.lines import Line2D
 import matplotlib as mpl
 import cartopy.crs as ccrs
 
@@ -43,6 +44,18 @@ LINE_EXPOSURES = ['road', 'rail']
 # Energy conversion factors
 TJ_TO_GWH = 0.277778
 HRS_PER_YEAR = 8760
+
+#Plots
+MPL_MARKERS = list(mpl.markers.MarkerStyle.markers.keys())
+# Use matplotlib-recognised linestyles to avoid ValueError when applying to plot()
+MPL_LINE_STYLES = [
+    'solid',
+    'dashed',
+    'dashdot',
+    'dotted',
+]
+#list(Line2D.markers.keys())
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -71,7 +84,7 @@ def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
                                transform=projection, alpha=0.5, color="grey",**kwargs)
     return fig, axes
 
-def infra_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**kwargs):
+def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection=ccrs.PlateCarree(),**kwargs):
     """Infrastructure plots"""
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
@@ -80,19 +93,35 @@ def infra_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),*
     else:
         fig = axes.get_figure()
     colors = kwargs.pop("colors", mpl.cm.tab20.colors)
+    cmap = mpl.colors.ListedColormap(["r", "k"])
     for i, ci_type in enumerate(ci_types):
+        point_marker = MPL_MARKERS[i % len(MPL_MARKERS)]
+        line_style = MPL_LINE_STYLES[i % len(MPL_LINE_STYLES)]
         color = colors[i]
+        if plot_col == 'ci_type':
+            cmap = mpl.colors.ListedColormap([color])
         if ci_type == 'people':
             fig, axes = population_plot(self, axes=axes, projection=projection, zorder=0, **kwargs)
         elif ci_type in LINE_EXPOSURES:
             plot_df = self.edges[self.edges.ci_type==ci_type]
-            plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, zorder=1, **kwargs)
+            plot_df.plot(plot_col, ax=axes, cmap=cmap, transform=projection, label=ci_type, linestyle=line_style, zorder=1, **kwargs)
         else:
             plot_df = self.nodes[self.nodes.ci_type==ci_type]
-            plot_df.plot(ax=axes, color=color, transform=projection, label=ci_type, markersize=200, marker="*",**kwargs)
+            marker = f"${ci_type[0].upper()}$"
+            plot_df.plot(plot_col, ax=axes, cmap=cmap, transform=projection, label=ci_type, markersize=200, marker=marker, **kwargs)
+
+    status_cmap = None if plot_col=='ci_type' else cmap
+
     axes.legend()
-    #format_plot(axes, crs=crs)
-    #f.suptitle(title ,fontweight="bold",y=0.92)
+    # Add a single status colorbar if any non-people layer was plotted
+    if status_cmap is not None:
+        sm = mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=0, vmax=1), cmap=status_cmap)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=axes, orientation="horizontal", shrink=0.55)
+        cbar.set_ticks([0, 1])
+        cbar.set_ticklabels(["Disrupted", "Functioning"], rotation=30)
+        cbar.set_label('CI status')
+
     return fig, axes
 
 def _get_dependencies(self, ci_types):
