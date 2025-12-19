@@ -1086,14 +1086,14 @@ class TestStaticIOModel(TestCase):
 
         mock_leontief.return_value = pd.DataFrame(
             [[10, 20], [30, 40]],
-            index=pd.Index([1, 2], name="event_id"),
+            index=pd.Index([1, 2]),
             columns=pd.MultiIndex.from_tuples(
                 [("regA", "sec1"), ("regB", "sec1")], names=["region", "sector"]
             ),
         )
         mock_ghosh.return_value = pd.DataFrame(
             [[50, 50], [50, 50]],
-            index=pd.Index([1, 2], name="event_id"),
+            index=pd.Index([1, 2]),
             columns=pd.MultiIndex.from_tuples(
                 [("regA", "sec1"), ("regB", "sec1")], names=["region", "sector"]
             ),
