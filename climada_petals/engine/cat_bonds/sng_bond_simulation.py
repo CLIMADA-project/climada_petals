@@ -6,14 +6,41 @@ from climada_petals.util.config import LOGGER
 
 
 class SingleCountryBondSimulation:
+    """
+    Single-country catastrophe bond simulation utilities.
 
-    def __init__(self, subarea_calc, term, number_of_terms):
+    This class simulates losses and returns for a single country's bond
+    based on per-event payouts and damages.
+
+    Parameters
+    ----------
+    subarea_calc : object
+        Subarea calculation instance exposing `pay_vs_dam` and `principal`.
+    term : int
+        Bond term in years for each simulated period.
+    number_of_terms : int
+        Number of consecutive terms to simulate.
+    """
+
+    def __init__(self, subarea_calc, term: int, number_of_terms: int):
+        """
+        Initialize with subarea data and simulation horizon.
+
+        Parameters
+        ----------
+        subarea_calc : object
+            Subarea calculation instance exposing `pay_vs_dam` and `principal`.
+        term : int
+            Bond term in years for each simulated period.
+        number_of_terms : int
+            Number of consecutive terms to simulate.
+        """
         self.term = term
         self.number_of_terms = number_of_terms
         self.subarea_calc = subarea_calc
 
     '''Simulate one term of bond to derive losses'''
-    def init_bond_loss(self, events_per_year):
+    def init_bond_loss(self, events_per_year: list[pd.DataFrame]):
         """
         Calculates the expected losses for a catastrophe bond over its term.
         This function simulates the bond's loss experience given a sequence of event data per year,
@@ -22,9 +49,7 @@ class SingleCountryBondSimulation:
 
         Parameters
         ----------
-        self : bond_simulation
-            An instance of the bond_simulation class containing a payout vs damage table, bond term, and the principal.
-        events_per_year : list of pandas.DataFrame
+        events_per_year : list[pandas.DataFrame]
             A list where each element is a DataFrame representing events in a year. Each DataFrame must
             contain at least 'month' and 'pay' columns, where 'pay' is the payout for each event.
         Returns
@@ -95,10 +120,15 @@ class SingleCountryBondSimulation:
         summed_payouts = annual_losses.sum()
 
         return rel_annual_losses, df_monthly, summed_payouts, summed_damages
-    
-    def init_loss_simulation(self, confidence_levels=[0.95, 0.99]):
+
+    def init_loss_simulation(self, confidence_levels: list[float] = [0.95, 0.99]):
         """
         Simulate losses, payouts, damages, and risk metrics for a catastrophe bond.
+
+        Parameters
+        ----------
+        confidence_levels : list[float], optional
+            Confidence levels for VaR and ES calculation.
 
         Returns
         -------
@@ -161,7 +191,7 @@ class SingleCountryBondSimulation:
 
 
     '''Simulate over all terms of bond to derive returns'''
-    def init_return_simulation(self, premium):
+    def init_return_simulation(self, premium: float):
         """
         Simulates the performance of a catastrophe bond over the simulation period, premiums and returns.
         This function models the bond's payouts, premiums, and returns over a series of simulated years.
@@ -169,11 +199,13 @@ class SingleCountryBondSimulation:
 
         Parameters
         ----------
-            self: bond_simulation
-                An instance of the bond_simulation class containing monthly loss data, premium rate, and term. 
+        premium : float
+            Annual premium rate for the bond.
         Returns
         -------
-            return_metrics (pd.DataFrame): DataFrame containing annual premiums, annual returns, total returns, and total premiums for the bond.
+        return_metrics : dict
+            Dictionary with annual premiums, annual returns, total returns,
+            total premiums, and Sharpe ratio.
         """
 
         premiums_tot = []
