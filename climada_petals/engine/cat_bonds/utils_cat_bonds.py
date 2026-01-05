@@ -1,17 +1,24 @@
 import numpy as np
+import pandas as pd
 
-'''Calculate value at risk and expected shorfall for various alphas'''
-def multi_level_es(losses, confidence_levels):
+"""Utility functions for catastrophe bond analytics."""
+def multi_level_es(losses: pd.Series, confidence_levels: list[float]):
     """
     Calculate Value at Risk (VaR) and Expected Shortfall (ES) for multiple confidence levels.
 
-    Parameters:
-    - losses: array-like, list of losses
-    - confidence_levels: list of floats, confidence levels (e.g., [0.95, 0.99])
+    Parameters
+    ----------
+    losses : pandas.Series
+        Loss samples used to estimate tail risk metrics.
+    confidence_levels : list[float]
+        Confidence levels (e.g., [0.95, 0.99]).
 
-    Returns:
-    - var_list: list, list of VaR values in the order of given confidence levels
-    - es_list: list, list of ES values in the order of given confidence levels
+    Returns
+    -------
+    var_list : list[float]
+        VaR values in the order of the given confidence levels.
+    es_list : list[float]
+        ES values in the order of the given confidence levels.
     """
 
     # Compute VaR and ES
@@ -26,19 +33,23 @@ def multi_level_es(losses, confidence_levels):
     return var_list, es_list
 
 
-def allocate_single_payout(payout, nominals):
+def allocate_single_payout(payout: float, nominals: np.ndarray):
     """
-    Vectorised allocation of one payout across tranche nominals (FIFO).
+    Allocate a single payout across tranche nominals (FIFO).
     
     Parameters
     ----------
     payout : float
-    nominals : 1D array of tranche nominal values
+        Payout amount to allocate.
+    nominals : array-like
+        1D array of tranche nominal values.
 
     Returns
     -------
-    alloc : array of size (T,)  -- how much each tranche pays
-    remaining_nominals : array -- leftover nominals after the payout
+    remaining_nominals : numpy.ndarray
+        Remaining nominal values after the payout.
+    payout_per_tranche : numpy.ndarray
+        Amount allocated to each tranche.
     """
 
     nominals = np.asarray(nominals, float)
