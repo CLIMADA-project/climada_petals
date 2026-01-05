@@ -14,27 +14,33 @@ import networkx as nx
 from climada_petals.util.config import LOGGER
 
 
-
 class Subareas:
+    """
+    Handle subareas for CAT bond spatial aggregation.
 
-    '''Class to handle subareas for CAT bonds.
-    
+    Parameters
+    ----------
+    hazard : climada.Hazard
+        Hazard object containing event data.
+    vulnerability : climada.Vulnerability
+        Vulnerability object containing vulnerability functions.
+    exposure : climada.Exposure
+        Exposure object containing monetary data and geometry.
+    subareas_gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing subarea polygons. Must cover the exposure
+        perimeter and include (or will be assigned) a `subarea_letter` column.
+
     Attributes
-        ----------
-        hazard : climada.Hazard
-            Hazard object containing hazard data.
-        vulnerability : climada.Vulnerability
-            Vulnerability object containing vulnerability data.
-        exposure : climada.Exposure
-            Exposure object containing monetary data.
-        resolution : float
-            Resolution for grid cells to create subareas.
-        crs : str, optional
-            Coordinate reference system for spatial data (default: "EPSG:3857").
-        subareas_gdf : geopandas.GeoDataFrame
-            GeoDataFrame containing the subareas as polygons. Needs to contain the whole exposure. If no column subarea_letter is given it will be added. 
-            If None, subareas will be generated based on the exposure perimeter and resolution.
-    '''
+    ----------
+    hazard : climada.Hazard
+        Hazard object containing event data.
+    vulnerability : climada.Vulnerability
+        Vulnerability object containing vulnerability functions.
+    exposure : climada.Exposure
+        Exposure object containing monetary data and geometry.
+    subareas_gdf : geopandas.GeoDataFrame
+        GeoDataFrame of subarea polygons with `subarea_letter` labels.
+    """
     
 
     def __init__(
@@ -42,8 +48,22 @@ class Subareas:
         hazard,
         vulnerability,
         exposure,
-        subareas_gdf,
+        subareas_gdf: gpd.GeoDataFrame,
     ):
+        """
+        Initialize a Subareas instance.
+
+        Parameters
+        ----------
+        hazard : climada.Hazard
+            Hazard object containing event data.
+        vulnerability : climada.Vulnerability
+            Vulnerability object containing vulnerability functions.
+        exposure : climada.Exposure
+            Exposure object containing monetary data and geometry.
+        subareas_gdf : geopandas.GeoDataFrame
+            GeoDataFrame containing subarea polygons.
+        """
 
         self.hazard = hazard
         self.vulnerability = vulnerability
@@ -51,15 +71,53 @@ class Subareas:
         self.subareas_gdf = subareas_gdf
 
     @classmethod
-    def from_resolution(cls, hazard, vulnerability, exposure, resolution, subareas_gdf=None):
-        """Create Subareas instance with specified resolution."""
+    def from_resolution(cls, hazard, vulnerability, exposure, resolution: float, subareas_gdf: gpd.GeoDataFrame | None = None):
+        """
+        Create subareas from a grid resolution.
+
+        Parameters
+        ----------
+        hazard : climada.Hazard
+            Hazard object containing event data.
+        vulnerability : climada.Vulnerability
+            Vulnerability object containing vulnerability functions.
+        exposure : climada.Exposure
+            Exposure object containing monetary data and geometry.
+        resolution : float
+            Grid cell size used to generate subareas.
+        subareas_gdf : geopandas.GeoDataFrame, optional
+            Unused placeholder for compatibility.
+
+        Returns
+        -------
+        Subareas
+            Initialized instance with generated subareas.
+        """
         subareas_gdf = cls._init_subareas(exposure, resolution)
 
         return cls(hazard, vulnerability, exposure, subareas_gdf)
     
     @classmethod
-    def from_geodataframe(cls, hazard, vulnerability, exposure, gdf):
-        """Create Subareas instance from existing GeoDataFrame."""
+    def from_geodataframe(cls, hazard, vulnerability, exposure, gdf: gpd.GeoDataFrame): 
+        """
+        Create subareas from an existing GeoDataFrame.
+
+        Parameters
+        ----------
+        hazard : climada.Hazard
+            Hazard object containing event data.
+        vulnerability : climada.Vulnerability
+            Vulnerability object containing vulnerability functions.
+        exposure : climada.Exposure
+            Exposure object containing monetary data and geometry.
+        gdf : geopandas.GeoDataFrame
+            GeoDataFrame of polygon subareas covering the exposure perimeter.
+
+        Returns
+        -------
+        Subareas
+            Initialized instance with the provided subareas.
+        """
         if (gdf.geometry.type != 'Polygon').any():
             raise ValueError("All geometries in the GeoDataFrame must be of type 'Polygon'.")
         exp_gdf = _create_exp_gdf(exposure)
@@ -70,16 +128,31 @@ class Subareas:
             gdf = gdf.copy()
             gdf["subarea_letter"] = [chr(65 + i) for i in range(len(gdf))]
             LOGGER.info("Added 'subarea_letter' column to GeoDataFrame.")
-        subareas_gdf = gdf.crs_convert(exposure.gdf.crs)
+        subareas_gdf = gdf.to_crs(exposure.gdf.crs)
         LOGGER.info("Converted GeoDataFrame to match exposure CRS.")
         return cls(hazard, vulnerability, exposure, subareas_gdf)
 
     # --- Properties ---
     @property
     def exposure(self):
+        """
+        Return the exposure object.
+
+        Returns
+        -------
+        climada.Exposure
+            Exposure object containing monetary data and geometry.
+        """
         return self._exposure
 
     def plot(self):
+        """
+        Plot exposure raster with subarea boundaries overlaid.
+
+        Returns
+        -------
+        None
+        """
         if self.subareas_gdf is None:
             raise ValueError("Subareas have not been generated yet.")
         else:
@@ -120,26 +193,34 @@ class Subareas:
             plt.show()
 
     def count_subareas(self):
+        """
+        Return the number of subareas.
+
+        Returns
+        -------
+        int
+            Number of subarea polygons.
+        """
         if self.subareas_gdf is None:
             raise ValueError("Subareas have not been generated yet.")
         else:
             return len(self.subareas_gdf)
 
     @staticmethod
-    def _init_subareas(exposure, resolution):
+    def _init_subareas(exposure, resolution: float):
         """
         Divides the exposure set into subareas and returns a geodataframe for the perimeter of exposed assets.
 
         Parameters
         ----------
-        exposure : Exposure object
+        exposure : climada.Exposure
             Exposure object containing monetary data.
         resolution : float
             Resolution for grid cells to create subareas.
 
         Returns
         -------
-        subareas_gdf : GeoDataFrame
+        subareas_gdf : geopandas.GeoDataFrame
             Geodataframe of subareas covering the exposure perimeter.
         """
         exp_gdf = _create_exp_gdf(exposure)
@@ -149,7 +230,7 @@ class Subareas:
 
         return subareas_gdf
 
-def _crop_grid_cells_to_polygon(resolution, exp_gdf, exposure):
+def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, exposure):
     """
     Generates subareas based on exposure perimeter stored in a GeoDataFrame.
     This function takes a GeoDataFrame of polygons and, for each polygon, generates a grid of rectangular cells
@@ -159,10 +240,12 @@ def _crop_grid_cells_to_polygon(resolution, exp_gdf, exposure):
 
     Parameters
     ----------
-    self : class instance
-        Instance of the Subareas class.
+    resolution : float
+        Grid cell size used to generate subareas.
     exp_gdf : geopandas.GeoDataFrame
         GeoDataFrame containing polygon geometries to be cropped into subareas.
+    exposure : climada.Exposure
+        Exposure object containing monetary data and geometry.
 
     Returns
     -------
@@ -238,7 +321,7 @@ def _crop_grid_cells_to_polygon(resolution, exp_gdf, exposure):
 
     return subareas
 
-def _create_exp_gdf(exposure):
+def _create_exp_gdf(exposure) -> gpd.GeoDataFrame:
     """
     Generates a merged polygon representing the geometric extent of the exposed assets.
     This function rasterizes the geometries in the input exposure object, identifies contiguous regions
@@ -247,8 +330,8 @@ def _create_exp_gdf(exposure):
 
     Parameters
     ----------
-    self : class instance
-        Instance of the Subareas class.
+    exposure : climada.Exposure
+        Exposure object containing monetary data and geometry.
 
     Returns
     -------
@@ -297,11 +380,13 @@ def _merge_overlapping_grids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     Parameters
     ----------
-        gdf (gpd.GeoDataFrame): GeoDataFrame containing grid cell geometries.
+    gdf : geopandas.GeoDataFrame
+        GeoDataFrame containing grid cell geometries.
 
     Returns
     -------
-        gpd.GeoDataFrame: GeoDataFrame with merged polygons.
+    geopandas.GeoDataFrame
+        GeoDataFrame with merged polygons.
     """
 
     LOGGER.info("Merging overlapping grid cells into single polygons.")
