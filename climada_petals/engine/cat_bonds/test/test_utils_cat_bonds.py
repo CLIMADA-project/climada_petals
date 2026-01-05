@@ -1,15 +1,17 @@
+"""Tests for cat bond utility functions."""
+
 import pandas as pd
 import numpy as np
 from climada_petals.engine.cat_bonds import utils_cat_bonds
-
-from climada_petals.util.config import LOGGER
 import unittest
 
 
 class TestUtils(unittest.TestCase):
+    """Unit tests for utils_cat_bonds."""
 
 
     def test_multi_level_es_basic(self):
+        """Validate VaR and ES for a basic loss series."""
         losses = pd.Series([0, 1, 2, 3, 4, 5])
         alphas = [0.5, 0.8]
 
@@ -28,6 +30,7 @@ class TestUtils(unittest.TestCase):
 
 
     def test_multi_level_es_all_equal_losses(self):
+        """Validate VaR/ES when all losses are equal."""
         losses = pd.Series([1, 1, 1, 1])
         alphas = [0.95]
 
@@ -41,6 +44,7 @@ class TestUtils(unittest.TestCase):
 
 
     def test_multi_level_es_no_tail_losses(self):
+        """Validate ES when tail losses are empty."""
         losses = pd.Series([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
         alphas = [0.9]  # VaR = 0
 
@@ -54,6 +58,7 @@ class TestUtils(unittest.TestCase):
 
 
     def test_allocate_single_payout_partial_first_tranche(self):
+        """Validate payout within the first tranche."""
         nominals = np.array([100, 100, 100])
         payout = 30
 
@@ -63,6 +68,7 @@ class TestUtils(unittest.TestCase):
 
 
     def test_allocate_single_payout_exact_first_tranche(self):
+        """Validate payout exactly exhausting first tranche."""
         nominals = np.array([50, 100])
         payout = 50
 
@@ -73,6 +79,7 @@ class TestUtils(unittest.TestCase):
 
 
     def test_allocate_single_payout_spans_multiple_tranches(self):
+        """Validate payout spanning multiple tranches."""
         nominals = np.array([50, 100, 200])
         payout = 180  # eats all of tranche 1 and 2, 30 of tranche 3
 
@@ -83,6 +90,7 @@ class TestUtils(unittest.TestCase):
 
 
     def test_allocate_single_payout_larger_than_all_nominals(self):
+        """Validate payout larger than total nominals."""
         nominals = np.array([40, 40])
         payout = 200  # everything wiped
 
@@ -93,6 +101,7 @@ class TestUtils(unittest.TestCase):
 
 
     def test_allocate_single_payout_zero_payout(self):
+        """Validate zero payout leaves nominals unchanged."""
         nominals = np.array([50, 100])
         payout = 0
 
