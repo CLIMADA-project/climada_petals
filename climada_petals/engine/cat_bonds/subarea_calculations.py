@@ -8,35 +8,45 @@ from climada.engine import ImpactCalc
 from climada_petals.util.config import LOGGER
 
 
-
-
 class SubareaCalculations:
-    def __init__(self, subareas, index_stat, intitial_guess=None):
-        '''
-        Attributes
+    """
+    Subarea-level calculations for parametric catastrophe bond payout setup.
+
+    This class computes impacts, parametric indices, payout thresholds, and
+    pay-versus-damage tables for a set of subareas.
+
+    Parameters
+    ----------
+    subareas : object
+        Container with `exposure`, `hazard`, `vulnerability`, and `subareas_gdf`.
+    index_stat : str or float
+        Statistic for the parametric index (e.g., "mean" or a percentile).
+    intitial_guess : tuple[float, float], optional
+        Initial guess for minimum and maximum trigger thresholds.
+
+    Attributes
+    ----------
+    subareas : object
+        Input container holding exposure, hazard, vulnerability, and subareas.
+    index_stat : str or float
+        Statistic used to summarize hazard intensity per subarea.
+    initial_guess : tuple[float, float]
+        Initial guess for minimum/maximum payout thresholds.
+    """
+    def __init__(self, subareas, index_stat: float | str, intitial_guess: tuple[float, float] | None =None):
+        """
+        Initialize the subarea calculation helper.
+
+        Parameters
         ----------
-        self.exposure : climada.Exposure
-            Exposure object containing geospatial exposure data (with a GeoDataFrame attribute `gdf`).
-        self.hazard : climada.Hazard
-            Hazard object containing hazard events.
-        self.vulnerability : climada.Vulnerability
-            Vulnerability object containing vulnerability functions.
-        self.subareas : geopandas.GeoDataFrame
-            GeoDataFrame of CAT bond subareas for spatial aggregation of impacts.
-        self.exhaustion_point: float
-            The exhaustion_point value (maximum possible payout) of the CAT bond. If it is a string with 'Exp', it is treated as a
-            share of total exposure. If it is a string with 'RP', it is treated as a return period. If it is a float,
-            it is treated as a monetary value.
-        self.attachment: float
-            The attachment value (minimum possible payout) of the CAT bond. If it is a string with 'Exp', it is treated as a
-            share of total exposure. If it is a string with 'RP', it is treated as a return period. If it is a float,
-            it is treated as a monetary value.
-        self.index_stat: str or float
-            The statistic to calculate. Can either be a number to calculate percentile or the string 'mean' to calculate the average.
-        self.initial_guess: tuple, optional
-            A tuple containing the initial guess for the minimum and maximum trigger thresholds used in the payout function optimization.
-            Will be calculated as the 30th and 60th percentiles of the hazard intensity data if not provided.
-        '''
+        subareas : object
+            Container with `exposure`, `hazard`, `vulnerability`, and `subareas_gdf`.
+        index_stat : str or float
+            Statistic used for the parametric index ("mean" or a percentile).
+        intitial_guess : tuple[float, float], optional
+            Initial guess for min/max trigger thresholds. When omitted, the
+            30th and 60th percentiles of hazard intensity are used.
+        """
 
         self.subareas = subareas
         self.index_stat = index_stat
@@ -47,15 +57,14 @@ class SubareaCalculations:
 
     def _calc_impact(self):
         """
-        Initializes and calculates impact based on exposure, hazard, vulnerability and optional subareas.
+        Calculate impact based on exposure, hazard, vulnerability, and subareas.
         This function performs the following steps:
         1. Calculates impact using the provided exposure, vulnerability and hazard datasets.
         2. If subareas are provided, aggregates impact per subarea using spatial joins.
 
         Parameters
         ----------
-        self: class instance
-            Instance of the Subarea_Calculations class.
+        None
 
         Returns
         -------
@@ -80,34 +89,32 @@ class SubareaCalculations:
 
         return imp, imp_subareas_evt
 
-    def _calc_attachment_principal(self, impact, attachment_point, exhaustion_point, attachment_point_method=None, exhaustion_point_method=None):
+    def _calc_attachment_principal(self, impact, attachment_point: float, exhaustion_point: float, attachment_point_method: str | None = None, exhaustion_point_method: str | None = None):
         """
         Initializes and calculates the attachment point and principal value for a CAT bond.
         The function determines the attachment point/principal amount based on either a protection return period
-        using the provided climada ImpactCalc object, or as a share of the total exposure value using the toal exposure.
-        If the principal is already a monetary values, it is used directly.
+        using the provided climada ImpactCalc object, or as a share of total exposure.
+        If the values are already monetary amounts, they are used directly.
 
         Parameters
         ----------
-            self: class instance
-                Instance of the Subarea_Calculations class.
-            impact : climada.ImpactCalc
-                Impact calculation object containing results and methods.
-            attachment_point : float
-                The attachment point value for the CAT bond. Can be expressed as a monetary value, a share of total exposure, or a return period.
-            exhaustion_point : float
-                The exhaustion point value for the CAT bond. Can be expressed as a monetary value, a share of total exposure, or a return period.
-            attachment_point_method : str, optional
-                Method to interpret the attachment point. Options are 'Exposure_Share' or 'Return_Period'. If None, the attachment_point is treated as a monetary value.
-            exhaustion_point_method : str, optional
-                Method to interpret the exhaustion point. Options are 'Exposure_Share' or 'Return_Period'. If None, the exhaustion_point is treated as a monetary value.
+        impact : climada.ImpactCalc
+            Impact calculation object containing results and methods.
+        attachment_point : float
+            Attachment point value for the CAT bond.
+        exhaustion_point : float
+            Exhaustion point value for the CAT bond.
+        attachment_point_method : str, optional
+            Interpretation method: "Exposure_Share", "Return_Period", or None.
+        exhaustion_point_method : str, optional
+            Interpretation method: "Exposure_Share", "Return_Period", or None.
 
         Returns
         ----------
-            attachment: float
-                The calculated attachment point value for the CAT bond.
-            principal: float
-                The calculated principal value for the CAT bond.
+        attachment : float
+            Calculated attachment point value for the CAT bond.
+        principal : float
+            Calculated principal value for the CAT bond.
         """
 
         tot_exp = self.subareas.exposure.gdf["value"].sum()
@@ -142,18 +149,17 @@ class SubareaCalculations:
 
     def _calc_parametric_index(self):
         """
-        Calculates a specified statistic (mean, percentiles) for each events parametrix incex for each subarea.
+        Calculate a specified statistic (mean or percentile) for each event's index in each subarea.
 
         Parameters
         ----------
-            self: class instance
-                Instance of the Subarea_Calculations class.
+        None
 
         Returns
         -------
-            int_sub_dict: dict
-                A dictionary containing a pandas.DataFrame with the calculated statistics per subarea with labels as columns and year and month for each event.
-                The key to the dataframe is the hazard type (e.g., 'TC' for tropical cyclones).
+        int_sub_dict : dict
+            Dictionary mapping hazard type to a DataFrame with per-subarea
+            statistics and event year/month columns.
         """
 
         hazard = self.subareas.hazard.centroids.gdf
@@ -193,7 +199,7 @@ class SubareaCalculations:
 
         return int_sub_dict
 
-    def _objective_fct(self, params, haz_int, damages, principal):
+    def _objective_fct(self, params: tuple[float, float], haz_int: pd.DataFrame, damages: pd.Series, principal: float):
         """
         Defines the objective function used to minimize basis risk by adjusting minimum and maximum trigger thresholds in the payout function.
         This function computes the squared difference between actual damages and payouts,
@@ -203,21 +209,19 @@ class SubareaCalculations:
 
         Parameters
         ----------
-            self: class instance
-                Instance of the Subarea_Calculations class.
-            params: tuple
-                A tuple containing the minimum and maximum trigger values.
-            haz_int: dict
-                Hazard intensity data.
-            damages: array-like
-                Observed damages for each subarea and hazard event.
-            principal: float
-                The principal value (maximum possible payout).
+        params : tuple[float, float]
+            Minimum and maximum trigger values.
+        haz_int : pandas.DataFrame
+            Hazard intensity data for a subarea.
+        damages : array-like
+            Observed damages for each subarea and hazard event.
+        principal : float
+            Principal value (maximum possible payout).
 
         Returns
         -------
-            basis_risk: float
-                The calculated basis risk as the sum of squared differences between damages and payouts.
+        basis_risk : float
+            Sum of squared differences between damages and payouts.
         """
 
         min_trig, max_trig = params
@@ -234,21 +238,19 @@ class SubareaCalculations:
     # funtion to minimze basis risk by adjusting minimum and maximum parametric index thresholds used in the payout funciton
     def _calibrate_payout_fcts(self, haz_int, principal, attachment, imp_subarea_evt):
         """
-        Initializes and performs the optimization of the payout function which is based on a paramteric index for each subarea.
+        Initialize and optimize payout functions based on a parametric index per subarea.
         This function iterates over subareas, selects appropriate initial guesses and damage data depending on the parametric index,
         and applies the COBYLA optimization algorithm to minimize the objective function (basis risk) for each subarea.
         The results for each subarea are collected and returned, along with arrays of optimized parameters.
 
         Parameters
         ----------
-        self: class instance
-            Instance of the Subarea_Calculations class.
-        attachment : float
-            The attachment point (minimum payout) for payouts.
         haz_int : dict
-            DataFrame containing paramteric index values for each subarea and additional columns.
+            Parametric index values for each subarea (with year/month columns).
         principal : float
             Principal of the CAT bond used in the optimization objective function.
+        attachment : float
+            Attachment point (minimum payout) for payouts.
         imp_subarea_evt : pandas.DataFrame
             Damages per event and subarea.
 
@@ -257,7 +259,7 @@ class SubareaCalculations:
         results : dict
             Dictionary mapping subarea indices to optimization result objects.
         opt_min_thresh : numpy.ndarray
-            Array of minimum paramteric index threshold for each subarea
+            Array of minimum parametric index thresholds for each subarea.
         opt_max_thresh : numpy.ndarray
             Array of maximum parametric index threshold for each subarea.
         """
@@ -303,12 +305,12 @@ class SubareaCalculations:
     def _calc_pay_vs_dam(
         self,
         impact,
-        imp_subareas_evt,
-        attachment,
-        principal,
-        opt_min_thresh,
-        opt_max_thresh,
-        haz_int,
+        imp_subareas_evt: pd.DataFrame,
+        attachment: float,
+        principal: float,
+        opt_min_thresh: np.ndarray,
+        opt_max_thresh: np.ndarray,
+        haz_int: dict,
     ):
         """
         Calculates payouts versus damages for hazard events.
@@ -326,7 +328,7 @@ class SubareaCalculations:
         principal : float
             The principal value of the CAT bond.
         opt_min_thresh : array-like
-            Thresholds for mimimum payouts for each payout function.
+            Thresholds for minimum payouts for each payout function.
         opt_max_thresh : array-like
             Thresholds for maximum payouts for each payout function.
         haz_int : dict
@@ -340,7 +342,7 @@ class SubareaCalculations:
         Notes
         -----
         - Payouts are capped at the nominal value and set to zero if below the minimum payout threshold.
-        - The function relies on an external `_calc_payout` function for payout calculation.
+        - The function relies on the module-level `calc_payout` function for payout calculation.
         """
 
         imp_per_event = impact.at_event
@@ -391,7 +393,30 @@ class SubareaCalculations:
 
         return pay_dam_df
 
-    def create_pay_vs_dam(self, attachment_point, exhaustion_point, methods_attachment_point=None, methods_exhaustion_point=None):
+    def create_pay_vs_dam(self, attachment_point: float, exhaustion_point: float, methods_attachment_point: str | None = None, methods_exhaustion_point: str | None = None):
+        """
+        Build the pay-versus-damage table for the bond structure.
+
+        This runs impact calculation, parametric index creation, payout
+        calibration, and computes pay/damage per event.
+
+        Parameters
+        ----------
+        attachment_point : float
+            Attachment point value or parameter for the selected method.
+        exhaustion_point : float
+            Exhaustion point value or parameter for the selected method.
+        methods_attachment_point : str, optional
+            Interpretation method for attachment (e.g., "Exposure_Share" or "Return_Period").
+        methods_exhaustion_point : str, optional
+            Interpretation method for exhaustion (e.g., "Exposure_Share" or "Return_Period").
+
+        Returns
+        -------
+        None
+            Sets `principal`, `attachment`, `results`, `opt_min_thresh`,
+            `opt_max_thresh`, and `pay_vs_dam` on the instance.
+        """
 
         imp, imp_subareas_evt = self._calc_impact() 
         parametric_index = self._calc_parametric_index()
@@ -404,7 +429,7 @@ class SubareaCalculations:
 
     
 # this function calculates the payout for an event in a subarea -> defines the payout function
-def calc_payout(min_trig, max_trig, haz_int, max_pay):
+def calc_payout(min_trig: float, max_trig: float, haz_int: pd.DataFrame, max_pay: float):
 
     """
     Calculates payout values based on a linear payout function using hazard intensities and trigger thresholds.
