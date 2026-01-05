@@ -1,3 +1,5 @@
+"""Tests for subarea calculations."""
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -5,14 +7,16 @@ from climada_petals.engine.cat_bonds import subarea_calculations
 from climada.hazard import Hazard
 from climada.hazard.centroids import Centroids
 from scipy import sparse
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from scipy.optimize import OptimizeResult
 
 class TestSubareaCalculations(unittest.TestCase):
+    """Unit tests for SubareaCalculations."""
 
     def setUp(self):
+        """Set up shared fixtures for subarea tests."""
         self.mock_subarea_calc_test = MagicMock()
         self.mock_subarea_calc_test.haz_int = pd.DataFrame({"intensity": [0, 5, 10, 15, 20]})
         self.mock_subarea_calc_test.haz_int_dict = {"TC": pd.DataFrame({
@@ -47,7 +51,7 @@ class TestSubareaCalculations(unittest.TestCase):
                 return type("obj", (), {"impact": rp * 10})  # simple mapping
 
 
-        s = subarea_calculations.SubareaCalculations(self.mock_subarea_calc_test, index_stat="mean", intitial_guess=[1,2])
+        s = subarea_calculations.SubareaCalculations(self.mock_subarea_calc_test, index_stat="mean", initial_guess=(1.0,2.0))
 
         imp = DummyImpact()
 
@@ -120,7 +124,7 @@ class TestSubareaCalculations(unittest.TestCase):
 
         imp = DummyImpact()
 
-        s = subarea_calculations.SubareaCalculations(subareas=None, index_stat="mean", intitial_guess=[1,2])
+        s = subarea_calculations.SubareaCalculations(subareas=None, index_stat="mean", initial_guess=(1, 2))
 
         # thresholds
         min_t = np.array([1, 0])
@@ -143,9 +147,9 @@ class TestSubareaCalculations(unittest.TestCase):
 
     def test_objective_fct_expected(self):
 
-        s = subarea_calculations.SubareaCalculations(subareas=self.mock_subarea_calc_test, index_stat="mean", intitial_guess=(0, 1))
+        s = subarea_calculations.SubareaCalculations(subareas=self.mock_subarea_calc_test, index_stat="mean", initial_guess=(0, 1))
 
-        damages = np.array([100, 200])
+        damages = pd.Series([100, 200])
 
         out = s._objective_fct((0, 2), self.mock_subarea_calc_test.haz_int_dict['TC'], damages, self.mock_subarea_calc_test.principal)
 
@@ -157,7 +161,7 @@ class TestSubareaCalculations(unittest.TestCase):
         Test that the optimization converges and reports a thresholds for all subareas.
         """
         subareas_calc_dummy = subarea_calculations.SubareaCalculations(
-            subareas=self.mock_subarea_calc_test, index_stat=50, intitial_guess=[2,4]
+            subareas=self.mock_subarea_calc_test, index_stat=50, initial_guess=(2, 4)
         )
 
         attachment = 0 
@@ -177,6 +181,56 @@ class TestSubareaCalculations(unittest.TestCase):
         assert len(results) == 2
         assert all(isinstance(r, OptimizeResult) for r in results.values())
         assert all(r.success for r in results.values())
+
+    def test_calc_impact(self):
+        """Validate impact calculation wiring and aggregation."""
+        exposure_gdf = gpd.GeoDataFrame(
+            {"value": [100], "geometry": [Point(0, 0)]},
+            crs="EPSG:4326",
+        )
+        subareas_gdf = gpd.GeoDataFrame(
+            {"subarea_letter": ["A"], "geometry": [Polygon([(-1, -1), (1, -1), (1, 1), (-1, 1)])]},
+            crs="EPSG:4326",
+        )
+        subareas = MagicMock()
+        subareas.exposure = type("exp", (), {"gdf": exposure_gdf})
+        subareas.vulnerability = MagicMock()
+        subareas.hazard = MagicMock()
+        subareas.subareas_gdf = subareas_gdf
+
+        dummy_imp = MagicMock()
+        dummy_imp.impact_at_reg.return_value = pd.DataFrame({"A": [1.0]})
+
+        impact_calc = MagicMock()
+        impact_calc.impact.return_value = dummy_imp
+
+        with patch("climada_petals.engine.cat_bonds.subarea_calculations.ImpactCalc", return_value=impact_calc) as impact_cls:
+            calc = subarea_calculations.SubareaCalculations(subareas, index_stat="mean", initial_guess=(1.0, 2.0))
+            imp, imp_subareas_evt = calc._calc_impact()
+
+        impact_cls.assert_called_once()
+        impact_calc.impact.assert_called_once_with(save_mat=True)
+        dummy_imp.impact_at_reg.assert_called_once()
+        self.assertIs(imp, dummy_imp)
+        pd.testing.assert_frame_equal(imp_subareas_evt, pd.DataFrame({"A": [1.0]}))
+
+    def test_create_pay_vs_dam(self):
+        """Validate that create_pay_vs_dam wires the helpers together."""
+        calc = subarea_calculations.SubareaCalculations(self.mock_subarea_calc_test, index_stat="mean", initial_guess=(1.0, 2.0))
+
+        with patch.object(calc, "_calc_impact", return_value=("imp", "imp_subareas")) as m_impact, \
+             patch.object(calc, "_calc_parametric_index", return_value={"TC": "haz"}) as m_idx, \
+             patch.object(calc, "_calc_attachment_principal", return_value=(123.0, 4.0)) as m_attach, \
+             patch.object(calc, "_calibrate_payout_fcts", return_value=("results", "min_t", "max_t")) as m_cal, \
+             patch.object(calc, "_calc_pay_vs_dam", return_value="pay_vs_dam") as m_pay:
+            calc.create_pay_vs_dam(
+                attachment_point=0.1,
+                exhaustion_point=0.5,
+                methods_attachment_point="Exposure_Share",
+                methods_exhaustion_point="Return_Period",
+            )
+
+        assert all(m.called for m in (m_impact, m_idx, m_attach, m_cal, m_pay))
 
     
 
