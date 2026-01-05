@@ -20,13 +20,54 @@ b_6 = -2.6742
 b_7 = 0.7057
 
 class PremiumCalculations:
+    """
+    Premium calculation utilities for catastrophe bond simulations.
+
+    This class provides premium estimation methods based on Chatoro regression,
+    IBRD bond curve fitting, and Sharpe ratio benchmarks.
+
+    Parameters
+    ----------
+    bond_simulation_class : object
+        Bond simulation instance exposing `loss_metrics`, `df_loss_month`,
+        and `term` attributes.
+    """
 
     def __init__(self, bond_simulation_class):
+        """
+        Initialize with a bond simulation object.
+
+        Parameters
+        ----------
+        bond_simulation_class : object
+            Bond simulation instance exposing `loss_metrics`, `df_loss_month`,
+            and `term` attributes.
+        """
         self.bond_simulation_class = bond_simulation_class
 
     ### CHATORO-PRICING ###
-    def calc_chatoro_premium(self, peak_multi, investment_graded, hybrid_trigger, GCIndex=None, BBSpread=None):
-        '''Linear regression formula to calculate the premium based on the regression model presented in Chatoro et al., 2022'''
+    def calc_chatoro_premium(self, peak_multi: int, investment_graded: int, hybrid_trigger: int, GCIndex = None, BBSpread = None):
+        """
+        Calculate premium using the Chatoro et al. (2022) regression model.
+
+        Parameters
+        ----------
+        peak_multi : float
+            Peak multiple factor for the bond.
+        investment_graded : int or float
+            Indicator for investment-grade status (e.g., 1 for yes, 0 for no).
+        hybrid_trigger : int or float
+            Indicator for hybrid trigger structure (e.g., 1 for yes, 0 for no).
+        GCIndex : float, optional
+            Guy Carpenter Global Property Catastrophe Rate on Line Index value.
+        BBSpread : float, optional
+            ICE BofA BB US High Yield Index OAS value.
+
+        Returns
+        -------
+        None
+            Sets `self.chatoro_prem_rate` on the instance.
+        """
 
         if GCIndex is None:
             GCIndex = 180 #Guy Carpenter Global Property Catastrophe Rate on Line Index (January, 2025)
@@ -48,7 +89,25 @@ class PremiumCalculations:
 
     ### IBRD-PRICING ###
     def monoExp(self, x, a, k, b):
-        '''Exponential function to fit the risk multiple curve'''
+        """
+        Exponential function for risk multiple curve fitting.
+
+        Parameters
+        ----------
+        x : float or np.ndarray
+            Input value(s) for the expected loss.
+        a : float
+            Amplitude parameter.
+        k : float
+            Decay rate parameter.
+        b : float
+            Offset parameter.
+
+        Returns
+        -------
+        float or np.ndarray
+            Evaluated exponential function values.
+        """
         return a * np.exp(-k * x) + b
 
     def calc_ibrd_premium(self, peril=None, year=None):
@@ -62,7 +121,7 @@ class PremiumCalculations:
         ----------
         peril : str, optional
             Peril type to filter the bonds (e.g., 'Earthquake', 'Flood'). If None, no filtering by peril is applied.
-        year : list or int, optional
+        year : list[int] or int, optional
             Issuing year(s) to filter the bonds. If None, no filtering by year is applied.
 
         Returns
@@ -93,7 +152,7 @@ class PremiumCalculations:
 
     ### BENCHMARK SHARPE RATIO PREMIUMS ###
     '''Benchmark pricing function for single country bonds -> goes through all losses and determines required premium to achieve a certain target Sharpe ratio'''
-    def find_sharpe(self, premium, monthly_losses, target_sharpe):
+    def find_sharpe(self, premium: float, monthly_losses: pd.DataFrame, target_sharpe: float):
         """
         Calculates the squared difference between the Sharpe ratio of a cat bond cash flow and a target Sharpe ratio.
         The function simulates the annual cash flows of a catastrophe bond investment, adjusting for losses and premium payments.
@@ -102,14 +161,18 @@ class PremiumCalculations:
 
         Parameters
         ----------
-            premium (float): The annual premium rate paid to the investor.
-            monthly_losses (pd.DataFrame): DataFrame containing monthly loss events per year, with columns 'losses' (list of loss amounts per event)
-                                      and 'months' (list of months when each event occurs).
-            target_sharpe (float): The target Sharpe ratio to compare against.
+        premium : float
+            Annual premium rate paid to the investor.
+        monthly_losses : pandas.DataFrame
+            DataFrame with columns 'losses' (list of loss amounts per event)
+            and 'months' (list of event months) for each year.
+        target_sharpe : float
+            Target Sharpe ratio to compare against.
 
         Returns
         -------
-            float: The squared difference between the calculated Sharpe ratio and the target Sharpe ratio.
+        float
+            Squared difference between the calculated Sharpe ratio and the target Sharpe ratio.
         """
 
         ncf = []
@@ -144,7 +207,7 @@ class PremiumCalculations:
 
 
     '''Benchmark pricing function for single country bonds -> wrapper function to call the optimization'''
-    def calc_benchmark_premium(self, target_sharpe):        
+    def calc_benchmark_premium(self, target_sharpe: float):        
         """
         Calculates the initial premium required to achieve a target Sharpe ratio for a given set of annual losses.
         This function uses numerical optimization to find the premium value that results in the desired Sharpe ratio,
@@ -152,17 +215,15 @@ class PremiumCalculations:
 
         Parameters
         ----------
-        self: float
-            An instance of the premium_calculation class containing a dataframw with monthly losses.
-        target_sharpe: float 
+        target_sharpe : float
             Desired Sharpe ratio to be achieved.
 
         Returns
         -------
-            float: The optimal premium value that achieves the target Sharpe ratio.
+        float
+            Optimal premium value that achieves the target Sharpe ratio.
         """
 
         result = minimize(lambda p: self.find_sharpe(p, self.bond_simulation_class.df_loss_month, target_sharpe), 
                           x0=[0.05])
         self.benchmark_prem_rate = result.x[0]
-
