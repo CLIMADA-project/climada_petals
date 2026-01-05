@@ -8,6 +8,34 @@ from climada_petals.util.config import LOGGER
 
 
 class MultiCountryBond:
+    """
+    Multi-country catastrophe bond simulation wrapper.
+
+    This class aggregates per-country bond simulation inputs (pay vs damage
+    tables and principal allocations) and provides pooled loss/return
+    simulations across multiple countries.
+
+    Parameters
+    ----------
+    country_dictionary : dict
+        Mapping from country codes to bond simulation instances. Each instance
+        must expose `subarea_calc.pay_vs_dam` and `subarea_calc.principal`.
+    term : int
+        Bond term in years for each simulated period.
+    number_of_terms : int
+        Number of consecutive terms to simulate.
+
+    Attributes
+    ----------
+    countries : list
+        List of country codes participating in the bond.
+    pay_vs_dam_dic : dict
+        Mapping of country code to pay-vs-damage DataFrames.
+    principal_dic_cty : dict
+        Mapping of country code to allocated principal.
+    min_year : int
+        Minimum year across all country event tables.
+    """
 
     def __init__(self, country_dictionary, term, number_of_terms):
         self.country_dictionary = country_dictionary
@@ -34,7 +62,7 @@ class MultiCountryBond:
 
 
     @classmethod
-    def simulate_bond_pool_n(cls, country_dictionary, term, number_of_terms, principal, number_pools, n_opt_rep=100):
+    def simulate_bond_pool_n(cls, country_dictionary: dict, term: int, number_of_terms: int, principal: float, number_pools: int, n_opt_rep: int = 100):
         """
         Class method to optimize pool allocation using a fixed number of pools, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
@@ -86,7 +114,7 @@ class MultiCountryBond:
         return mlt_bond_simulation_dic, pool_allocation, algorithm_result
     
     @classmethod
-    def simulate_bond_max_principal_pool(cls, country_dictionary, term, number_of_terms, principal, maximum_principal, n_opt_rep=100):
+    def simulate_bond_max_principal_pool(cls, country_dictionary: dict, term: int, number_of_terms: int, principal: float, maximum_principal: float, n_opt_rep: int = 100):
         """
         Class method to optimize pool allocation using a maximum principal, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
@@ -139,7 +167,7 @@ class MultiCountryBond:
 
 
     '''Simulate one term of bond to derive losses'''
-    def _init_bond_loss(self, events_per_year, principal):
+    def _init_bond_loss(self, events_per_year: list, principal: float):
         '''
         Simulates the expected losses and payouts for a multi-country catastrophe bond over its term.
         This function iterates over each year (term) and processes event data for each country, calculating
@@ -229,16 +257,16 @@ class MultiCountryBond:
         rel_bond_monthly_losses = pd.DataFrame(loss_month_data, columns=['losses', 'months'])
 
         rel_ann_bond_losses = list(np.array(ann_loss) / principal)
-        rel_bond_monthly_losses['losses'] = rel_bond_monthly_losses['losses'].values / principal
+        rel_bond_monthly_losses['losses'] = [losses / principal for losses in rel_bond_monthly_losses['losses'].values]
         coverage_tot = {'payout': np.sum(ann_loss), 'damage': sum_damages}
 
         return rel_ann_bond_losses, rel_ann_cty_losses, rel_bond_monthly_losses, coverage_tot, coverage_cty
 
 
     '''Loop over all terms of bond to derive losses'''
-    def init_loss_simulation(self, principal, confidence_levels=[0.95, 0.99]):
+    def init_loss_simulation(self, principal: float, confidence_levels: list = [0.95, 0.99]):
         """
-        Simulates expected loss and attachment probability for a multi-country catastrophe bond over simulation period.
+        Simulates expected loss and attachment probability for a multi-country catastrophe bond over the simulation period.
         This function aggregates event data for multiple countries over a specified simulation period, computes annual and total losses,
         calculates risk metrics (Value-at-Risk and Expected Shortfall) at given confidence levels, and evaluates coverage and expected loss
         shares for each country. It also computes the probability that the bond is triggered (attachment probability) and can print summary statistics.
@@ -332,12 +360,11 @@ class MultiCountryBond:
         LOGGER.info(f'Attachment Probability = {att_prob_ann}')
 
 
-    '''reduced function to derive returns of the bond -> was used to save time during calculation'''
-    def init_return_simulation(self, premium, rf=0.0):
+    def init_return_simulation(self, premium: float, rf: float = 0.0):
         """
-        Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simiulation period.
-        This function calculates the premium payments, net cash flows, and premium allocations for the whole bond and all countries, 
-        considering monthly losses and country exposure shares. It accounts for loss events, premium payments, 
+        Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simulation period.
+        This function calculates the premium payments, net cash flows, and premium allocations for the whole bond and all countries,
+        considering monthly losses and country exposure shares. It accounts for loss events, premium payments,
         and risk-free rates, and distributes premiums according to country exposure shares represented by the country's Expected Marginal Loss.
 
         Parameters
@@ -409,18 +436,18 @@ class MultiCountryBond:
 
   
     '''reduced function to derive returns of the bond -> was used to save time during calculation'''
-    def init_return_simulation_tranches(self, premiums, tranches, rf=0.0):
+    def init_return_simulation_tranches(self, premiums: list[float], tranches: list[float], rf: float = 0.0):
         """
-        Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simiulation period.
-        This function calculates the premium payments, net cash flows, and premium allocations for each tranche and country, 
-        considering monthly losses, tranche structures, and country exposure shares. It accounts for loss events, premium payments, 
+        Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simulation period.
+        This function calculates the premium payments, net cash flows, and premium allocations for each tranche and country,
+        considering monthly losses, tranche structures, and country exposure shares. It accounts for loss events, premium payments,
         and risk-free rates, and distributes premiums according to country exposure shares represented by the country's Expected Marginal Loss.
 
         Parameters
         ----------
         self: mlt_bond_simulation
             Class instance of mlt_bond_simulation containing monthly loss data, country exposure shares, tranche structures, and the term of the bond.
-        premiums : float
+        premiums : list
             List of annual premium rates for each tranche.
         tranches : list
             List of share of principal values for each tranche.
@@ -429,9 +456,9 @@ class MultiCountryBond:
 
         Returns
         -------
-        ncf : pandas.DataFrame
+        ncf_tranches : pandas.DataFrame
             DataFrame containing net cash flows for each tranche and the total across all tranches for each period.
-        prem_cty_df : pandas.DataFrame
+        prem_cty_df_tranches : pandas.DataFrame
             DataFrame containing premium allocations for each country (based on their exposure share), total premiums (if bond is priced as one), and alternative total premiums (if each tranche is priced seperately).
 
         Notes
@@ -529,7 +556,7 @@ class MultiCountryBond:
 
     
     '''derives losses for one term of bond'''
-    def _init_equ_nom_sim(self, events_per_year, nominal_dic_cty):
+    def _init_equ_nom_sim(self, events_per_year: list, nominal_dic_cty: dict):
         """
         Simulates total losses for a multi-country catastrophe bond over a specified term.
         For each year in the bond's term, the function processes a list of event dataframes, each containing
