@@ -493,7 +493,7 @@ class MultiCountryBond:
                 for j in range(len(losses)):
                     loss = losses[j]
                     month = months[j]
-                    cur_nominal_tranches, payout_per_tranche = allocate_single_payout(loss, cur_nominal_tranches)
+                    cur_nominal_tranches, payout_per_tranche = allocate_single_payout(loss, np.array(cur_nominal_tranches))
                     losses_per_tranche += payout_per_tranche
                     if j + 1 < len(losses):
                         nex_month = months[j+1]
