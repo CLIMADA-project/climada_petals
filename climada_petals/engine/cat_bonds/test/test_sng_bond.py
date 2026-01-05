@@ -1,15 +1,19 @@
+"""Tests for SingleCountryBondSimulation."""
+
 import pandas as pd
 import numpy as np
 from climada_petals.engine.cat_bonds.sng_bond_simulation import SingleCountryBondSimulation
-from climada_petals.util.config import LOGGER
 import unittest
 
 class TestSingleCountryBond(unittest.TestCase):
+    """Unit tests for SingleCountryBondSimulation."""
     def setUp(self):
+        """Set up common fixtures for tests."""
         self.principal = 100
         self.pay_vs_dam = pd.DataFrame()  # DataFrame to be set in tests
 
     def test_init_bond_loss(self):
+        """Validate per-term loss calculation and principal exhaustion."""
         sim = SingleCountryBondSimulation(subarea_calc=self, term=1, number_of_terms=1)
 
         # Year 0 events:
@@ -31,6 +35,7 @@ class TestSingleCountryBond(unittest.TestCase):
         assert df_month["months"].iloc[0] == [1, 2, 3]
 
     def test_init_loss_simulation(self):
+        """Validate aggregated loss metrics and VaR/ES outputs."""
 
         self.pay_vs_dam = pd.DataFrame({
             "year":  [2000,2000,2001,2001,2002,2002, 2003,2003],
@@ -62,6 +67,7 @@ class TestSingleCountryBond(unittest.TestCase):
         assert "ES_95_ann" in metrics
 
     def test_init_return_simulation(self):
+        """Validate annual premium and return calculations over terms."""
         sim = SingleCountryBondSimulation(subarea_calc=self, term=3, number_of_terms=2)
 
         # Create simple df_loss_month:
@@ -108,6 +114,26 @@ class TestSingleCountryBond(unittest.TestCase):
         # Returns:
         # Premiums - losses
         assert np.allclose(out["annual_returns"], [10/100, (8.125/100)-0.5, 0.4167/100-0.5, (8.125/100)-0.5, 0.4167/100-0.5, 0], atol=1e-3)
+
+    def test_init_bond_loss_same_month_events(self):
+        """Validate handling of multiple events in the same month."""
+        sim = SingleCountryBondSimulation(subarea_calc=self, term=1, number_of_terms=1)
+
+        df = pd.DataFrame({
+            "month": [6, 6, 6],
+            "pay": [30, 50, 40],
+            "damage": [35, 55, 45],
+        })
+
+        rel_losses, df_month, tot_pay, tot_dam = sim.init_bond_loss([df])
+
+        # principal exhausted after second event: third payout should be 20
+        assert np.allclose(rel_losses.values, [100/100])
+        assert np.allclose(tot_pay, 100)
+        assert tot_dam == 35 + 55 + 45
+
+        assert df_month["losses"].iloc[0] == [0.30, 0.50, 0.20]
+        assert df_month["months"].iloc[0] == [6, 6, 6]
 
 
 if __name__ == "__main__":
