@@ -1,8 +1,9 @@
+"""Tests for premium calculation utilities."""
+
 import numpy as np
 import pandas as pd
 from climada_petals.engine.cat_bonds.premium_class import PremiumCalculations  
 
-from climada_petals.util.config import LOGGER
 import unittest
 
 # regression coefficients for chatoro premium calculation (extracted from Chatoro et al., 2022)
@@ -17,8 +18,10 @@ b_7 = 0.7057
 
 
 class TestPremiumCalculations(unittest.TestCase):
+    """Unit tests for PremiumCalculations."""
 
     def setUp(self):
+        """Set up common fixtures for tests."""
         self.loss_metrics = {"EL_ann":  0.1}
         self.term = 1
         self.df_loss_month = pd.DataFrame({
@@ -44,7 +47,7 @@ class TestPremiumCalculations(unittest.TestCase):
         NCF_manual = [0.1, 0.1, 0.1, 0.1, 0.1, -0.009166666666666668]
         manual_sharpe = (np.mean(NCF_manual) / np.std(NCF_manual))
 
-        pc.calc_benchmark_premium(target_sharpe=manual_sharpe)
+        pc.calc_benchmark_premium(target_sharpe=float(manual_sharpe))
 
         assert np.isclose(np.array(pc.benchmark_prem_rate), np.array(manual_premium), rtol=1e-6) 
 
@@ -72,10 +75,6 @@ class TestPremiumCalculations(unittest.TestCase):
         pc.calc_ibrd_premium()
 
         assert 0.1 < pc.ibrd_prem_rate < 0.3
-
-
-
-
 
 if __name__ == "__main__":
     TESTS = unittest.TestLoader().loadTestsFromTestCase(TestPremiumCalculations)
