@@ -37,7 +37,7 @@ class MultiCountryBond:
         Minimum year across all country event tables.
     """
 
-    def __init__(self, country_dictionary, term, number_of_terms):
+    def __init__(self, country_dictionary: dict, term: int, number_of_terms: int):
         self.country_dictionary = country_dictionary
         self.term = term
         self.number_of_terms = number_of_terms
