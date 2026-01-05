@@ -33,7 +33,7 @@ class SubareaCalculations:
     initial_guess : tuple[float, float]
         Initial guess for minimum/maximum payout thresholds.
     """
-    def __init__(self, subareas, index_stat: float | str, intitial_guess: tuple[float, float] | None =None):
+    def __init__(self, subareas, index_stat: float | str, initial_guess: tuple[float, float] | None =None):
         """
         Initialize the subarea calculation helper.
 
@@ -43,15 +43,15 @@ class SubareaCalculations:
             Container with `exposure`, `hazard`, `vulnerability`, and `subareas_gdf`.
         index_stat : str or float
             Statistic used for the parametric index ("mean" or a percentile).
-        intitial_guess : tuple[float, float], optional
+        initial_guess : tuple[float, float], optional
             Initial guess for min/max trigger thresholds. When omitted, the
             30th and 60th percentiles of hazard intensity are used.
         """
 
         self.subareas = subareas
         self.index_stat = index_stat
-        if intitial_guess is not None:
-            self.initial_guess = intitial_guess
+        if initial_guess is not None:
+            self.initial_guess = initial_guess
         else:
             self.initial_guess = (np.percentile(subareas.hazard.intensity.data, 30), np.percentile(subareas.hazard.intensity.data, 60))
 
