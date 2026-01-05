@@ -67,6 +67,17 @@ class TestPremiumCalculations(unittest.TestCase):
 
         assert manual_chat_prem == pc.chatoro_prem_rate
 
+    def test_monoexp(self):
+        """Verify monoExp evaluates the exponential form correctly."""
+        pc = PremiumCalculations(self)
+        x = np.array([0.0, 1.0, 2.0])
+        a = 2.0
+        k = 0.5
+        b = 0.1
+        expected = a * np.exp(-k * x) + b
+
+        np.testing.assert_allclose(pc.monoExp(x, a, k, b), expected, rtol=1e-12)
+
     def test_ibrd_premium(self):
         """
         Test if premium rates for the IBRD method are calculated as intended.
