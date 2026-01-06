@@ -136,18 +136,19 @@ class Network:
         #for gra in graphs:
         #    graph += gra.graph
 
-        edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
+        new_edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
             {'source': 'from_id', 'target': 'to_id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
-        nodes = graphs.get_vertex_dataframe()
-        if 'id' in nodes.columns:
-            nodes.pop('id')
-        nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
+        new_nodes = graphs.get_vertex_dataframe()
+        if 'id' in new_nodes.columns:
+            new_nodes.pop('id')
+        new_nodes = gpd.GeoDataFrame(new_nodes.reset_index().rename(
             {'vertex ID': 'id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
 
-        self.edges = edges
-        self.nodes = nodes
+
+        self.edges = new_edges
+        self.nodes = new_nodes
 
     def to_graph(self, directed=False):
         """
@@ -196,5 +197,7 @@ class Network:
         self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
 
     def initialize_supply(self, source):
+        self.nodes[f'access_state_{source}_people'] = "undefined"
         self.nodes[f'actual_supply_{source}_people'] = 0
         self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{source}_people'] = 1
+        self.nodes.loc[self.nodes['ci_type']=='people',f'access_state_{source}_people'] = "no base access"
