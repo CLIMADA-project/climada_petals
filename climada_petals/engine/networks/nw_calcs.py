@@ -833,13 +833,14 @@ class GraphCalcs():
             #1 check access to former source
             es_access_base = self.graph.es.select(ci_type=dependency_name)
 
-            es_access_base_failed_source = es_access_base.select(func_tot_lt=1)
+            #es_access_base_failed_source = es_access_base.select(func_tot_lt=1) ! func_tot on es = road failed?
 
-            #ppl having access to ci in base state
+            #get nodes of ppl having access to ci in base state
             ppl_former_access = [edge.target for edge in es_access_base]
 
-            #ppl having access to ci in new state
-            ppl_former_access_source_failed = [edge.target for edge in es_access_base_failed_source]
+            #ppl having access to ci in base state where source is now failed
+            ppl_former_access_source_failed = [edge.target for edge in es_access_base if self.graph.vs[edge.source]["func_tot"] < 1]
+
 
             #2 Recheck access
 
@@ -885,6 +886,7 @@ class GraphCalcs():
                             'ci_type': row['target']},
                         via_attrs={
                             'ci_type': row['via_link']},
+                            ## here we do not require func_tot=1 on via link
                         link_attrs={
                             'ci_type': "new_"+dependency_name},
                         link_condition=row['link_condition'],
@@ -904,7 +906,7 @@ class GraphCalcs():
                             ci_type="new_"+dependency_name)
 
             #4 mark disrupted access for failed sources
-            ppl_no_reaccess = [ppl_node for ppl_node in ppl_former_access if ppl_node not in ppl_new_access and ppl_node not in ppl_access_broken_via]
+            ppl_no_reaccess = [ppl_node for ppl_node in ppl_former_access if (ppl_node not in ppl_new_access and ppl_node not in ppl_access_broken_via)]
 
             self.graph.vs[ppl_no_reaccess][f'access_state_{row.source}_people'] = "access disrupted source"
 
