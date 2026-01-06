@@ -34,6 +34,7 @@ from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
 import matplotlib as mpl
 import cartopy.crs as ccrs
+from matplotlib.colors import ListedColormap
 
 from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
@@ -56,7 +57,13 @@ MPL_LINE_STYLES = [
 ]
 #list(Line2D.markers.keys())
 
-
+STATUS_MAP = {
+        "access undisrupted": -2,
+        "access new source": -1,
+        "no base access": 0,
+        "access disrupted via": 1,
+        "access disrupted source": 2,
+    }
 LOGGER = logging.getLogger(__name__)
 
 # =============================================================================
@@ -146,6 +153,34 @@ def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**k
     axes.legend()
     #format_plot(axes, crs=crs)
     #f.suptitle(title ,fontweight="bold",y=0.92)
+    return fig, axes
+
+def access_plot(self, ci_type, axes=None, projection=ccrs.PlateCarree(),cmap=ListedColormap(['#046582',"#158204",'grey',"#CF8018", '#BB8082'])):
+    if axes is None:
+        fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
+    else:
+        fig = axes.figure
+    gdf_ppl = self.nodes[self.nodes.ci_type=="people"]
+
+    service = f"access_state_{ci_type}_people"
+
+    # lowercase for safety
+    cvals = gdf_ppl[service].str.lower().map(STATUS_MAP).fillna(0)
+    scatter = axes.scatter(gdf_ppl.geometry.x, gdf_ppl.geometry.y, c=cvals,
+                           s=gdf_ppl['counts']/max(gdf_ppl['counts'])*100,
+                           transform=projection, cmap=cmap, vmin=-2, vmax=2)
+    n_ppl_access_loss = gdf_ppl[gdf_ppl[service].isin(["access disrupted via", "access disrupted source"])].counts.sum()
+    n_ppl_no_base_access = gdf_ppl[gdf_ppl[service].isin(["no base access"])].counts.sum()
+
+    text = f"{n_ppl_no_base_access:.2f} people without base access to {ci_type}" + \
+    f"\n{n_ppl_access_loss:.2f} people loosing access to {ci_type}"
+    axes.text(0.015, 0.015, text, transform=axes.transAxes, fontsize=14, bbox=dict(
+                   ec='gray', fc='gray', alpha=0.2))
+    #add colorbar
+    cbar = fig.colorbar(scatter, ax=axes, orientation="horizontal", shrink = 0.55)#pad=0.05, aspect=50
+    cbar.set_ticks([-8/5, -4/5, 0, 4/5, 8/5])
+    cbar.set_ticklabels(STATUS_MAP.keys(),rotation=30)#,fontweight="bold"#fontsize=18
+    cbar.set_label('Access to service')#,fontweight="bold" fontsize=24
     return fig, axes
 # =============================================================================
 # Spatial analysis util functions

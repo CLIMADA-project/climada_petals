@@ -23,7 +23,10 @@ import logging
 import geopandas as gpd
 import igraph as ig
 import pandas as pd
-from climada_petals.engine.networks.nw_utils import infra_plot, population_plot, dep_plot
+from zipfile import ZipFile, ZIP_DEFLATED
+import io
+from pathlib import Path
+from climada_petals.engine.networks.nw_utils import infra_plot, population_plot, dep_plot, access_plot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +37,7 @@ class Network:
     plot_infra = infra_plot
     plot_pop = population_plot
     plot_dep = dep_plot
+    plot_access = access_plot
 
     def __init__(self,
                  edges=gpd.GeoDataFrame(),
@@ -128,6 +132,79 @@ class Network:
 
         return Network(edges=edges, nodes=nodes)
 
+    def save_network_zip(self, path_save, savename):
+        """
+        Save a network's nodes and edges into a single .zip archive
+        containing Feather files.
+
+        Args:
+            network (Network): Network with GeoDataFrames `.nodes` and `.edges`.
+            path_save (str | pathlib.Path): Directory to place the archive.
+            savename (str): Base name for the archive (without extension).
+
+        Returns:
+            pathlib.Path: Path to the created zip archive.
+        """
+        path_save = Path(path_save)
+        path_save.mkdir(parents=True, exist_ok=True)
+        zip_path = path_save / f"{savename}.zip"
+
+        with ZipFile(zip_path, mode="w", compression=ZIP_DEFLATED) as zf:
+            # Save nodes
+            if hasattr(self, "nodes") and not self.nodes.empty:
+                buf_nodes = io.BytesIO()
+                gpd.GeoDataFrame(self.nodes).to_feather(buf_nodes)
+                zf.writestr(f"{savename}_nodes.feather", buf_nodes.getvalue())
+
+            # Save edges (optional if present)
+            if hasattr(self, "edges") and not self.edges.empty:
+                buf_edges = io.BytesIO()
+                gpd.GeoDataFrame(self.edges).to_feather(buf_edges)
+                zf.writestr(f"{savename}_edges.feather", buf_edges.getvalue())
+
+        return zip_path
+
+    @classmethod
+    def load_network_zip(cls, path_load, savename):
+        """
+        Load a network's nodes and edges from a .zip archive that
+        contains Feather files saved by `save_network_zip`.
+
+        Args:
+            path_load (str | pathlib.Path): Directory containing `<savename>.zip`.
+            savename (str): Base name used when saving (without extension).
+
+        Returns:
+            Network: Network with `nodes` and `edges` GeoDataFrames
+                     (empty if not found).
+        """
+        path_load = Path(path_load)
+        zip_path = path_load / f"{savename}.zip"
+
+        nodes = gpd.GeoDataFrame()
+        edges = gpd.GeoDataFrame()
+
+        if not zip_path.exists():
+            print(f"Archive {zip_path} not found")
+            return Network(edges=edges, nodes=nodes)
+
+        with ZipFile(zip_path, mode="r") as zf:
+            nodes_name = f"{savename}_nodes.feather"
+            edges_name = f"{savename}_edges.feather"
+
+            if nodes_name in zf.namelist():
+                with zf.open(nodes_name) as f:
+                    nodes = gpd.read_feather(io.BytesIO(f.read()))
+            else:
+                print(f"Nodes file {nodes_name} not found in archive")
+
+            if edges_name in zf.namelist():
+                with zf.open(edges_name) as f:
+                    edges = gpd.read_feather(io.BytesIO(f.read()))
+            else:
+                print(f"Edges file {edges_name} not found in archive")
+
+        return cls(edges=edges, nodes=nodes)
     def update_network_from_graphs(self, graphs):
         """
         update network object from several graph objects
