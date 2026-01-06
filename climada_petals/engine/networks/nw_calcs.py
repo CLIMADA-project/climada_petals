@@ -843,25 +843,25 @@ class GraphCalcs():
 
 
             #2 Recheck access
-
-            #recalc dependencies
-            self.graph.delete_edges(
-                            ci_type=dependency_name)
-            self._calc_dependencies(
-                        source_attrs={
-                            'ci_type': row['source'],
-                            'func_tot': 1},
-                        target_attrs={
-                            'ci_type': row['target']},
-                        via_attrs={
-                            'ci_type': row['via_link'],
-                            'func_tot': 1},
-                        link_attrs={
-                            'ci_type': dependency_name},
-                        link_condition=row['link_condition'],
-                        dist_thresh=row['thresh_dist'],
-                        bidir_link=row['bidir_link']
-                    )
+            if rerouting:
+                # if we allow rerouting, recompute dependencies from scratch
+                self.graph.delete_edges(
+                                ci_type=dependency_name)
+                self._calc_dependencies(
+                            source_attrs={
+                                'ci_type': row['source'],
+                                'func_tot': 1},
+                            target_attrs={
+                                'ci_type': row['target']},
+                            via_attrs={
+                                'ci_type': row['via_link'],
+                                'func_tot': 1},
+                            link_attrs={
+                                'ci_type': dependency_name},
+                            link_condition=row['link_condition'],
+                            dist_thresh=row['thresh_dist'],
+                            bidir_link=row['bidir_link']
+                        )
             es_access_new = self.graph.es.select(
                 ci_type=dependency_name)
             ppl_new_access = [edge.target for edge in es_access_new]
