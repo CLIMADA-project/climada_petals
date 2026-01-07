@@ -941,9 +941,6 @@ class GraphCalcs():
                     [subgraph_graph_vsdict[sink.index] for sink in sinks]
                 ].set_attribute_values(var, sd_ratio)
 
-    def return_network(self):
-        return Network.from_graphs([self])
-
 class NetworkCalcs():
     """Gathers wrapper for network preparation"""
     def __init__(self, network, dep_table):

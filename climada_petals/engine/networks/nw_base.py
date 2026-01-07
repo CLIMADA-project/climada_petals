@@ -111,27 +111,6 @@ class Network:
         return Network(edges=edges.reset_index(drop=True),
                        nodes=nodes.reset_index(drop=True))
 
-    @classmethod
-    def from_graphs(cls, graphs):
-        """
-        make one network object out of several graph objects
-        """
-        graph = ig.Graph(directed=graphs[0].directed)
-        for gra in graphs:
-            graph += gra.graph
-
-        edges = gpd.GeoDataFrame(graph.get_edge_dataframe().rename(
-            {'source': 'from_id', 'target': 'to_id'}, axis=1),
-            geometry='geometry', crs='EPSG:4326')
-        nodes = graph.get_vertex_dataframe()
-        if 'id' in nodes.columns:
-            nodes.pop('id')
-        nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
-            {'vertex ID': 'id'}, axis=1),
-            geometry='geometry', crs='EPSG:4326')
-
-        return Network(edges=edges, nodes=nodes)
-
     def save_network_zip(self, path_save, savename):
         """
         Save a network's nodes and edges into a single .zip archive
@@ -209,9 +188,6 @@ class Network:
         """
         update network object from several graph objects
         """
-        #graph = ig.Graph(directed=graphs[0].directed)
-        #for gra in graphs:
-        #    graph += gra.graph
 
         new_edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
             {'source': 'from_id', 'target': 'to_id'}, axis=1),
