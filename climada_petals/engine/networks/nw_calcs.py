@@ -846,8 +846,8 @@ class GraphCalcs():
         self.graph.vs[ppl_no_reaccess + ppl_access_broken_via][f'actual_supply_{row.source}_{row.target}'] = 0
 
 
-
-    def recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
+    @DeprecationWarning
+    def _recheck_access(self, source_ci, target_ci, via_ci, friction_surf,
                        dist_thresh, dur_thresh, criterion='distance',
                        link_name=None, bidir=False):
         """
