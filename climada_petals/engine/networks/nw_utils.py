@@ -69,17 +69,6 @@ LOGGER = logging.getLogger(__name__)
 # =============================================================================
 # Plots
 # =============================================================================
-def _format_plot(ax, crs):
-    """formatting for all plots"""
-    ctx.add_basemap(ax, source=BASEMAPS["osm"]["providers"][1],crs=crs, attribution_size=rc["font.size"]/2)
-    gl = ax.gridlines(draw_labels=False, dms=True)
-    gl.xlabels_top = False
-    gl.ylabels_left = False
-    gl.xlines = False
-    gl.ylines = False
-    ax.legend(loc='upper left')#fontsize=30,
-    add_scalebar(ax, crs)
-
 def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
     plot_df = self.nodes[self.nodes.ci_type=="people"]
     if axes is None:
@@ -151,7 +140,6 @@ def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**k
         plot_df = self.edges[self.edges.ci_type==dep]
         plot_df.plot(ax=axes, color=color, transform=projection, label=dep, alpha=0.5, zorder=10, **kwargs)
     axes.legend()
-    #format_plot(axes, crs=crs)
     #f.suptitle(title ,fontweight="bold",y=0.92)
     return fig, axes
 
