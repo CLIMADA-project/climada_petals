@@ -1018,10 +1018,6 @@ class NetworkCalcs():
             if  row['type_I'] == 'enduser':
                 self.network.initialize_supply(row['source'])
 
-    def add_dependency(self, source, target, n_links, access_cnstr):
-        return
-
-
     def setup_dependencies(self):
         for i, row in self.dep_table.iterrows():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
