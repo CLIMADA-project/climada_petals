@@ -29,7 +29,8 @@ from shapely.geometry import Point, LineString
 import igraph as ig
 import copy as cp
 from climada_petals.engine.networks.nw_base import Network
-
+from climada_petals.engine.networks.nw_preps import add_distances
+from climada.util.constants import ONE_LAT_KM
 
 @pytest.fixture
 def temp_dir():
@@ -46,7 +47,7 @@ def nodes_gdf():
         {
             'id': [0, 1, 2, 3],
             'orig_id': [0, 1, 2, 3],
-            'geometry': [Point(0, 0), Point(1, 1), Point(2, 2), Point(1, 1)]
+            'geometry': [Point(0, 0), Point(1, 1), Point(2, 2), Point(3, 3)]
         },
         geometry='geometry',
         crs='EPSG:4326'
@@ -58,14 +59,14 @@ def edges_gdf():
     """Create simple test edges"""
     return gpd.GeoDataFrame(
         {
-            'from_id': [0, 1],
-            'to_id': [1, 2],
+            'from_id': [1, 2],
+            'to_id': [2, 3],
             'id': [0, 1],
             'orig_id': [0, 1],
             'osm_id': [100, 101],
             'geometry': [
-                LineString([(0, 0), (1, 1)]),
-                LineString([(1, 1), (2, 2)])
+                LineString([(1, 1), (2, 2)]),
+                LineString([(2, 2), (3, 3)])
             ]
         },
         geometry='geometry',
@@ -76,9 +77,9 @@ def edges_gdf():
 def network_with_ci_types(edges_gdf, nodes_gdf):
     """Create a network with CI type information"""
     nodes = nodes_gdf.copy()
-    nodes['ci_type'] = ['road', 'road', 'road','healthcare']
+    nodes['ci_type'] = ['people', 'road', 'road','healthcare']
     nodes['func_tot'] = 1
-    nodes.loc[0,'func_tot'] = 0  # partial functionality for testing
+    nodes.loc[1,'func_tot'] = 0  # partial functionality for testing
     edges = edges_gdf.copy()
     edges['ci_type'] = 'road'
     edges['func_tot'] = 1
@@ -281,7 +282,7 @@ class TestNetwork:
         network_update = cp.deepcopy(network_with_ci_types)
         graph = network_update.to_graph(directed=False)
         #modify graph by adding a new node and edge
-        graph.add_vertex(name='new_node', id=4, orig_id=4, ci_type='healthcare', func_tot=1)
+        graph.add_vertex(name='new_node', id=5, orig_id=5, ci_type='healthcare', func_tot=1)
         graph.add_edge(2, 4)
 
         # Update network from graph
@@ -324,7 +325,7 @@ class TestGraphCalcs:
         graph = graph_calcs.build_graph()
 
         assert isinstance(graph, ig.Graph)
-        assert graph.vcount() == 4
+        assert graph.vcount() == 5
         assert graph.ecount() == 2
 
     def test_graph_calcs_graph_property_lazy_load(self, graph_calcs):
@@ -408,18 +409,18 @@ class TestGraphCalcs:
     def test_select_closest_k_basic(self):
         """Test selecting k nearest neighbors"""
         # Create source and target node GeoDataFrames
-        gdf_vs_source = gpd.GeoDataFrame(
+        gdf_vs_target = gpd.GeoDataFrame(
             {
                 'id': [0, 1],
-                'geometry': [Point(0, 0), Point(1, 1)]
+                'geometry': [Point(0, 0), Point(3, 3)]
             },
             geometry='geometry',
             crs='EPSG:4326'
         )
-        gdf_vs_target = gpd.GeoDataFrame(
+        gdf_vs_source = gpd.GeoDataFrame(
             {
                 'id': [2, 3],
-                'geometry': [Point(2, 2), Point(3, 3)]
+                'geometry': [Point(1, 1), Point(2, 2)]
             },
             geometry='geometry',
             crs='EPSG:4326'
@@ -431,6 +432,37 @@ class TestGraphCalcs:
 
         assert len(v_ids_source) > 0
         assert len(v_ids_source) == len(v_ids_target)
+        np.testing.assert_array_equal(v_ids_target, [0, 1])
+        np.testing.assert_array_equal(v_ids_source, [2, 3])
+
+    def test_select_closest_k_dist(self):
+        """Test selecting k nearest neighbors with distance threshold"""
+        # Create source and target node GeoDataFrames
+        gdf_vs_target = gpd.GeoDataFrame(
+            {
+                'id': [0, 1],
+                'geometry': [Point(0, 0), Point(6, 6)]
+            },
+            geometry='geometry',
+            crs='EPSG:4326'
+        )
+        gdf_vs_source = gpd.GeoDataFrame(
+            {
+                'id': [2, 3],
+                'geometry': [Point(1, 1), Point(2, 2)]
+            },
+            geometry='geometry',
+            crs='EPSG:4326'
+        )
+        dist_th = 2 * (ONE_LAT_KM * 1000)
+        v_ids_source, v_ids_target = GraphCalcs._select_closest_k(
+            gdf_vs_source, gdf_vs_target, dist_thresh=dist_th, bidir=False, k=1
+        )
+
+        assert len(v_ids_source) > 0
+        assert len(v_ids_source) == len(v_ids_target)
+        np.testing.assert_array_equal(v_ids_target, [0])
+        np.testing.assert_array_equal(v_ids_source, [2])
 
     def test_funcstates_sum(self, graph_calcs):
         """Test summing functional states"""
@@ -448,13 +480,14 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         source_attrs = {'ci_type': 'road'}
-        target_attrs = {'ci_type': 'demand'}
-        via_attrs = {'ci_type': 'junction'}
+        target_attrs = {'ci_type': 'people'}
+        via_attrs = {'ci_type': 'road'}
 
         subgraph = graph_calcs._create_subgraph(source_attrs, target_attrs, via_attrs)
 
         assert isinstance(subgraph, ig.Graph)
-        assert subgraph.vcount() <= graph_calcs.graph.vcount()
+        assert subgraph.vcount() == 4  # 3 road nodes + 1 people node
+        assert subgraph.ecount() == 2  # 2 edges between road nodes
 
     def test_link_vertices_edgecond(self, graph_calcs):
         """Test linking vertices based on edge conditions"""
@@ -463,13 +496,15 @@ class TestGraphCalcs:
 
         # This should add edges based on condition
         graph_calcs.link_vertices_edgecond(
-            target_attrs={'ci_type': 'demand'},
+            target_attrs={'ci_type': 'healthcare'},
             edge_attrs={'ci_type': 'road'},
-            link_attrs={'ci_type': 'dependency_road_demand'}
+            link_attrs={'ci_type': 'dependency_road_healthcare'}
         )
 
         # Verify that method completes without error
-        assert graph_calcs.graph is not None
+        assert graph_calcs.graph.ecount() > initial_edge_count
+        assert 'dependency_road_healthcare' in graph_calcs.graph.es["ci_type"]
+
 
 
 # ========================================================================
@@ -483,13 +518,15 @@ from climada_petals.engine.networks.nw_calcs import NetworkCalcs
 def dependency_table():
     """Create a simple dependency table"""
     return pd.DataFrame({
-        'source': ['road', 'power_plant'],
-        'target': ['demand', 'power_line'],
-        'type_I': ['physical', 'functional'],
+        'source': ['road', 'healthcare'],
+        'target': ['people', 'people'],
+        'type_I': ['physical', 'physical'],
+        'via_link': ['road', 'road'],
         'link_condition': ['distance', 'distance'],
-        'dist_thresh': [1000, 1000],
+        'thresh_dist': [np.inf, np.inf],
         'bidir_link': [False, False],
-        'access_cnstr': [False, False]
+        'access_cnstr': [False, True],
+        'n_links': [1, 1]
     })
 
 
@@ -519,17 +556,20 @@ class TestNetworkCalcs:
         assert 'func_internal' in network_calcs.network.edges.columns
         assert 'func_tot' in network_calcs.network.edges.columns
 
-    def test_merge_clusters_single_cluster(self, network_calcs):
+    def test_merge_clusters(self, network_calcs):
         """Test merging clusters when network is already connected"""
-        # Set up network with single cluster
+
         network_calcs.graph_calc.build_graph()
+        init_node_count = len(network_calcs.network.nodes)
+        init_edge_count = len(network_calcs.network.edges)
 
         # Try to merge clusters
-        network_calcs.merge_clusters(ci_type='road', max_iter=1, dist_thresh=30000)
+        network_calcs.merge_clusters(ci_type='road', max_iter=1, dist_thresh=np.inf)
 
         # Verify network structure is maintained
-        assert len(network_calcs.network.nodes) > 0
-        assert len(network_calcs.network.edges) > 0
+        assert len(network_calcs.network.nodes) == init_node_count
+        assert len(network_calcs.network.edges) >= init_edge_count #! double edges may be added
+        assert len(network_calcs.graph_calc.graph.connected_components()) == 1
 
     def test_add_physical_links(self, network_calcs):
         """Test adding physical links to network"""
@@ -537,15 +577,21 @@ class TestNetworkCalcs:
 
         network_calcs.add_physical_links()
 
-        # Physical links may or may not be added depending on data
-        assert len(network_calcs.network.edges) >= initial_edge_count
+        # check that one edge between people and road has been added
+        assert len(network_calcs.network.edges) >= initial_edge_count + 1
+        assert len(network_calcs.network.nodes) == len(network_calcs.network.nodes)
+        assert network_calcs.network.edges.iloc[initial_edge_count]['ci_type'] == 'road'
 
     def test_setup_dependencies(self, network_calcs):
         """Test setting up dependencies"""
+
+        #add distances first
+        network_calcs.network = add_distances(network_calcs.network)
         network_calcs.setup_dependencies()
 
         # Verify that graph has been updated
-        assert network_calcs.graph_calc.graph is not None
+        assert "dependency_road_people" in network_calcs.graph_calc.graph.es["ci_type"]
+        assert "dependency_healthcare_people" in network_calcs.graph_calc.graph.es["ci_type"]
 
     def test_network_calcs_graph_property(self, network_calcs):
         """Test graph property of NetworkCalcs"""
