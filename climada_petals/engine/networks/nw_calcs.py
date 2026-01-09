@@ -31,8 +31,7 @@ import scipy
 
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
-                                                     _ckdnearest,
-                                                     _preselect_destinations)
+                                                     _ckdnearest)
 from climada_petals.engine.networks.nw_preps import (reset_ids,
                                                      ordered_network)
 
