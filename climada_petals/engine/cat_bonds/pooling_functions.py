@@ -64,7 +64,7 @@ def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100
         )
 
         # Solve the problem
-        res_reg = minimize(problem, algorithm, verbose=False, save_history=True)
+        res_reg = minimize(problem.fixed_number_pools_problem, algorithm, verbose=False, save_history=True)
 
         # Process results (same code as inside the loop)
         x = res_reg.X
@@ -128,6 +128,7 @@ def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simul
     # Loop through repetitions for seed analysis
     for index in opt_rep:
         # Define Problem and Algorithm (same as inside the loop)
+        
         problem = PoolOptimizationMaximumPrincipal(principal_sng, maximum_principal, df_losses, bools, alpha, len(countries), calc_pool_conc)
         algorithm = GA(
             pop_size=2000,
@@ -138,7 +139,7 @@ def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simul
         )
 
         # Solve the problem
-        res_reg = minimize(problem, algorithm, verbose=False, save_history=True)
+        res_reg = minimize(problem.max_principal_problem, algorithm, verbose=False, save_history=True)
 
         # Process results (same code as inside the loop)
         x = res_reg.X
@@ -157,9 +158,6 @@ def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simul
             country_allocation['min_conc'] = pd.DataFrame([res_reg.F], columns=['min_conc'])
 
     return country_allocation, algorithm_result
-
-
-
 
 
 def calc_pool_conc(x, data_arr, bools, alpha):
@@ -205,8 +203,8 @@ def calc_pool_conc(x, data_arr, bools, alpha):
 
     return np.round(POOL_CONC, 2)
 
-'''Pool optimization problem using fixed number of pools'''
-class PoolOptimizationFixedNumber(ElementwiseProblem):
+
+class PoolOptimizationFixedNumber():
     def __init__(self, nominals, data, bools, alpha, N, fun, **kwargs):
         self.data_arr = data
         self.bools = bools
@@ -215,30 +213,32 @@ class PoolOptimizationFixedNumber(ElementwiseProblem):
         self.fun = fun
         self.nominals = np.array(nominals)
         self.n_countries = len(nominals)
-        super().__init__(
-            n_var=self.data_arr.shape[1],
-            n_obj=1,  
-            n_constr = 1,
-            xl=0,                  
-            xu=self.N - 1,
+        self.fixed_number_pools_problem = self._init_optimisation_problem(len(nominals), N, **kwargs)
+        self.fixed_number_pools_problem._evaluate = self._evaluate
+
+    @classmethod
+    def _init_optimisation_problem(cls, n_countries, n_pools, **kwargs): # I would also rename n_var to what they are in your case
+         return ElementwiseProblem(
+            n_var=n_countries,
+            n_obj=1,
+            n_constr=1,
+            xl=0,
+            xu=n_pools - 1,
             type_var=int,
-            vars=[Integer((0, self.n_countries - 1)) for _ in range(self.n_countries)],
+            vars=[Integer((0, n_countries - 1)) for _ in range(n_countries)],
             **kwargs
         )
 
     def _evaluate(self, x, out, *args, **kwargs):
-        pools = {i: [] for i in np.unique(x)}
-        for i, pool_id in enumerate(x):
-            if len(np.where(x == i)[0]) > 0:
-                pool_mask = np.where(x == i)[0]
-                pools[i].append(pool_mask)
-        
+        pool_ids = np.unique(x)
+        pools = {pid: np.where(x == pid)[0] for pid in pool_ids}
+
         total_concentration = 0
         for pool_key, pool_countries in pools.items():
-            pool1_col = self.data_arr.columns[pool_countries[0]]
+            pool1_col = self.data_arr.columns[pool_countries]
             pool1_data = self.data_arr[pool1_col].values
             pool1_bools = self.bools[pool1_col].values
-            conc = self.fun(np.arange(0, len(pool_countries[0])), pool1_data, pool1_bools, self.alpha)
+            conc = self.fun(np.arange(0, len(pool_countries)), pool1_data, pool1_bools, self.alpha)
             total_concentration += conc
         constraints = 0
         if len(pools) != self.N:
@@ -251,8 +251,8 @@ def pop_num(n, k):
     combinations = comb(n + k - 1, k)
     return combinations
 
-'''Pool optimization problem using maximum nominal constraint'''
-class PoolOptimizationMaximumPrincipal(ElementwiseProblem):
+
+class PoolOptimizationMaximumPrincipal():
     def __init__(self, nominals, max_nominal, data, bools, alpha, N, fun, **kwargs):
         self.data_arr = data
         self.bools = bools
@@ -262,34 +262,36 @@ class PoolOptimizationMaximumPrincipal(ElementwiseProblem):
         self.nominals = np.array(nominals)
         self.n_countries = len(nominals)
         self.max_nominal = max_nominal
-        super().__init__(
-            n_var=self.data_arr.shape[1],
-            n_obj=1,  
-            n_constr = 1,
-            xl=0,                  
-            xu=self.N - 1,
+        self.max_principal_problem = self._init_optimisation_problem(len(nominals), N, **kwargs)
+        self.max_principal_problem._evaluate = self._evaluate
+
+    @classmethod
+    def _init_optimisation_problem(cls, n_countries, n_pools, **kwargs): # I would also rename n_var to what they are in your case
+         return ElementwiseProblem(
+            n_var=n_countries,
+            n_obj=1,
+            n_constr=1,
+            xl=0,
+            xu=n_pools - 1,
             type_var=int,
-            vars=[Integer((0, self.n_countries - 1)) for _ in range(self.n_countries)],
+            vars=[Integer((0, n_countries - 1)) for _ in range(n_countries)],
             **kwargs
         )
 
     def _evaluate(self, x, out, *args, **kwargs):
-        pools = {i: [] for i in np.unique(x)}
-        for i, pool_id in enumerate(x):
-            if len(np.where(x == i)[0]) > 0:
-                pool_mask = np.where(x == i)[0]
-                pools[i].append(pool_mask)
+        pool_ids = np.unique(x)
+        pools = {pid: np.where(x == pid)[0] for pid in pool_ids}
         
         total_concentration = 0
         for pool_key, pool_countries in pools.items():
-            pool1_col = self.data_arr.columns[pool_countries[0]]
+            pool1_col = self.data_arr.columns[pool_countries]
             pool1_data = self.data_arr[pool1_col].values
             pool1_bools = self.bools[pool1_col].values
-            conc = self.fun(np.arange(0, len(pool_countries[0])), pool1_data, pool1_bools, self.alpha) * np.sum(self.nominals[pool_countries[0]])
+            conc = self.fun(np.arange(0, len(pool_countries)), pool1_data, pool1_bools, self.alpha) * np.sum(self.nominals[pool_countries])
             total_concentration += conc
         constraints = 0
         for members in pools.values():
-            pool_nominal_diff = np.sum(self.nominals[members[0]]) - self.max_nominal
+            pool_nominal_diff = np.sum(self.nominals[members]) - self.max_nominal
             if pool_nominal_diff > 0:
                 constraints += pool_nominal_diff
 
