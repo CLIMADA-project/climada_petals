@@ -1,5 +1,4 @@
 import numpy as np
-from math import comb
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.core.variable import Integer
 import pandas as pd
@@ -129,7 +128,7 @@ def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simul
     for index in opt_rep:
         # Define Problem and Algorithm (same as inside the loop)
         
-        problem = PoolOptimizationMaximumPrincipal(principal_sng, maximum_principal, df_losses, bools, alpha, len(countries), calc_pool_conc)
+        problem = PoolOptimizationMaximumPrincipal(principal_sng, maximum_principal, df_losses, bools, alpha, calc_pool_conc)
         algorithm = GA(
             pop_size=2000,
             sampling=IntegerRandomSampling(),
@@ -247,32 +246,27 @@ class PoolOptimizationFixedNumber():
         out["F"] = total_concentration/len(pools)
         out["G"] = constraints
 
-def pop_num(n, k):
-    combinations = comb(n + k - 1, k)
-    return combinations
-
 
 class PoolOptimizationMaximumPrincipal():
-    def __init__(self, nominals, max_nominal, data, bools, alpha, N, fun, **kwargs):
+    def __init__(self, nominals, max_nominal, data, bools, alpha, fun, **kwargs):
         self.data_arr = data
         self.bools = bools
         self.alpha = alpha
-        self.N = N
         self.fun = fun
         self.nominals = np.array(nominals)
         self.n_countries = len(nominals)
         self.max_nominal = max_nominal
-        self.max_principal_problem = self._init_optimisation_problem(len(nominals), N, **kwargs)
+        self.max_principal_problem = self._init_optimisation_problem(len(nominals), **kwargs)
         self.max_principal_problem._evaluate = self._evaluate
 
     @classmethod
-    def _init_optimisation_problem(cls, n_countries, n_pools, **kwargs): # I would also rename n_var to what they are in your case
+    def _init_optimisation_problem(cls, n_countries, **kwargs): # I would also rename n_var to what they are in your case
          return ElementwiseProblem(
             n_var=n_countries,
             n_obj=1,
             n_constr=1,
             xl=0,
-            xu=n_pools - 1,
+            xu=n_countries - 1,
             type_var=int,
             vars=[Integer((0, n_countries - 1)) for _ in range(n_countries)],
             **kwargs
