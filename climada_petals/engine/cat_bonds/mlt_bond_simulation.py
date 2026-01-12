@@ -454,7 +454,7 @@ class MultiCountryBond:
         premiums : list
             List of annual premium rates for each tranche.
         tranches : list
-            List of share of principal values for each tranche.
+            List of share of principal values for each tranche. Should sum to 1.
         rf : float, optional
             Risk-free rate to be added to the premium (default is 0.0).
 
@@ -474,7 +474,8 @@ class MultiCountryBond:
         - Alternative premium calculation is provided for country-level allocation.
         - Losses are allocated to tranches in reverse order (from highest to lowest risk).
         """
-
+        if not np.sum(tranches) == 1:
+            raise ValueError("Tranches should sum to 1.")
         ncf = {str(tranche): [] for tranche in tranches}
         premiums_tot = []
         cur_nominal_tranches = tranches.copy()
