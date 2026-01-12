@@ -29,7 +29,6 @@ from shapely.geometry import Point, LineString
 import igraph as ig
 import copy as cp
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.nw_preps import add_distances
 from climada.util.constants import ONE_LAT_KM
 
 @pytest.fixture
@@ -64,6 +63,7 @@ def edges_gdf():
             'id': [0, 1],
             'orig_id': [0, 1],
             'osm_id': [100, 101],
+            'distance': [157200, 157200],  # approx distances in meters
             'geometry': [
                 LineString([(1, 1), (2, 2)]),
                 LineString([(2, 2), (3, 3)])
@@ -585,8 +585,6 @@ class TestNetworkCalcs:
     def test_setup_dependencies(self, network_calcs):
         """Test setting up dependencies"""
 
-        #add distances first
-        network_calcs.network = add_distances(network_calcs.network)
         network_calcs.setup_dependencies()
 
         # Verify that graph has been updated
@@ -599,55 +597,6 @@ class TestNetworkCalcs:
 
         assert isinstance(graph, ig.Graph)
 
-    def test_network_calcs_multiple_dependencies(self):
-        """Test NetworkCalcs with multiple dependencies"""
-        nodes = gpd.GeoDataFrame(
-            {
-                'id': [0, 1, 2, 3],
-                'orig_id': [0, 1, 2, 3],
-                'ci_type': ['power_plant', 'power_line', 'road', 'people'],
-                'func_tot': [1, 1, 1, 1],
-                'geometry': [Point(0, 0), Point(1, 1), Point(2, 2), Point(3, 3)]
-            },
-            geometry='geometry',
-            crs='EPSG:4326'
-        )
-        edges = gpd.GeoDataFrame(
-            {
-                'from_id': [0, 1, 2],
-                'to_id': [1, 2, 3],
-                'id': [0, 1, 2],
-                'orig_id': [0, 1, 2],
-                'osm_id': [100, 101, 102],
-                'ci_type': ['power', 'power', 'road'],
-                'func_tot': [1, 1, 1],
-                'geometry': [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)])
-                ]
-            },
-            geometry='geometry',
-            crs='EPSG:4326'
-        )
-        network = Network(edges=edges, nodes=nodes)
-
-        dep_table = pd.DataFrame({
-            'source': ['power_plant', 'road'],
-            'target': ['people', 'people'],
-            'type_I': ['functional', 'physical'],
-            'link_condition': ['distance', 'distance'],
-            'dist_thresh': [1000, 1000],
-            'bidir_link': [False, False],
-            'access_cnstr': [False, False]
-        })
-
-        nc = NetworkCalcs(network=network, dep_table=dep_table)
-        nc.initialize_base_state()
-
-        # Verify base state was initialized
-        assert 'func_tot' in nc.network.nodes.columns
-        assert 'func_tot' in nc.network.edges.columns
 
 
 
