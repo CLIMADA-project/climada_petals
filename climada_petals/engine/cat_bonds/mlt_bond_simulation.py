@@ -62,7 +62,7 @@ class MultiCountryBond:
 
 
     @classmethod
-    def simulate_bond_pool_n(cls, country_dictionary: dict, term: int, number_of_terms: int, principal: float, number_pools: int, n_opt_rep: int = 100):
+    def simulate_bond_pool_n(cls, country_dictionary: dict, term: int, number_of_terms: int, number_pools: int, n_opt_rep: int = 100):
         """
         Class method to optimize pool allocation using a fixed number of pools, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
@@ -74,8 +74,6 @@ class MultiCountryBond:
             Term of the bond in years.
         number_of_terms : int
             Number of terms to simulate.
-        principal : float
-            Total principal value of the bond.
         number_pools : int
             Number of pools to create.
         n_opt_rep : int, optional
@@ -101,6 +99,7 @@ class MultiCountryBond:
                 pool_dict[pool_allocation[cty][0]] = []
             pool_dict[pool_allocation[cty][0]].append(cty)
         LOGGER.info("Completed pooling optimization.")
+        print(pool_dict)
 
         mlt_bond_simulation_dic = {}
         for key, countries in pool_dict.items():
@@ -108,13 +107,14 @@ class MultiCountryBond:
             LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
             pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
             mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
-            mlt_bond_simulation_dic[key].init_loss_simulation(principal)
+            mlt_bond_simulation_dic[key].init_required_principal()
+            mlt_bond_simulation_dic[key].init_loss_simulation(mlt_bond_simulation_dic[key].requ_principal)
             LOGGER.info(f"Completed loss simulation for pool {key}.")
 
         return mlt_bond_simulation_dic, pool_allocation, algorithm_result
-    
+
     @classmethod
-    def simulate_bond_max_principal_pool(cls, country_dictionary: dict, term: int, number_of_terms: int, principal: float, maximum_principal: float, n_opt_rep: int = 100):
+    def simulate_bond_max_principal_pool(cls, country_dictionary: dict, term: int, number_of_terms: int, maximum_principal: float, n_opt_rep: int = 100):
         """
         Class method to optimize pool allocation using a maximum principal, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
@@ -126,8 +126,8 @@ class MultiCountryBond:
             Term of the bond in years.
         number_of_terms : int
             Number of terms to simulate.
-        principal : float
-            Total principal value of the bond.
+        principal : float | None
+            Total principal value of the bond. If none it will be calculated with init_required_principal()
         maximum_principal : float
             Maximum principal allowed per pool.
         n_opt_rep : int, optional
@@ -159,7 +159,8 @@ class MultiCountryBond:
             LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
             pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
             mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
-            mlt_bond_simulation_dic[key].init_loss_simulation(principal)
+            mlt_bond_simulation_dic[key].init_required_principal()
+            mlt_bond_simulation_dic[key].init_loss_simulation(mlt_bond_simulation_dic[key].requ_principal)
             LOGGER.info(f"Completed loss simulation for pool {key}.")
 
         return mlt_bond_simulation_dic, pool_allocation, algorithm_result
@@ -303,7 +304,7 @@ class MultiCountryBond:
         coverage = {'payout': 0, 'damage': 0}
         self.tot_coverage_cty = {}
         for cty in self.countries:
-            self.tot_coverage_cty[cty] = {'payout': 0.0, 'damage': 0.0, 'coverage': 0.0, 'EL': 0, 'share_EL': 0}
+            self.tot_coverage_cty[cty] = {'Tot_payout': 0.0, 'Tot_damages': 0.0, 'coverage': 0.0, 'EL': 0, 'share_EL': 0}
 
         for start_year in range(self.min_year, self.min_year + self.number_of_terms):
             events_per_year = []
@@ -324,8 +325,8 @@ class MultiCountryBond:
             coverage['damage'] += coverage_tot['damage']
 
             for key in coverage_cty.keys():
-                self.tot_coverage_cty[key]['payout'] += coverage_cty[key]['payout']
-                self.tot_coverage_cty[key]['damage'] += coverage_cty[key]['damage']
+                self.tot_coverage_cty[key]['Tot_payout'] += coverage_cty[key]['payout']
+                self.tot_coverage_cty[key]['Tot_damages'] += coverage_cty[key]['damage']
 
             for key in rel_ann_cty_losses:
                 ann_cty_losses[key].extend(rel_ann_cty_losses[key])
@@ -341,7 +342,7 @@ class MultiCountryBond:
         var_list, es_list = multi_level_es(annual_losses, confidence_levels)
 
         for key in self.tot_coverage_cty.keys():
-            self.tot_coverage_cty[key]['coverage'] = self.tot_coverage_cty[key]['payout'] / self.tot_coverage_cty[key]['damage']
+            self.tot_coverage_cty[key]['coverage'] = self.tot_coverage_cty[key]['Tot_payout'] / self.tot_coverage_cty[key]['Tot_damages']
             self.tot_coverage_cty[key]['EL'] = np.mean(ann_cty_losses[key])
             self.tot_coverage_cty[key]['share_EL'] = self.tot_coverage_cty[key]['EL'] / exp_loss_ann
         
@@ -349,8 +350,8 @@ class MultiCountryBond:
 
         self.loss_metrics = {'EL_ann': exp_loss_ann,
                              'AP_ann': att_prob_ann,
-                             'Payout': coverage['payout'], 
-                             'Damage': coverage['damage']}
+                             'Tot_payout': coverage['payout'], 
+                             'Tot_damages': coverage['damage']}
         
         for cl, var, es in zip(confidence_levels, var_list, es_list):
             self.loss_metrics[f'VaR_{int(cl*100)}_ann'] = var
@@ -432,6 +433,7 @@ class MultiCountryBond:
         
         self.ncf = pd.DataFrame(ncf_tot, columns=['Total'])
         self.prem_cty_df = pd.DataFrame(prem_cty_dic)
+        self.sharpe_ratio = (np.mean(self.ncf['Total']) - rf) / np.std(self.ncf['Total'])
 
 
   
@@ -522,6 +524,7 @@ class MultiCountryBond:
         self.ncf_tranches = pd.DataFrame(ncf)
         self.ncf_tranches['Total'] = self.ncf_tranches.sum(axis=1)
         self.prem_cty_df_tranches = pd.DataFrame(prem_cty_dic)
+        self.sharpe_ratio_tranches = [(np.mean(self.ncf_tranches[str(tranche)]) - rf) / np.std(self.ncf_tranches[str(tranche)]) for tranche in tranches]
 
 
     '''Calculates required nominal for multi-country bonds -> derives maximal loss over simulation period'''
