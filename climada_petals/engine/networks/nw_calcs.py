@@ -906,40 +906,6 @@ class GraphCalcs():
                                      zip(es_check, bool_keep)
                                      if not bool_f])
 
-    def powercap_from_clusters(self, p_source, p_sink, demand_ci, source_var,
-                               demand_var):
-
-        capacity_vars = [var for var in self.graph.vs.attributes()
-                         if f'capacity_{p_sink}_' in var]
-        power_vs = self.graph.vs.select(
-            ci_type_in=['power_line', p_source, p_sink, demand_ci])
-        # make subgraph spanning all nodes, but only functional edges
-        # Subgraph operations do not modify original graph.
-        power_subgraph = self.graph.induced_subgraph(power_vs)
-        power_subgraph.delete_edges(func_tot_lt=0.1)
-
-        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, power_vs)
-
-        for cluster in power_subgraph.clusters(mode='weak'):
-
-            sources = power_subgraph.vs[cluster].select(ci_type=p_source)
-            sinks = power_subgraph.vs[cluster].select(ci_type=p_sink)
-            demands = power_subgraph.vs[cluster].select(ci_type=demand_ci)
-
-            psupply = sum([source[source_var]*source['func_tot']
-                           for source in sources])
-            pdemand = sum([demand[demand_var] for demand in demands])
-
-            try:
-                sd_ratio = min(1, psupply/pdemand)
-            except ZeroDivisionError:
-                sd_ratio = 1
-
-            for var in capacity_vars:
-                self.graph.vs[
-                    [subgraph_graph_vsdict[sink.index] for sink in sinks]
-                ].set_attribute_values(var, sd_ratio)
-
 class NetworkCalcs():
     """Gathers wrapper for network preparation"""
     def __init__(self, network, dep_table):
