@@ -383,6 +383,8 @@ class MultiCountryBond:
             DataFrame containing net cash flows for the bond.
         prem_cty_df : pandas.DataFrame
             DataFrame containing premium allocations for each country (based on their exposure share) and total premiums.
+        sharpe_ratio : float
+            Sharpe ratio of the bond.
 
         Notes
         -----
@@ -462,6 +464,8 @@ class MultiCountryBond:
             DataFrame containing net cash flows for each tranche and the total across all tranches for each period.
         prem_cty_df_tranches : pandas.DataFrame
             DataFrame containing premium allocations for each country (based on their exposure share), total premiums (if bond is priced as one), and alternative total premiums (if each tranche is priced seperately).
+        sharpe_ratio_tranches : list
+            List of Sharpe ratios for each tranche.
 
         Notes
         -----
