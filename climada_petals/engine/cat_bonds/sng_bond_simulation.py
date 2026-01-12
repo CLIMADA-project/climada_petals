@@ -164,7 +164,6 @@ class SingleCountryBondSimulation:
             total_damages += summed_damages
 
         # Combine monthly losses
-        LOGGER.info(list_loss_month)
         self.df_loss_month = pd.concat(list_loss_month, ignore_index=True)
 
         annual_losses = pd.Series(annual_losses)
