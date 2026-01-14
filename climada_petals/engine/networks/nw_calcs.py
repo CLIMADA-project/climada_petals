@@ -975,10 +975,8 @@ class NetworkCalcs():
         #do it after build up of physical dependencies so that created edge also receive
         #functionality states
         self.network.initialize_funcstates()
-        for __, row in self.dep_table.iterrows():
-            self.network.initialize_capacity(row['source'], row['target'])
-            if  row['type_I'] == 'enduser':
-                self.network.initialize_supply(row['source'])
+        self.network.initialize_capacity(self.dep_table)
+        self.network.initialize_supply(self.dep_table)
 
     def setup_dependencies(self):
         for i, row in self.dep_table.iterrows():

@@ -244,13 +244,17 @@ class Network:
         self.edges['imp_dir'] = 0
         self.nodes['imp_dir'] = 0
 
-    def initialize_capacity(self, source, target):
-        self.nodes[f'capacity_{source}_{target}'] = 0
-        self.nodes.loc[self.nodes['ci_type']==f'{source}',f'capacity_{source}_{target}'] = 1
-        self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
+    def initialize_capacity(self, dep_table):
+        for __, row in dep_table.iterrows():
+            source = row['source']
+            target = row['target']
+            self.nodes[f'capacity_{source}_{target}'] = 0
+            self.nodes.loc[self.nodes['ci_type']==f'{source}',f'capacity_{source}_{target}'] = 1
+            self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
 
-    def initialize_supply(self, source):
-        self.nodes[f'access_state_{source}_people'] = "undefined"
-        self.nodes[f'actual_supply_{source}_people'] = 0
-        self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{source}_people'] = 1
-        self.nodes.loc[self.nodes['ci_type']=='people',f'access_state_{source}_people'] = "no base access"
+    def initialize_supply(self, dep_table):
+        for __, row in dep_table.loc[dep_table['type_I'] == 'enduser'].iterrows():
+            self.nodes[f'access_state_{row["source"]}_people'] = "undefined"
+            self.nodes[f'actual_supply_{row["source"]}_people'] = 0
+            #self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row["source"]}_people'] = 1
+            self.nodes.loc[self.nodes['ci_type']=='people',f'access_state_{row["source"]}_people'] = "no base access"
