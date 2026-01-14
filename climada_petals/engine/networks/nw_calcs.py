@@ -106,6 +106,8 @@ class GraphCalcs():
         for member in np.unique(gdf_vs['membership']):
             gdf_a = gdf_vs[gdf_vs['membership'] == member]
             gdf_b = gdf_vs[gdf_vs['membership'] != member]
+            if gdf_a.empty or gdf_b.empty:
+                continue
             try:
                 dists, ix_match = _ckdnearest(
                     gdf_a, gdf_b, dist_thresh=dist_thresh)
