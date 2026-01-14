@@ -103,9 +103,13 @@ class GraphCalcs():
         # very rough conversion from metres to degrees
         dist_thresh /= (ONE_LAT_KM*1000)
 
-        for member in np.unique(gdf_vs['membership']):
-            gdf_a = gdf_vs[gdf_vs['membership'] == member]
-            gdf_b = gdf_vs[gdf_vs['membership'] != member]
+        members = np.unique(gdf_vs['membership'])
+        if len(members) <= 1:
+            LOGGER.info("Graph is already fully connected; no cluster linking needed.")
+            return
+        for i in range(len(members)-1):# last iteration is redundant
+            gdf_a = gdf_vs[gdf_vs['membership'] == members[i]]
+            gdf_b = gdf_vs[gdf_vs['membership'] != members[i]]
             if gdf_a.empty or gdf_b.empty:
                 continue
             try:
