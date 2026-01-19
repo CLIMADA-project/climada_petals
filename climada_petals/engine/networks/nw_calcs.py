@@ -31,8 +31,7 @@ import scipy
 
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
-                                                     _ckdnearest,
-                                                     _preselect_destinations)
+                                                     _ckdnearest)
 from climada_petals.engine.networks.nw_preps import (reset_ids,
                                                      ordered_network)
 
@@ -104,9 +103,15 @@ class GraphCalcs():
         # very rough conversion from metres to degrees
         dist_thresh /= (ONE_LAT_KM*1000)
 
-        for member in np.unique(gdf_vs['membership']):
-            gdf_a = gdf_vs[gdf_vs['membership'] == member]
-            gdf_b = gdf_vs[gdf_vs['membership'] != member]
+        members = np.unique(gdf_vs['membership'])
+        if len(members) <= 1:
+            LOGGER.info("Graph is already fully connected; no cluster linking needed.")
+            return
+        for i in range(len(members)-1):# last iteration is redundant
+            gdf_a = gdf_vs[gdf_vs['membership'] == members[i]]
+            gdf_b = gdf_vs[gdf_vs['membership'] != members[i]]
+            if gdf_a.empty or gdf_b.empty:
+                continue
             try:
                 dists, ix_match = _ckdnearest(
                     gdf_a, gdf_b, dist_thresh=dist_thresh)
@@ -1010,10 +1015,8 @@ class NetworkCalcs():
         #do it after build up of physical dependencies so that created edge also receive
         #functionality states
         self.network.initialize_funcstates()
-        for __, row in self.dep_table.iterrows():
-            self.network.initialize_capacity(row['source'], row['target'])
-            if  row['type_I'] == 'enduser':
-                self.network.initialize_supply(row['source'])
+        self.network.initialize_capacity(self.dep_table)
+        self.network.initialize_supply(self.dep_table)
 
     def setup_dependencies(self):
         for i, row in self.dep_table.iterrows():

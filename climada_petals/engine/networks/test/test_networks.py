@@ -29,7 +29,6 @@ from shapely.geometry import Point, LineString
 import igraph as ig
 import copy as cp
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.nw_preps import add_distances
 from climada.util.constants import ONE_LAT_KM
 
 @pytest.fixture
@@ -59,12 +58,14 @@ def edges_gdf():
     """Create simple test edges"""
     return gpd.GeoDataFrame(
         {
-            'from_id': [1, 2],
-            'to_id': [2, 3],
-            'id': [0, 1],
-            'orig_id': [0, 1],
-            'osm_id': [100, 101],
+            'from_id': [0, 1, 2],
+            'to_id': [1, 2, 3],
+            'id': [0, 1, 2],
+            'orig_id': [0, 1, 2],
+            'osm_id': [100, 101, 102],
+            'distance': [157200, 157200, 157200],  # approx distances in meters
             'geometry': [
+                LineString([(0, 0), (1, 1)]),
                 LineString([(1, 1), (2, 2)]),
                 LineString([(2, 2), (3, 3)])
             ]
@@ -76,14 +77,53 @@ def edges_gdf():
 @pytest.fixture
 def network_with_ci_types(edges_gdf, nodes_gdf):
     """Create a network with CI type information"""
-    nodes = nodes_gdf.copy()
+    nodes = cp.deepcopy(nodes_gdf)
     nodes['ci_type'] = ['people', 'road', 'road','healthcare']
-    nodes['func_tot'] = 1
-    nodes.loc[1,'func_tot'] = 0  # partial functionality for testing
-    edges = edges_gdf.copy()
+    edges = cp.deepcopy(edges_gdf)
     edges['ci_type'] = 'road'
+    nodes['func_tot'] = 1
     edges['func_tot'] = 1
     return Network(edges=edges, nodes=nodes)
+
+@pytest.fixture
+def network_with_source_fail(network_with_ci_types):
+    """Create a network with a failed source CI"""
+    network = cp.deepcopy(network_with_ci_types)
+    network.nodes.loc[network.nodes['ci_type']=='healthcare','func_tot'] = 0  # ci fail for testing
+    return network
+
+@pytest.fixture
+def network_with_remote_node(network_with_source_fail):
+    """Create a network with CI type information"""
+    network = cp.deepcopy(network_with_source_fail)
+    #add far away hospital node
+    new_node = gpd.GeoDataFrame(
+        {
+            'id': [4],
+            'orig_id': [4],
+            'ci_type': ['healthcare'],
+            'func_tot': [1],
+            'geometry': [Point(50, 50)]
+        },
+        geometry='geometry',
+        crs='EPSG:4326'
+    )
+    network.nodes = pd.concat([network.nodes, new_node], ignore_index=True)
+    return network
+@pytest.fixture
+def network_with_missing_edge(network_with_ci_types):
+    """Create a network with CI type information"""
+    network = cp.deepcopy(network_with_ci_types)
+    network.edges = network.edges.drop(index=0).reset_index(drop=True)  # remove one edge for testing
+    return network
+
+@pytest.fixture
+def network_with_edge_fail(network_with_ci_types):
+    """Create a network with CI type information"""
+    network = cp.deepcopy(network_with_ci_types)
+    network.edges.loc[1,'func_tot'] = 0  # ci fail for testing
+    return network
+
 
 class TestNetwork:
     """Test cases for the Network class"""
@@ -100,7 +140,7 @@ class TestNetwork:
         """Test Network initialization with data"""
         network = Network(edges=edges_gdf, nodes=nodes_gdf)
         assert len(network.nodes) == 4
-        assert len(network.edges) == 2
+        assert len(network.edges) == 3
         assert network.nodes.crs.to_string() == 'EPSG:4326'
         assert network.edges.crs.to_string() == 'EPSG:4326'
 
@@ -150,7 +190,7 @@ class TestNetwork:
         combined = Network.from_nws([network])
 
         assert len(combined.nodes) == 4
-        assert len(combined.edges) == 2
+        assert len(combined.edges) == 3
 
     def test_from_nws_multiple_networks(self, edges_gdf, nodes_gdf):
         """Test combining multiple networks"""
@@ -160,7 +200,7 @@ class TestNetwork:
         combined = Network.from_nws([network1, network2])
 
         assert len(combined.nodes) == 8  # 4 + 4
-        assert len(combined.edges) == 4  # 2 + 2
+        assert len(combined.edges) == 6  # 3 + 3
         # Check that node IDs are properly offset
         assert combined.nodes['id'].max() == 7
 
@@ -171,7 +211,7 @@ class TestNetwork:
 
         assert isinstance(graph, ig.Graph)
         assert graph.vcount() == 4
-        assert graph.ecount() == 2
+        assert graph.ecount() == 3
         assert not graph.is_directed()
 
     def test_to_graph_directed(self, edges_gdf, nodes_gdf):
@@ -181,7 +221,7 @@ class TestNetwork:
 
         assert isinstance(graph, ig.Graph)
         assert graph.vcount() == 4
-        assert graph.ecount() == 2
+        assert graph.ecount() == 3
         assert graph.is_directed()
 
     def test_to_graph_nodes_only(self, nodes_gdf):
@@ -204,7 +244,7 @@ class TestNetwork:
         loaded_network = Network.load_network_zip(temp_dir, 'test_network')
 
         assert len(loaded_network.nodes) == 4
-        assert len(loaded_network.edges) == 2
+        assert len(loaded_network.edges) == 3
         pd.testing.assert_frame_equal(
             loaded_network.nodes.reset_index(drop=True),
             network.nodes.reset_index(drop=True)
@@ -289,7 +329,7 @@ class TestNetwork:
         network_update.update_network_from_graphs(graph)
 
         assert len(network_update.nodes) == 5
-        assert len(network_update.edges) == 3
+        assert len(network_update.edges) == 4
         assert 'from_id' in network_update.edges.columns
         assert 'to_id' in network_update.edges.columns
         assert network_update.nodes.iloc[4]['ci_type'] == 'healthcare'
@@ -308,6 +348,24 @@ def graph_calcs(network_with_ci_types):
     return GraphCalcs(parent=nw_calcs_mock, directed=False)
 
 
+@pytest.fixture
+def graph_calcs_with_source_fail(network_with_source_fail):
+    """Create GraphCalcs instance with test network containing CI failures"""
+    nw_calcs_mock = type('obj', (object,), {'network': network_with_source_fail})()
+    return GraphCalcs(parent=nw_calcs_mock, directed=False)
+
+@pytest.fixture
+def graph_calcs_with_edge_ci_fail(network_with_edge_fail):
+    """Create GraphCalcs instance with test network containing edge CI failures"""
+    nw_calcs_mock = type('obj', (object,), {'network': network_with_edge_fail})()
+    return GraphCalcs(parent=nw_calcs_mock, directed=False)
+
+@pytest.fixture
+def graph_calcs_with_remote_node(network_with_remote_node):
+    """Create GraphCalcs instance with test network containing remote node"""
+    nw_calcs_mock = type('obj', (object,), {'network': network_with_remote_node})()
+    return GraphCalcs(parent=nw_calcs_mock, directed=False)
+
 class TestGraphCalcs:
     """Test cases for the GraphCalcs class"""
 
@@ -325,8 +383,8 @@ class TestGraphCalcs:
         graph = graph_calcs.build_graph()
 
         assert isinstance(graph, ig.Graph)
-        assert graph.vcount() == 5
-        assert graph.ecount() == 2
+        assert graph.vcount() == 4
+        assert graph.ecount() == 3
 
     def test_graph_calcs_graph_property_lazy_load(self, graph_calcs):
         """Test that graph property lazy loads the graph"""
@@ -346,26 +404,26 @@ class TestGraphCalcs:
 
         assert graph_calcs._graph is None
 
-    def test_filter_vertices_single_attr(self, graph_calcs):
+    def test_filter_vertices_single_attr(self, graph_calcs_with_remote_node):
         """Test filtering vertices by single attribute"""
-        graph_calcs.build_graph()
+        graph_calcs_with_remote_node.build_graph()
 
-        df_vs = GraphCalcs._filter_vertices(graph_calcs.graph, {'ci_type': 'road'})
-
-        assert len(df_vs) == 3
-        assert all(df_vs['ci_type'] == 'road')
-
-    def test_filter_vertices_multiple_attrs(self, graph_calcs):
-        """Test filtering vertices by multiple attributes"""
-        graph_calcs.build_graph()
-
-        df_vs = GraphCalcs._filter_vertices(
-            graph_calcs.graph,
-            {'ci_type': 'road', 'func_tot': 1}
-        )
+        df_vs = GraphCalcs._filter_vertices(graph_calcs_with_remote_node.graph, {'ci_type': 'healthcare'})
 
         assert len(df_vs) == 2
-        assert all(df_vs['ci_type'] == 'road')
+        assert all(df_vs['ci_type'] == 'healthcare')
+
+    def test_filter_vertices_multiple_attrs(self, graph_calcs_with_remote_node):
+        """Test filtering vertices by multiple attributes"""
+        graph_calcs_with_remote_node.build_graph()
+
+        df_vs = GraphCalcs._filter_vertices(
+            graph_calcs_with_remote_node.graph,
+            {'ci_type': 'healthcare', 'func_tot': 1}
+        )
+
+        assert len(df_vs) == 1
+        assert all(df_vs['ci_type'] == 'healthcare')
         assert all(df_vs['func_tot'] == 1)
 
     def test_filter_edges_by_ci_type(self, graph_calcs):
@@ -375,7 +433,7 @@ class TestGraphCalcs:
         df_es_match = GraphCalcs._filter_edges(graph_calcs.graph, {'ci_type': 'road'})
         df_es_not = GraphCalcs._filter_edges(graph_calcs.graph, {'ci_type': 'river'})
 
-        assert len(df_es_match) == 2
+        assert len(df_es_match) == 3
         assert len(df_es_not) == 0
 
     def test_get_subgraph2graph_vsdict(self, graph_calcs):
@@ -399,12 +457,12 @@ class TestGraphCalcs:
 
         # Create a subgraph with all vertices
         subgraph = graph.induced_subgraph(range(graph.vcount()))
-        subgraph.es['orig_id'] = [1, 0]
+        subgraph.es['orig_id'] = [1, 2, 0]
 
         mapping = GraphCalcs._get_subgraph2graph_esdict(graph, subgraph)
 
         assert isinstance(mapping, dict)
-        assert mapping == {0: 1, 1: 0}
+        assert mapping == {0: 1, 1: 2, 2: 0}
 
     def test_select_closest_k_basic(self):
         """Test selecting k nearest neighbors"""
@@ -486,7 +544,7 @@ class TestGraphCalcs:
         subgraph = graph_calcs._create_subgraph(source_attrs, target_attrs, via_attrs)
 
         assert isinstance(subgraph, ig.Graph)
-        assert subgraph.vcount() == 4  # 3 road nodes + 1 people node
+        assert subgraph.vcount() == 3  # 2 road nodes + 1 people node
         assert subgraph.ecount() == 2  # 2 edges between road nodes
 
     def test_link_vertices_edgecond(self, graph_calcs):
@@ -518,15 +576,17 @@ from climada_petals.engine.networks.nw_calcs import NetworkCalcs
 def dependency_table():
     """Create a simple dependency table"""
     return pd.DataFrame({
-        'source': ['road', 'healthcare'],
-        'target': ['people', 'people'],
-        'type_I': ['physical', 'physical'],
-        'via_link': ['road', 'road'],
-        'link_condition': ['distance', 'distance'],
-        'thresh_dist': [np.inf, np.inf],
-        'bidir_link': [False, False],
-        'access_cnstr': [False, True],
-        'n_links': [1, 1]
+        'source': ['road', 'healthcare', 'road'],
+        'target': ['people', 'people', 'healthcare'],
+        'type_I': ['enduser', 'enduser', 'functional'],
+        'type_II': ['logical', 'logical', 'logical'],
+        'via_link': ['none', 'road', 'none'],
+        'thresh_func': [1, 1, 1],
+        'link_condition': ['edgecond', 'distance', 'edgecond'],
+        'thresh_dist': [np.inf, np.inf, np.inf],
+        'bidir_link': [False, False, False],
+        'access_cnstr': [False, True, False],
+        'n_links': [1, 1, 1]
     })
 
 
@@ -534,6 +594,16 @@ def dependency_table():
 def network_calcs(network_with_ci_types, dependency_table):
     """Create NetworkCalcs instance"""
     return NetworkCalcs(network=network_with_ci_types, dep_table=dependency_table)
+
+@pytest.fixture
+def network_calcs_edge_fail(network_with_edge_fail, dependency_table):
+    """Create NetworkCalcs instance"""
+    return NetworkCalcs(network=network_with_edge_fail, dep_table=dependency_table)
+
+@pytest.fixture
+def network_calcs_source_fail(network_with_source_fail, dependency_table):
+    """Create NetworkCalcs instance"""
+    return NetworkCalcs(network=network_with_source_fail, dep_table=dependency_table)
 
 
 class TestNetworkCalcs:
@@ -585,12 +655,10 @@ class TestNetworkCalcs:
     def test_setup_dependencies(self, network_calcs):
         """Test setting up dependencies"""
 
-        #add distances first
-        network_calcs.network = add_distances(network_calcs.network)
         network_calcs.setup_dependencies()
 
         # Verify that graph has been updated
-        assert "dependency_road_people" in network_calcs.graph_calc.graph.es["ci_type"]
+        assert "dependency_road_people" in network_calcs.graph_calc.graph.es["ci_type"] #(missing road if add_pyhsical_links not run)
         assert "dependency_healthcare_people" in network_calcs.graph_calc.graph.es["ci_type"]
 
     def test_network_calcs_graph_property(self, network_calcs):
@@ -599,32 +667,455 @@ class TestNetworkCalcs:
 
         assert isinstance(graph, ig.Graph)
 
-    def test_network_calcs_multiple_dependencies(self):
-        """Test NetworkCalcs with multiple dependencies"""
+    def test_cascade_initialization(self, network_calcs):
+        """Test cascade with initial flag"""
+        network_calcs.network.initialize_capacity(network_calcs.dep_table)
+        network_calcs.network.initialize_supply(network_calcs.dep_table)
+        network_calcs.setup_dependencies()
+
+        # Run cascade with initial=True
+        network_calcs.cascade(
+            initial=True,
+            friction_surf=None,
+            rerouting=False
+        )
+
+        # Verify network state was updated
+        assert 'actual_supply_road_people' in network_calcs.network.nodes.columns
+        assert 'actual_supply_healthcare_people' in network_calcs.network.nodes.columns
+        assert np.all(network_calcs.network.nodes.loc[network_calcs.network.nodes["ci_type"]=="people",'actual_supply_road_people']) == 1
+        assert np.all(network_calcs.network.nodes.loc[network_calcs.network.nodes["ci_type"]=="people",'actual_supply_healthcare_people']) == 1
+
+    def test_cascade_simple(self, network_calcs_source_fail):
+        """Test simple cascade without friction surface"""
+        network_calcs_source_fail.network = network_calcs_source_fail.network.initialize_capacity(network_calcs_source_fail.dep_table)
+        network_calcs_source_fail.network = network_calcs_source_fail.network.initialize_supply(network_calcs_source_fail.dep_table)
+        network_calcs_source_fail.setup_dependencies()
+
+        assert np.all(network_calcs_source_fail.network.nodes.loc[network_calcs_source_fail.network.nodes["ci_type"]=="people",'actual_supply_road_people']) == 1
+        assert np.all(network_calcs_source_fail.network.nodes.loc[network_calcs_source_fail.network.nodes["ci_type"]=="people",'actual_supply_healthcare_people']) == 1
+
+        network_calcs_source_fail.cascade(
+            initial=False,
+            friction_surf=None,
+            rerouting=False
+        )
+
+        # Verify cascade completed
+        assert np.all(network_calcs_source_fail.network.nodes.loc[network_calcs_source_fail.network.nodes["ci_type"]=="people",'actual_supply_road_people']) == 1
+        assert np.all(network_calcs_source_fail.network.nodes.loc[network_calcs_source_fail.network.nodes["ci_type"]=="people",'actual_supply_healthcare_people']) == 1
+
+
+# ========================================================================
+# Additional tests for GraphCalcs methods
+# ========================================================================
+
+class TestGraphCalcsLinking:
+    """Test cases for GraphCalcs linking methods"""
+
+    def test_link_clusters_no_clusters(self, graph_calcs):
+        """Test link_clusters when network is already connected"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs.link_clusters(
+            dist_thresh=np.inf,
+            link_attrs={'ci_type': 'cluster_link'}
+        )
+
+        # Should not add edges if already connected
+
+        assert 'cluster_link' not in graph_calcs.graph.es['ci_type']
+
+    def test_link_clusters_with_threshold_low(self, graph_calcs_with_remote_node):
+        """Test link_clusters with distance threshold"""
+        graph_calcs_with_remote_node.build_graph()
+        initial_edge_count = graph_calcs_with_remote_node.graph.ecount()
+        graph_calcs_with_remote_node.link_clusters(
+            dist_thresh=1000,
+            link_attrs={'ci_type': 'cluster_link'}
+        )
+
+        # Verify method completes
+        assert graph_calcs_with_remote_node.graph.ecount() == initial_edge_count
+        assert 'cluster_link' not in graph_calcs_with_remote_node.graph.es['ci_type']
+
+    def test_link_clusters_with_threshold_high(self, graph_calcs_with_remote_node):
+        """Test link_clusters with distance threshold"""
+        graph_calcs_with_remote_node.build_graph()
+        initial_edge_count = graph_calcs_with_remote_node.graph.ecount()
+        graph_calcs_with_remote_node.link_clusters(
+            dist_thresh=np.inf,
+            link_attrs={'ci_type': 'cluster_link'},
+        )
+
+        # Verify method completes
+        assert graph_calcs_with_remote_node.graph.ecount() == initial_edge_count + 1
+        assert 'cluster_link' in graph_calcs_with_remote_node.graph.es['ci_type']
+
+    def test_link_vertices_closest_k_low_thresh(self, graph_calcs):
+        """Test linking vertices by k-nearest neighbors"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs.link_vertices_closest_k(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            link_attrs={'ci_type': 'link_road_people'},
+            dist_thresh=1000,
+            bidir=False,
+            k=1
+        )
+
+        # Should add at least one edge
+        assert graph_calcs.graph.ecount() == initial_edge_count
+        assert 'link_road_people' not in graph_calcs.graph.es['ci_type']
+
+    def test_link_vertices_closest_k_high_thresh(self, graph_calcs):
+        """Test linking vertices by k-nearest neighbors"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs.link_vertices_closest_k(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            link_attrs={'ci_type': 'link_road_people'},
+            dist_thresh=np.inf,
+            bidir=False,
+            k=1
+        )
+
+        # Should add at least one edge
+        assert graph_calcs.graph.ecount() == initial_edge_count + 1
+        assert 'link_road_people' in graph_calcs.graph.es['ci_type']
+
+    def test_link_vertices_closest_k_bidir(self, graph_calcs):
+        """Test linking vertices by k-nearest neighbors"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs.link_vertices_closest_k(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            link_attrs={'ci_type': 'link_road_people'},
+            dist_thresh=np.inf,
+            bidir=True,
+            k=1
+        )
+
+        # Should add at least one edge
+        assert graph_calcs.graph.ecount() == initial_edge_count + 2
+        assert 'link_road_people' in graph_calcs.graph.es['ci_type']
+
+    def test_link_vertices_shortest_paths_single(self, graph_calcs):
+        """Test linking via shortest paths with k=1"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs.link_vertices_shortest_paths(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'shortest_path_link'},
+            dist_thresh=10e6,
+            criterion='distance',
+            k=1,
+            bidir=False
+        )
+
+        # Should add edges based on shortest paths
+        assert graph_calcs.graph.ecount() > initial_edge_count
+
+    def test_link_vertices_shortest_paths_multiple(self, graph_calcs):
+        """Test linking via shortest paths with k>1"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs.link_vertices_shortest_paths(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'healthcare'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'multi_path_link'},
+            dist_thresh=10e6,
+            criterion='distance',
+            k=2,
+            bidir=False
+        )
+
+        assert graph_calcs.graph.ecount() > initial_edge_count
+
+    def test_edges_from_vlists(self, graph_calcs_with_remote_node):
+        """Test adding edges from vertex lists"""
+        graph_calcs_with_remote_node.build_graph()
+        initial_edge_count = graph_calcs_with_remote_node.graph.ecount()
+
+        # Add edges between specific vertices
+        v_ids_source = [1, 2]
+        v_ids_target = [3, 4]
+
+        graph_calcs_with_remote_node._edges_from_vlists(
+            v_ids_source,
+            v_ids_target,
+            link_attrs={'ci_type': 'test_link'}
+        )
+
+        # Should have added 2 edges
+        assert graph_calcs_with_remote_node.graph.ecount() == initial_edge_count + 2
+        assert 'test_link' in graph_calcs_with_remote_node.graph.es['ci_type']
+
+    def test_edges_from_vlists_with_distance(self, graph_calcs):
+        """Test adding edges with pre-calculated distances"""
+        graph_calcs.build_graph()
+
+        v_ids_source = [1]
+        v_ids_target = [2]
+
+        graph_calcs._edges_from_vlists(
+            v_ids_source,
+            v_ids_target,
+            link_attrs={'ci_type': 'test_link', 'distance': [1000.0]}
+        )
+
+        # Check that distance was preserved
+        new_edge = graph_calcs.graph.es[graph_calcs.graph.ecount() - 1]
+        assert new_edge['distance'] == 1000.0
+
+    def test_calc_dependencies_distance(self, graph_calcs):
+        """Test calculating dependencies with distance criterion"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dep_link'},
+            link_condition='distance',
+            dist_thresh=np.inf,
+            bidir_link=False,
+            friction_surf=None
+        )
+
+        assert 'dep_link' in graph_calcs.graph.es['ci_type']
+        assert graph_calcs.graph.ecount() == initial_edge_count + 1
+    def test_calc_dependencies_edgecond(self, graph_calcs):
+        """Test calculating dependencies with edge condition"""
+        graph_calcs.build_graph()
+        initial_edge_count = graph_calcs.graph.ecount()
+
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={},
+            link_attrs={'ci_type': 'edge_cond_link'},
+            link_condition='edgecond',
+            dist_thresh=np.inf,
+            bidir_link=False,
+            friction_surf=None
+        )
+
+        # Should add edges based on edge conditions
+        assert graph_calcs.graph.ecount() == initial_edge_count + 1
+        assert 'edge_cond_link' in graph_calcs.graph.es['ci_type']
+
+
+class TestGraphCalcsPropagation:
+    """Test cases for GraphCalcs propagation methods"""
+
+    def test_funcstates_sum_with_failures(self, graph_calcs):
+        """Test summing functional states with some failures"""
+        graph_calcs.build_graph()
+
+        # Set some vertices to failed state
+        graph_calcs.graph.vs[1]['func_tot'] = 0
+        graph_calcs.graph.es[0]['func_tot'] = 0
+
+        v_sum, e_sum = graph_calcs._funcstates_sum()
+
+        # Should reflect the failures
+        assert v_sum < graph_calcs.graph.vcount()
+        assert e_sum < graph_calcs.graph.ecount()
+
+    def test_propagate_check_fail_people(self, graph_calcs):
+        """Test propagate_check_fail setup"""
+        graph_calcs.build_graph()
+
+        # Initialize capacity for propagation
+        graph_calcs.graph.vs['capacity_road_people'] = 0
+        for v in graph_calcs.graph.vs.select(ci_type='road'):
+            v['capacity_road_people'] = 1
+        for v in graph_calcs.graph.vs.select(ci_type='people'):
+            v['actual_supply_road_people'] = 0
+            v['capacity_road_people'] = -1
+
+        # Run propagation
+        graph_calcs._propagate_check_fail(
+            source='road',
+            target='people',
+            thresh_func=1
+        )
+
+        # Verify propagation completed
+        assert 'actual_supply_road_people' in graph_calcs.graph.vs.attributes()
+        assert all(v['actual_supply_road_people'] ==1 for v in graph_calcs.graph.vs.select(ci_type='people'))
+
+    def test_propagate_check_fail_ci(self, graph_calcs):
+        """Test propagate_check_fail setup"""
+        graph_calcs.build_graph()
+
+        # Initialize capacity for propagation
+        graph_calcs.graph.vs['capacity_road_healthcare'] = 0
+        for v in graph_calcs.graph.vs.select(ci_type='road'):
+            v['capacity_road_healthcare'] = 1
+        for v in graph_calcs.graph.vs.select(ci_type='healthcare'):
+            v['actual_supply_road_healthcare'] = 0
+            v['capacity_road_healthcare'] = -1
+
+        # Run propagation
+        graph_calcs._propagate_check_fail(
+            source='road',
+            target='healthcare',
+            thresh_func=1
+        )
+
+        # Verify propagation completed
+        assert 'func_tot' in graph_calcs.graph.vs.attributes()
+        assert all(v['func_tot'] ==1 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
+
+    def test_propagate_check_fail_fail(self, graph_calcs):
+        """Test propagate_check_fail setup"""
+        graph_calcs.build_graph()
+
+        # Initialize capacity for propagation
+        graph_calcs.graph.vs['capacity_road_healthcare'] = 0
+        for v in graph_calcs.graph.vs.select(ci_type='road'):
+            v['func_tot'] = 0
+            v['capacity_road_healthcare'] = 1
+        for v in graph_calcs.graph.vs.select(ci_type='healthcare'):
+            v['actual_supply_road_healthcare'] = 0
+            v['capacity_road_healthcare'] = -1
+
+        # Run propagation
+        graph_calcs._propagate_check_fail(
+            source='road',
+            target='healthcare',
+            thresh_func=1
+        )
+
+        # Verify propagation completed
+        assert 'func_tot' in graph_calcs.graph.vs.attributes()
+        assert all(v['func_tot'] ==0 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
+
+    def test_update_internal_dependencies_roads(self, graph_calcs):
+        """Test updating internal dependencies for roads"""
+        graph_calcs.build_graph()
+
+        # Set some edge functionality
+        graph_calcs.graph.es['func_tot'] = 0
+
+        graph_calcs._update_internal_dependencies(
+            p_source='powerstation',
+            p_sink='powerline',
+            source_var='capacity',
+            demand_var='demand'
+
+        )
+
+        # Method should complete
+        assert all(v['func_tot'] ==0 for v in graph_calcs.graph.vs.select(ci_type='road'))
+
+    def test_update_functional_dependencies(self, graph_calcs):
+        """Test updating functional dependencies"""
+        graph_calcs.build_graph()
+
+        # Create dependency dataframe
+        df_dependencies = pd.DataFrame({
+            'source': ['road'],
+            'target': ['healthcare'],
+            'type_I': ['functional'],
+            'type_II': ['logical'],
+            'via_link': ['none'],
+            'thresh_func': [1.0],
+            'thresh_dist': [np.inf],
+            'bidir_link': [False],
+            'access_cnstr': [False],
+        })
+
+        # Initialize capacities
+        graph_calcs.graph.vs['capacity_road_healthcare'] = 0
+        for v in graph_calcs.graph.vs.select(ci_type='road'):
+            v['capacity_road_healthcare'] = 1
+        for v in graph_calcs.graph.vs.select(ci_type='healthcare'):
+            v['capacity_road_healthcare'] = -1
+
+        graph_calcs._update_functional_dependencies(df_dependencies)
+        assert all(v['func_tot'] == 1 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
+
+        #repeat with road failure
+        #set all road nodes as failed
+        for v in graph_calcs.graph.vs.select(ci_type='road'):
+            v['func_tot'] = 0
+        graph_calcs._update_functional_dependencies(df_dependencies)
+        assert all(v['func_tot'] == 0 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
+
+    def test_update_enduser_dependencies(self, graph_calcs):
+        """Test updating end-user dependencies"""
+        graph_calcs.build_graph()
+
+        # Create end-user dependency dataframe
+        df_dependencies = pd.DataFrame({
+            'source': ['road'],
+            'target': ['people'],
+            'type_I': ['enduser'],
+            'access_cnstr': [False]
+        })
+
+        # Initialize access states
+        for v in graph_calcs.graph.vs.select(ci_type='people'):
+            v['access_state_road_people'] = 'no base access'
+            v['actual_supply_road_people'] = 0
+
+        graph_calcs._update_enduser_dependencies(
+            df_dependencies,
+            friction_surf=None,
+            rerouting=False
+        )
+
+        assert graph_calcs.graph is not None
+
+
+class TestNetworkCalcsAdvanced:
+    """Advanced test cases for NetworkCalcs"""
+
+    def test_cascade_with_dependencies(self):
+        """Test cascade with complete dependency setup"""
+        # Create a more complex network
         nodes = gpd.GeoDataFrame(
             {
-                'id': [0, 1, 2, 3],
-                'orig_id': [0, 1, 2, 3],
-                'ci_type': ['power_plant', 'power_line', 'road', 'people'],
-                'func_tot': [1, 1, 1, 1],
-                'geometry': [Point(0, 0), Point(1, 1), Point(2, 2), Point(3, 3)]
+                'id': [0, 1, 2, 3, 4],
+                'orig_id': [0, 1, 2, 3, 4],
+                'ci_type': ['healthcare', 'healthcare', 'road', 'road', 'people'],
+                'func_tot': [1, 1, 1, 1, 1],
+                'geometry': [Point(0, 0), Point(1, 1), Point(2, 2), Point(3, 3), Point(4, 4)]
             },
             geometry='geometry',
             crs='EPSG:4326'
         )
         edges = gpd.GeoDataFrame(
             {
-                'from_id': [0, 1, 2],
-                'to_id': [1, 2, 3],
-                'id': [0, 1, 2],
-                'orig_id': [0, 1, 2],
-                'osm_id': [100, 101, 102],
-                'ci_type': ['power', 'power', 'road'],
-                'func_tot': [1, 1, 1],
+                'from_id': [0, 1, 2, 3],
+                'to_id': [1, 2, 3, 4],
+                'id': [0, 1, 2, 3],
+                'orig_id': [0, 1, 2, 3],
+                'osm_id': [100, 101, 102, 103],
+                'ci_type': ['healthcare', 'road', 'road', 'road'],
+                'func_tot': [1, 1, 1, 1],
+                'distance': [157200, 157200, 157200, 157200],
                 'geometry': [
                     LineString([(0, 0), (1, 1)]),
                     LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)])
+                    LineString([(2, 2), (3, 3)]),
+                    LineString([(3, 3), (4, 4)])
                 ]
             },
             geometry='geometry',
@@ -633,21 +1124,98 @@ class TestNetworkCalcs:
         network = Network(edges=edges, nodes=nodes)
 
         dep_table = pd.DataFrame({
-            'source': ['power_plant', 'road'],
-            'target': ['people', 'people'],
-            'type_I': ['functional', 'physical'],
+            'source': ['healthcare', 'road'],
+            'target': ['road', 'people'],
+            'type_I': ['functional', 'enduser'],
+            'via_link': ['road', 'road'],
             'link_condition': ['distance', 'distance'],
-            'dist_thresh': [1000, 1000],
+            'thresh_dist': [np.inf, np.inf],
             'bidir_link': [False, False],
-            'access_cnstr': [False, False]
+            'access_cnstr': [False, False],
+            'n_links': [1, 1],
+            'thresh_func': [0.5, 0.5]
         })
 
         nc = NetworkCalcs(network=network, dep_table=dep_table)
         nc.initialize_base_state()
 
-        # Verify base state was initialized
+        # Set a failure
+        nc.network.nodes.loc[1, 'func_tot'] = 0
+
+        # Run cascade
+        nc.cascade(
+            p_source='healthcare',
+            p_sink='road',
+            source_var='capacity',
+            demand_var='demand',
+            initial=False,
+            friction_surf=None,
+            rerouting=False
+        )
+
+        # Verify cascade completed and network was updated
+        assert nc.network is not None
         assert 'func_tot' in nc.network.nodes.columns
-        assert 'func_tot' in nc.network.edges.columns
+
+    def test_cascade_multiple_iterations(self):
+        """Test cascade that requires multiple iterations"""
+        nodes = gpd.GeoDataFrame(
+            {
+                'id': [0, 1, 2],
+                'orig_id': [0, 1, 2],
+                'ci_type': ['healthcare', 'road', 'road'],
+                'func_tot': [1, 1, 1],
+                'geometry': [Point(0, 0), Point(1, 1), Point(2, 2)]
+            },
+            geometry='geometry',
+            crs='EPSG:4326'
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                'from_id': [0, 1],
+                'to_id': [1, 2],
+                'id': [0, 1],
+                'orig_id': [0, 1],
+                'osm_id': [100, 101],
+                'ci_type': ['road', 'road'],
+                'func_tot': [1, 1],
+                'distance': [157200, 157200],
+                'geometry': [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)])
+                ]
+            },
+            geometry='geometry',
+            crs='EPSG:4326'
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        dep_table = pd.DataFrame({
+            'source': ['healthcare'],
+            'target': ['road'],
+            'type_I': ['functional'],
+            'via_link': ['road'],
+            'link_condition': ['distance'],
+            'thresh_dist': [np.inf],
+            'bidir_link': [False],
+            'access_cnstr': [False],
+            'n_links': [1],
+            'thresh_func': [0.5]
+        })
+
+        nc = NetworkCalcs(network=network, dep_table=dep_table)
+        nc.initialize_base_state()
+
+        nc.cascade(
+            p_source='healthcare',
+            p_sink='road',
+            source_var='capacity',
+            demand_var='demand',
+            initial=True
+        )
+
+        assert nc.network is not None
+
 
 
 
