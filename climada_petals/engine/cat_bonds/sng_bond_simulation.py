@@ -11,15 +11,6 @@ class SingleCountryBondSimulation:
 
     This class simulates losses and returns for a single country's bond
     based on per-event payouts and damages.
-
-    Parameters
-    ----------
-    subarea_calc : object
-        Subarea calculation instance exposing `pay_vs_dam` and `principal`.
-    term : int
-        Bond term in years for each simulated period.
-    number_of_terms : int
-        Number of consecutive terms to simulate.
     """
 
     def __init__(self, subarea_calc, term: int, number_of_terms: int):
@@ -29,7 +20,7 @@ class SingleCountryBondSimulation:
         Parameters
         ----------
         subarea_calc : object
-            Subarea calculation instance exposing `pay_vs_dam` and `principal`.
+            Subarea calculation instance.
         term : int
             Bond term in years for each simulated period.
         number_of_terms : int
@@ -43,9 +34,9 @@ class SingleCountryBondSimulation:
     def init_bond_loss(self, events_per_year: list[pd.DataFrame]):
         """
         Calculates the expected losses for a catastrophe bond over its term.
-        This function simulates the bond's loss experience given a sequence of event data per year,
+        This function simulates the bond's loss experience given a sequence of event data per year and month,
         tracking payouts, damages, remaining princpal value, and the timing of losses. It returns the relative
-        losses per year, the total payouts and damages per term, and a DataFrame detailing losses and their corresponding months.
+        losses, the total payouts and damages per term, and a DataFrame detailing losses and their corresponding months.
 
         Parameters
         ----------
@@ -130,7 +121,7 @@ class SingleCountryBondSimulation:
         confidence_levels : list[float], optional
             Confidence levels for VaR and ES calculation.
 
-        Returns
+        Sets
         -------
         df_loss_month : pd.DataFrame
             Monthly loss data for all simulations.

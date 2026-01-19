@@ -20,6 +20,8 @@ def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100
     ----------
     n : int
         Number of pools to optimize.
+    countries : list
+        List of country names corresponding to the bond simulations.
     cls_bond_simulations : list
         List of SingleCountryBondSimulation instances for each country, containing the principals and 
         monthly losses.
@@ -94,6 +96,8 @@ def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simul
     ----------
     maximum_principal : float
         Maximum principal allowed per pool.
+    countries : list
+        List of country names corresponding to the bond simulations.
     cls_bond_simulations : list
         List of SingleCountryBondSimulation instances for each country, containing the principals and 
         monthly losses.
@@ -216,7 +220,7 @@ class PoolOptimizationFixedNumber():
         self.fixed_number_pools_problem._evaluate = self._evaluate
 
     @classmethod
-    def _init_optimisation_problem(cls, n_countries, n_pools, **kwargs): # I would also rename n_var to what they are in your case
+    def _init_optimisation_problem(cls, n_countries, n_pools, **kwargs):
          return ElementwiseProblem(
             n_var=n_countries,
             n_obj=1,
@@ -260,7 +264,7 @@ class PoolOptimizationMaximumPrincipal():
         self.max_principal_problem._evaluate = self._evaluate
 
     @classmethod
-    def _init_optimisation_problem(cls, n_countries, **kwargs): # I would also rename n_var to what they are in your case
+    def _init_optimisation_problem(cls, n_countries, **kwargs): 
          return ElementwiseProblem(
             n_var=n_countries,
             n_obj=1,

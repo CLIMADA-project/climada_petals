@@ -5,7 +5,7 @@ from scipy.optimize import curve_fit, minimize
 
 from climada_petals.util.config import LOGGER
 
-# path to data folder
+# path to data folder of ibrd cat bond data
 DATA_DIR = (Path(__file__).parent.parent.parent).joinpath('data/cat_bonds')
 
 
@@ -53,20 +53,20 @@ class PremiumCalculations:
         Parameters
         ----------
         peak_multi : float
-            Peak multiple factor for the bond.
-        investment_graded : int or float
+            Indicator wether the cat bond is considered peak peril or if it is covering multiple perils. If either is ture = 1, else 0.
+        investment_graded : int 
             Indicator for investment-grade status (e.g., 1 for yes, 0 for no).
-        hybrid_trigger : int or float
+        hybrid_trigger : int 
             Indicator for hybrid trigger structure (e.g., 1 for yes, 0 for no).
         GCIndex : float, optional
             Guy Carpenter Global Property Catastrophe Rate on Line Index value.
         BBSpread : float, optional
             ICE BofA BB US High Yield Index OAS value.
 
-        Returns
+        Sets
         -------
-        None
-            Sets `self.chatoro_prem_rate` on the instance.
+        chatoro_prem_rate: float
+            Calculated Chatoro premium rate.
         """
 
         if GCIndex is None:
@@ -115,16 +115,16 @@ class PremiumCalculations:
         Fits a monotonic exponential curve to catastrophe bond data for bonds issued by the World Bank to estimate premium parameters.
         This function loads IBRD bond data from an Excel file, optionally filters the data by peril type or issuing year,
         and fits a monotonic exponential function to the relationship between expected loss and risk multiple.
-        The fitted parameters are returned. Optionally, the function can generate and save a plot of the fit.
+        The fitted parameters are returned. 
 
         Parameters
         ----------
         peril : str, optional
-            Peril type to filter the bonds (e.g., 'Earthquake', 'Flood'). If None, no filtering by peril is applied.
+            Peril type to filter the bonds. If None, no filtering by peril is applied.
         year : list[int] or int, optional
             Issuing year(s) to filter the bonds. If None, no filtering by year is applied.
 
-        Returns
+        Sets
         -------
         ibrd_prem_rate : float
             The estimated premium rate based on the fitted curve and the bond's expected annual loss.
@@ -151,7 +151,7 @@ class PremiumCalculations:
 
 
     ### BENCHMARK SHARPE RATIO PREMIUMS ###
-    '''Benchmark pricing function for single country bonds -> goes through all losses and determines required premium to achieve a certain target Sharpe ratio'''
+    '''Benchmark pricing function -> goes through all losses and determines required premium to achieve a certain target Sharpe ratio'''
     def find_sharpe(self, premium: float, monthly_losses: pd.DataFrame, target_sharpe: float):
         """
         Calculates the squared difference between the Sharpe ratio of a cat bond cash flow and a target Sharpe ratio.
@@ -206,12 +206,11 @@ class PremiumCalculations:
         return (avg_ret / sigma - target_sharpe)**2
 
 
-    '''Benchmark pricing function for single country bonds -> wrapper function to call the optimization'''
+    '''Benchmark pricing function -> wrapper function to call the optimization'''
     def calc_benchmark_premium(self, target_sharpe: float):        
         """
         Calculates the initial premium required to achieve a target Sharpe ratio for a given set of annual losses.
-        This function uses numerical optimization to find the premium value that results in the desired Sharpe ratio,
-        given the annual losses and the risk-free rate.
+        This function uses numerical optimization to find the premium value that results in the desired Sharpe ratio.
 
         Parameters
         ----------

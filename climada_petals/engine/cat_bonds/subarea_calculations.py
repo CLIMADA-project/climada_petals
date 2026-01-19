@@ -22,16 +22,16 @@ class SubareaCalculations:
     index_stat : str or float
         Statistic for the parametric index (e.g., "mean" or a percentile).
     intitial_guess : tuple[float, float], optional
-        Initial guess for minimum and maximum trigger thresholds.
+        Initial guess for minimum and maximum payout trigger thresholds.
 
     Attributes
     ----------
     subareas : object
         Input container holding exposure, hazard, vulnerability, and subareas.
     index_stat : str or float
-        Statistic used to summarize hazard intensity per subarea.
+        Statistic used to summarize hazard intensity per subarea which is used as parametric index.
     initial_guess : tuple[float, float]
-        Initial guess for minimum/maximum payout thresholds.
+        Initial guess for minimum/maximum thresholds for the payout function.
     """
     def __init__(self, subareas, index_stat: float | str, initial_guess: tuple[float, float] | None =None):
         """
@@ -44,7 +44,7 @@ class SubareaCalculations:
         index_stat : str or float
             Statistic used for the parametric index ("mean" or a percentile).
         initial_guess : tuple[float, float], optional
-            Initial guess for min/max trigger thresholds. When omitted, the
+            Initial guess for min/max payout trigger thresholds. When omitted, the
             30th and 60th percentiles of hazard intensity are used.
         """
 
@@ -101,9 +101,9 @@ class SubareaCalculations:
         impact : climada.ImpactCalc
             Impact calculation object containing results and methods.
         attachment_point : float
-            Attachment point value for the CAT bond.
+            Attachment point value for the CAT bond. Is either a monetary amount, a fraction of total exposure, or a return period in years.
         exhaustion_point : float
-            Exhaustion point value for the CAT bond.
+            Exhaustion point value for the CAT bond. Is either a monetary amount, a fraction of total exposure, or a return period in years.
         attachment_point_method : str, optional
             Interpretation method: "Exposure_Share", "Return_Period", or None.
         exhaustion_point_method : str, optional
@@ -149,7 +149,7 @@ class SubareaCalculations:
 
     def _calc_parametric_index(self):
         """
-        Calculate a specified statistic (mean or percentile) for each event's index in each subarea.
+        Calculate a specified statistic as the parametric index (mean or percentile) for each event's index in each subarea.
 
         Parameters
         ----------
@@ -246,7 +246,7 @@ class SubareaCalculations:
         Parameters
         ----------
         haz_int : dict
-            Parametric index values for each subarea (with year/month columns).
+            Parametric index values for each subarea.
         principal : float
             Principal of the CAT bond used in the optimization objective function.
         attachment : float
@@ -314,7 +314,7 @@ class SubareaCalculations:
     ):
         """
         Calculates payouts versus damages for hazard events.
-        This function computes the payout for each event based on optimized threshold parameters and parametric index data.
+        This function computes the payout for each event based on optimized payout threshold parameters and parametric index data.
         It compares the payouts to the corresponding damages, applying constraints such as minimum payout and principal cap.
 
         Parameters
@@ -403,9 +403,9 @@ class SubareaCalculations:
         Parameters
         ----------
         attachment_point : float
-            Attachment point value or parameter for the selected method.
+            Attachment point value or parameter for the selected method. Is either a monetary amount, a fraction of total exposure, or a return period in years.
         exhaustion_point : float
-            Exhaustion point value or parameter for the selected method.
+            Exhaustion point value or parameter for the selected method. Is either a monetary amount, a fraction of total exposure, or a return period in years.
         methods_attachment_point : str, optional
             Interpretation method for attachment (e.g., "Exposure_Share" or "Return_Period").
         methods_exhaustion_point : str, optional

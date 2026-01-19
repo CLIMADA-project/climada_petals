@@ -35,7 +35,7 @@ def multi_level_es(losses: pd.Series, confidence_levels: list[float]):
 
 def allocate_single_payout(payout: float, nominals: np.ndarray):
     """
-    Allocate a single payout across tranche nominals (FIFO).
+    Allocate a single payout across tranche nominals.
     
     Parameters
     ----------

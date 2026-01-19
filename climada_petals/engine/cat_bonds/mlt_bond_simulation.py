@@ -126,8 +126,6 @@ class MultiCountryBond:
             Term of the bond in years.
         number_of_terms : int
             Number of terms to simulate.
-        principal : float | None
-            Total principal value of the bond. If none it will be calculated with init_required_principal()
         maximum_principal : float
             Maximum principal allowed per pool.
         n_opt_rep : int, optional
@@ -203,7 +201,6 @@ class MultiCountryBond:
 
         Notes
         -----
-        - The function assumes that the term (number of years) is inferred from the length of `events_per_year`.
         - Payouts are capped by the remaining principal value for the bond and by the per-country princpal allocation.
         - All losses and payouts are normalized by the total principal value before being returned.
         '''
@@ -281,7 +278,7 @@ class MultiCountryBond:
         confidence_levels : list, optional
             List of confidence levels (floats between 0 and 1) for risk metrics calculation (default is [0.95, 0.99]).
 
-        Returns
+        Sets
         -------
         df_loss_month : pandas.DataFrame
             DataFrame containing monthly relative losses for the entire bond.
@@ -377,7 +374,7 @@ class MultiCountryBond:
         rf : float, optional
             Risk-free rate to be added to the premium (default is 0.0).
 
-        Returns
+        Sets
         -------
         ncf : pandas.DataFrame
             DataFrame containing net cash flows for the bond.
@@ -388,7 +385,6 @@ class MultiCountryBond:
 
         Notes
         -----
-        - The function resets the nominal value at the end of each term.
         - Premiums and cash flows are calculated monthly, accounting for loss events and remaining nominal.
         """
 
@@ -442,38 +438,36 @@ class MultiCountryBond:
     '''reduced function to derive returns of the bond -> was used to save time during calculation'''
     def init_return_simulation_tranches(self, premiums: list[float], tranches: list[float], rf: float = 0.0):
         """
-        Simulates the net cash flows (NCF) and premium allocations for a multi-country catastrophe bond structure over the simulation period.
-        This function calculates the premium payments, net cash flows, and premium allocations for each tranche and country,
-        considering monthly losses, tranche structures, and country exposure shares. It accounts for loss events, premium payments,
-        and risk-free rates, and distributes premiums according to country exposure shares represented by the country's Expected Marginal Loss.
+        Simulate net cash flows and premium allocation for a multi-country bond with tranches.
+
+        Computes tranche-level net cash flows across the simulation horizon, allocating
+        monthly premium accruals and losses based on the remaining tranche notionals.
+        Premium allocation to countries follows each country's share of expected loss
+        (self.tot_coverage_cty[cty]['share_EL']).
 
         Parameters
         ----------
-        self: mlt_bond_simulation
-            Class instance of mlt_bond_simulation containing monthly loss data, country exposure shares, tranche structures, and the term of the bond.
-        premiums : list
-            List of annual premium rates for each tranche.
-        tranches : list
-            List of share of principal values for each tranche. Should sum to 1.
+        premiums : list of float
+            Annual premium rates for each tranche (same length/order as `tranches`).
+        tranches : list of float
+            Principal shares per tranche; must sum to 1.
         rf : float, optional
-            Risk-free rate to be added to the premium (default is 0.0).
+            Risk-free rate added to premiums.
 
-        Returns
-        -------
-        ncf_tranches : pandas.DataFrame
-            DataFrame containing net cash flows for each tranche and the total across all tranches for each period.
-        prem_cty_df_tranches : pandas.DataFrame
-            DataFrame containing premium allocations for each country (based on their exposure share), total premiums (if bond is priced as one), and alternative total premiums (if each tranche is priced seperately).
-        sharpe_ratio_tranches : list
-            List of Sharpe ratios for each tranche.
+        Sets
+        ----
+        self.ncf_tranches : pandas.DataFrame
+            Tranche-level net cash flows per period, plus `Total`.
+        self.prem_cty_df_tranches : pandas.DataFrame
+            Country-level premium allocations and a `Total` column based on tranche premiums.
+        self.sharpe_ratio_tranches : list of float
+            Sharpe ratio per tranche.
 
         Notes
         -----
-        - The function resets the nominal value at the end of each term.
-        - Premiums and cash flows are calculated monthly, accounting for loss events and remaining nominal.
-        - Alternative premium calculation is provided for country-level allocation.
-        - Losses are allocated to tranches in reverse order (from highest to lowest risk).
+        - Loss allocation across tranches is handled by `allocate_single_payout`.
         """
+
         if not np.sum(tranches) == 1:
             raise ValueError("Tranches should sum to 1.")
         ncf = {str(tranche): [] for tranche in tranches}
@@ -542,7 +536,7 @@ class MultiCountryBond:
         Parameters:
             self: MultiCountryBondSimulation
                 An instance of the MultiCountryBondSimulation class containing country data and simulation parameters.
-        Returns:
+        Sets:
             float: The required nominal value for the catastrophe bond, equal to the maximum simulated total loss.
         """
 

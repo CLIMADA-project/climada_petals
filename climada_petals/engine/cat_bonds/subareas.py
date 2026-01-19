@@ -73,7 +73,7 @@ class Subareas:
     @classmethod
     def from_resolution(cls, hazard, vulnerability, exposure, resolution: float, subareas_gdf: gpd.GeoDataFrame | None = None):
         """
-        Create subareas from a grid resolution.
+        Create subareas from a grid resolution and an exposure layer.
 
         Parameters
         ----------
@@ -232,25 +232,27 @@ class Subareas:
 
 def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, exposure):
     """
-    Generates subareas based on exposure perimeter stored in a GeoDataFrame.
-    This function takes a GeoDataFrame of polygons and, for each polygon, generates a grid of rectangular cells
-    within its bounding box. Each grid cell is then cropped to the polygon's boundary using geometric intersection.
-    For polygons smaller than a specified minimum area, the polygon itself is retained without cropping.
-    The resulting grid cells are the subareas of the CAT bond.
+    Generate subarea grid cells from exposure perimeter polygons.
+
+    For each polygon in `exp_gdf`, build a padded bounding box, create a regular
+    grid of `resolution` cells over that box, and keep only cells that contain
+    at least one exposure point. If the bounding box is smaller than one cell in
+    either dimension, keep a single buffered bounding box cell. Finally, merge
+    overlapping grid cells and drop empty geometries.
 
     Parameters
     ----------
     resolution : float
-        Grid cell size used to generate subareas.
+        Grid cell size used to generate subareas (CRS units).
     exp_gdf : geopandas.GeoDataFrame
-        GeoDataFrame containing polygon geometries to be cropped into subareas.
+        GeoDataFrame of perimeter polygons.
     exposure : climada.Exposure
-        Exposure object containing monetary data and geometry.
+        Exposure object with point geometries in `exposure.gdf`.
 
     Returns
     -------
     subareas : geopandas.GeoDataFrame
-        GeoDataFrame containing the cropped grid cells for all polygons, with empty geometries removed.
+        GeoDataFrame of merged grid cells (subareas) covering exposure points.
     """
     LOGGER.info("Creating subareas from exposure perimeter polygon.")
     cropped_cells = []
@@ -323,21 +325,22 @@ def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, ex
 
 def _create_exp_gdf(exposure) -> gpd.GeoDataFrame:
     """
-    Generates a merged polygon representing the geometric extent of the exposed assets.
-    This function rasterizes the geometries in the input exposure object, identifies contiguous regions
-    where the exposure value is greater than zero, and merges these regions into a single polygon.
-    The result is returned as a GeoDataFrame with the specified coordinate reference system.
+    Build a polygonal footprint of exposed assets from an exposure GeoDataFrame.
+
+    Rasterizes the exposure points on a grid whose resolution is inferred from
+    nearest-neighbor spacing, then extracts contiguous regions where rasterized
+    values are > 0. The regions are unioned and exploded into individual polygons.
 
     Parameters
     ----------
     exposure : climada.Exposure
-        Exposure object containing monetary data and geometry.
+        Exposure object containing point geometries and a `value` column.
 
     Returns
     -------
     exp_gdf : geopandas.GeoDataFrame
-        A GeoDataFrame containing a single merged polygon geometry representing the geometric extent of
-        the country in the specified CRS.
+        GeoDataFrame of one or more polygons representing the exposure footprint,
+        in the exposure CRS.
     """
 
     LOGGER.info("Creating exposure perimeter polygon from exposure data.")
