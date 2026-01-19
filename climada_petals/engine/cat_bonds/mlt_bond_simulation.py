@@ -322,8 +322,8 @@ class MultiCountryBond:
             coverage['damage'] += coverage_tot['damage']
 
             for key in coverage_cty.keys():
-                self.tot_coverage_cty[key]['Tot_payout'] += coverage_cty[key]['payout']
-                self.tot_coverage_cty[key]['Tot_damages'] += coverage_cty[key]['damage']
+                self.tot_coverage_cty[key]['Total_payout'] += coverage_cty[key]['payout']
+                self.tot_coverage_cty[key]['Total_damages'] += coverage_cty[key]['damage']
 
             for key in rel_ann_cty_losses:
                 ann_cty_losses[key].extend(rel_ann_cty_losses[key])
@@ -339,20 +339,20 @@ class MultiCountryBond:
         var_list, es_list = multi_level_es(annual_losses, confidence_levels)
 
         for key in self.tot_coverage_cty.keys():
-            self.tot_coverage_cty[key]['coverage'] = self.tot_coverage_cty[key]['Tot_payout'] / self.tot_coverage_cty[key]['Tot_damages']
-            self.tot_coverage_cty[key]['EL'] = np.mean(ann_cty_losses[key])
-            self.tot_coverage_cty[key]['share_EL'] = self.tot_coverage_cty[key]['EL'] / exp_loss_ann
+            self.tot_coverage_cty[key]['coverage'] = self.tot_coverage_cty[key]['Total_payout'] / self.tot_coverage_cty[key]['Total_damages']
+            self.tot_coverage_cty[key]['Expected_annual_loss'] = np.mean(ann_cty_losses[key])
+            self.tot_coverage_cty[key]['share_expected_annual_loss'] = self.tot_coverage_cty[key]['Expected_annual_loss'] / exp_loss_ann
         
 
 
-        self.loss_metrics = {'EL_ann': exp_loss_ann,
-                             'AP_ann': att_prob_ann,
-                             'Tot_payout': coverage['payout'], 
-                             'Tot_damages': coverage['damage']}
+        self.loss_metrics = {'Expected_annual_loss': exp_loss_ann,
+                             'Annual_attachment_probability': att_prob_ann,
+                             'Total_payout': coverage['payout'], 
+                             'Total_damages': coverage['damage']}
         
         for cl, var, es in zip(confidence_levels, var_list, es_list):
-            self.loss_metrics[f'VaR_{int(cl*100)}_ann'] = var
-            self.loss_metrics[f'ES_{int(cl*100)}_ann'] = es
+            self.loss_metrics[f'Annual_Value_at_risk_{int(cl*100)}'] = var
+            self.loss_metrics[f'Annual_Expected_shortfall_{int(cl*100)}'] = es
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
         LOGGER.info(f'Attachment Probability = {att_prob_ann}')
@@ -426,12 +426,12 @@ class MultiCountryBond:
                 cur_nominal = 1
         prem_cty_dic = {country: [] for country in self.tot_coverage_cty}
         for country in prem_cty_dic:
-            prem_cty_dic[country] = np.array(premiums_tot) * self.tot_coverage_cty[country]['share_EL']
-        prem_cty_dic['Total'] = premiums_tot
+            prem_cty_dic[country] = np.array(premiums_tot) * self.tot_coverage_cty[country]['share_expected_annual_loss']
+        prem_cty_dic['Total_premiums'] = premiums_tot
         
-        self.ncf = pd.DataFrame(ncf_tot, columns=['Total'])
-        self.prem_cty_df = pd.DataFrame(prem_cty_dic)
-        self.sharpe_ratio = (np.mean(self.ncf['Total']) - rf) / np.std(self.ncf['Total'])
+        self.net_cash_flow = pd.DataFrame(ncf_tot, columns=['Total_net_cash_flow'])
+        self.premiums = pd.DataFrame(prem_cty_dic)
+        self.sharpe_ratio = (np.mean(self.net_cash_flow['Total_net_cash_flow']) - rf) / np.std(self.net_cash_flow['Total_net_cash_flow'])
 
 
   
@@ -517,13 +517,13 @@ class MultiCountryBond:
 
         prem_cty_dic = {country: [] for country in self.tot_coverage_cty}
         for country in prem_cty_dic:
-            prem_cty_dic[country] = np.array(premiums_tot) * self.tot_coverage_cty[country]['share_EL']
-        prem_cty_dic['Total'] = premiums_tot
+            prem_cty_dic[country] = np.array(premiums_tot) * self.tot_coverage_cty[country]['share_expected_annual_loss']
+        prem_cty_dic['Total_premiums'] = premiums_tot
 
-        self.ncf_tranches = pd.DataFrame(ncf)
-        self.ncf_tranches['Total'] = self.ncf_tranches.sum(axis=1)
-        self.prem_cty_df_tranches = pd.DataFrame(prem_cty_dic)
-        self.sharpe_ratio_tranches = [(np.mean(self.ncf_tranches[str(tranche)]) - rf) / np.std(self.ncf_tranches[str(tranche)]) for tranche in tranches]
+        self.net_cash_flow_tranches = pd.DataFrame(ncf)
+        self.net_cash_flow_tranches['Total_net_cash_flos'] = self.net_cash_flow_tranches.sum(axis=1)
+        self.premiums_tranches = pd.DataFrame(prem_cty_dic)
+        self.sharpe_ratio_tranches = [(np.mean(self.net_cash_flow_tranches[str(tranche)]) - rf) / np.std(self.net_cash_flow_tranches[str(tranche)]) for tranche in tranches]
 
 
     '''Calculates required nominal for multi-country bonds -> derives maximal loss over simulation period'''

@@ -163,17 +163,17 @@ class SingleCountryBondSimulation:
 
         # Save metrics
         self.loss_metrics = {
-            'EL_ann': exp_loss_ann,
-            'AP_ann': att_prob,
-            'Tot_payout': total_payouts,
-            'Tot_damages': total_damages,
+            'Expected_annual_loss': exp_loss_ann,
+            'Annual_attachment_probability': att_prob,
+            'Total_payout': total_payouts,
+            'Total_damages': total_damages,
         }
 
         var_list, es_list = multi_level_es(annual_losses, confidence_levels)
 
         for cl, var, es in zip(confidence_levels, var_list, es_list):
-            self.loss_metrics[f'VaR_{int(cl*100)}_ann'] = var
-            self.loss_metrics[f'ES_{int(cl*100)}_ann'] = es
+            self.loss_metrics[f'Annual_Value_at_risk_{int(cl*100)}'] = var
+            self.loss_metrics[f'Annual_Expected_shortfall_{int(cl*100)}'] = es
 
         LOGGER.info(f'Expected Loss = {exp_loss_ann}')
         LOGGER.info(f'Attachment Probability = {att_prob}')
