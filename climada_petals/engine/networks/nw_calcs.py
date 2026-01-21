@@ -482,20 +482,21 @@ class GraphCalcs():
         subgraph = self.graph.induced_subgraph(vs_keep)
 
         #map graph ids to subgraph ids
-        #subgraph_graph_esdict = _get_subgraph2graph_esdict(graph, subgraph)
+        #subgraph_graph_esdict = GraphCalcs._get_subgraph2graph_esdict(self.graph, subgraph)
         #graph_to_subgraph_esdict = {v: k for k, v in subgraph_graph_esdict.items()}
 
         # delete remaining edges that have wrong attributes
-        df_es_target = GraphCalcs._filter_edges(subgraph, target_attrs)
-        df_es_source = GraphCalcs._filter_edges(subgraph, source_attrs)
+        #df_es_target = GraphCalcs._filter_edges(subgraph, target_attrs)
+        #df_es_source = GraphCalcs._filter_edges(subgraph, source_attrs)
         df_es_via = GraphCalcs._filter_edges(subgraph, via_attrs)
 
-        correct_edges = np.concatenate((df_es_target.index.values,
-                                       df_es_source.index.values,
-                                       df_es_via.index.values))
+        correct_edges = df_es_via.index.values
+        #correct_edges = np.concatenate((df_es_target.index.values,
+        #                               df_es_source.index.values,
+        #                               df_es_via.index.values))
 
         #map correct edge ids back to subgraph ids
-        #correct_edges = [graph_to_subgraph_esdict[id_corr_edg] for id_corr_edg
+        #correct_edges = [subgraph_graph_esdict[id_corr_edg] for id_corr_edg
         #                in correct_edges]
 
         wrong_edges = set(range(len(subgraph.es))).difference(set(correct_edges))
