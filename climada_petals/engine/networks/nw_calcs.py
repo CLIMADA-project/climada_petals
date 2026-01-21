@@ -95,7 +95,9 @@ class GraphCalcs():
         gdf_vs = self.graph.get_vertex_dataframe()
         #if ci_type is not None:#filter to ci_type
         #    gdf_vs = gdf_vs[gdf_vs.ci_type==ci_type]
-        gdf_vs['membership'] = self.graph.connected_components().membership
+        # Use 'weak' mode for directed graphs to treat them as undirected for connectivity
+        mode = 'weak' if self.graph.is_directed() else None
+        gdf_vs['membership'] = self.graph.connected_components(mode=mode).membership
 
         v_ids_source = []
         v_ids_target = []
@@ -185,7 +187,7 @@ class GraphCalcs():
 
         vs_target = self.graph.vs[df_vs_target.index.values]
 
-        pot_edges_ids = [self.graph.incident(v_target, mode='in')
+        pot_edges_ids = [self.graph.incident(v_target, mode='all')
                      for v_target in vs_target]
         # flatten nested list
         pot_edges_ids = [item for sublist in pot_edges_ids for item in sublist]
@@ -200,11 +202,24 @@ class GraphCalcs():
             if all(self.graph.es[item][key] == value for key, value in edge_attrs.items())
             ]
 
-        self._edges_from_vlists([edge.source for edge in pot_edges],
-                           [edge.target for edge in pot_edges], link_attrs)
+        #make sure source are indeed of edge_attrs type and targets of target_attrs type
+        sources = []
+        targets = []
+        for edge in pot_edges:
+            source_vx = self.graph.vs[edge.source]
+            target_vx = self.graph.vs[edge.target]
+            if source_vx['ci_type'] == edge_attrs['ci_type']:
+                sources.append(edge.source)
+                targets.append(edge.target)
+            elif target_vx['ci_type'] == edge_attrs['ci_type']:
+                sources.append(edge.target)
+                targets.append(edge.source)
+            else:
+                raise ValueError("Edge does not connect correct ci_types!")
+
+        self._edges_from_vlists(sources, targets, link_attrs)
         if bidir:
-            self._edges_from_vlists([edge.target for edge in pot_edges],
-                               [edge.source for edge in pot_edges], link_attrs)
+            self._edges_from_vlists(targets, sources, link_attrs)
 
         #self.invalidate()
     def link_vertices_shortest_paths(self, source_attrs, target_attrs, via_attrs,
@@ -246,7 +261,8 @@ class GraphCalcs():
 
         path_dists = subgraph.distances(
             source=df_vs_source.index.values, target=df_vs_target.index.values,
-            weights=criterion)
+            weights=criterion,
+            mode='all')
         path_dists = np.array(path_dists)  # dim: (#sources, #targets)
 
         if not len(path_dists) == 0:
@@ -466,20 +482,21 @@ class GraphCalcs():
         subgraph = self.graph.induced_subgraph(vs_keep)
 
         #map graph ids to subgraph ids
-        #subgraph_graph_esdict = _get_subgraph2graph_esdict(graph, subgraph)
+        #subgraph_graph_esdict = GraphCalcs._get_subgraph2graph_esdict(self.graph, subgraph)
         #graph_to_subgraph_esdict = {v: k for k, v in subgraph_graph_esdict.items()}
 
         # delete remaining edges that have wrong attributes
-        df_es_target = GraphCalcs._filter_edges(subgraph, target_attrs)
-        df_es_source = GraphCalcs._filter_edges(subgraph, source_attrs)
+        #df_es_target = GraphCalcs._filter_edges(subgraph, target_attrs)
+        #df_es_source = GraphCalcs._filter_edges(subgraph, source_attrs)
         df_es_via = GraphCalcs._filter_edges(subgraph, via_attrs)
 
-        correct_edges = np.concatenate((df_es_target.index.values,
-                                       df_es_source.index.values,
-                                       df_es_via.index.values))
+        correct_edges = df_es_via.index.values
+        #correct_edges = np.concatenate((df_es_target.index.values,
+        #                               df_es_source.index.values,
+        #                               df_es_via.index.values))
 
         #map correct edge ids back to subgraph ids
-        #correct_edges = [graph_to_subgraph_esdict[id_corr_edg] for id_corr_edg
+        #correct_edges = [subgraph_graph_esdict[id_corr_edg] for id_corr_edg
         #                in correct_edges]
 
         wrong_edges = set(range(len(subgraph.es))).difference(set(correct_edges))
