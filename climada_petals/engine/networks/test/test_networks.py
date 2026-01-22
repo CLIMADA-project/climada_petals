@@ -326,20 +326,26 @@ class TestNetwork:
         # Healthcare nodes should have capacity -1
         assert (network_with_ci_types.nodes.loc[network_with_ci_types.nodes['ci_type'] == 'healthcare', capacity_col] == -1).all()
 
-    def test_initialize_supply(self, network_with_ci_types, dependency_table):
+    def test_initialize_supply(self, network_with_ci_types):
         """Test initialization of supply"""
 
-        network_with_ci_types.initialize_supply(dependency_table)
+        dep_table = pd.DataFrame({
+            'source': ['healthcare'],
+            'target': ['people'],
+            'type_I': ['enduser']
+        })
 
-        access_col = 'access_state_road_people'
-        supply_col = 'actual_supply_road_people'
+        network_with_ci_types.initialize_supply(dep_table)
+
+        access_col = 'access_state_healthcare_people'
+        supply_col = 'actual_supply_healthcare_people'
 
         assert access_col in network_with_ci_types.nodes.columns
         assert supply_col in network_with_ci_types.nodes.columns
 
-        # People nodes should have supply 1 and access state "no base access"
+        # People nodes should have supply 0 and access state "no base access"
         people_nodes = network_with_ci_types.nodes[network_with_ci_types.nodes['ci_type'] == 'people']
-        assert (people_nodes[supply_col] == 1).all()
+        assert (people_nodes[supply_col] == 0).all()
         assert (people_nodes[access_col] == 'no base access').all()
 
     def test_update_network_from_graphs(self, network_with_ci_types):
@@ -878,7 +884,7 @@ class TestGraphCalcs:
         assert v_sum < graph_calcs.graph.vcount()
         assert e_sum < graph_calcs.graph.ecount()
 
-    def test_check_access_basic(self, graph_calcs, dependency_table):
+    def test_check_access_basic_undisrupted(self, graph_calcs, dependency_table):
         """Test _check_access basic functionality"""
         graph_calcs.parent.network.initialize_funcstates()
         graph_calcs.parent.network.initialize_capacity(dependency_table)
@@ -905,9 +911,10 @@ class TestGraphCalcs:
             people_nodes = graph_calcs.graph.vs.select(ci_type='people')
             for node in people_nodes:
                 assert f'access_state_{row.source}_{row.target}' in node.attributes()
+                assert f'actual_supply_{row.source}_{row.target}' in node.attributes()
                 assert node[f'access_state_{row.source}_{row.target}'] == 'access undisrupted'
 
-    def test_check_access_with_rerouting(self, graph_calcs, dependency_table):
+    def test_check_access_with_rerouting_undisrupted(self, graph_calcs, dependency_table):
         """Test _check_access with rerouting enabled"""
         graph_calcs.parent.network.initialize_funcstates()
         graph_calcs.parent.network.initialize_capacity(dependency_table)
@@ -933,9 +940,10 @@ class TestGraphCalcs:
             people_nodes = graph_calcs.graph.vs.select(ci_type='people')
             for node in people_nodes:
                 assert f'access_state_{row.source}_{row.target}' in node.attributes()
+                assert f'actual_supply_{row.source}_{row.target}' in node.attributes()
                 assert node[f'access_state_{row.source}_{row.target}'] == 'access undisrupted'
 
-    def test_check_access_with_rerouting_source_fail(self, graph_calcs_with_remote_node, dependency_table):
+    def test_check_access_with_rerouting_new_source(self, graph_calcs_with_remote_node, dependency_table):
         """Test _check_access with rerouting enabled"""
         graph_calcs_with_remote_node.parent.network.initialize_funcstates()
         graph_calcs_with_remote_node.parent.network.initialize_capacity(dependency_table)
@@ -965,16 +973,18 @@ class TestGraphCalcs:
         people_nodes = graph_calcs_with_remote_node.graph.vs.select(ci_type='people')
         for node in people_nodes:
             assert f'access_state_{row.source}_{row.target}' in node.attributes()
+            assert f'actual_supply_{row.source}_{row.target}' in node.attributes()
             assert node[f'access_state_{row.source}_{row.target}'] == 'access new source'
+            assert node[f'actual_supply_{row.source}_{row.target}'] == 1
 
-    def test_check_access_with_rerouting_via_fail(self, graph_calcs_with_remote_node, dependency_table):
-        """Test _check_access with rerouting when source is failing"""
+    def test_check_access_with_rerouting_via_disrupted(self, graph_calcs_with_remote_node, dependency_table):
+        """Test _check_access with rerouting when via is failing"""
         graph_calcs_with_remote_node.parent.network.initialize_funcstates()
         graph_calcs_with_remote_node.parent.network.initialize_capacity(dependency_table)
         graph_calcs_with_remote_node.parent.network.initialize_supply(dependency_table)
         graph_calcs_with_remote_node.build_graph()
 
-        row = dependency_table.iloc[0]  # Use row 0 (road->people enduser)
+        row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
 
         graph_calcs_with_remote_node._calc_dependencies(
             source_attrs={'ci_type': row.source},
@@ -988,8 +998,8 @@ class TestGraphCalcs:
         )
 
         # Fail a road node to test rerouting
-        roads = graph_calcs_with_remote_node.graph.vs.select(ci_type='road')
-        roads[0]['func_tot'] = 0
+        graph_calcs_with_remote_node.graph.vs.select(ci_type='road')[0]['func_tot'] = 0
+        graph_calcs_with_remote_node.graph.es.select(ci_type='road')[0]['func_tot'] = 0
 
         # Call _check_access
         graph_calcs_with_remote_node._check_access(row, friction_surf=None, rerouting=True)
@@ -997,113 +1007,78 @@ class TestGraphCalcs:
         people_nodes = graph_calcs_with_remote_node.graph.vs.select(ci_type='people')
         for node in people_nodes:
             assert f'access_state_{row.source}_{row.target}' in node.attributes()
+            assert f'actual_supply_{row.source}_{row.target}' in node.attributes()
             # With rerouting enabled and just one road failed, access should still be possible
-            assert node[f'access_state_{row.source}_{row.target}'] in ['access undisrupted', 'access disrupted via', 'access new source']
+            assert node[f'access_state_{row.source}_{row.target}'] == 'access disrupted via'
 
-    def test_check_access_undisrupted(self, graph_calcs, dependency_table):
-        """Test _check_access marks undisrupted access when sources are functional"""
-        graph_calcs.parent.network.initialize_funcstates()
-        graph_calcs.parent.network.initialize_capacity(dependency_table)
-        graph_calcs.parent.network.initialize_supply(dependency_table)
-        graph_calcs.build_graph()
+    def test_check_access_with_rerouting_new_source(self, graph_calcs_with_remote_node, dependency_table):
+        """Test _check_access with rerouting when via is failing"""
+        graph_calcs_with_remote_node.parent.network.initialize_funcstates()
+        graph_calcs_with_remote_node.parent.network.initialize_capacity(dependency_table)
+        graph_calcs_with_remote_node.parent.network.initialize_supply(dependency_table)
+        graph_calcs_with_remote_node.build_graph()
 
-        # Add dependency edges
-        graph_calcs.link_vertices_edgecond(
-            target_attrs={'ci_type': 'people'},
-            edge_attrs={'ci_type': 'road'},
-            link_attrs={'ci_type': 'dependency_road_people'}
-        )
+        row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
 
-        # Ensure all road nodes are functional
-        road_nodes = graph_calcs.graph.vs.select(ci_type='road')
-        assert all(node['func_tot'] == 1 for node in road_nodes)
-
-        row = dependency_table.iloc[0]
-        graph_calcs._check_access(row, friction_surf=None, rerouting=False)
-        # Check that people nodes have undisrupted access
-        people_nodes = graph_calcs.graph.vs.select(ci_type='people')
-        for node in people_nodes:
-            if 'access_state_road_people' in node.attributes():
-                access_state = node['access_state_road_people']
-                assert access_state == 'access undisrupted'
-
-    def test_check_access_with_source_failure(self, graph_calcs_with_source_fail, dependency_table):
-        """Test _check_access responds to source failures"""
-        graph_calcs_with_source_fail.parent.network.initialize_funcstates()
-        graph_calcs_with_source_fail.parent.network.initialize_capacity(dependency_table)
-        graph_calcs_with_source_fail.parent.network.initialize_supply(dependency_table)
-
-        ## Set healthcare node to failed state before building graph
-        #healthcare_idx = graph_calcs_with_source_fail.parent.network.nodes[graph_calcs_with_source_fail.parent.network.nodes['ci_type'] == 'healthcare'].index[0]
-        #graph_calcs_with_source_fail.parent.network.nodes.loc[healthcare_idx, 'func_tot'] = 0
-
-        graph_calcs_with_source_fail.build_graph()
-
-        # Add dependency edges
-        graph_calcs_with_source_fail.link_vertices_shortest_paths(
-            source_attrs={'ci_type': 'healthcare'},
-            target_attrs={'ci_type': 'people'},
+        graph_calcs_with_remote_node._calc_dependencies(
+            source_attrs={'ci_type': row.source},
+            target_attrs={'ci_type': row.target},
             via_attrs={'ci_type': 'road'},
-            link_attrs={'ci_type': 'dependency_healthcare_people'},
-            dist_thresh=np.inf,
-            criterion='distance',
-            k=1,
-            bidir=False
+            link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
+            link_condition=row['link_condition'],
+            dist_thresh=row['thresh_dist'],
+            bidir_link=row['bidir_link'],
+            friction_surf=None
         )
 
-        row = dependency_table.iloc[1]  # healthcare -> people
-        graph_calcs_with_source_fail._check_access(row, friction_surf=None, rerouting=False)
-        # People nodes should have disrupted or alternative access
-        people_nodes = graph_calcs_with_source_fail.graph.vs.select(ci_type='people')
+        # Fail a road node to test rerouting
+        graph_calcs_with_remote_node.graph.vs[3]['func_tot'] = 0
+        graph_calcs_with_remote_node.graph.es[3]['func_tot'] = 0
+
+        # Call _check_access
+        graph_calcs_with_remote_node._check_access(row, friction_surf=None, rerouting=True)
+        # Verify access states are set on people nodes
+        people_nodes = graph_calcs_with_remote_node.graph.vs.select(ci_type='people')
         for node in people_nodes:
-            access_state = node[f'access_state_{row.source}_{row.target}'] if f'access_state_{row.source}_{row.target}' in node.attributes() else None
-            assert access_state in (None, 'access disrupted source', 'access new source', 'access undisrupted')
+            assert f'access_state_{row.source}_{row.target}' in node.attributes()
+            assert f'actual_supply_{row.source}_{row.target}' in node.attributes()
+            # With rerouting enabled and just one road failed, access should still be possible
+            assert node[f'access_state_{row.source}_{row.target}'] == 'access undisrupted'
 
-    def test_check_access_actual_supply(self, graph_calcs, dependency_table):
-        """Test _check_access sets actual_supply attribute"""
-        graph_calcs.parent.network.initialize_funcstates()
-        graph_calcs.parent.network.initialize_capacity(dependency_table)
-        graph_calcs.parent.network.initialize_supply(dependency_table)
-        graph_calcs.build_graph()
-
-        # Add dependency edges
-        graph_calcs.link_vertices_edgecond(
-            target_attrs={'ci_type': 'people'},
-            edge_attrs={'ci_type': 'road'},
-            link_attrs={'ci_type': 'dependency_road_people'}
-        )
-
-        row = dependency_table.iloc[0]
-        graph_calcs._check_access(row, friction_surf=None, rerouting=False)
-
-        # Check actual_supply is set
-        people_nodes = graph_calcs.graph.vs.select(ci_type='people')
-        for node in people_nodes:
-            supply_col = f'actual_supply_{row.source}_{row.target}'
-            if supply_col in node.attributes():
-                assert node[supply_col] in (0, 1)
-
-    def test_check_access_no_constraint(self, graph_calcs, dependency_table):
+    def test_check_access_no_constraint(self, graph_calcs_with_remote_node, dependency_table):
         """Test _check_access with access constraints disabled"""
-        graph_calcs.parent.network.initialize_funcstates()
-        graph_calcs.parent.network.initialize_capacity(dependency_table)
-        graph_calcs.parent.network.initialize_supply(dependency_table)
-        graph_calcs.build_graph()
+        graph_calcs_with_remote_node.parent.network.initialize_funcstates()
+        graph_calcs_with_remote_node.parent.network.initialize_capacity(dependency_table)
+        graph_calcs_with_remote_node.parent.network.initialize_supply(dependency_table)
+        graph_calcs_with_remote_node.build_graph()
 
-        # Add dependency edges
-        graph_calcs.link_vertices_edgecond(
-            target_attrs={'ci_type': 'people'},
-            edge_attrs={'ci_type': 'road'},
-            link_attrs={'ci_type': 'dependency_road_people'}
-        )
+        for _, row in dependency_table.loc[dependency_table['target'] == 'people'].iterrows():
+            graph_calcs_with_remote_node._calc_dependencies(
+                source_attrs={'ci_type': row.source},
+                target_attrs={'ci_type': row.target},
+                via_attrs={'ci_type': 'road'},
+                link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
+                link_condition=row['link_condition'],
+                dist_thresh=row['thresh_dist'],
+                bidir_link=row['bidir_link'],
+                friction_surf=None
+            )
+            #deactivate access constraints
+            row['access_cnstr'] = False
 
-        row = dependency_table.iloc[0].copy()
-        row['access_cnstr'] = False
-        graph_calcs._check_access(row, friction_surf=None, rerouting=False)
-        # Access states should still be populated
-        people_nodes = graph_calcs.graph.vs.select(ci_type='people')
-        access_states = [node['access_state_road_people'] if 'access_state_road_people' in node.attributes() else None for node in people_nodes]
-        assert any(state is not None for state in access_states)
+            # Fail a road node to test access constraint being ignored
+            graph_calcs_with_remote_node.graph.vs.select(ci_type='road')[1]['func_tot'] = 0
+            graph_calcs_with_remote_node.graph.es.select(ci_type='road')[1]['func_tot'] = 0
+
+            # Call _check_access
+            graph_calcs_with_remote_node._check_access(row, friction_surf=None, rerouting=True)
+
+            # Verify access states are set on people nodes
+            people_nodes = graph_calcs_with_remote_node.graph.vs.select(ci_type='people')
+            for node in people_nodes:
+                assert f'access_state_{row.source}_{row.target}' in node.attributes()
+                assert f'actual_supply_{row.source}_{row.target}' in node.attributes()
+                assert node[f'access_state_{row.source}_{row.target}'] == 'access undisrupted'
 
     def test_check_access_dependency_edges(self, graph_calcs, dependency_table):
         """Test _check_access uses existing dependency edges"""
@@ -1282,6 +1257,331 @@ class TestGraphCalcs:
         )
 
         assert graph_calcs.graph is not None
+
+    def test_check_access_no_rerouting_constraint_all_functional(self, graph_calcs):
+        """Test _check_access with no rerouting, access constraints, all edges functional"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create initial dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        # Initialize supply
+        for v in graph_calcs.graph.vs.select(ci_type='people'):
+            v['access_state_healthcare_people'] = 'no base access'
+            v['actual_supply_healthcare_people'] = 0
+
+        # Create dependency row
+        row = pd.Series({
+            'source': 'healthcare',
+            'target': 'people',
+            'via_link': 'road',
+            'link_condition': 'distance',
+            'thresh_dist': 10E6,
+            'bidir_link': False,
+            'access_cnstr': True
+        })
+
+        # Check access with no rerouting
+        graph_calcs._check_access(row, friction_surf=None, rerouting=False)
+
+        # All via edges are functional, so access should be undisrupted
+        people_node = graph_calcs.graph.vs.select(ci_type='people')[0]
+        assert people_node['access_state_healthcare_people'] == 'access undisrupted'
+        assert people_node['actual_supply_healthcare_people'] == 1
+
+    def test_check_access_no_rerouting_constraint_via_failed(self, graph_calcs):
+        """Test _check_access with no rerouting, access constraints, failed via edge"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create initial dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        # Initialize supply
+        for v in graph_calcs.graph.vs.select(ci_type='people'):
+            v['access_state_healthcare_people'] = 'no base access'
+            v['actual_supply_healthcare_people'] = 0
+
+        # Fail one via edge (break the path)
+        graph_calcs.graph.es[1]['func_tot'] = 0
+
+        # Create dependency row
+        row = pd.Series({
+            'source': 'healthcare',
+            'target': 'people',
+            'via_link': 'road',
+            'link_condition': 'distance',
+            'thresh_dist': 10E6,
+            'bidir_link': False,
+            'access_cnstr': True
+        })
+
+        # Check access with no rerouting
+        graph_calcs._check_access(row, friction_surf=None, rerouting=False)
+
+        # Via edge failed, so access should be disrupted
+        people_node = graph_calcs.graph.vs.select(ci_type='people')[0]
+        assert people_node['access_state_healthcare_people'] == 'access disrupted via'
+        assert people_node['actual_supply_healthcare_people'] == 0
+
+    def test_check_access_no_rerouting_no_constraint_via_failed(self, graph_calcs):
+        """Test _check_access with no rerouting, no access constraints, failed via edge"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create initial dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        # Initialize supply
+        for v in graph_calcs.graph.vs.select(ci_type='people'):
+            v['access_state_healthcare_people'] = 'no base access'
+            v['actual_supply_healthcare_people'] = 0
+
+        # Fail one via edge
+        graph_calcs.graph.es[1]['func_tot'] = 0
+
+        # Create dependency row without access constraints
+        row = pd.Series({
+            'source': 'healthcare',
+            'target': 'people',
+            'via_link': 'road',
+            'link_condition': 'distance',
+            'thresh_dist': 10E6,
+            'bidir_link': False,
+            'access_cnstr': False
+        })
+
+        # Check access with no rerouting
+        graph_calcs._check_access(row, friction_surf=None, rerouting=False)
+
+        # No access constraints, so even with failed via edge, access should be undisrupted
+        people_node = graph_calcs.graph.vs.select(ci_type='people')[0]
+        assert people_node['access_state_healthcare_people'] == 'access undisrupted'
+        assert people_node['actual_supply_healthcare_people'] == 1
+
+    def test_get_former_access_info(self, graph_calcs):
+        """Test _get_former_access_info helper function"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        # Get former access info
+        es_access_base, ppl_former_access, ppl_former_access_source_failed = \
+            graph_calcs._get_former_access_info('dependency_healthcare_people')
+
+        assert len(es_access_base) > 0
+        assert len(ppl_former_access) > 0
+        assert len(ppl_former_access_source_failed) == 0  # No sources failed yet
+
+        # Fail a source
+        healthcare_nodes = graph_calcs.graph.vs.select(ci_type='healthcare')
+        healthcare_nodes[0]['func_tot'] = 0
+
+        # Get former access info again
+        es_access_base, ppl_former_access, ppl_former_access_source_failed = \
+            graph_calcs._get_former_access_info('dependency_healthcare_people')
+
+        assert len(ppl_former_access_source_failed) > 0
+
+    def test_recompute_dependencies_with_rerouting(self, graph_calcs):
+        """Test _recompute_dependencies_with_rerouting helper function"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create initial dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        row = pd.Series({
+            'source': 'healthcare',
+            'target': 'people',
+            'via_link': 'road',
+            'link_condition': 'distance',
+            'thresh_dist': 10E6,
+            'bidir_link': False,
+            'access_cnstr': True
+        })
+
+        # Recompute with rerouting
+        es_access_new, ppl_new_access, ppl_access_all_via = \
+            graph_calcs._recompute_dependencies_with_rerouting(
+                row, 'dependency_healthcare_people'
+            )
+
+        assert len(es_access_new) > 0
+        assert len(ppl_new_access) > 0
+        assert len(ppl_access_all_via) > 0
+
+    def test_validate_dependency_paths(self, graph_calcs):
+        """Test _validate_dependency_paths helper function"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        es_check = list(graph_calcs.graph.es.select(ci_type='dependency_healthcare_people'))
+
+        # Create subgraph
+        v_ids_source = [edge.source for edge in es_check]
+        v_ids_target = [edge.target for edge in es_check]
+        v_ids_via = [v.index for v in graph_calcs.graph.vs.select(ci_type='road')]
+        v_seq = list(np.unique([*v_ids_source, *v_ids_target, *v_ids_via]))
+
+        graph_calcs.graph.vs['orig_id'] = range(len(graph_calcs.graph.vs))
+        subgraph = graph_calcs.graph.induced_subgraph(v_seq)
+
+        subgraph_graph_vsdict = graph_calcs._get_subgraph2graph_vsdict(graph_calcs.graph, subgraph)
+        graph_subgraph_vsdict = {int(v): int(k) for k, v in subgraph_graph_vsdict.items()}
+
+        row = pd.Series({
+            'thresh_dist': 10E6
+        })
+
+        # Validate paths
+        edges_to_keep = graph_calcs._validate_dependency_paths(
+            es_check, row, graph_subgraph_vsdict, subgraph
+        )
+
+        # All paths should be valid initially
+        assert len(edges_to_keep) == len(es_check)
+
+    def test_validate_dependencies_without_rerouting_with_constraint(self, graph_calcs):
+        """Test _validate_dependencies_without_rerouting with access constraints"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        es_access_base = list(graph_calcs.graph.es.select(ci_type='dependency_healthcare_people'))
+        ppl_former_access = [edge.target for edge in es_access_base]
+
+        row = pd.Series({
+            'source': 'healthcare',
+            'target': 'people',
+            'via_link': 'road',
+            'link_condition': 'distance',
+            'thresh_dist': 10E6,
+            'bidir_link': False,
+            'access_cnstr': True
+        })
+
+        # Validate without rerouting
+        es_access_new, ppl_new_access, ppl_access_all_via = \
+            graph_calcs._validate_dependencies_without_rerouting(
+                row, 'dependency_healthcare_people', es_access_base,
+                ppl_former_access
+            )
+
+        assert len(es_access_new) > 0
+        assert len(ppl_new_access) > 0
+        assert ppl_access_all_via == ppl_former_access
+
+    def test_mark_access_states_and_supply(self, graph_calcs):
+        """Test _mark_access_states_and_supply helper function"""
+        graph_calcs.parent.network.initialize_funcstates()
+        graph_calcs.build_graph()
+
+        # Create dependencies
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False
+        )
+
+        # Initialize access states
+        for v in graph_calcs.graph.vs.select(ci_type='people'):
+            v['access_state_healthcare_people'] = 'no base access'
+            v['actual_supply_healthcare_people'] = 0
+
+        es_access_new = list(graph_calcs.graph.es.select(ci_type='dependency_healthcare_people'))
+        ppl_former_access = [edge.target for edge in es_access_new]
+        ppl_former_access_source_failed = []
+        ppl_access_all_via = ppl_former_access
+        ppl_new_access = ppl_former_access
+
+        row = pd.Series({
+            'source': 'healthcare',
+            'target': 'people'
+        })
+
+        # Mark access states
+        graph_calcs._mark_access_states_and_supply(
+            row, es_access_new, ppl_former_access, ppl_former_access_source_failed,
+            ppl_access_all_via, ppl_new_access
+        )
+
+        # Check that access states were set
+        people_nodes = graph_calcs.graph.vs.select(ci_type='people')
+        for node in people_nodes:
+            assert 'access_state_healthcare_people' in node.attributes()
+            assert 'actual_supply_healthcare_people' in node.attributes()
+            assert node['access_state_healthcare_people'] == 'access undisrupted'
+            assert node['actual_supply_healthcare_people'] == 1
+
 # ========================================================================
 # Tests for NetworkCalcs class
 # ========================================================================
@@ -1300,7 +1600,7 @@ def dependency_table():
         'via_link': ['none', 'road', 'none'],
         'thresh_func': [1, 1, 1],
         'link_condition': ['edgecond', 'distance', 'edgecond'],
-        'thresh_dist': [np.inf, np.inf, np.inf],
+        'thresh_dist': [5E6, 10E6, 10E6],
         'bidir_link': [False, False, False],
         'access_cnstr': [False, True, False],
         'n_links': [1, 1, 1]
@@ -1588,6 +1888,52 @@ class TestNetworkCalcsAdvanced:
         )
 
         assert nc.network is not None
+
+    def test_initial_cascade_with_setup_dependencies(self, network_with_ci_types):
+        """Test that initial cascade works correctly even when setup_dependencies is called first"""
+        import numpy as np
+
+        # Create a dependency table with enduser dependencies
+        dep_table = pd.DataFrame([{
+            'Dep': 'dependency_healthcare_people',
+            'source': 'healthcare',
+            'target': 'people',
+            'n_links': 1,
+            'access_cnstr': True,
+            'type_I': 'enduser',
+            'type_II': 'logical',
+            'thresh_func': 1,
+            'thresh_dist': 50000,
+            'thresh_dur': 90,
+            'conditions': None,
+            'link_condition': 'distance',
+            'via_link': 'road',
+            'bidir_link': True
+        }])
+
+        # Create network calculator
+        nw_calc = NetworkCalcs(network_with_ci_types, dep_table=dep_table)
+
+        # Add physical links
+        nw_calc.add_physical_links()
+
+        # Initialize base state
+        nw_calc.initialize_base_state()
+
+        # Setup dependencies (this creates the dependency edges)
+        nw_calc.setup_dependencies()
+
+        # Run initial cascade - this should treat it as initial state, not former access
+        nw_calc.cascade(initial=True)
+
+        # Check that people have access undisrupted, not access disrupted source
+        people_nodes = nw_calc.graph.vs.select(ci_type='people')
+        for node in people_nodes:
+            # All people should have undisrupted access in initial state
+            # (assuming they're within distance threshold)
+            if 'access_state_healthcare_people' in node.attributes():
+                assert node['access_state_healthcare_people'] in ['access undisrupted', 'no base access'], \
+                    f"Node {node.index} has incorrect access state: {node['access_state_healthcare_people']}"
 
 
 
