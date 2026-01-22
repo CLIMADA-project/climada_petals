@@ -816,14 +816,6 @@ class GraphCalcs():
             ci_type=dependency_name)
         ppl_new_access = [edge.target for edge in es_access_new]
 
-        #if init source was failed but ppl still have access, then they have access to a new source
-        ppl_access_new_source = [edge.target for edge in es_access_new if edge.target in ppl_former_access_source_failed]
-        self.graph.vs[ppl_access_new_source][f'access_state_{row.source}_people'] = "access new source"
-
-        #remaining accesses are undisrupted
-        ppl_access_undisrupted = [edge.target for edge in es_access_new if edge.target not in ppl_former_access_source_failed]
-        self.graph.vs[ppl_access_undisrupted][f'access_state_{row.source}_people'] = "access undisrupted"
-
         #3 check if could have access if links were not broken
         if row.access_cnstr:
             ## TODO do recheck only on end users who have their base access disrupted
@@ -848,10 +840,7 @@ class GraphCalcs():
             #ppl having access regardless of the state of the via link
             ppl_access_all_via = [edge.target for edge in self.graph.es.select(
                 ci_type="new_"+dependency_name)]
-
-            ppl_access_broken_via = [ppl_node for ppl_node in ppl_access_all_via if ppl_node not in ppl_new_access]
-
-            self.graph.vs[ppl_access_broken_via][f'access_state_{row.source}_people'] = "access disrupted via"
+            #delete temporary edges
             self.graph.delete_edges(
                         ci_type="new_"+dependency_name)
         else:
@@ -859,9 +848,23 @@ class GraphCalcs():
             ppl_access_broken_via = []
 
         #4 mark disrupted access for failed sources
-        ppl_no_reaccess = [ppl_node for ppl_node in ppl_former_access if (ppl_node not in ppl_new_access and ppl_node not in ppl_access_broken_via)]
 
+        #if init source was failed but ppl still have access, then they have access to a new source
+        ppl_access_new_source = [edge.target for edge in es_access_new if edge.target in ppl_former_access_source_failed]
+        self.graph.vs[ppl_access_new_source][f'access_state_{row.source}_people'] = "access new source"
+
+        #if people have access only when no functional via is required, then access is disrupted via
+        ppl_access_broken_via = [ppl_node for ppl_node in ppl_access_all_via if ppl_node not in ppl_new_access]
+        self.graph.vs[ppl_access_broken_via][f'access_state_{row.source}_people'] = "access disrupted via"
+
+        #if people do not have access due to via constraints, then they the access is disrupted at source
+        ppl_no_reaccess = [ppl_node for ppl_node in ppl_former_access if (ppl_node not in ppl_new_access and ppl_node not in ppl_access_broken_via)]
         self.graph.vs[ppl_no_reaccess][f'access_state_{row.source}_people'] = "access disrupted source"
+
+        #remaining accesses are undisrupted
+        ppl_access_undisrupted = [edge.target for edge in es_access_new if edge.target not in ppl_former_access_source_failed]
+        self.graph.vs[ppl_access_undisrupted][f'access_state_{row.source}_people'] = "access undisrupted"
+
 
         #add boolean array of actual supply
         self.graph.vs[ppl_access_all_via +ppl_access_new_source][f'actual_supply_{row.source}_{row.target}'] = 1
