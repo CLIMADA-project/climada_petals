@@ -777,98 +777,305 @@ class GraphCalcs():
                 self._propagate_check_fail(row.source, row.target, row.thresh_func)
 
 
-    def _check_access(self, row, friction_surf, rerouting=True):
-        """Updated version of update end-user dependencies."""
+    def _get_former_access_info(self, dependency_name):
+        """
+        Get information about former access from base state.
 
-        dependency_name = f'dependency_{row.source}_{row.target}'
+        Parameters
+        ----------
+        dependency_name : str
+            Name of dependency edges to check
 
-        #1 check access to former source
+        Returns
+        -------
+        tuple
+            (es_access_base, ppl_former_access, ppl_former_access_source_failed)
+        """
         es_access_base = self.graph.es.select(ci_type=dependency_name)
-
-        #get nodes of ppl having access to ci in base state
         ppl_former_access = [edge.target for edge in es_access_base]
+        ppl_former_access_source_failed = [
+            edge.target for edge in es_access_base
+            if self.graph.vs[edge.source]["func_tot"] < 1
+        ]
+        return es_access_base, ppl_former_access, ppl_former_access_source_failed
 
-        #ppl having access to ci in base state where source is now failed
-        ppl_former_access_source_failed = [edge.target for edge in es_access_base if self.graph.vs[edge.source]["func_tot"] < 1]
+    def _recompute_dependencies_with_rerouting(self, row, dependency_name):
+        """
+        Recompute dependencies when rerouting is allowed.
 
+        Parameters
+        ----------
+        row : pd.Series
+            Dependency configuration row
+        dependency_name : str
+            Name of dependency edges
 
-        #2 Recheck access
-        if rerouting:
-            # if we allow rerouting, recompute dependencies from scratch
-            self.graph.delete_edges(
-                            ci_type=dependency_name)
-            self._calc_dependencies(
-                        source_attrs={
-                            'ci_type': row['source'],
-                            'func_tot': 1},
-                        target_attrs={
-                            'ci_type': row['target']},
-                        via_attrs={
-                            'ci_type': row['via_link'],
-                            'func_tot': 1},
-                        link_attrs={
-                            'ci_type': dependency_name},
-                        link_condition=row['link_condition'],
-                        dist_thresh=row['thresh_dist'],
-                        bidir_link=row['bidir_link']
-                    )
-        es_access_new = self.graph.es.select(
-            ci_type=dependency_name)
+        Returns
+        -------
+        tuple
+            (es_access_new, ppl_new_access, ppl_access_all_via)
+        """
+        # Delete existing dependencies to recompute from scratch
+        self.graph.delete_edges(ci_type=dependency_name)
+
+        # If access_constraint is False, compute dependencies without requiring functional via edges
+        via_attrs_dict = {'ci_type': row['via_link']}
+        if row.access_cnstr:
+            via_attrs_dict['func_tot'] = 1
+
+        self._calc_dependencies(
+            source_attrs={'ci_type': row['source'], 'func_tot': 1},
+            target_attrs={'ci_type': row['target']},
+            via_attrs=via_attrs_dict,
+            link_attrs={'ci_type': dependency_name},
+            link_condition=row['link_condition'],
+            dist_thresh=row['thresh_dist'],
+            bidir_link=row['bidir_link']
+        )
+
+        es_access_new = self.graph.es.select(ci_type=dependency_name)
         ppl_new_access = [edge.target for edge in es_access_new]
 
-        #3 check if could have access if links were not broken
+        # Check if could have access if links were not broken
         if row.access_cnstr:
-            ## TODO do recheck only on end users who have their base access disrupted
-            #only need to do it for rows which require physical access
+            # Compute dependencies without requiring functional via edges to identify
+            # people who could have access if via links were functional
             self._calc_dependencies(
-                    source_attrs={
-                        'ci_type': row['source'],
-                        'func_tot': 1},
-                    target_attrs={
-                        'ci_type': row['target']},
-                    via_attrs={
-                        'ci_type': row['via_link']},
-                        ## here we do not require func_tot=1 on via link
-                    link_attrs={
-                        'ci_type': "new_"+dependency_name},
-                    link_condition=row['link_condition'],
-                    dist_thresh=row['thresh_dist'],
-                    bidir_link=row['bidir_link']
-                )
+                source_attrs={'ci_type': row['source'], 'func_tot': 1},
+                target_attrs={'ci_type': row['target']},
+                via_attrs={'ci_type': row['via_link']},  # No func_tot requirement
+                link_attrs={'ci_type': "new_"+dependency_name},
+                link_condition=row['link_condition'],
+                dist_thresh=row['thresh_dist'],
+                bidir_link=row['bidir_link']
+            )
 
-
-            #ppl having access regardless of the state of the via link
-            ppl_access_all_via = [edge.target for edge in self.graph.es.select(
-                ci_type="new_"+dependency_name)]
-            #delete temporary edges
-            self.graph.delete_edges(
-                        ci_type="new_"+dependency_name)
+            # People having access regardless of the state of the via link
+            ppl_access_all_via = [
+                edge.target for edge in self.graph.es.select(ci_type="new_"+dependency_name)
+            ]
+            # Delete temporary edges
+            self.graph.delete_edges(ci_type="new_"+dependency_name)
         else:
             ppl_access_all_via = ppl_new_access
-            ppl_access_broken_via = []
 
-        #4 mark disrupted access for failed sources
+        return es_access_new, ppl_new_access, ppl_access_all_via
 
-        #if init source was failed but ppl still have access, then they have access to a new source
-        ppl_access_new_source = [edge.target for edge in es_access_new if edge.target in ppl_former_access_source_failed]
+    def _validate_dependency_paths(self, es_check, row, graph_subgraph_vsdict, subgraph):
+        """
+        Validate which dependency edges still have valid paths through functional via edges.
+
+        Parameters
+        ----------
+        es_check : list
+            Edges to validate
+        row : pd.Series
+            Dependency configuration row
+        graph_subgraph_vsdict : dict
+            Mapping from graph vertex ids to subgraph vertex ids
+        subgraph : igraph.Graph
+            Subgraph containing only source, target, and via vertices
+
+        Returns
+        -------
+        list
+            Edges that still have valid paths
+        """
+        edges_to_keep = []
+        for edge in es_check:
+            source_sub = graph_subgraph_vsdict.get(edge.source)
+            target_sub = graph_subgraph_vsdict.get(edge.target)
+
+            if source_sub is not None and target_sub is not None:
+                try:
+                    dist = subgraph.distances(
+                        source=source_sub,
+                        target=target_sub,
+                        weights='distance',
+                        mode='all'  # Treat as undirected for connectivity check
+                    )
+                    # If path exists and is within threshold, keep the edge
+                    if dist[0][0] < row['thresh_dist']:
+                        edges_to_keep.append(edge)
+                except (IndexError, ValueError):
+                    # No path exists, edge should be removed
+                    pass
+
+        return edges_to_keep
+
+    def _validate_dependencies_without_rerouting(self, row, dependency_name,
+                                                  es_access_base, ppl_former_access):
+        """
+        Validate existing dependencies when rerouting is not allowed.
+
+        Parameters
+        ----------
+        row : pd.Series
+            Dependency configuration row
+        dependency_name : str
+            Name of dependency edges
+        es_access_base : list
+            Base access edges
+        ppl_former_access : list
+            People who had former access
+
+        Returns
+        -------
+        tuple
+            (es_access_new, ppl_new_access, ppl_access_all_via)
+        """
+        es_access_new = self.graph.es.select(ci_type=dependency_name)
+
+        if row.access_cnstr:
+            # Need to check if via edges used in former dependencies have failed
+            # Keep edges where source is functional and path through functional via edges exists
+            es_check = [
+                edge for edge in es_access_base
+                if self.graph.vs[edge.source]['func_tot'] >= 1
+            ]
+
+            if len(es_check) > 0:
+                # Check which edges still have valid paths through functional via edges
+                v_ids_source = [edge.source for edge in es_check]
+                v_ids_target = [edge.target for edge in es_check]
+                v_ids_via = [v.index for v in self.graph.vs.select(ci_type=row['via_link'])]
+
+                # Create subgraph with only source, target, and via vertices
+                v_seq = list(np.unique([*v_ids_source, *v_ids_target, *v_ids_via]))
+                self.graph.vs['orig_id'] = range(len(self.graph.vs))
+                subgraph = self.graph.induced_subgraph(v_seq)
+
+                # Map from original graph ids to subgraph ids
+                subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
+                graph_subgraph_vsdict = {int(v): int(k) for k, v in subgraph_graph_vsdict.items()}
+
+                # Delete failed edges and non-via edges from subgraph
+                edges_to_delete = []
+                for e in subgraph.es:
+                    if 'func_tot' in e.attributes() and e['func_tot'] is not None and e['func_tot'] < 1:
+                        edges_to_delete.append(e.index)
+                subgraph.delete_edges(edges_to_delete)
+
+                wrong_edges = set(subgraph.es['ci_type']).difference({row['via_link']})
+                subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
+
+                # Check which former dependency edges still have valid paths
+                edges_to_keep = self._validate_dependency_paths(
+                    es_check, row, graph_subgraph_vsdict, subgraph
+                )
+
+                # Delete edges that no longer have valid paths
+                edges_to_remove = [edge.index for edge in es_check if edge not in edges_to_keep]
+                self.graph.delete_edges(edges_to_remove)
+
+            # Get updated list of access edges after validation
+            es_access_new = self.graph.es.select(ci_type=dependency_name)
+            ppl_new_access = [edge.target for edge in es_access_new]
+            ppl_access_all_via = ppl_former_access
+        else:
+            # No access constraints, so no need to check via edges
+            ppl_new_access = [edge.target for edge in es_access_new]
+            ppl_access_all_via = ppl_new_access
+
+        return es_access_new, ppl_new_access, ppl_access_all_via
+
+    def _mark_access_states_and_supply(self, row, es_access_new, ppl_former_access,
+                                       ppl_former_access_source_failed, ppl_access_all_via,
+                                       ppl_new_access):
+        """
+        Mark access states and actual supply for all nodes.
+
+        Parameters
+        ----------
+        row : pd.Series
+            Dependency configuration row
+        es_access_new : list
+            New access edges after validation
+        ppl_former_access : list
+            People who had former access
+        ppl_former_access_source_failed : list
+            People whose former source failed
+        ppl_access_all_via : list
+            People who could have access if via links were functional
+        ppl_new_access : list
+            People who have current access
+        """
+        # If init source was failed but ppl still have access, then they have access to a new source
+        ppl_access_new_source = [
+            edge.target for edge in es_access_new
+            if edge.target in ppl_former_access_source_failed
+        ]
         self.graph.vs[ppl_access_new_source][f'access_state_{row.source}_people'] = "access new source"
 
-        #if people have access only when no functional via is required, then access is disrupted via
-        ppl_access_broken_via = [ppl_node for ppl_node in ppl_access_all_via if ppl_node not in ppl_new_access]
+        # If people have access only when no functional via is required, then access is disrupted via
+        ppl_access_broken_via = [
+            ppl_node for ppl_node in ppl_access_all_via
+            if ppl_node not in ppl_new_access
+        ]
         self.graph.vs[ppl_access_broken_via][f'access_state_{row.source}_people'] = "access disrupted via"
 
-        #if people do not have access due to via constraints, then they the access is disrupted at source
-        ppl_no_reaccess = [ppl_node for ppl_node in ppl_former_access if (ppl_node not in ppl_new_access and ppl_node not in ppl_access_broken_via)]
+        # If people do not have access due to via constraints, then the access is disrupted at source
+        ppl_no_reaccess = [
+            ppl_node for ppl_node in ppl_former_access
+            if (ppl_node not in ppl_new_access and ppl_node not in ppl_access_broken_via)
+        ]
         self.graph.vs[ppl_no_reaccess][f'access_state_{row.source}_people'] = "access disrupted source"
 
-        #remaining accesses are undisrupted
-        ppl_access_undisrupted = [edge.target for edge in es_access_new if edge.target not in ppl_former_access_source_failed]
+        # Remaining accesses are undisrupted
+        ppl_access_undisrupted = [
+            edge.target for edge in es_access_new
+            if edge.target not in ppl_former_access_source_failed
+        ]
         self.graph.vs[ppl_access_undisrupted][f'access_state_{row.source}_people'] = "access undisrupted"
 
-
-        #add boolean array of actual supply
-        self.graph.vs[ppl_access_all_via +ppl_access_new_source][f'actual_supply_{row.source}_{row.target}'] = 1
+        # Add boolean array of actual supply
+        self.graph.vs[ppl_access_all_via + ppl_access_new_source][f'actual_supply_{row.source}_{row.target}'] = 1
         self.graph.vs[ppl_no_reaccess + ppl_access_broken_via][f'actual_supply_{row.source}_{row.target}'] = 0
+
+    def _check_access(self, row, friction_surf, rerouting=True):
+        """
+        Check and update access states for end-user dependencies.
+
+        This is the main function that orchestrates the access checking process.
+        It delegates to helper functions for specific tasks.
+
+        Parameters
+        ----------
+        row : pd.Series
+            Dependency configuration row containing source, target, via_link, etc.
+        friction_surf : object or None
+            Friction surface for calculating travel times (not currently used)
+        rerouting : bool, optional
+            Whether to allow rerouting to alternative sources. Default is True.
+        """
+        dependency_name = f'dependency_{row.source}_{row.target}'
+
+        # Handle both 'access_cnstr' and 'access_constraint' field names
+        # Prioritize 'access_constraint' if explicitly set (e.g., in tests)
+        if 'access_constraint' in row.index:
+            access_constraint = row['access_constraint']
+        else:
+            access_constraint = getattr(row, 'access_cnstr', False)
+
+        # Get former access information
+        es_access_base, ppl_former_access, ppl_former_access_source_failed = \
+            self._get_former_access_info(dependency_name)
+
+        # Recheck access based on rerouting setting
+        if rerouting:
+            es_access_new, ppl_new_access, ppl_access_all_via = \
+                self._recompute_dependencies_with_rerouting(row, dependency_name, access_constraint)
+        else:
+            es_access_new, ppl_new_access, ppl_access_all_via = \
+                self._validate_dependencies_without_rerouting(
+                    row, dependency_name, es_access_base, ppl_former_access, access_constraint
+                )
+
+        # Mark access states and supply
+        self._mark_access_states_and_supply(
+            row, es_access_new, ppl_former_access, ppl_former_access_source_failed,
+            ppl_access_all_via, ppl_new_access
+        )
 
 
     @DeprecationWarning
