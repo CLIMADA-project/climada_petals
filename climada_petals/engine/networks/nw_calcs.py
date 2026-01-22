@@ -690,9 +690,12 @@ class GraphCalcs():
         if target == 'people':
             self.graph.vs[v_seq_orig_id][f'actual_supply_{source}_{target}'] = capa_suff
         else:
-            func_tot = np.minimum(capa_suff, v_seq['func_tot'])
-            #v_seq['func_tot'] = func_tot
-            self.graph.vs[v_seq_orig_id]['func_tot'] = func_tot
+            # Only update TARGET vertices, not source vertices
+            # Get indices of target vertices only
+            target_mask = np.array([vx['ci_type'] == target for vx in v_seq])
+            target_orig_ids = [v_seq_orig_id[i] for i, is_target in enumerate(target_mask) if is_target]
+            func_tot_targets = np.minimum(capa_suff[target_mask], v_seq.select(ci_type=target)['func_tot'])
+            self.graph.vs[target_orig_ids]['func_tot'] = func_tot_targets
 
         #delete large objects to avoid memory issues
         del capa_rec, func_capa, capa_suff, adj_sub, func_thresh, subgraph
@@ -818,7 +821,7 @@ class GraphCalcs():
         # Delete existing dependencies to recompute from scratch
         self.graph.delete_edges(ci_type=dependency_name)
 
-        # If access_constraint is False, compute dependencies without requiring functional via edges
+        # If access_cnstr is False, compute dependencies without requiring functional via edges
         via_attrs_dict = {'ci_type': row['via_link']}
         if row.access_cnstr:
             via_attrs_dict['func_tot'] = 1
@@ -1029,10 +1032,13 @@ class GraphCalcs():
         self.graph.vs[ppl_access_undisrupted][f'access_state_{row.source}_people'] = "access undisrupted"
 
         # Add boolean array of actual supply
-        self.graph.vs[ppl_access_all_via + ppl_access_new_source][f'actual_supply_{row.source}_{row.target}'] = 1
+        # People with access get supply=1 (includes undisrupted, all_via, and new_source)
+        # Use set to avoid duplicates
+        ppl_with_supply = list(set(ppl_access_undisrupted + ppl_access_all_via + ppl_access_new_source))
+        self.graph.vs[ppl_with_supply][f'actual_supply_{row.source}_{row.target}'] = 1
         self.graph.vs[ppl_no_reaccess + ppl_access_broken_via][f'actual_supply_{row.source}_{row.target}'] = 0
 
-    def _check_access(self, row, friction_surf, rerouting=True):
+    def _check_access(self, row, friction_surf, rerouting=True, initial=False):
         """
         Check and update access states for end-user dependencies.
 
@@ -1047,28 +1053,23 @@ class GraphCalcs():
             Friction surface for calculating travel times (not currently used)
         rerouting : bool, optional
             Whether to allow rerouting to alternative sources. Default is True.
+        initial : bool, optional
+            Whether this is an initial cascade (no former access state). Default is False.
         """
         dependency_name = f'dependency_{row.source}_{row.target}'
 
-        # Handle both 'access_cnstr' and 'access_constraint' field names
-        # Prioritize 'access_constraint' if explicitly set (e.g., in tests)
-        if 'access_constraint' in row.index:
-            access_constraint = row['access_constraint']
-        else:
-            access_constraint = getattr(row, 'access_cnstr', False)
-
         # Get former access information
         es_access_base, ppl_former_access, ppl_former_access_source_failed = \
-            self._get_former_access_info(dependency_name)
+                self._get_former_access_info(dependency_name)
 
         # Recheck access based on rerouting setting
         if rerouting:
             es_access_new, ppl_new_access, ppl_access_all_via = \
-                self._recompute_dependencies_with_rerouting(row, dependency_name, access_constraint)
+                self._recompute_dependencies_with_rerouting(row, dependency_name)
         else:
             es_access_new, ppl_new_access, ppl_access_all_via = \
                 self._validate_dependencies_without_rerouting(
-                    row, dependency_name, es_access_base, ppl_former_access, access_constraint
+                    row, dependency_name, es_access_base, ppl_former_access
                 )
 
         # Mark access states and supply
