@@ -26,7 +26,7 @@ import pandas as pd
 from zipfile import ZipFile, ZIP_DEFLATED
 import io
 from pathlib import Path
-#from climada_petals.engine.networks.nw_utils import infra_plot, population_plot, dep_plot, access_plot
+from climada_petals.engine.networks.nw_utils import infra_plot, population_plot, dep_plot, access_plot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,10 +34,10 @@ LOGGER = logging.getLogger(__name__)
 class Network:
 
     # map methods
-    #plot_infra = infra_plot
-    #plot_pop = population_plot
-    #plot_dep = dep_plot
-    #plot_access = access_plot
+    plot_infra = infra_plot
+    plot_pop = population_plot
+    plot_dep = dep_plot
+    plot_access = access_plot
 
     def __init__(self,
                  edges=gpd.GeoDataFrame(),
