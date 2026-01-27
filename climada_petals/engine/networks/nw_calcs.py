@@ -24,7 +24,6 @@ import pyproj
 from tqdm import tqdm
 import timeit
 import gc
-from memory_profiler import profile
 
 
 import scipy
@@ -1270,7 +1269,6 @@ class NetworkCalcs():
         self.graph_calc.invalidate()
 
 
-    #@profile
     def cascade(self, p_source='power_plant',
                 p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
                   initial=False, friction_surf=None, rerouting=True):
