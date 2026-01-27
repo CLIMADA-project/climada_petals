@@ -57,14 +57,14 @@ class TestSingleCountryBond(unittest.TestCase):
         assert np.allclose(actual, expected)
 
         metrics = sim.loss_metrics
-        assert np.isclose(metrics["EL_ann"], expected.mean())
-        assert np.isclose(metrics["AP_ann"], (expected > 0).mean())
-        assert metrics["Tot_payout"] == 10 + 50 + 40 + 50 + 50 + 0
-        assert metrics["Tot_damages"] == 20 + 60 + 120 + 60 + 120 + 0
+        assert np.isclose(metrics["Expected_annual_loss"], expected.mean())
+        assert np.isclose(metrics["Annual_attachment_probability"], (expected > 0).mean())
+        assert metrics["Total_payout"] == 10 + 50 + 40 + 50 + 50 + 0
+        assert metrics["Total_damages"] == 20 + 60 + 120 + 60 + 120 + 0
 
         # VaR and ES present
-        assert "VaR_95_ann" in metrics
-        assert "ES_95_ann" in metrics
+        assert "Annual_Value_at_risk_95" in metrics
+        assert "Annual_Expected_shortfall_95" in metrics
 
     def test_init_return_simulation(self):
         """Validate annual premium and return calculations over terms."""

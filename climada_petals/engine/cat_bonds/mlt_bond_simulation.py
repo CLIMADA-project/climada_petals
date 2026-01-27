@@ -301,7 +301,7 @@ class MultiCountryBond:
         coverage = {'payout': 0, 'damage': 0}
         self.tot_coverage_cty = {}
         for cty in self.countries:
-            self.tot_coverage_cty[cty] = {'Tot_payout': 0.0, 'Tot_damages': 0.0, 'coverage': 0.0, 'EL': 0, 'share_EL': 0}
+            self.tot_coverage_cty[cty] = {'Total_payout': 0.0, 'Total_damages': 0.0, 'coverage': 0.0, 'Expected_annual_loss': 0, 'share_expected_annual_loss': 0}
 
         for start_year in range(self.min_year, self.min_year + self.number_of_terms):
             events_per_year = []
@@ -521,7 +521,7 @@ class MultiCountryBond:
         prem_cty_dic['Total_premiums'] = premiums_tot
 
         self.net_cash_flow_tranches = pd.DataFrame(ncf)
-        self.net_cash_flow_tranches['Total_net_cash_flos'] = self.net_cash_flow_tranches.sum(axis=1)
+        self.net_cash_flow_tranches['Total_net_cash_flow'] = self.net_cash_flow_tranches.sum(axis=1)
         self.premiums_tranches = pd.DataFrame(prem_cty_dic)
         self.sharpe_ratio_tranches = [(np.mean(self.net_cash_flow_tranches[str(tranche)]) - rf) / np.std(self.net_cash_flow_tranches[str(tranche)]) for tranche in tranches]
 

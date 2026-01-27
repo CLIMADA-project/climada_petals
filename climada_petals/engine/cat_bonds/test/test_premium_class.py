@@ -22,7 +22,7 @@ class TestPremiumCalculations(unittest.TestCase):
 
     def setUp(self):
         """Set up common fixtures for tests."""
-        self.loss_metrics = {"EL_ann":  0.1}
+        self.loss_metrics = {"Expected_annual_loss":  0.1}
         self.term = 1
         self.df_loss_month = pd.DataFrame({
         "losses": [[0], [0], [0], [0], [0], [0.1]],
@@ -63,7 +63,7 @@ class TestPremiumCalculations(unittest.TestCase):
         pc = PremiumCalculations(self)
         pc.calc_chatoro_premium(peak_multi=peak_multi, investment_graded=investment_graded, hybrid_trigger=hybrid_trigger)
 
-        manual_chat_prem = (b_0 + b_1 * self.loss_metrics['EL_ann'] * 100 + b_2 * peak_multi + b_3 * GCIndex + b_4 * BBSpread + b_5 * self.term * 12 + b_6 * investment_graded + b_7 * hybrid_trigger) / 100
+        manual_chat_prem = (b_0 + b_1 * self.loss_metrics['Expected_annual_loss'] * 100 + b_2 * peak_multi + b_3 * GCIndex + b_4 * BBSpread + b_5 * self.term * 12 + b_6 * investment_graded + b_7 * hybrid_trigger) / 100
 
         assert manual_chat_prem == pc.chatoro_prem_rate
 

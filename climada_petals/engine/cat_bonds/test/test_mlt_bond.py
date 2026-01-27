@@ -121,10 +121,10 @@ class TestMultiCountryBond(unittest.TestCase):
         # -------------------------
         # Assertions (results only)
         # -------------------------
-        self.assertAlmostEqual(bond.loss_metrics["EL_ann"], expected_EL, places=5)
-        self.assertAlmostEqual(bond.loss_metrics["AP_ann"], expected_AP, places=5)
-        self.assertAlmostEqual(bond.loss_metrics["Payout"], expected_total_payout, places=5)
-        self.assertAlmostEqual(bond.loss_metrics["Damage"], expected_total_damage, places=5)
+        self.assertAlmostEqual(bond.loss_metrics["Expected_annual_loss"], expected_EL, places=5)
+        self.assertAlmostEqual(bond.loss_metrics["Annual_attachment_probability"], expected_AP, places=5)
+        self.assertAlmostEqual(bond.loss_metrics["Total_payout"], expected_total_payout, places=5)
+        self.assertAlmostEqual(bond.loss_metrics["Total_damages"], expected_total_damage, places=5)
         # Monthly losses should match annual losses
         pd.testing.assert_frame_equal(bond.df_loss_month, pd.DataFrame({
             'losses': [[0.05 , 0.025], [0.1, 0.05]],
@@ -142,8 +142,8 @@ class TestMultiCountryBond(unittest.TestCase):
 
         # Two countries with simple shares
         bond.tot_coverage_cty = {
-            0: {"share_EL": 0.5},
-            1: {"share_EL": 0.5}
+            0: {"share_expected_annual_loss": 0.5},
+            1: {"share_expected_annual_loss": 0.5}
         }
 
         premium = 0.1   # 10% annual premium
@@ -183,25 +183,25 @@ class TestMultiCountryBond(unittest.TestCase):
         # Assertions
         # -------------------------
         np.testing.assert_allclose(
-            bond.ncf["Total"].to_numpy(),
+            bond.net_cash_flow["Total_net_cash_flow"].to_numpy(),
             expected_ncf,
             rtol=1e-10
         )
 
         np.testing.assert_allclose(
-            bond.prem_cty_df["Total"].to_numpy(),
+            bond.premiums["Total_premiums"].to_numpy(),
             expected_total_premium,
             rtol=1e-10
         )
 
         np.testing.assert_allclose(
-            bond.prem_cty_df[0].to_numpy(),
+            bond.premiums[0].to_numpy(),
             expected_cty_0,
             rtol=1e-10
         )
 
         np.testing.assert_allclose(
-            bond.prem_cty_df[1].to_numpy(),
+            bond.premiums[1].to_numpy(),
             expected_cty_1,
             rtol=1e-10
         )
@@ -253,8 +253,8 @@ class TestMultiCountryBond(unittest.TestCase):
         })
 
         bond.tot_coverage_cty = {
-            0: {"share_EL": 0.5},
-            1: {"share_EL": 0.5}
+            0: {"share_expected_annual_loss": 0.5},
+            1: {"share_expected_annual_loss": 0.5}
         }
 
         premiums = [0.1, 0.1]
@@ -263,16 +263,16 @@ class TestMultiCountryBond(unittest.TestCase):
         bond.init_return_simulation_tranches(premiums, tranches)
 
         # Tranche cashflows
-        self.assertAlmostEqual(bond.ncf_tranches["0.6"][0], -0.15, places=5)
-        self.assertAlmostEqual(bond.ncf_tranches["0.4"][0], 0.04, places=5)
+        self.assertAlmostEqual(bond.net_cash_flow_tranches["0.6"][0], -0.15, places=5)
+        self.assertAlmostEqual(bond.net_cash_flow_tranches["0.4"][0], 0.04, places=5)
 
         # Total cashflow
-        self.assertAlmostEqual(bond.ncf_tranches["Total"][0], -0.11, places=5)
+        self.assertAlmostEqual(bond.net_cash_flow_tranches["Total_net_cash_flow"][0], -0.11, places=5)
 
         # Premium allocation
-        self.assertAlmostEqual(bond.prem_cty_df_tranches["Total"][0], 0.09, places=5)
-        self.assertAlmostEqual(bond.prem_cty_df_tranches[0][0], 0.045, places=5)
-        self.assertAlmostEqual(bond.prem_cty_df_tranches[1][0], 0.045, places=5)
+        self.assertAlmostEqual(bond.premiums_tranches["Total_premiums"][0], 0.09, places=5)
+        self.assertAlmostEqual(bond.premiums_tranches[0][0], 0.045, places=5)
+        self.assertAlmostEqual(bond.premiums_tranches[1][0], 0.045, places=5)
 
     def test_simulate_bond_pool_n(self):
         """
@@ -290,7 +290,6 @@ class TestMultiCountryBond(unittest.TestCase):
             country_dictionary=self.country_dict,
             term=1,
             number_of_terms=2,
-            principal=2.0,
             number_pools=1,
             n_opt_rep=1
         )

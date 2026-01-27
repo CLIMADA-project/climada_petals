@@ -80,7 +80,7 @@ class PremiumCalculations:
         else:
             pass
 
-        self.chatoro_prem_rate = (b_0 + b_1 * self.bond_simulation_class.loss_metrics['EL_ann'] * 100 + b_2 * peak_multi + 
+        self.chatoro_prem_rate = (b_0 + b_1 * self.bond_simulation_class.loss_metrics['Expected_annual_loss'] * 100 + b_2 * peak_multi + 
                                   b_3 * GCIndex + b_4 * BBSpread + b_5 * self.bond_simulation_class.term * 12 + 
                                   b_6 * investment_graded + b_7 * hybrid_trigger) / 100
         LOGGER.info(f'Calculated Chatoro premium rate: {self.chatoro_prem_rate}')
@@ -145,7 +145,7 @@ class PremiumCalculations:
 
         a, k, b = params_prem_ibrd
         LOGGER.info(f'Fitted IBRD premium parameters: a={a}, k={k}, b={b}')
-        self.ibrd_prem_rate = self.monoExp(self.bond_simulation_class.loss_metrics['EL_ann']*100, a, k, b) * self.bond_simulation_class.loss_metrics['EL_ann']
+        self.ibrd_prem_rate = self.monoExp(self.bond_simulation_class.loss_metrics['Expected_annual_loss']*100, a, k, b) * self.bond_simulation_class.loss_metrics['Expected_annual_loss']
         LOGGER.info(f"Calculated IBRD premium rate: {self.ibrd_prem_rate}")
         
 
