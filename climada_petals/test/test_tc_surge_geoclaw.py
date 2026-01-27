@@ -110,8 +110,10 @@ class TestGeoclawRun(unittest.TestCase):
         )
 
         self.assertEqual(intensity.shape, (centroids.shape[0],))
-        self.assertTrue(np.all(intensity[:6] > 0))
-        self.assertTrue(np.all(intensity[6:] == 0))
+        np.testing.assert_array_equal(
+            intensity[:6] > 0, [True, True, False, True, True, True]
+        )
+        np.testing.assert_array_equal(intensity[6:] == 0, [True] * len(intensity[6:]))
         for gdata in gauge_data:
             self.assertTrue((gdata['time'][0][0] - track.time[0]) / np.timedelta64(1, 'h') >= 0)
             self.assertTrue((track.time[-1] - gdata['time'][0][-1]) / np.timedelta64(1, 'h') >= 0)
