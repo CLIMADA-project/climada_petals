@@ -89,28 +89,46 @@ def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection
     else:
         fig = axes.get_figure()
     colors = kwargs.pop("colors", mpl.cm.tab20.colors)
-    cmap = mpl.colors.ListedColormap(["r", "k"])
+
+    # Define colormap based on plot_col
+    if plot_col == 'ci_type':
+        # Each CI type gets its own color
+        use_status_colorbar = False
+        vmin, vmax = None, None
+    else:
+        # Functional status: 0=red (disrupted), 1=black (functioning)
+        status_cmap = mpl.colors.ListedColormap(["r", "k"])
+        use_status_colorbar = True
+        vmin, vmax = 0, 1
+
     for i, ci_type in enumerate(ci_types):
         point_marker = MPL_MARKERS[i % len(MPL_MARKERS)]
         line_style = MPL_LINE_STYLES[i % len(MPL_LINE_STYLES)]
         color = colors[i]
+
+        # Set colormap for this CI type
         if plot_col == 'ci_type':
             cmap = mpl.colors.ListedColormap([color])
+        else:
+            cmap = status_cmap
+
         if ci_type == 'people':
             fig, axes = population_plot(self, axes=axes, projection=projection, zorder=0, **kwargs)
         elif ci_type in LINE_EXPOSURES:
             plot_df = self.edges[self.edges.ci_type==ci_type]
-            plot_df.plot(plot_col, ax=axes, cmap=cmap, transform=projection, label=ci_type, linestyle=line_style, zorder=1, **kwargs)
+            plot_df.plot(plot_col, ax=axes, cmap=cmap, vmin=vmin, vmax=vmax,
+                        transform=projection, label=ci_type, linestyle=line_style, zorder=1, **kwargs)
         else:
             plot_df = self.nodes[self.nodes.ci_type==ci_type]
             marker = f"${ci_type[0].upper()}$"
-            plot_df.plot(plot_col, ax=axes, cmap=cmap, transform=projection, label=ci_type, markersize=200, marker=marker, **kwargs)
-
-    status_cmap = None if plot_col=='ci_type' else cmap
+            plot_df.plot(plot_col, ax=axes, cmap=cmap, vmin=vmin, vmax=vmax,
+                        transform=projection, label=ci_type, markersize=200,
+                        zorder=i+1, marker=marker, edgecolor='white', linewidth=0.05, **kwargs)
 
     axes.legend()
-    # Add a single status colorbar if any non-people layer was plotted
-    if status_cmap is not None:
+
+    # Add a single status colorbar if plotting functional status
+    if use_status_colorbar:
         sm = mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=0, vmax=1), cmap=status_cmap)
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=axes, orientation="horizontal", shrink=0.55)
