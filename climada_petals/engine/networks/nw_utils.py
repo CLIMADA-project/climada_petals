@@ -80,7 +80,7 @@ def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
                                transform=projection, alpha=0.5, color="grey",**kwargs)
     return fig, axes
 
-def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection=ccrs.PlateCarree(),**kwargs):
+def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection=ccrs.PlateCarree(), pop_kwargs=dict(), ci_kwargs=dict(), cbar_kwargs=dict()):
     """Infrastructure plots"""
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
@@ -88,7 +88,7 @@ def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection
         fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
         fig = axes.get_figure()
-    colors = kwargs.pop("colors", mpl.cm.tab20.colors)
+    colors = ci_kwargs.pop("colors", mpl.cm.tab20.colors)
 
     # Define colormap based on plot_col
     if plot_col == 'ci_type':
@@ -113,25 +113,27 @@ def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection
             cmap = status_cmap
 
         if ci_type == 'people':
-            fig, axes = population_plot(self, axes=axes, projection=projection, zorder=0, **kwargs)
+            fig, axes = population_plot(self, axes=axes, projection=projection, zorder=0, **pop_kwargs)
         elif ci_type in LINE_EXPOSURES:
             plot_df = self.edges[self.edges.ci_type==ci_type]
             plot_df.plot(plot_col, ax=axes, cmap=cmap, vmin=vmin, vmax=vmax,
-                        transform=projection, label=ci_type, linestyle=line_style, zorder=1, **kwargs)
+                        transform=projection, label=ci_type, linestyle=line_style, zorder=1, **ci_kwargs)
         else:
             plot_df = self.nodes[self.nodes.ci_type==ci_type]
             marker = f"${ci_type[0].upper()}$"
             plot_df.plot(plot_col, ax=axes, cmap=cmap, vmin=vmin, vmax=vmax,
                         transform=projection, label=ci_type, markersize=200,
-                        zorder=i+1, marker=marker, edgecolor='white', linewidth=0.05, **kwargs)
+                        zorder=i+1, marker=marker, edgecolor='white', linewidth=0.05, **ci_kwargs)
 
     axes.legend()
 
     # Add a single status colorbar if plotting functional status
     if use_status_colorbar:
+        orientation = cbar_kwargs.pop("orientation", "horizontal")
+        shrink = cbar_kwargs.pop("shrink", 0.55)
         sm = mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=0, vmax=1), cmap=status_cmap)
         sm.set_array([])
-        cbar = fig.colorbar(sm, ax=axes, orientation="horizontal", shrink=0.55)
+        cbar = fig.colorbar(sm, ax=axes, orientation=orientation, shrink=shrink, **cbar_kwargs)
         cbar.set_ticks([0, 1])
         cbar.set_ticklabels(["Disrupted", "Functioning"], rotation=30)
         cbar.set_label('CI status')
@@ -143,7 +145,7 @@ def _get_dependencies(self, ci_types):
     return np.unique(dep_list)
 
 
-def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**kwargs):
+def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(), **kwargs):
     """dependencies plots"""
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
@@ -161,11 +163,13 @@ def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(),**k
     #f.suptitle(title ,fontweight="bold",y=0.92)
     return fig, axes
 
-def access_plot(self, ci_type, axes=None, projection=ccrs.PlateCarree(),cmap=ListedColormap(['#046582',"#158204",'grey',"#CF8018", '#BB8082'])):
+def access_plot(self, ci_type, axes=None, projection=ccrs.PlateCarree(), plot_kwargs=dict(), cbar_kwargs=dict()):
     if axes is None:
         fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
         fig = axes.figure
+
+    cmap= plot_kwargs.pop("cmap", ListedColormap(['#046582',"#158204",'grey',"#CF8018", '#BB8082']))
     gdf_ppl = self.nodes[self.nodes.ci_type=="people"]
 
     service = f"access_state_{ci_type}_people"
@@ -174,16 +178,18 @@ def access_plot(self, ci_type, axes=None, projection=ccrs.PlateCarree(),cmap=Lis
     cvals = gdf_ppl[service].str.lower().map(STATUS_MAP).fillna(0)
     scatter = axes.scatter(gdf_ppl.geometry.x, gdf_ppl.geometry.y, c=cvals,
                            s=gdf_ppl['counts']/max(gdf_ppl['counts'])*100,
-                           transform=projection, cmap=cmap, vmin=-2, vmax=2)
+                           transform=projection, cmap=cmap, vmin=-2, vmax=2, **plot_kwargs)
     n_ppl_access_loss = gdf_ppl[gdf_ppl[service].isin(["access disrupted via", "access disrupted source"])].counts.sum()
     n_ppl_no_base_access = gdf_ppl[gdf_ppl[service].isin(["no base access"])].counts.sum()
 
     text = f"{n_ppl_no_base_access:.2f} people without base access to {ci_type}" + \
     f"\n{n_ppl_access_loss:.2f} people loosing access to {ci_type}"
-    axes.text(0.015, 0.015, text, transform=axes.transAxes, fontsize=14, bbox=dict(
+    axes.text(0.015, 0.015, text, transform=axes.transAxes, bbox=dict(
                    ec='gray', fc='gray', alpha=0.2))
     #add colorbar
-    cbar = fig.colorbar(scatter, ax=axes, orientation="horizontal", shrink = 0.55)#pad=0.05, aspect=50
+    orientation = cbar_kwargs.pop("orientation", "horizontal")
+    shrink = cbar_kwargs.pop("shrink", 0.55)
+    cbar = fig.colorbar(scatter, ax=axes, orientation=orientation, shrink=shrink, **cbar_kwargs)
     cbar.set_ticks([-8/5, -4/5, 0, 4/5, 8/5])
     cbar.set_ticklabels(STATUS_MAP.keys(),rotation=30)#,fontweight="bold"#fontsize=18
     cbar.set_label('Access to service')#,fontweight="bold" fontsize=24
