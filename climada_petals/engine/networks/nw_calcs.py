@@ -55,6 +55,8 @@ class GraphCalcs():
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
+        self._edge_cache = {}  # Add edge cache
+        self._vertex_cache = {}  # Add vertex cache
 
 
     @property
@@ -77,7 +79,16 @@ class GraphCalcs():
         return self._graph
 
     def invalidate(self):
+        """Clear edge cache when edges are added/removed (vertices unchanged)"""
         self._graph = None
+        self._edge_cache = {}
+
+    def full_reset(self):
+        """Clear all caches when vertices are added/removed or graph is rebuilt"""
+        self._graph = None
+        self._edge_cache = {}
+        self._vertex_cache = {}
+
     # =============================================================================
     # Making links
     # =============================================================================
@@ -139,7 +150,6 @@ class GraphCalcs():
             self._edges_from_vlists(
                 v_ids_source, v_ids_target, link_attrs)
 
-        #self.invalidate()
     def link_vertices_closest_k(self, source_attrs, target_attrs, link_attrs=None,
                                 dist_thresh=np.inf, bidir=False, k=5):
         """
@@ -301,7 +311,6 @@ class GraphCalcs():
             if bidir:
                self._edges_from_vlists(v_ids_target, v_ids_source, link_attrs)
 
-        #self.invalidate()
     def link_vertices_friction_surf(self, source_ci, target_ci,
                                         link_name=None, dist_thresh=None,
                                         bidir=False, k=5, dur_thresh=None):
@@ -387,6 +396,10 @@ class GraphCalcs():
         graph : nw_base.Graph object
         """
 
+        # Early return if no edges to add
+        if len(v_ids_source) == 0 or len(v_ids_target) == 0:
+            return
+
         pairs = list(zip(v_ids_source, v_ids_target))
 
         link_attrs['geometry'] = make_edge_geometries(
@@ -408,6 +421,11 @@ class GraphCalcs():
         """
         Parameters
         ----------
+        gdf_vs_source : pd.DataFrame
+        gdf_vs_target : pd.DataFrame
+        dist_thresh : float
+        bidir : bool
+        k : int
 
         Returns
         -------
@@ -641,58 +659,53 @@ class GraphCalcs():
     # =============================================================================
 
     def _propagate_check_fail(self, source, target, thresh_func):
-        """
-        propagate capacities from source vertices to target vertices
-        on the subgraph via the adjacency matrix.
-        check whether capacity enough.
-        fail target if not.
-        """
-        v_seq = self.graph.vs.select(ci_type_in=[source, target])
-        subgraph = self.graph.induced_subgraph(v_seq)
+        """Optimized version - avoid subgraph creation when possible"""
+        # Cache vertex selections
+        if not hasattr(self, '_vertex_cache'):
+            self._vertex_cache = {}
 
-        #take vertices seq from subgraph and do operation on it to be sure that order is the same
-        v_seq_sub = subgraph.vs.select(ci_type_in=[source, target])
+        cache_key = (source, target)
+        if cache_key not in self._vertex_cache:
+            self._vertex_cache[cache_key] = {
+                'source_ids': [v.index for v in self.graph.vs.select(ci_type=source)],
+                'target_ids': [v.index for v in self.graph.vs.select(ci_type=target)]
+            }
 
-        #keep track of original ids
-        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
-        v_seq_orig_id = [subgraph_graph_vsdict[v_id] for v_id in v_seq_sub.indices]
+        cached = self._vertex_cache[cache_key]
+        source_ids = cached['source_ids']
+        target_ids = cached['target_ids']
+        all_ids = source_ids + target_ids
 
-        try:
-            adj_sub = subgraph.get_adjacency_sparse()
-        except (TypeError, ValueError):
-            # treats case where empty adjacency matrix!
-            adj_sub = scipy.sparse.csr_matrix(subgraph.get_adjacency().data)
+        # Use direct adjacency matrix slicing instead of subgraph
+        adj_full = self.graph.get_adjacency_sparse()
+        adj_sub = adj_full[all_ids, :][:, all_ids]
 
-        # Hadamard product func_tot (*) capacity
-        func_capa = np.multiply(v_seq['func_tot'],
-                                v_seq[f'capacity_{source}_{target}'])
-        # propagate capacities down from source --> target along adj
-        capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
+        # Vectorized capacity calculation
+        func_tots = np.array([self.graph.vs[i]['func_tot'] for i in all_ids])
+        capacity_attr = f'capacity_{source}_{target}'
+        capacities = np.array([self.graph.vs[i][capacity_attr] if capacity_attr in self.graph.vs[i].attributes() else 0 for i in all_ids])
+        func_capa = func_tots * capacities
 
-        # functionality thesholds for received capacity
-        func_thresh = np.array([thresh_func if vx['ci_type'] == target
-                                else 0 for vx in v_seq])
+        # Matrix multiplication
+        capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub).toarray().squeeze()
 
-        # boolean vector whether received capacity great enough to supply endusers
-        capa_suff = (np.array(capa_rec.todense()).squeeze()
-                     >= func_thresh).astype(int)
-        # This is under the assumption that subgraph retains the same
-        # relative ordering of vertices as in v_seq extracted from graph!
-        # This further assumes that any operation on a VertexSeq equally modifies its graph.
-        # Both should be the case, but the igraph doc is always a bit ambiguous
+        # Vectorized threshold check
+        is_target = np.array([self.graph.vs[i]['ci_type'] == target for i in all_ids])
+        func_thresh = np.where(is_target, thresh_func, 0)
+        capa_suff = (capa_rec >= func_thresh).astype(int)
 
+        # Update graph attributes
         if target == 'people':
-            self.graph.vs[v_seq_orig_id][f'actual_supply_{source}_{target}'] = capa_suff
+            for i, idx in enumerate(all_ids):
+                self.graph.vs[idx][f'actual_supply_{source}_{target}'] = capa_suff[i]
         else:
-            # Only update TARGET vertices, not source vertices
-            # Get indices of target vertices only
-            target_mask = np.array([vx['ci_type'] == target for vx in v_seq])
-            target_orig_ids = [v_seq_orig_id[i] for i, is_target in enumerate(target_mask) if is_target]
-            func_tot_targets = np.minimum(capa_suff[target_mask], v_seq.select(ci_type=target)['func_tot'])
-            self.graph.vs[target_orig_ids]['func_tot'] = func_tot_targets
+            target_indices = [all_ids[i] for i in range(len(all_ids)) if is_target[i]]
+            for i, idx in enumerate(target_indices):
+                orig_func = self.graph.vs[idx]['func_tot']
+                self.graph.vs[idx]['func_tot'] = min(capa_suff[np.where(np.array(all_ids) == idx)[0][0]], orig_func)
 
         #delete large objects to avoid memory issues
-        del capa_rec, func_capa, capa_suff, adj_sub, func_thresh, subgraph
+        del capa_rec, func_capa, capa_suff, adj_sub, func_thresh
         gc.collect()
 
     def _funcstates_sum(self):
@@ -944,16 +957,13 @@ class GraphCalcs():
 
                 # Map from original graph ids to subgraph ids
                 subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
-                graph_subgraph_vsdict = {int(v): int(k) for k, v in subgraph_graph_vsdict.items()}
-
-                # Delete failed edges and non-via edges from subgraph
-                edges_to_delete = []
-                for e in subgraph.es:
-                    if 'func_tot' in e.attributes() and e['func_tot'] is not None and e['func_tot'] < 1:
-                        edges_to_delete.append(e.index)
-                subgraph.delete_edges(edges_to_delete)
-
-                wrong_edges = set(subgraph.es['ci_type']).difference({row['via_link']})
+                graph_subgraph_vsdict = {int(v): int(k) for k,
+                                     v in subgraph_graph_vsdict.items()}
+                # Delete edges with func_tot < 1 (but keep edges without func_tot or func_tot=None, like dependency edges)
+                failed_edges = [e.index for e in subgraph.es if 'func_tot' in e.attributes() and e['func_tot'] is not None and e['func_tot'] < 1]
+                subgraph.delete_edges(failed_edges)
+                wrong_edges = set(subgraph.es['ci_type']).difference(
+                    {row['via_link']})
                 subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
 
                 # Check which former dependency edges still have valid paths
@@ -1157,7 +1167,7 @@ class NetworkCalcs():
             iter_count+=1
             self.network.update_network_from_graphs(self.graph)
             self.network = reset_ids(self.network)
-            self.graph_calc.invalidate()
+            self.graph_calc.full_reset()
         n_clusters = len(self.graph_calc.graph.connected_components())
         LOGGER.info(print(f'Number of clusters in the network after merging: {n_clusters}'))
 
@@ -1188,7 +1198,7 @@ class NetworkCalcs():
         self.network = reset_ids(self.network)
 
         # Invalidate cached graph
-        self.graph_calc.invalidate()
+        self.graph_calc.full_reset()
 
     def initialize_base_state(self):
         #base state
@@ -1203,26 +1213,34 @@ class NetworkCalcs():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
             self.graph_calc._calc_dependencies(
                 source_attrs={
-                    'ci_type': row['source'],
-                    'func_tot': 1},
+                    'ci_type': row['source']},
                 target_attrs={
                     'ci_type': row['target']},
                 via_attrs={
-                    'ci_type': row['via_link'],
-                    'func_tot': 1},
+                    'ci_type': row['via_link']},
                 link_attrs={
                     'ci_type': dependency_name},
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
                 bidir_link=row['bidir_link']
             )
+        # initialize base access and supply for enduser dependencies
+        enduser_rows = self.dep_table[self.dep_table['type_I'] == 'enduser']
+        for __, row in enduser_rows.iterrows():
+            dependency_name = f'dependency_{row["source"]}_{row["target"]}'
+            dep_edges = self.graph_calc.graph.es.select(ci_type=dependency_name)
+            if len(dep_edges) == 0:
+                continue
+            targets = [edge.target for edge in dep_edges]
+            self.graph_calc.graph.vs[targets][f'access_state_{row.source}_{row.target}'] = "access undisrupted"
+            self.graph_calc.graph.vs[targets][f'actual_supply_{row.source}_{row.target}'] = 1
         #reset ids as new edges have been created
         self.network = reset_ids(self.network)
 
         #update network
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
-        self.graph_calc.invalidate()
+        self.graph_calc.full_reset()
 
 
     def cascade(self, p_source='power_plant',
@@ -1259,4 +1277,4 @@ class NetworkCalcs():
         #update network
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
-        self.graph_calc.invalidate()
+        self.graph_calc.full_reset()
