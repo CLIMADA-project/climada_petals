@@ -65,7 +65,7 @@ def edges_gdf():
             'osm_id': [100, 101, 102, 103],
             'distance': [157200, 157200, 157200, 157200],  # approx distances in meters
             'geometry': [
-                LineString([(1, 1), (0, 0)]), #roads need to go from ci to user
+                LineString([(0, 0), (1, 1)]), #roads need to go from ci to user
                 LineString([(1, 1), (2, 2)]),
                 LineString([(2, 2), (3, 3)]),
                 LineString([(3, 3), (4, 4)])
@@ -98,7 +98,7 @@ def network_with_remote_node_missing_edge(network_with_ci_types):
             'orig_id': [5],
             'ci_type': ['healthcare'],
             'func_tot': [1],
-            'geometry': [Point(50, 50)]
+            'geometry': [Point(4, 50)]
         },
         geometry='geometry',
         crs='EPSG:4326'
@@ -121,7 +121,7 @@ def network_with_remote_node(network_with_remote_node_missing_edge):
             'distance': [7000000],  # approx distances in meters
             'ci_type': ['road'],
             'func_tot': [1],
-            'geometry': [LineString([(2, 2), (50, 50)])]
+            'geometry': [LineString([(2, 2), (4, 50)])]
         },
         geometry='geometry',
         crs='EPSG:4326'
@@ -778,8 +778,8 @@ class TestGraphCalcs:
         initial_edge_count = graph_calcs_with_remote_node.graph.ecount()
 
         # Add edges between specific vertices
-        v_ids_source = [1, 2]
-        v_ids_target = [3, 4]
+        v_ids_source = [1, 2, 4]
+        v_ids_target = [3, 4, 1]
 
         graph_calcs_with_remote_node._edges_from_vlists(
             v_ids_source,
@@ -788,12 +788,15 @@ class TestGraphCalcs:
         )
         sources = [e.source for e in graph_calcs_with_remote_node.graph.es if e['ci_type'] == 'test_link']
         targets = [e.target for e in graph_calcs_with_remote_node.graph.es if e['ci_type'] == 'test_link']
-        # Should have added 2 edges
-        assert graph_calcs_with_remote_node.graph.ecount() == initial_edge_count + 2
+        # Should have added 3 edges
+        assert graph_calcs_with_remote_node.graph.ecount() == initial_edge_count + 3
         assert 'test_link' in graph_calcs_with_remote_node.graph.es['ci_type']
+        assert len(sources) == 3
+        assert len(targets) == 3
         # Verify correct source-target pairs
-        for s, t in zip(sources, targets):
-            assert (s in v_ids_source) and (t in v_ids_target)
+        for i in range(len(sources)):
+            assert sources[i] == v_ids_source[i]
+            assert targets[i] == v_ids_target[i]
 
     def test_edges_from_vlists_with_distance(self, graph_calcs):
         """Test adding edges with pre-calculated distances"""
@@ -1626,36 +1629,37 @@ def network_calcs_source_fail(network_with_source_fail, dependency_table):
 def expected_dep_pairs():
     """Expected dependency edges between node pairs."""
     return {
-        'dependency_road_people': {(0, 1)},
-        'dependency_healthcare_people': {(0, 4)},
+        'dependency_road_people': ([1,], [0,]), #sources targets
+        'dependency_healthcare_people': ([4,], [0,]),
+        'dependency_road_healthcare': ([3,], [4,]),
     }
 
 
-@pytest.fixture
-def forbidden_dep_pairs():
-    """Node pairs that must not carry dependency edges."""
-    return {(0, 2), (1, 3), (2, 3)}
-
-
-def _norm_pair(edge):
-    """Return a sorted (u, v) tuple for an undirected edge."""
-    return tuple(sorted((edge.source, edge.target)))
-
-
-def _assert_dependency_pairs(graph, expected_dep_pairs, forbidden_dep_pairs):
-    """Check expected dependency edges and ensure none exist on forbidden pairs."""
-    dep_names = list(expected_dep_pairs.keys())
-
-    for dep_name, expected_pairs in expected_dep_pairs.items():
-        es = graph.es.select(ci_type=dep_name)
-        assert len(es) > 0
-        found = {_norm_pair(e) for e in es}
-        assert found == expected_pairs
-
-    # No dependency edges on forbidden pairs
-    forbidden_edges = graph.es.select(ci_type_in=dep_names)
-    for edge in forbidden_edges:
-        assert _norm_pair(edge) not in forbidden_dep_pairs
+#@pytest.fixture
+#def forbidden_dep_pairs():
+#    """Node pairs that must not carry dependency edges."""
+#    return {(0, 2), (1, 3), (2, 3)}
+#
+#
+#def _norm_pair(edge):
+#    """Return a sorted (u, v) tuple for an undirected edge."""
+#    return tuple(sorted((edge.source, edge.target)))
+#
+#
+#def _assert_dependency_pairs(graph, expected_dep_pairs, forbidden_dep_pairs):
+#    """Check expected dependency edges and ensure none exist on forbidden pairs."""
+#    dep_names = list(expected_dep_pairs.keys())
+#
+#    for dep_name, expected_pairs in expected_dep_pairs.items():
+#        es = graph.es.select(ci_type=dep_name)
+#        assert len(es) > 0
+#        found = {_norm_pair(e) for e in es}
+#        assert found == expected_pairs
+#
+#    # No dependency edges on forbidden pairs
+#    forbidden_edges = graph.es.select(ci_type_in=dep_names)
+#    for edge in forbidden_edges:
+#        assert _norm_pair(edge) not in forbidden_dep_pairs
 
 class TestNetworkCalcs:
     """Test cases for the NetworkCalcs class"""
@@ -1690,7 +1694,7 @@ class TestNetworkCalcs:
         # Verify network structure is maintained
         assert len(network_calcs.network.nodes) == init_node_count
         assert len(network_calcs.network.edges) >= init_edge_count #! double edges may be added
-        assert len(network_calcs.graph_calc.graph.connected_components()) == 1
+        assert len(network_calcs.graph_calc.graph.connected_components(mode='weak')) == 1
 
     def test_add_physical_links(self, network_calcs):
         """Test adding physical links to network"""
@@ -1704,12 +1708,21 @@ class TestNetworkCalcs:
         assert network_calcs.network.edges.iloc[initial_edge_count]['ci_type'] == 'road'
 
 
-    def test_setup_dependencies(self, network_calcs, expected_dep_pairs, forbidden_dep_pairs):
+    def test_setup_dependencies(self, network_calcs, expected_dep_pairs):
         """Ensure dependency edges exist before access checks"""
         network_calcs.initialize_base_state()
         network_calcs.setup_dependencies()
 
-        _assert_dependency_pairs(network_calcs.graph, expected_dep_pairs, forbidden_dep_pairs)
+
+        for dep_link, (exp_sources, exp_targets) in expected_dep_pairs.items():
+            sources = [e.source for e in network_calcs.graph.es if e['ci_type'] == dep_link]
+            targets = [e.target for e in network_calcs.graph.es if e['ci_type'] == dep_link]
+
+            assert  len(sources) == len(exp_sources)
+            assert  len(targets) == len(exp_targets)
+            for i in range(len(sources)):
+                assert sources[i] == exp_sources[i]
+                assert targets[i] == exp_targets[i]
 
     def test_network_calcs_graph_property(self, network_calcs):
         """Test graph property of NetworkCalcs"""
@@ -1721,7 +1734,7 @@ class TestNetworkCalcs:
         """Test cascade with initial flag"""
         network_calcs.network.initialize_capacity(network_calcs.dep_table)
         network_calcs.network.initialize_supply(network_calcs.dep_table)
-        #network_calcs.setup_dependencies()
+        network_calcs.setup_dependencies()
 
         # Run cascade with initial=True
         network_calcs.cascade(

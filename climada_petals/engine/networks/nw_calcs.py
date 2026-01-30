@@ -47,20 +47,29 @@ LOGGER.setLevel('INFO')
 PHYSICAL_SOURCES = ['road', 'rail']
 
 class GraphCalcs():
-    def __init__(self, parent, directed=False):
+    def __init__(self, parent, directed=True, friction_surf=None):
         """
         network : instance of networks.nw_base.Network
         """
         self.parent = parent #parent nw calc object
         self._graph = None
         self.directed = directed
+        self.friction_surf = friction_surf
+
+
     @property
     def network(self):
         return self.parent.network
 
     def build_graph(self):
+        if self.network.nodes.columns[0] != 'id' or \
+              self.network.edges.columns[0] != 'from_id' or self.network.edges.columns[1] != 'to_id':
+            LOGGER.warning("Network nodes or edges columns are not properly ordered for graph generation." \
+            "igraph expects 'id' in position 0 for nodes and 'from_id', 'to_id' in position 0 and 1 respectively for edges."
+            "Please reorder the columns of your nodes and edges using ordered_network() function.")
         self._graph = self.network.to_graph(directed=self.directed)
         return self._graph
+
     @property
     def graph(self):
         if self._graph is None:
@@ -160,7 +169,6 @@ class GraphCalcs():
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
 
-        #self.invalidate()
     def link_vertices_edgecond(self, target_attrs, edge_attrs, link_attrs,
                                bidir=False):
         """
@@ -191,10 +199,6 @@ class GraphCalcs():
         # flatten nested list
         pot_edges_ids = [item for sublist in pot_edges_ids for item in sublist]
 
-        # select those edges which fulfill edge_attrs
-        #for key, value in edge_attrs.items():
-        #    pot_edges = [self.graph.es[item] for item in pot_edges_ids
-        #                 if self.graph.es[item][key] == value]
         pot_edges = [
             self.graph.es[item]
             for item in pot_edges_ids
@@ -220,7 +224,6 @@ class GraphCalcs():
         if bidir:
             self._edges_from_vlists(targets, sources, link_attrs)
 
-        #self.invalidate()
     def link_vertices_shortest_paths(self, source_attrs, target_attrs, via_attrs,
                                      link_attrs, dist_thresh=10e6, criterion='distance',
                                      k=1, bidir=False):
@@ -299,9 +302,11 @@ class GraphCalcs():
                self._edges_from_vlists(v_ids_target, v_ids_source, link_attrs)
 
         #self.invalidate()
-    def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf,
+    def link_vertices_friction_surf(self, source_ci, target_ci,
                                         link_name=None, dist_thresh=None,
                                         bidir=False, k=5, dur_thresh=None):
+            if not self.friction_surf:
+                LOGGER.error("No friction surface provided!")
 
             gdf_vs = self.graph.get_vertex_dataframe()
             gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
@@ -325,8 +330,6 @@ class GraphCalcs():
                     link_name = f'dependency_{source_ci}_{target_ci}'
 
                 self._edges_from_vlists(list(v_ids_source), list(v_ids_target), {'ci_type': link_name})
-
-            #self.invalidate()
 
     # =============================================================================
     # Helper funcs for making links
@@ -391,15 +394,11 @@ class GraphCalcs():
             self.graph.vs[v_ids_target]['geometry'])
 
         if 'distance' not in link_attrs.keys():
-            print("! adding distance")
+            LOGGER.info("Adding edge distances for new links.")
             link_attrs['distance'] = [
                 pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
                 for edge_geom in link_attrs['geometry']
             ]
-        ## check if save to add new orig_id here as they might replace existing ones
-        #add orig_id to new edges
-        #if 'orig_id' not in link_attrs.keys():
-        #    link_attrs['orig_id'] = np.max(self.graph.es['orig_id'])+np.arange(len(pairs))
 
         self.graph.add_edges(pairs, attributes=link_attrs)
 
@@ -534,7 +533,6 @@ class GraphCalcs():
 
         df_conc = pd.concat([df_subg, df_g], axis=1)
         result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
-        #result = dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) #previous version, very slow
         return result
 
     @staticmethod
@@ -567,7 +565,6 @@ class GraphCalcs():
 
         df_conc = pd.concat([df_subg, df_g], axis=1)
         result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
-        #result = dict((k, v) for k, v in zip(df_conc['index_sub'], df_conc['index_g'])) #previous version, very slow
         return result
     @staticmethod
     def _calc_friction(edge_geoms, friction_surf):
@@ -611,7 +608,7 @@ class GraphCalcs():
 
             return friction.eai_exp
 
-    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link, friction_surf=None):
+    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link):
         if "distance" in link_condition:
             self.link_vertices_shortest_paths(
                 source_attrs=source_attrs,
@@ -625,7 +622,6 @@ class GraphCalcs():
             self.link_vertices_friction_surf(
                 source_ci=source_attrs,
                 target_ci=target_attrs,
-                friction_surf=friction_surf,
                 link_name=link_attrs,
                 dist_thresh=dist_thresh,
                 bidir=bidir_link
@@ -659,7 +655,6 @@ class GraphCalcs():
 
         #keep track of original ids
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
-        #subgraph_graph_vsdict = _get_subgraph2graph_vsdict_old(graph, v_seq)
         v_seq_orig_id = [subgraph_graph_vsdict[v_id] for v_id in v_seq_sub.indices]
 
         try:
@@ -1175,10 +1170,11 @@ class GraphCalcs():
 
 class NetworkCalcs():
     """Gathers wrapper for network preparation"""
-    def __init__(self, network, dep_table):
+    def __init__(self, network, dep_table, friction_surf=None, directed=True):
         self.network = network
         self.dep_table = dep_table
-        self.graph_calc = GraphCalcs(parent=self)
+        self.graph_calc = GraphCalcs(parent=self, directed=directed, friction_surf=friction_surf)
+
 
     @property
     def graph(self):
@@ -1198,12 +1194,6 @@ class NetworkCalcs():
             self.graph_calc.invalidate()
         n_clusters = len(self.graph_calc.graph.connected_components())
         LOGGER.info(print(f'Number of clusters in the network after merging: {n_clusters}'))
-
-        #update orig_id field (required for building subgraphes)
-        self.network.edges['orig_id'] = self.network.edges['id']
-        self.network.nodes['orig_id'] = self.network.nodes['id']
-        self.network = ordered_network(self.network)
-
 
     def add_physical_links(self):
         """Wrapper function to add physical links."""
@@ -1230,13 +1220,10 @@ class NetworkCalcs():
 
         ##need to have all ids reset after new road edges have been added
         self.network = reset_ids(self.network)
-        #update orig_id field (required for building subgraphes)
-        self.network.edges['orig_id'] = self.network.edges['id']
-        self.network.nodes['orig_id'] = self.network.nodes['id']
-        self.network = ordered_network(self.network)
 
         # Invalidate cached graph
         self.graph_calc.invalidate()
+
     def initialize_base_state(self):
         #base state
         #do it after build up of physical dependencies so that created edge also receive
@@ -1263,6 +1250,9 @@ class NetworkCalcs():
                 dist_thresh=row['thresh_dist'],
                 bidir_link=row['bidir_link']
             )
+        #reset ids as new edges have been created
+        self.network = reset_ids(self.network)
+
         #update network
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
@@ -1298,6 +1288,8 @@ class NetworkCalcs():
             self.graph_calc._update_enduser_dependencies(
                 self.dep_table, friction_surf, rerouting=rerouting)
 
+        #reset ids as new edges may have been created
+        self.network = reset_ids(self.network)
         #update network
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
