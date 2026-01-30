@@ -1694,7 +1694,7 @@ class TestNetworkCalcs:
         # Verify network structure is maintained
         assert len(network_calcs.network.nodes) == init_node_count
         assert len(network_calcs.network.edges) >= init_edge_count #! double edges may be added
-        assert len(network_calcs.graph_calc.graph.connected_components()) == 1
+        assert len(network_calcs.graph_calc.graph.connected_components(mode='weak')) == 1
 
     def test_add_physical_links(self, network_calcs):
         """Test adding physical links to network"""
