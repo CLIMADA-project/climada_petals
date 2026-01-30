@@ -47,13 +47,15 @@ LOGGER.setLevel('INFO')
 PHYSICAL_SOURCES = ['road', 'rail']
 
 class GraphCalcs():
-    def __init__(self, parent, directed=True):
+    def __init__(self, parent, directed=True, friction_surf=None):
         """
         network : instance of networks.nw_base.Network
         """
         self.parent = parent #parent nw calc object
         self._graph = None
         self.directed = directed
+        self.friction_surf = friction_surf
+
 
     @property
     def network(self):
@@ -299,9 +301,12 @@ class GraphCalcs():
             if bidir:
                self._edges_from_vlists(v_ids_target, v_ids_source, link_attrs)
 
-    def link_vertices_friction_surf(self, source_ci, target_ci, friction_surf,
+        #self.invalidate()
+    def link_vertices_friction_surf(self, source_ci, target_ci,
                                         link_name=None, dist_thresh=None,
                                         bidir=False, k=5, dur_thresh=None):
+            if not self.friction_surf:
+                LOGGER.error("No friction surface provided!")
 
             gdf_vs = self.graph.get_vertex_dataframe()
             gdf_vs_target = gdf_vs[gdf_vs.ci_type==target_ci]
@@ -603,7 +608,7 @@ class GraphCalcs():
 
             return friction.eai_exp
 
-    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link, friction_surf=None):
+    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link):
         if "distance" in link_condition:
             self.link_vertices_shortest_paths(
                 source_attrs=source_attrs,
@@ -617,7 +622,6 @@ class GraphCalcs():
             self.link_vertices_friction_surf(
                 source_ci=source_attrs,
                 target_ci=target_attrs,
-                friction_surf=friction_surf,
                 link_name=link_attrs,
                 dist_thresh=dist_thresh,
                 bidir=bidir_link
@@ -1132,10 +1136,11 @@ class GraphCalcs():
 
 class NetworkCalcs():
     """Gathers wrapper for network preparation"""
-    def __init__(self, network, dep_table, directed=True):
+    def __init__(self, network, dep_table, friction_surf=None, directed=True):
         self.network = network
         self.dep_table = dep_table
-        self.graph_calc = GraphCalcs(parent=self, directed=directed)
+        self.graph_calc = GraphCalcs(parent=self, directed=directed, friction_surf=friction_surf)
+
 
     @property
     def graph(self):
