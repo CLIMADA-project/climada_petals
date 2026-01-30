@@ -47,7 +47,7 @@ LOGGER.setLevel('INFO')
 PHYSICAL_SOURCES = ['road', 'rail']
 
 class GraphCalcs():
-    def __init__(self, parent, directed=False):
+    def __init__(self, parent, directed=True):
         """
         network : instance of networks.nw_base.Network
         """
@@ -1132,10 +1132,10 @@ class GraphCalcs():
 
 class NetworkCalcs():
     """Gathers wrapper for network preparation"""
-    def __init__(self, network, dep_table):
+    def __init__(self, network, dep_table, directed=True):
         self.network = network
         self.dep_table = dep_table
-        self.graph_calc = GraphCalcs(parent=self)
+        self.graph_calc = GraphCalcs(parent=self, directed=directed)
 
     @property
     def graph(self):
