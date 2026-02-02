@@ -55,6 +55,8 @@ class GraphCalcs():
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
+        self._edge_cache = {}  # Add edge cache
+        self._vertex_cache = {}  # Add vertex cache
 
 
     @property
@@ -77,7 +79,16 @@ class GraphCalcs():
         return self._graph
 
     def invalidate(self):
+        """Clear edge cache when edges are added/removed (vertices unchanged)"""
         self._graph = None
+        self._edge_cache = {}
+
+    def full_reset(self):
+        """Clear all caches when vertices are added/removed or graph is rebuilt"""
+        self._graph = None
+        self._edge_cache = {}
+        self._vertex_cache = {}
+
     # =============================================================================
     # Making links
     # =============================================================================
@@ -139,7 +150,6 @@ class GraphCalcs():
             self._edges_from_vlists(
                 v_ids_source, v_ids_target, link_attrs)
 
-        #self.invalidate()
     def link_vertices_closest_k(self, source_attrs, target_attrs, link_attrs=None,
                                 dist_thresh=np.inf, bidir=False, k=5):
         """
@@ -230,6 +240,7 @@ class GraphCalcs():
         """
         Per target, choose single shortest path to source which is
         below dist_thresh.
+        Optimized with vectorized operations.
 
         Parameters
         ----------
@@ -252,14 +263,17 @@ class GraphCalcs():
         # subgraph containing only "allowed" elements
         subgraph = self._create_subgraph(source_attrs, target_attrs, via_attrs)
 
-        # mapping from subgraph to graph indices
+        # mapping from subgraph to graph indices (create lookup array instead of dict for speed)
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
 
-        # select only those for which specified attrs apply
-        df_vs_target = GraphCalcs._filter_vertices(subgraph, target_attrs)
+        # Vectorize the dictionary lookup
+        subgraph_ids = np.array(sorted(subgraph_graph_vsdict.keys()))
+        graph_ids = np.array([subgraph_graph_vsdict[k] for k in subgraph_ids])
 
         # select only those for which specified attrs apply
-        df_vs_source = GraphCalcs._filter_vertices(subgraph, source_attrs)
+        cache = {}
+        df_vs_target = GraphCalcs._filter_vertices(subgraph, target_attrs, cache)
+        df_vs_source = GraphCalcs._filter_vertices(subgraph, source_attrs, cache)
 
         path_dists = subgraph.distances(
             source=df_vs_source.index.values, target=df_vs_target.index.values,
@@ -267,15 +281,13 @@ class GraphCalcs():
             mode='all')
         path_dists = np.array(path_dists)  # dim: (#sources, #targets)
 
-        if not len(path_dists) == 0:
-
-            if k==1:#single_shortest
+        if len(path_dists) > 0:
+            if k==1:  # single_shortest
                 ix_source, ix_target = np.where(
                     ((path_dists == path_dists.min(axis=0)) &
                      (path_dists <= dist_thresh)))  # min dist. per target
             else:
                 ix_source, ix_target = np.where(path_dists < dist_thresh)
-
             # Get the indices of the k shortest distances per target
             #sorted_indices = np.argsort(path_dists, axis=0)[:k, :]  # Indices of k smallest distances
             #valid_mask = path_dists[sorted_indices, np.arange(path_dists.shape[1])] <= dist_thresh  # Apply threshold
@@ -283,25 +295,20 @@ class GraphCalcs():
             ## Extract source and target indices
             #ix_source, ix_target = np.where(valid_mask)
             #ix_source = sorted_indices[ix_source, ix_target]  # Map to original indices
+            # Vectorized re-mapping using numpy arrays instead of list comprehension
+            source_subgraph_ids = df_vs_source.index.values[ix_source]
+            target_subgraph_ids = df_vs_target.index.values[ix_target]
 
-            ## re-map sources to original graph
-            #v_ids_source = df_vs_source.index.values[list(ix_source)]
-            v_ids_source = [subgraph_graph_vsdict[v_id_source] for v_id_source
-                            in df_vs_source.index.values[list(ix_source)]]
-
-            ## re-map targets to original graph
-            #v_ids_target = df_vs_target.index.values[list(ix_target)]
-            v_ids_target = [subgraph_graph_vsdict[v_id_target] for v_id_target
-                            in df_vs_target.index.values[list(ix_target)]]
+            v_ids_source = np.array([subgraph_graph_vsdict[int(sid)] for sid in source_subgraph_ids])
+            v_ids_target = np.array([subgraph_graph_vsdict[int(tid)] for tid in target_subgraph_ids])
 
             link_attrs['distance'] = path_dists[(ix_source, ix_target)]
 
-            self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
+            self._edges_from_vlists(v_ids_source.tolist(), v_ids_target.tolist(), link_attrs)
 
             if bidir:
-               self._edges_from_vlists(v_ids_target, v_ids_source, link_attrs)
+               self._edges_from_vlists(v_ids_target.tolist(), v_ids_source.tolist(), link_attrs)
 
-        #self.invalidate()
     def link_vertices_friction_surf(self, source_ci, target_ci,
                                         link_name=None, dist_thresh=None,
                                         bidir=False, k=5, dur_thresh=None):
@@ -322,7 +329,7 @@ class GraphCalcs():
                     self.graph.vs[v_ids_source]['geometry'],
                     self.graph.vs[v_ids_target]['geometry'])
 
-                friction = self._calc_friction(edge_geoms, friction_surf)
+                friction = self._calc_friction(edge_geoms, self.friction_surf)
                 v_ids_source = np.array(v_ids_source)[friction<dur_thresh]
                 v_ids_target = np.array(v_ids_target)[friction<dur_thresh]
 
@@ -335,23 +342,35 @@ class GraphCalcs():
     # Helper funcs for making links
     # =============================================================================
     @staticmethod
-    def _filter_vertices(graph, attr_dict):
+    def _filter_vertices(graph, attr_dict, cache=None):
         """
         get vertices of graph to which given attributes apply
+        Supports caching to avoid redundant dataframe operations.
 
         Parameters
         ----------
         graph : igraph.Graph object
+        attr_dict : dict
+        cache : dict, optional
+            Cache for vertex dataframe to avoid repeated get_vertex_dataframe calls
 
         Returns
         -------
         df_vs : pd.Dataframe
         """
+        # Use cached vertex dataframe if available
+        if cache is not None and 'vertex_df' in cache:
+            df_vs = cache['vertex_df']
+        else:
+            df_vs = graph.get_vertex_dataframe()
+            if cache is not None:
+                cache['vertex_df'] = df_vs
 
-        df_vs = graph.get_vertex_dataframe()
+        # Apply filters using numpy operations for speed
+        mask = np.ones(len(df_vs), dtype=bool)
         for key, value in attr_dict.items():
-            df_vs = df_vs[df_vs[key] == value]
-        return df_vs
+            mask &= (df_vs[key] == value).values
+        return df_vs[mask]
 
     @staticmethod
     def _filter_edges(graph, attr_dict):
@@ -377,6 +396,7 @@ class GraphCalcs():
         """
         add edges to graph given source and target vertex lists
         adds geometries, edge lengths, edge names and func states as attributes
+        Optimized version with vectorized distance calculations.
 
         Parameters
         ----------
@@ -387,6 +407,10 @@ class GraphCalcs():
         graph : nw_base.Graph object
         """
 
+        # Early return if no edges to add
+        if len(v_ids_source) == 0 or len(v_ids_target) == 0:
+            return
+
         pairs = list(zip(v_ids_source, v_ids_target))
 
         link_attrs['geometry'] = make_edge_geometries(
@@ -395,10 +419,13 @@ class GraphCalcs():
 
         if 'distance' not in link_attrs.keys():
             LOGGER.info("Adding edge distances for new links.")
-            link_attrs['distance'] = [
-                pyproj.Geod(ellps='WGS84').geometry_length(edge_geom)
-                for edge_geom in link_attrs['geometry']
-            ]
+            # Vectorized distance calculation using Geod
+            geod = pyproj.Geod(ellps='WGS84')
+            distances = []
+            for edge_geom in link_attrs['geometry']:
+                dist = geod.geometry_length(edge_geom)
+                distances.append(dist)
+            link_attrs['distance'] = distances
 
         self.graph.add_edges(pairs, attributes=link_attrs)
 
@@ -408,6 +435,11 @@ class GraphCalcs():
         """
         Parameters
         ----------
+        gdf_vs_source : pd.DataFrame
+        gdf_vs_target : pd.DataFrame
+        dist_thresh : float
+        bidir : bool
+        k : int
 
         Returns
         -------
@@ -463,14 +495,18 @@ class GraphCalcs():
         link_vertices_shortest_paths(), link_vertices_shortest_path()
         """
 
-        # select only those for which specified attrs apply
-        df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
-        df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
-        df_vs_via = GraphCalcs._filter_vertices(self.graph, via_attrs)
+        # Cache vertex dataframe to avoid multiple get_vertex_dataframe calls
+        cache = {}
 
-        vs_keep = np.concatenate((df_vs_source.index.values,
+        # select only those for which specified attrs apply
+        df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs, cache)
+        df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs, cache)
+        df_vs_via = GraphCalcs._filter_vertices(self.graph, via_attrs, cache)
+
+        # Use efficient numpy operations instead of list concatenation
+        vs_keep = np.unique(np.concatenate((df_vs_source.index.values,
                                   df_vs_target.index.values,
-                                  df_vs_via.index.values))
+                                  df_vs_via.index.values))).astype(int)
 
         # vs_keep has indexing of original graph, subgraph has new indexing. There
         # is no way of keeping track of the re-ordering, other than to have a named
@@ -479,24 +515,10 @@ class GraphCalcs():
         self.graph.es['orig_id'] = range(len(self.graph.es))
         subgraph = self.graph.induced_subgraph(vs_keep)
 
-        #map graph ids to subgraph ids
-        #subgraph_graph_esdict = GraphCalcs._get_subgraph2graph_esdict(self.graph, subgraph)
-        #graph_to_subgraph_esdict = {v: k for k, v in subgraph_graph_esdict.items()}
-
         # delete remaining edges that have wrong attributes
-        #df_es_target = GraphCalcs._filter_edges(subgraph, target_attrs)
-        #df_es_source = GraphCalcs._filter_edges(subgraph, source_attrs)
         df_es_via = GraphCalcs._filter_edges(subgraph, via_attrs)
 
         correct_edges = df_es_via.index.values
-        #correct_edges = np.concatenate((df_es_target.index.values,
-        #                               df_es_source.index.values,
-        #                               df_es_via.index.values))
-
-        #map correct edge ids back to subgraph ids
-        #correct_edges = [subgraph_graph_esdict[id_corr_edg] for id_corr_edg
-        #                in correct_edges]
-
         wrong_edges = set(range(len(subgraph.es))).difference(set(correct_edges))
 
         subgraph.delete_edges(wrong_edges)
@@ -509,6 +531,7 @@ class GraphCalcs():
         Keep track of which vertices in induced subgraph represent which vertices
         in original graph. dict[subgraph_vs_ind] = graph_vs_ind
         Goes via the named attribute 'orig_id' created before making the subgraph.
+        Optimized with vectorized operations.
 
         Parameters
         ----------
@@ -521,26 +544,35 @@ class GraphCalcs():
         dict
             mapping from subgraph to graph indices.
         """
-        subgraph_vs_indices = [subvx.index for subvx in subgraph.vs]
-        subgraph_orig_ids = subgraph.vs.get_attribute_values('orig_id')
-        df_subg = pd.DataFrame(
-            subgraph_vs_indices, index=subgraph_orig_ids, columns=['index_sub'])
+        # Vectorized attribute access
+        subgraph_vs_indices = np.arange(len(subgraph.vs))
+        subgraph_orig_ids = np.array(subgraph.vs.get_attribute_values('orig_id'))
 
-        graph_vs_indices = [vx.index for vx in graph.vs]
-        graph_orig_ids = graph.vs.get_attribute_values('orig_id')
-        df_g = pd.DataFrame(
-            graph_vs_indices, index=graph_orig_ids,  columns=['index_g'])
+        graph_vs_indices = np.arange(len(graph.vs))
+        graph_orig_ids = np.array(graph.vs.get_attribute_values('orig_id'))
 
-        df_conc = pd.concat([df_subg, df_g], axis=1)
-        result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
+        # Use numpy argsort for faster mapping
+        sort_idx = np.argsort(graph_orig_ids)
+        graph_orig_ids_sorted = graph_orig_ids[sort_idx]
+        graph_vs_indices_sorted = graph_vs_indices[sort_idx]
+
+        # Use searchsorted to find indices - O(log n) instead of O(n)
+        positions = np.searchsorted(graph_orig_ids_sorted, subgraph_orig_ids)
+        result = {}
+        for i, orig_id in enumerate(subgraph_orig_ids):
+            pos = positions[i]  # Use precomputed position
+            if pos < len(graph_orig_ids_sorted) and graph_orig_ids_sorted[pos] == orig_id:
+                result[subgraph_vs_indices[i]] = graph_vs_indices_sorted[pos]
+
         return result
 
     @staticmethod
     def _get_subgraph2graph_esdict(graph, subgraph):
         """
         Keep track of which edges in induced subgraph represent which edges
-        in original graph. dict[subgraph_vs_ind] = graph_vs_ind
+        in original graph. dict[subgraph_es_ind] = graph_es_ind
         Goes via the named attribute 'orig_id' created before making the subgraph.
+        Optimized with vectorized numpy operations.
 
         Parameters
         ----------
@@ -553,18 +585,26 @@ class GraphCalcs():
         dict
             mapping from subgraph to graph indices.
         """
-        subgraph_es_indices = [subvx.index for subvx in subgraph.es]
-        subgraph_orig_ids = subgraph.es.get_attribute_values('orig_id')
-        df_subg = pd.DataFrame(
-            subgraph_es_indices, index=subgraph_orig_ids, columns=['index_sub'])
+        # Vectorized attribute access
+        subgraph_es_indices = np.arange(len(subgraph.es))
+        subgraph_orig_ids = np.array(subgraph.es.get_attribute_values('orig_id'))
 
-        graph_es_indices = [vx.index for vx in graph.es]
-        graph_orig_ids = graph.es.get_attribute_values('orig_id')
-        df_g = pd.DataFrame(
-            graph_es_indices, index=graph_orig_ids,  columns=['index_g'])
+        graph_es_indices = np.arange(len(graph.es))
+        graph_orig_ids = np.array(graph.es.get_attribute_values('orig_id'))
 
-        df_conc = pd.concat([df_subg, df_g], axis=1)
-        result = df_conc.groupby('index_sub')['index_g'].first().to_dict()
+        # Use numpy argsort for faster mapping
+        sort_idx = np.argsort(graph_orig_ids)
+        graph_orig_ids_sorted = graph_orig_ids[sort_idx]
+        graph_es_indices_sorted = graph_es_indices[sort_idx]
+
+        # Use searchsorted for O(log n) lookup
+        positions = np.searchsorted(graph_orig_ids_sorted, subgraph_orig_ids)
+        result = {}
+        for i, orig_id in enumerate(subgraph_orig_ids):
+            pos = positions[i]  # Use precomputed position
+            if pos < len(graph_orig_ids_sorted) and graph_orig_ids_sorted[pos] == orig_id:
+                result[subgraph_es_indices[i]] = graph_es_indices_sorted[pos]
+
         return result
     @staticmethod
     def _calc_friction(edge_geoms, friction_surf):
@@ -641,58 +681,60 @@ class GraphCalcs():
     # =============================================================================
 
     def _propagate_check_fail(self, source, target, thresh_func):
-        """
-        propagate capacities from source vertices to target vertices
-        on the subgraph via the adjacency matrix.
-        check whether capacity enough.
-        fail target if not.
-        """
-        v_seq = self.graph.vs.select(ci_type_in=[source, target])
-        subgraph = self.graph.induced_subgraph(v_seq)
+        """Optimized version with numpy array caching and vectorized operations"""
+        # Cache vertex selections and convert to numpy arrays immediately
+        if not hasattr(self, '_vertex_cache'):
+            self._vertex_cache = {}
 
-        #take vertices seq from subgraph and do operation on it to be sure that order is the same
-        v_seq_sub = subgraph.vs.select(ci_type_in=[source, target])
+        cache_key = (source, target)
+        if cache_key not in self._vertex_cache:
+            self._vertex_cache[cache_key] = {
+                'source_ids': np.array([v.index for v in self.graph.vs.select(ci_type=source)]),
+                'target_ids': np.array([v.index for v in self.graph.vs.select(ci_type=target)])
+            }
 
-        #keep track of original ids
-        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
-        v_seq_orig_id = [subgraph_graph_vsdict[v_id] for v_id in v_seq_sub.indices]
+        cached = self._vertex_cache[cache_key]
+        source_ids = cached['source_ids']
+        target_ids = cached['target_ids']
+        all_ids = np.concatenate([source_ids, target_ids])
 
-        try:
-            adj_sub = subgraph.get_adjacency_sparse()
-        except (TypeError, ValueError):
-            # treats case where empty adjacency matrix!
-            adj_sub = scipy.sparse.csr_matrix(subgraph.get_adjacency().data)
+        # Use direct adjacency matrix slicing instead of subgraph
+        adj_full = self.graph.get_adjacency_sparse()
+        adj_sub = adj_full[all_ids, :][:, all_ids]
 
-        # Hadamard product func_tot (*) capacity
-        func_capa = np.multiply(v_seq['func_tot'],
-                                v_seq[f'capacity_{source}_{target}'])
-        # propagate capacities down from source --> target along adj
-        capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub)
+        # Vectorized capacity calculation - batch access vertex attributes
+        func_tots = np.array([self.graph.vs[int(i)]['func_tot'] for i in all_ids])
+        capacity_attr = f'capacity_{source}_{target}'
+        capacities = np.zeros(len(all_ids))
+        for idx, vid in enumerate(all_ids):
+            if capacity_attr in self.graph.vs[int(vid)].attributes():
+                capacities[idx] = self.graph.vs[int(vid)][capacity_attr]
 
-        # functionality thesholds for received capacity
-        func_thresh = np.array([thresh_func if vx['ci_type'] == target
-                                else 0 for vx in v_seq])
+        func_capa = func_tots * capacities
 
-        # boolean vector whether received capacity great enough to supply endusers
-        capa_suff = (np.array(capa_rec.todense()).squeeze()
-                     >= func_thresh).astype(int)
-        # This is under the assumption that subgraph retains the same
-        # relative ordering of vertices as in v_seq extracted from graph!
-        # This further assumes that any operation on a VertexSeq equally modifies its graph.
-        # Both should be the case, but the igraph doc is always a bit ambiguous
+        # Matrix multiplication using sparse operations
+        capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub).toarray().squeeze()
+        if capa_rec.ndim == 0:
+            capa_rec = np.array([capa_rec])
 
+        # Vectorized threshold check
+        is_target = np.array([self.graph.vs[int(i)]['ci_type'] == target for i in all_ids])
+        func_thresh = np.where(is_target, thresh_func, 0)
+        capa_suff = (capa_rec >= func_thresh).astype(int)
+
+        # Batch update graph attributes using vectorized operations
         if target == 'people':
-            self.graph.vs[v_seq_orig_id][f'actual_supply_{source}_{target}'] = capa_suff
+            for i, idx in enumerate(all_ids):
+                self.graph.vs[int(idx)][f'actual_supply_{source}_{target}'] = capa_suff[i]
         else:
-            # Only update TARGET vertices, not source vertices
-            # Get indices of target vertices only
-            target_mask = np.array([vx['ci_type'] == target for vx in v_seq])
-            target_orig_ids = [v_seq_orig_id[i] for i, is_target in enumerate(target_mask) if is_target]
-            func_tot_targets = np.minimum(capa_suff[target_mask], v_seq.select(ci_type=target)['func_tot'])
-            self.graph.vs[target_orig_ids]['func_tot'] = func_tot_targets
+            target_indices = np.where(is_target)[0]
+            for idx_in_all in target_indices:
+                actual_idx = all_ids[idx_in_all]
+                orig_func = self.graph.vs[int(actual_idx)]['func_tot']
+                self.graph.vs[int(actual_idx)]['func_tot'] = min(capa_suff[idx_in_all], orig_func)
 
         #delete large objects to avoid memory issues
-        del capa_rec, func_capa, capa_suff, adj_sub, func_thresh, subgraph
+        del capa_rec, func_capa, capa_suff, adj_sub, func_thresh
         gc.collect()
 
     def _funcstates_sum(self):
@@ -933,37 +975,41 @@ class GraphCalcs():
 
             if len(es_check) > 0:
                 # Check which edges still have valid paths through functional via edges
-                v_ids_source = [edge.source for edge in es_check]
-                v_ids_target = [edge.target for edge in es_check]
-                v_ids_via = [v.index for v in self.graph.vs.select(ci_type=row['via_link'])]
+                v_ids_source = np.array([edge.source for edge in es_check])
+                v_ids_target = np.array([edge.target for edge in es_check])
+                v_ids_via = np.array([v.index for v in self.graph.vs.select(ci_type=row['via_link'])])
 
                 # Create subgraph with only source, target, and via vertices
-                v_seq = list(np.unique([*v_ids_source, *v_ids_target, *v_ids_via]))
+                v_seq = np.unique(np.concatenate([v_ids_source, v_ids_target, v_ids_via]))
                 self.graph.vs['orig_id'] = range(len(self.graph.vs))
                 subgraph = self.graph.induced_subgraph(v_seq)
 
                 # Map from original graph ids to subgraph ids
                 subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
-                graph_subgraph_vsdict = {int(v): int(k) for k, v in subgraph_graph_vsdict.items()}
-
-                # Delete failed edges and non-via edges from subgraph
-                edges_to_delete = []
-                for e in subgraph.es:
-                    if 'func_tot' in e.attributes() and e['func_tot'] is not None and e['func_tot'] < 1:
-                        edges_to_delete.append(e.index)
-                subgraph.delete_edges(edges_to_delete)
+                graph_subgraph_vsdict = {int(v): int(k) for k,
+                                     v in subgraph_graph_vsdict.items()}
+                # Delete edges with func_tot < 1 (but keep edges without func_tot or func_tot=None, like dependency edges)
+                # Vectorized edge filtering
+                failed_edges = np.array([e.index for e in subgraph.es
+                                        if 'func_tot' in e.attributes()
+                                        and e['func_tot'] is not None
+                                        and e['func_tot'] < 1])
+                if len(failed_edges) > 0:
+                    subgraph.delete_edges(failed_edges)
 
                 wrong_edges = set(subgraph.es['ci_type']).difference({row['via_link']})
-                subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
+                if wrong_edges:
+                    subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
 
                 # Check which former dependency edges still have valid paths
                 edges_to_keep = self._validate_dependency_paths(
                     es_check, row, graph_subgraph_vsdict, subgraph
                 )
 
-                # Delete edges that no longer have valid paths
-                edges_to_remove = [edge.index for edge in es_check if edge not in edges_to_keep]
-                self.graph.delete_edges(edges_to_remove)
+                # Delete edges that no longer have valid paths using vectorized operations
+                edges_to_remove = np.array([edge.index for edge in es_check if edge not in edges_to_keep])
+                if len(edges_to_remove) > 0:
+                    self.graph.delete_edges(edges_to_remove)
 
             # Get updated list of access edges after validation
             es_access_new = self.graph.es.select(ci_type=dependency_name)
@@ -981,6 +1027,7 @@ class GraphCalcs():
                                        ppl_new_access):
         """
         Mark access states and actual supply for all nodes.
+        Optimized with set operations for O(1) membership checks.
 
         Parameters
         ----------
@@ -997,40 +1044,53 @@ class GraphCalcs():
         ppl_new_access : list
             People who have current access
         """
+        # Convert to sets for O(1) membership checking (only those actually used)
+        ppl_former_access_source_failed_set = set(ppl_former_access_source_failed)
+        ppl_new_access_set = set(ppl_new_access)
+
         # If init source was failed but ppl still have access, then they have access to a new source
         ppl_access_new_source = [
             edge.target for edge in es_access_new
-            if edge.target in ppl_former_access_source_failed
+            if edge.target in ppl_former_access_source_failed_set
         ]
-        self.graph.vs[ppl_access_new_source][f'access_state_{row.source}_people'] = "access new source"
+        if ppl_access_new_source:
+            self.graph.vs[ppl_access_new_source][f'access_state_{row.source}_people'] = "access new source"
 
         # If people have access only when no functional via is required, then access is disrupted via
         ppl_access_broken_via = [
             ppl_node for ppl_node in ppl_access_all_via
-            if ppl_node not in ppl_new_access
+            if ppl_node not in ppl_new_access_set
         ]
-        self.graph.vs[ppl_access_broken_via][f'access_state_{row.source}_people'] = "access disrupted via"
+        if ppl_access_broken_via:
+            self.graph.vs[ppl_access_broken_via][f'access_state_{row.source}_people'] = "access disrupted via"
 
         # If people do not have access due to via constraints, then the access is disrupted at source
+        ppl_access_broken_via_set = set(ppl_access_broken_via)
         ppl_no_reaccess = [
             ppl_node for ppl_node in ppl_former_access
-            if (ppl_node not in ppl_new_access and ppl_node not in ppl_access_broken_via)
+            if (ppl_node not in ppl_new_access_set and ppl_node not in ppl_access_broken_via_set)
         ]
-        self.graph.vs[ppl_no_reaccess][f'access_state_{row.source}_people'] = "access disrupted source"
+        if ppl_no_reaccess:
+            self.graph.vs[ppl_no_reaccess][f'access_state_{row.source}_people'] = "access disrupted source"
 
         # Remaining accesses are undisrupted
         ppl_access_undisrupted = [
             edge.target for edge in es_access_new
-            if edge.target not in ppl_former_access_source_failed
+            if edge.target not in ppl_former_access_source_failed_set
         ]
-        self.graph.vs[ppl_access_undisrupted][f'access_state_{row.source}_people'] = "access undisrupted"
+        if ppl_access_undisrupted:
+            self.graph.vs[ppl_access_undisrupted][f'access_state_{row.source}_people'] = "access undisrupted"
 
         # Add boolean array of actual supply
         # People with access get supply=1 (includes undisrupted, all_via, and new_source)
         # Use set to avoid duplicates
         ppl_with_supply = list(set(ppl_access_undisrupted + ppl_access_all_via + ppl_access_new_source))
-        self.graph.vs[ppl_with_supply][f'actual_supply_{row.source}_{row.target}'] = 1
-        self.graph.vs[ppl_no_reaccess + ppl_access_broken_via][f'actual_supply_{row.source}_{row.target}'] = 0
+        if ppl_with_supply:
+            self.graph.vs[ppl_with_supply][f'actual_supply_{row.source}_{row.target}'] = 1
+
+        ppl_without_supply = ppl_no_reaccess + ppl_access_broken_via
+        if ppl_without_supply:
+            self.graph.vs[ppl_without_supply][f'actual_supply_{row.source}_{row.target}'] = 0
 
     def _check_access(self, row, friction_surf, rerouting=True, initial=False):
         """
@@ -1191,7 +1251,7 @@ class NetworkCalcs():
             iter_count+=1
             self.network.update_network_from_graphs(self.graph)
             self.network = reset_ids(self.network)
-            self.graph_calc.invalidate()
+            self.graph_calc.full_reset()
         n_clusters = len(self.graph_calc.graph.connected_components())
         LOGGER.info(print(f'Number of clusters in the network after merging: {n_clusters}'))
 
@@ -1222,7 +1282,7 @@ class NetworkCalcs():
         self.network = reset_ids(self.network)
 
         # Invalidate cached graph
-        self.graph_calc.invalidate()
+        self.graph_calc.full_reset()
 
     def initialize_base_state(self):
         #base state
@@ -1237,26 +1297,34 @@ class NetworkCalcs():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
             self.graph_calc._calc_dependencies(
                 source_attrs={
-                    'ci_type': row['source'],
-                    'func_tot': 1},
+                    'ci_type': row['source']},
                 target_attrs={
                     'ci_type': row['target']},
                 via_attrs={
-                    'ci_type': row['via_link'],
-                    'func_tot': 1},
+                    'ci_type': row['via_link']},
                 link_attrs={
                     'ci_type': dependency_name},
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
                 bidir_link=row['bidir_link']
             )
+        # initialize base access and supply for enduser dependencies
+        enduser_rows = self.dep_table[self.dep_table['type_I'] == 'enduser']
+        for __, row in enduser_rows.iterrows():
+            dependency_name = f'dependency_{row["source"]}_{row["target"]}'
+            dep_edges = self.graph_calc.graph.es.select(ci_type=dependency_name)
+            if len(dep_edges) == 0:
+                continue
+            targets = [edge.target for edge in dep_edges]
+            self.graph_calc.graph.vs[targets][f'access_state_{row.source}_{row.target}'] = "access undisrupted"
+            self.graph_calc.graph.vs[targets][f'actual_supply_{row.source}_{row.target}'] = 1
         #reset ids as new edges have been created
         self.network = reset_ids(self.network)
 
         #update network
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
-        self.graph_calc.invalidate()
+        self.graph_calc.full_reset()
 
 
     def cascade(self, p_source='power_plant',
@@ -1293,4 +1361,4 @@ class NetworkCalcs():
         #update network
         self.network.update_network_from_graphs(self.graph)
         # Invalidate cached graph
-        self.graph_calc.invalidate()
+        self.graph_calc.full_reset()

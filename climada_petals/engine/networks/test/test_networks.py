@@ -828,7 +828,6 @@ class TestGraphCalcs:
             link_condition='distance',
             dist_thresh=1E7,
             bidir_link=False,
-            friction_surf=None
         )
 
         assert 'dep_link' in graph_calcs.graph.es['ci_type']
@@ -847,7 +846,6 @@ class TestGraphCalcs:
             link_condition='edgecond',
             dist_thresh=None,
             bidir_link=False,
-            friction_surf=None
         )
 
         # Should add edges based on edge conditions
@@ -867,7 +865,6 @@ class TestGraphCalcs:
             link_condition='distance',
             dist_thresh=1E7,
             bidir_link=False,
-            friction_surf=None
         )
 
         assert 'dep_link' not in graph_calcs_with_edge_ci_fail.graph.es['ci_type']
@@ -904,7 +901,6 @@ class TestGraphCalcs:
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
                 bidir_link=row['bidir_link'],
-                friction_surf=None
             )
 
             # Call _check_access
@@ -933,7 +929,6 @@ class TestGraphCalcs:
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
                 bidir_link=row['bidir_link'],
-                friction_surf=None
             )
 
             # Call _check_access
@@ -997,7 +992,6 @@ class TestGraphCalcs:
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
             bidir_link=row['bidir_link'],
-            friction_surf=None
         )
 
         # Fail a road node to test rerouting
@@ -1031,7 +1025,6 @@ class TestGraphCalcs:
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
             bidir_link=row['bidir_link'],
-            friction_surf=None
         )
 
         # Fail a road node to test rerouting
@@ -1064,7 +1057,6 @@ class TestGraphCalcs:
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
                 bidir_link=row['bidir_link'],
-                friction_surf=None
             )
             #deactivate access constraints
             row['access_cnstr'] = False
