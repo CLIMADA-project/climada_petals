@@ -351,18 +351,19 @@ def _map_impact_calc(
         #cascade
         nw_calc = NetworkCalcs(network=nw_disr,
                                dep_table=df_dep,
-                               friction_surf=friction_surf).cascade(initial=False, rerouting=False, friction_surf=friction_surf)
-
+                               friction_surf=friction_surf)
+        nw_calc.cascade(initial=False, rerouting=True, friction_surf=friction_surf)
+        nw_disr_casc = nw_calc.network
 
         # CALC IMPACTSTATS
         imp_dict = nwu.disaster_impact_allservices_df(
-            nw.nodes, nw_disr.nodes, services=ci_types
+            nw.nodes, nw_disr_casc.nodes, services=ci_types
         )
         imp_types = [
             ci_type + "_access" if ci_type != "people" else ci_type
             for ci_type in ci_types
         ]
-        print(imp_types)
+        #print(imp_types)
         # {uncertainty_values[k].append(v) for k, v in imp_dict.items()}
         imp_list = [imp_dict[imp_type] for imp_type in imp_types]
         uncertainty_values.append(imp_list)
