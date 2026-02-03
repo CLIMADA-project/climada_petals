@@ -113,9 +113,9 @@ def datetime_index_to_request(
     """Create a request-compatible dict from a series"""
     prefix = "h" if product == "historical" else ""
     return {
-        prefix + "year": list(map(str, index.year)),
-        prefix + "month": list(map(lambda x: f"{x:02d}", index.month)),
-        prefix + "day": list(map(lambda x: f"{x:02d}", index.day)),
+        prefix + "year": list(map(str, index.year.unique())),
+        prefix + "month": list(map(lambda x: f"{x:02d}", index.month.unique())),
+        prefix + "day": list(map(lambda x: f"{x:02d}", index.day.unique())),
     }
 
 
