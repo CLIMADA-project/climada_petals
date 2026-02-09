@@ -84,8 +84,8 @@ class TestFloodMapTiles(unittest.TestCase):
                 filepaths = sorted(rp_dir.iterdir())
                 self.assertListEqual(
                     [
-                        f"ID3_N60_W170_RP{rp}_depth.tif",
-                        f"ID6_N60_W160_RP{rp}_depth.tif",
+                        f"ID4_N60_W170_RP{rp}_depth.tif",
+                        f"ID7_N60_W160_RP{rp}_depth.tif",
                     ],
                     [path.name for path in filepaths],
                 )

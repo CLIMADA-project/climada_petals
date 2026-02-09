@@ -329,14 +329,14 @@ class TestGlofasDownloadOps(unittest.TestCase):
             pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2000-03-11"]),
             42,
             self.tempdir.name,
-            split_request="2M",
+            split_request="2MS",
             open_mfdataset_kw=False,
         )
         glofas_request_single.assert_not_called()
         self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][0],
             glofas_request_multiple.call_args.args[1][0]
-            | {"year": ["2000", "2000"], "month": ["01", "02"], "day": ["10", "10"]},
+            | {"year": ["2000"], "month": ["01", "02"], "day": ["10"]},
         )
         self.assertDictEqual(
             glofas_request_multiple.call_args.args[1][1],

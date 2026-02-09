@@ -324,7 +324,7 @@ class TestRiverFloodInundation(unittest.TestCase):
                 "N70_W160",
                 "N60_W160",
             ],
-            index=[1, 2, 4, 5],
+            index=[2, 3, 5, 6],
             name="name",
         )
         pdt.assert_series_equal(

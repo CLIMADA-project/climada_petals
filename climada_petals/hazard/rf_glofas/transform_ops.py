@@ -257,7 +257,7 @@ def download_glofas_discharge(
         frequency string that will be inserted into a
         `pandas.Grouper <https://pandas.pydata.org/docs/reference/api/pandas.Grouper.html#pandas.Grouper>`_
         as ``freq`` parameter, or a boolean, in which case a split frequency of 1 day
-        (``freq="1D"``) is chosen for ``forecast`` products and 1 year (``freq="1Y"``)
+        (``freq="1D"``) is chosen for ``forecast`` products and 1 year (``freq="1YS"``)
         is chosen for ``historical`` (or other) products.
     request_kwargs:
         Keyword arguments for the Copernicus data store request. See
@@ -281,7 +281,7 @@ def download_glofas_discharge(
 
     # Parse input
     if split_request is True:
-        split_request_freq = "1Y" if product == "historical" else "1D"
+        split_request_freq = "1YS" if product == "historical" else "1D"
     elif split_request is False:
         split_request_freq = None
     else:

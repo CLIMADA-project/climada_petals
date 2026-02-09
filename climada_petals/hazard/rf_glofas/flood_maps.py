@@ -67,7 +67,7 @@ def tile_url(return_period: int, tile_id: int, name: str) -> str:
     :py:func:`open_flood_maps_extents`
         The function that loads the tile extents dataset.
     """
-    return JRC_FLOOD_HAZARD_MAP_URL.format(rp=return_period, tile_id=tile_id+1, name=name)
+    return JRC_FLOOD_HAZARD_MAP_URL.format(rp=return_period, tile_id=tile_id, name=name)
 
 
 def tile_filename(return_period: int, tile_id: int, name: str) -> str:

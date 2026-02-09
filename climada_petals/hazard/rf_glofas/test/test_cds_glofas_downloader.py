@@ -46,11 +46,11 @@ class TestDateTimeIndexToRequest(unittest.TestCase):
 
     def setUp(self):
         """Create the default range"""
-        self.index_default = pd.date_range("2000-01-01", "2001-02-02")
+        self.index_default = pd.date_range("2000-01-01", "2001-02-02", freq="1D")
         self.target_default = {
-            "year": [f"{year:04}" for year in self.index_default.year],
-            "month": [f"{month:02}" for month in self.index_default.month],
-            "day": [f"{day:02}" for day in self.index_default.day],
+            "year": ["2000", "2001"],
+            "month": [f"{month:02}" for month in range (1, 13)],
+            "day": [f"{day:02}" for day in range(1, 32)],
         }
 
     def test_range_default(self):
@@ -70,7 +70,7 @@ class TestDateTimeIndexToRequest(unittest.TestCase):
         )
         self.assertDictEqual(
             request,
-            {"year": ["2000", "2001"], "month": ["01", "01"], "day": ["01", "01"]},
+            {"year": ["2000", "2001"], "month": ["01"], "day": ["01"]},
         )
 
 
