@@ -30,6 +30,7 @@ dependencies = [
     "ruamel.yaml",
     "scikit-image",
     "xesmf"
+    "pymoo"
 ]
 
 [project.urls]
