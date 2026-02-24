@@ -29,7 +29,7 @@ dependencies = [
     "rioxarray",
     "ruamel.yaml",
     "scikit-image",
-    "xesmf"
+    "xesmf",
     "pymoo"
 ]
 
