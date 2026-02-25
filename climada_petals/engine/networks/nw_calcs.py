@@ -914,13 +914,17 @@ class GraphCalcs():
 
 
     def _update_enduser_dependencies(self, df_dependencies,
-                                     friction_surf, rerouting=True):
+                                     friction_surf,
+                                     access_check_method="routing",
+                                     rerouting=True):
         """Update end-user dependencies for the cascade
 
         Parameters
         ----------
         df_dependencies : pd.DataFrame
             Dependency table with ``type_I == 'enduser'``.
+        access_check_method : str
+            Method to check access either "routing" or "propagation". Default is ``"routing"``.,
         friction_surf : object or None
             Friction surface used for routing when applicable.
         rerouting : bool, optional
@@ -930,11 +934,12 @@ class GraphCalcs():
         for __, row in df_dependencies[
                 df_dependencies['type_I'] == 'enduser'].iterrows():
 
-
-            if (row.target == 'people'):
+            if access_check_method == "routing":
                 self._check_access(row, friction_surf, rerouting=rerouting)
-            else:
+            elif access_check_method == "propagation":
                 self._propagate_check_fail(row.source, row.target, row.thresh_func)
+            else:
+                raise ValueError("Invalid access check method specified!")
 
 
     def _get_former_access_info(self, dependency_name):
@@ -991,9 +996,6 @@ class GraphCalcs():
             bidir_link=row['bidir_link']
         )
 
-        es_access_new = self.graph.es.select(ci_type=dependency_name)
-        ppl_new_access = [edge.target for edge in es_access_new]
-
         # Check if could have access if links were not broken
         if row.access_cnstr:
             # Compute dependencies without requiring functional via edges to identify
@@ -1015,17 +1017,24 @@ class GraphCalcs():
             # Delete temporary edges
             self.graph.delete_edges(ci_type="new_"+dependency_name)
         else:
+            ppl_access_all_via = []
+
+        # Re-query after all edge deletions to get fresh edge objects
+        es_access_new = self.graph.es.select(ci_type=dependency_name)
+        ppl_new_access = [edge.target for edge in es_access_new]
+
+        if not row.access_cnstr:
             ppl_access_all_via = ppl_new_access
 
-        return es_access_new, ppl_new_access, ppl_access_all_via
+        return ppl_new_access, ppl_access_all_via
 
-    def _validate_dependency_paths(self, es_check, row, graph_subgraph_vsdict, subgraph):
+    def _validate_dependency_paths(self, edge_pairs, row, graph_subgraph_vsdict, subgraph):
         """Validate which dependency edges still have valid paths
 
         Parameters
         ----------
-        es_check : list
-            Edges to validate.
+        edge_pairs : list of tuple
+            ``(source, target)`` vertex index pairs to validate.
         row : pd.Series
             Dependency configuration row.
         graph_subgraph_vsdict : dict
@@ -1035,13 +1044,13 @@ class GraphCalcs():
 
         Returns
         -------
-        list
-            Edges that still have valid paths.
+        list of tuple
+            ``(source, target)`` pairs that still have valid paths.
         """
-        edges_to_keep = []
-        for edge in es_check:
-            source_sub = graph_subgraph_vsdict.get(edge.source)
-            target_sub = graph_subgraph_vsdict.get(edge.target)
+        pairs_to_keep = []
+        for source, target in edge_pairs:
+            source_sub = graph_subgraph_vsdict.get(source)
+            target_sub = graph_subgraph_vsdict.get(target)
 
             if source_sub is not None and target_sub is not None:
                 try:
@@ -1053,15 +1062,15 @@ class GraphCalcs():
                     )
                     # If path exists and is within threshold, keep the edge
                     if dist[0][0] < row['thresh_dist']:
-                        edges_to_keep.append(edge)
+                        pairs_to_keep.append((source, target))
                 except (IndexError, ValueError):
                     # No path exists, edge should be removed
                     pass
 
-        return edges_to_keep
+        return pairs_to_keep
 
     def _validate_dependencies_without_rerouting(self, row, dependency_name,
-                                                  es_access_base, ppl_former_access):
+                                                  es_access_base):
         """Validate dependencies without rerouting
 
         Parameters
@@ -1080,66 +1089,71 @@ class GraphCalcs():
         tuple
             ``(es_access_new, ppl_new_access, ppl_access_all_via)``.
         """
-        es_access_new = self.graph.es.select(ci_type=dependency_name)
+
+        # Extract all data from edge objects BEFORE any deletions,
+        # because igraph invalidates all edge objects when edges are deleted.
+        func_source_pairs = []
+        failed_edge_indices = []
+        for edge in es_access_base:
+            src, tgt = edge.source, edge.target
+            if self.graph.vs[src]['func_tot'] >= 1:
+                func_source_pairs.append((src, tgt))
+            else:
+                failed_edge_indices.append(edge.index)
+
+        # People having access regardless of the state of the via link
+        ppl_access_all_via = [tgt for _, tgt in func_source_pairs]
+
+        # Remove dependency edges from failed sources (they can't provide access)
+        if failed_edge_indices:
+            self.graph.delete_edges(failed_edge_indices)
 
         if row.access_cnstr:
             # Need to check if via edges used in former dependencies have failed
             # Keep edges where source is functional and path through functional via edges exists
-            es_check = [
-                edge for edge in es_access_base
-                if self.graph.vs[edge.source]['func_tot'] >= 1
-            ]
 
-            if len(es_check) > 0:
-                # Check which edges still have valid paths through functional via edges
-                v_ids_source = np.array([edge.source for edge in es_check])
-                v_ids_target = np.array([edge.target for edge in es_check])
-                v_ids_via = np.array([v.index for v in self.graph.vs.select(ci_type=row['via_link'])])
-
-                # Create subgraph with only source, target, and via vertices
-                v_seq = np.unique(np.concatenate([v_ids_source, v_ids_target, v_ids_via]))
-                self.graph.vs['orig_id'] = range(len(self.graph.vs))
-                subgraph = self.graph.induced_subgraph(v_seq)
-
+            if len(func_source_pairs) > 0:
+                # create subgraph
+                subgraph = self._create_subgraph(
+                    source_attrs={'ci_type': row['source'], 'func_tot': 1},
+                    target_attrs={'ci_type': row['target']},
+                    via_attrs={'ci_type': row['via_link'], 'func_tot': 1}
+                )
                 # Map from original graph ids to subgraph ids
                 subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
                 graph_subgraph_vsdict = {int(v): int(k) for k,
                                      v in subgraph_graph_vsdict.items()}
-                # Delete edges with func_tot < 1 (but keep edges without func_tot or func_tot=None, like dependency edges)
-                # Vectorized edge filtering
-                failed_edges = np.array([e.index for e in subgraph.es
-                                        if 'func_tot' in e.attributes()
-                                        and e['func_tot'] is not None
-                                        and e['func_tot'] < 1])
-                if len(failed_edges) > 0:
-                    subgraph.delete_edges(failed_edges)
-
-                wrong_edges = set(subgraph.es['ci_type']).difference({row['via_link']})
-                if wrong_edges:
-                    subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
 
                 # Check which former dependency edges still have valid paths
-                edges_to_keep = self._validate_dependency_paths(
-                    es_check, row, graph_subgraph_vsdict, subgraph
+                pairs_to_keep = self._validate_dependency_paths(
+                    func_source_pairs, row, graph_subgraph_vsdict, subgraph
                 )
+                pairs_to_keep_set = set(pairs_to_keep)
 
-                # Delete edges that no longer have valid paths using vectorized operations
-                edges_to_remove = np.array([edge.index for edge in es_check if edge not in edges_to_keep])
-                if len(edges_to_remove) > 0:
-                    self.graph.delete_edges(edges_to_remove)
+                # Find and delete dependency edges that no longer have valid paths
+                pairs_to_remove = [
+                    pair for pair in func_source_pairs
+                    if pair not in pairs_to_keep_set
+                ]
+                if pairs_to_remove:
+                    # Find current edge indices by source-target lookup
+                    eids_to_remove = self.graph.get_eids(
+                        pairs=pairs_to_remove, directed=True, error=False
+                    )
+                    eids_to_remove = [eid for eid in eids_to_remove if eid >= 0]
+                    if eids_to_remove:
+                        self.graph.delete_edges(eids_to_remove)
 
             # Get updated list of access edges after validation
             es_access_new = self.graph.es.select(ci_type=dependency_name)
             ppl_new_access = [edge.target for edge in es_access_new]
-            ppl_access_all_via = ppl_former_access
         else:
             # No access constraints, so no need to check via edges
-            ppl_new_access = [edge.target for edge in es_access_new]
-            ppl_access_all_via = ppl_new_access
+            ppl_new_access = ppl_access_all_via
 
-        return es_access_new, ppl_new_access, ppl_access_all_via
+        return ppl_new_access, ppl_access_all_via
 
-    def _mark_access_states_and_supply(self, row, es_access_new, ppl_former_access,
+    def _mark_access_states_and_supply(self, row, ppl_former_access,
                                        ppl_former_access_source_failed, ppl_access_all_via,
                                        ppl_new_access):
         """Mark access states and supply for people nodes
@@ -1148,8 +1162,6 @@ class GraphCalcs():
         ----------
         row : pd.Series
             Dependency configuration row.
-        es_access_new : list
-            New access edges after validation.
         ppl_former_access : list
             People who had former access.
         ppl_former_access_source_failed : list
@@ -1159,14 +1171,14 @@ class GraphCalcs():
         ppl_new_access : list
             People who have current access.
         """
-        # Convert to sets for O(1) membership checking (only those actually used)
+        # Convert to sets for O(1) membership checking
         ppl_former_access_source_failed_set = set(ppl_former_access_source_failed)
         ppl_new_access_set = set(ppl_new_access)
 
         # If init source was failed but ppl still have access, then they have access to a new source
         ppl_access_new_source = [
-            edge.target for edge in es_access_new
-            if edge.target in ppl_former_access_source_failed_set
+            ppl_node for ppl_node in ppl_new_access
+            if ppl_node in ppl_former_access_source_failed_set
         ]
         if ppl_access_new_source:
             self.graph.vs[ppl_access_new_source][f'access_state_{row.source}_people'] = "access new source"
@@ -1190,8 +1202,8 @@ class GraphCalcs():
 
         # Remaining accesses are undisrupted
         ppl_access_undisrupted = [
-            edge.target for edge in es_access_new
-            if edge.target not in ppl_former_access_source_failed_set
+            ppl_node for ppl_node in ppl_new_access
+            if ppl_node not in ppl_former_access_source_failed_set
         ]
         if ppl_access_undisrupted:
             self.graph.vs[ppl_access_undisrupted][f'access_state_{row.source}_people'] = "access undisrupted"
@@ -1229,17 +1241,17 @@ class GraphCalcs():
 
         # Recheck access based on rerouting setting
         if rerouting:
-            es_access_new, ppl_new_access, ppl_access_all_via = \
+            ppl_new_access, ppl_access_all_via = \
                 self._recompute_dependencies_with_rerouting(row, dependency_name)
         else:
-            es_access_new, ppl_new_access, ppl_access_all_via = \
+            ppl_new_access, ppl_access_all_via = \
                 self._validate_dependencies_without_rerouting(
-                    row, dependency_name, es_access_base, ppl_former_access
+                    row, dependency_name, es_access_base
                 )
 
         # Mark access states and supply
         self._mark_access_states_and_supply(
-            row, es_access_new, ppl_former_access, ppl_former_access_source_failed,
+            row, ppl_former_access, ppl_former_access_source_failed,
             ppl_access_all_via, ppl_new_access
         )
 
