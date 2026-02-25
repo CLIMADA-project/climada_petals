@@ -1449,7 +1449,7 @@ class NetworkCalcs():
 
     def cascade(self, p_source='power_plant',
                 p_sink='power_line', source_var='el_generation', demand_var='el_consumption',
-                  initial=False, friction_surf=None, rerouting=True):
+                  initial=False, friction_surf=None, rerouting=True, access_check_method="routing"):
         """
         Perform cascade failure analysis on the network.
                 This method iteratively updates the functional states of network components
@@ -1473,6 +1473,8 @@ class NetworkCalcs():
                     Friction surface data for routing calculations (default is None).
                 rerouting : bool, optional
                     If True, enables rerouting for end-user dependencies (default is True).
+                access_check_method : str, optional
+                    Method to use for checking access (default is "routing").
                 Returns
                 -------
                 None
@@ -1504,7 +1506,7 @@ class NetworkCalcs():
                     ' Proceeding to end-user update.')
         if (cycles > 1) or initial:
             self.graph_calc._update_enduser_dependencies(
-                self.dep_table, friction_surf, rerouting=rerouting)
+                self.dep_table, friction_surf, rerouting=rerouting, access_check_method=access_check_method)
 
         #reset ids as new edges may have been created
         self.network = reset_ids(self.network)
