@@ -766,7 +766,7 @@ class GraphCalcs():
     # Propagation functions
     # =============================================================================
 
-    def _propagate_check_fail(self, source, target, thresh_func):
+    def _propagate_check_fail(self, source, target, type_I, thresh_func):
         """Propagate functional failures for a source-target dependency
 
         Parameters
@@ -775,6 +775,8 @@ class GraphCalcs():
             Source infrastructure type.
         target : str
             Target infrastructure type.
+        type_I : str
+            Type of dependency (enduser vs functional).
         thresh_func : float
             Functional threshold for target nodes.
 
@@ -823,9 +825,17 @@ class GraphCalcs():
         capa_suff = (capa_rec >= func_thresh).astype(int)
 
         # Batch update graph attributes using vectorized operations
-        if target == 'people':
+        if type_I == "enduser":
             for i, idx in enumerate(all_ids):
-                self.graph.vs[int(idx)][f'actual_supply_{source}_{target}'] = capa_suff[i]
+                if is_target[i]:  # Only update target nodes
+                    prev_supply = self.graph.vs[int(idx)][f'actual_supply_{source}_{target}']
+                    self.graph.vs[int(idx)][f'actual_supply_{source}_{target}'] = capa_suff[i]
+
+                    #mark access state
+                    if prev_supply >= thresh_func:
+                        self.graph.vs[int(idx)][f'access_state_{source}_{target}'] = 'access disrupted' if capa_suff[i] == 0 else 'access undisrupted'
+                    else:
+                        self.graph.vs[int(idx)][f'access_state_{source}_{target}'] = 'no base access' if capa_suff[i] == 0 else 'access undisrupted'
         else:
             target_indices = np.where(is_target)[0]
             for idx_in_all in target_indices:
@@ -910,7 +920,7 @@ class GraphCalcs():
                 LOGGER.warning(
                     'Road access condition for CI-CI deps not yet implemented')
 
-            self._propagate_check_fail(row.source, row.target, row.thresh_func)
+            self._propagate_check_fail(row.source, row.target, row.type_I, row.thresh_func)
 
 
     def _update_enduser_dependencies(self, df_dependencies,
@@ -937,7 +947,7 @@ class GraphCalcs():
             if access_check_method == "routing":
                 self._check_access(row, friction_surf, rerouting=rerouting)
             elif access_check_method == "propagation":
-                self._propagate_check_fail(row.source, row.target, row.thresh_func)
+                self._propagate_check_fail(row.source, row.target, row.type_I, row.thresh_func)
             else:
                 raise ValueError("Invalid access check method specified!")
 
