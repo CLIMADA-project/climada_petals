@@ -1028,7 +1028,7 @@ class GraphCalcs():
 
         return ppl_new_access, ppl_access_all_via
 
-    def _validate_dependency_paths(self, edge_pairs, row, graph_subgraph_vsdict, subgraph):
+    def _validate_dependency_paths(self, edge_pairs, row, subgraph):
         """Validate which dependency edges still have valid paths
 
         Parameters
@@ -1047,6 +1047,11 @@ class GraphCalcs():
         list of tuple
             ``(source, target)`` pairs that still have valid paths.
         """
+        #map graph vertex ids to subgraph vertex ids for quick lookup
+        # Map from original graph ids to subgraph ids
+        subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
+        graph_subgraph_vsdict = {int(v): int(k) for k, v in subgraph_graph_vsdict.items()}
+
         pairs_to_keep = []
         for source, target in edge_pairs:
             source_sub = graph_subgraph_vsdict.get(source)
@@ -1119,14 +1124,10 @@ class GraphCalcs():
                     target_attrs={'ci_type': row['target']},
                     via_attrs={'ci_type': row['via_link'], 'func_tot': 1}
                 )
-                # Map from original graph ids to subgraph ids
-                subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
-                graph_subgraph_vsdict = {int(v): int(k) for k,
-                                     v in subgraph_graph_vsdict.items()}
 
                 # Check which former dependency edges still have valid paths
                 pairs_to_keep = self._validate_dependency_paths(
-                    func_source_pairs, row, graph_subgraph_vsdict, subgraph
+                    func_source_pairs, row, subgraph
                 )
                 pairs_to_keep_set = set(pairs_to_keep)
 
