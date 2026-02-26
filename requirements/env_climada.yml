@@ -18,3 +18,8 @@ dependencies:
   - ruamel.yaml>=0.18
   - scikit-image>=0.25
   - xesmf>=0.8
+  - pip:
+    - openpyxl==3.1.0  # this is necessary as currently (2026-02-26) in conda-forge there is
+                       # no openpyxl 3.1.* version compatible with python 3.12 and pymrio 0.6
+                       # so by updating the envrionment with this file openpyxl gets downgraded to 3.0.9
+                       # and the silently upgraded to 3.1.0 again
