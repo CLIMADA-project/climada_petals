@@ -1278,18 +1278,31 @@ class TestGraphCalcs:
             v['func_tot'] = 1  # Ensure roads are functional
         for v in graph_calcs.graph.vs.select(ci_type='people'):
             v['actual_supply_road_people'] = 0
-            v['capacity_road_people'] = 1  # Need positive capacity to receive supply
+            v['capacity_road_people'] = -1  # Need positive capacity to receive supply
+
+        #add dependency edge for propagation
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_road_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False,
+        )
 
         # Run propagation
         graph_calcs._propagate_check_fail(
             source='road',
             target='people',
+            type_I='enduser',
             thresh_func=1
         )
 
         # Verify propagation completed
         assert 'actual_supply_road_people' in graph_calcs.graph.vs.attributes()
-        assert all(v['actual_supply_road_people'] >= 0 for v in graph_calcs.graph.vs.select(ci_type='people'))
+        assert all(v['actual_supply_road_people'] == 1 for v in graph_calcs.graph.vs.select(ci_type='people'))
+        assert all(v['access_state_road_people'] == 'access undisrupted' for v in graph_calcs.graph.vs.select(ci_type='people'))
 
     def test_propagate_check_fail_ci(self, graph_calcs):
         """Test propagate_check_fail setup"""
@@ -1303,18 +1316,31 @@ class TestGraphCalcs:
             v['actual_supply_road_healthcare'] = 0
             v['capacity_road_healthcare'] = -1
 
+        #add dependency edge for propagation
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'healthcare'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_road_healthcare'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False,
+        )
+
         # Run propagation
         graph_calcs._propagate_check_fail(
             source='road',
             target='healthcare',
+            type_I='functional',
             thresh_func=1
         )
 
         # Verify propagation completed
         assert 'func_tot' in graph_calcs.graph.vs.attributes()
         assert all(v['func_tot'] ==1 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
+        assert "access_state_healthcare_road" not in graph_calcs.graph.vs.attributes()  # CI propagation should not set access state
 
-    def test_propagate_check_fail_fail(self, graph_calcs):
+    def test_propagate_check_fail_fail_ci(self, graph_calcs):
         """Test propagate_check_fail setup"""
         graph_calcs.build_graph()
 
@@ -1327,16 +1353,64 @@ class TestGraphCalcs:
             v['actual_supply_road_healthcare'] = 0
             v['capacity_road_healthcare'] = -1
 
+        #add dependency edge for propagation
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'healthcare'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_road_healthcare'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False,
+        )
         # Run propagation
         graph_calcs._propagate_check_fail(
             source='road',
             target='healthcare',
+            type_I='functional',
             thresh_func=1
         )
 
         # Verify propagation completed
         assert 'func_tot' in graph_calcs.graph.vs.attributes()
         assert all(v['func_tot'] ==0 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
+
+    def test_propagate_check_fail_fail_enduser(self, graph_calcs):
+        """Test propagate_check_fail setup"""
+        graph_calcs.build_graph()
+
+        # Initialize capacity for propagation
+        graph_calcs.graph.vs['capacity_healthcare_people'] = 0
+        for v in graph_calcs.graph.vs.select(ci_type='healthcare'):
+            v['func_tot'] = 0
+            v['capacity_healthcare_people'] = 1
+        for v in graph_calcs.graph.vs.select(ci_type='people'):
+            v['actual_supply_healthcare_people'] = 1
+            v['capacity_healthcare_people'] = -1
+
+        #add dependency edge for propagation
+        graph_calcs._calc_dependencies(
+            source_attrs={'ci_type': 'healthcare'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_healthcare_people'},
+            link_condition='distance',
+            dist_thresh=10E6,
+            bidir_link=False,
+        )
+
+        # Run propagation
+        graph_calcs._propagate_check_fail(
+            source='healthcare',
+            target='people',
+            type_I='enduser',
+            thresh_func=1
+        )
+
+        # Verify propagation completed
+        assert 'actual_supply_healthcare_people' in graph_calcs.graph.vs.attributes()
+        assert all(v['actual_supply_healthcare_people'] == 0 for v in graph_calcs.graph.vs.select(ci_type='people'))
+        assert all(v['access_state_healthcare_people'] == 'access disrupted' for v in graph_calcs.graph.vs.select(ci_type='people'))
 
     def test_update_internal_dependencies_roads(self, graph_calcs):
         """Test updating internal dependencies for roads"""
@@ -1418,7 +1492,6 @@ class TestGraphCalcs:
 
     def test_update_enduser_dependencies_propagation(self, graph_calcs_with_source_fail):
          """Test updating end-user dependencies"""
-         graph_calcs_with_source_fail.build_graph()
 
          # Create end-user dependency dataframe
          df_dependencies = pd.DataFrame({
@@ -1432,6 +1505,10 @@ class TestGraphCalcs:
              'bidir_link': [False, False],
              'thresh_func': [1.0, 1.0]
          })
+         graph_calcs_with_source_fail.parent.network.initialize_funcstates()
+         graph_calcs_with_source_fail.parent.network.initialize_capacity(df_dependencies)
+         graph_calcs_with_source_fail.parent.network.initialize_supply(df_dependencies)
+         graph_calcs_with_source_fail.build_graph()
 
          graph_calcs_with_source_fail._update_enduser_dependencies(
              df_dependencies,
