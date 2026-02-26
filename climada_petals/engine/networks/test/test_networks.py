@@ -1374,6 +1374,7 @@ class TestGraphCalcs:
         # Verify propagation completed
         assert 'func_tot' in graph_calcs.graph.vs.attributes()
         assert all(v['func_tot'] ==0 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
+        assert all(v['actual_supply_road_healthcare'] ==0 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
 
     def test_propagate_check_fail_fail_enduser(self, graph_calcs):
         """Test propagate_check_fail setup"""
