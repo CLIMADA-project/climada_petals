@@ -799,18 +799,15 @@ class GraphCalcs():
         source_ids = cached['source_ids']
         target_ids = cached['target_ids']
         all_ids = np.concatenate([source_ids, target_ids])
+        all_ids_list = all_ids.tolist()
 
         # Use direct adjacency matrix slicing instead of subgraph
         adj_full = self.graph.get_adjacency_sparse()
         adj_sub = adj_full[all_ids, :][:, all_ids]
 
-        # Vectorized capacity calculation - batch access vertex attributes
-        func_tots = np.array([self.graph.vs[int(i)]['func_tot'] for i in all_ids])
-        capacity_attr = f'capacity_{source}_{target}'
-        capacities = np.zeros(len(all_ids))
-        for idx, vid in enumerate(all_ids):
-            if capacity_attr in self.graph.vs[int(vid)].attributes():
-                capacities[idx] = self.graph.vs[int(vid)][capacity_attr]
+        # Vectorized capacity & func_tot reads via batch attribute access
+        func_tots = np.array(self.graph.vs[all_ids_list]['func_tot'], dtype=float)
+        capacities = np.array(self.graph.vs[all_ids_list][f'capacity_{source}_{target}'], dtype=float)
 
         func_capa = func_tots * capacities
 
@@ -820,30 +817,46 @@ class GraphCalcs():
             capa_rec = np.array([capa_rec])
 
         # Vectorized threshold check
-        is_target = np.array([self.graph.vs[int(i)]['ci_type'] == target for i in all_ids])
+        is_target = np.array(self.graph.vs[all_ids_list]['ci_type']) == target
         func_thresh = np.where(is_target, thresh_func, 0)
         capa_suff = (capa_rec >= func_thresh).astype(int)
 
+        # Extract target-only arrays for batch updates
+        target_graph_ids = all_ids[is_target].tolist()
+        target_capa_suff = capa_suff[is_target]
+
         # Batch update graph attributes using vectorized operations
+        supply_attr = f'actual_supply_{source}_{target}'
+        access_attr = f'access_state_{source}_{target}'
+
         if type_I == "enduser":
-            for i, idx in enumerate(all_ids):
-                if is_target[i]:  # Only update target nodes
-                    prev_supply = self.graph.vs[int(idx)][f'actual_supply_{source}_{target}']
-                    self.graph.vs[int(idx)][f'actual_supply_{source}_{target}'] = capa_suff[i]
+            # Read previous supply in batch
+            prev_supply = np.array(
+                self.graph.vs[target_graph_ids][supply_attr], dtype=float)
 
-                    #mark access state
-                    if prev_supply >= thresh_func:
-                        self.graph.vs[int(idx)][f'access_state_{source}_{target}'] = 'access disrupted' if capa_suff[i] == 0 else 'access undisrupted'
-                    else:
-                        self.graph.vs[int(idx)][f'access_state_{source}_{target}'] = 'no base access' if capa_suff[i] == 0 else 'access undisrupted'
+            # Write new supply in batch
+            self.graph.vs[target_graph_ids][supply_attr] = target_capa_suff.tolist()
+
+            # Determine access states vectorized:
+            # - sufficient capacity now -> 'access undisrupted'
+            # - insufficient now, but had supply before -> 'access disrupted'
+            # - insufficient now, never had supply -> 'no base access'
+            access_states = np.where(
+                target_capa_suff >= 1,
+                'access undisrupted',
+                np.where(prev_supply >= thresh_func,
+                         'access disrupted',
+                         'no base access')
+            )
+            self.graph.vs[target_graph_ids][access_attr] = access_states.tolist()
         else:
-            target_indices = np.where(is_target)[0]
-            for idx_in_all in target_indices:
-                actual_idx = all_ids[idx_in_all]
-                orig_func = self.graph.vs[int(actual_idx)]['func_tot']
-                self.graph.vs[int(actual_idx)]['func_tot'] = min(capa_suff[idx_in_all], orig_func)
+            # For functional dependencies: func_tot = min(capa_suff, orig_func)
+            orig_func = np.array(
+                self.graph.vs[target_graph_ids]['func_tot'], dtype=float)
+            new_func = np.minimum(target_capa_suff, orig_func)
+            self.graph.vs[target_graph_ids]['func_tot'] = new_func.tolist()
 
-        #delete large objects to avoid memory issues
+        # Delete large objects to avoid memory issues
         del capa_rec, func_capa, capa_suff, adj_sub, func_thresh
         gc.collect()
 
@@ -947,6 +960,14 @@ class GraphCalcs():
             if access_check_method == "routing":
                 self._check_access(row, friction_surf, rerouting=rerouting)
             elif access_check_method == "propagation":
+                if row.access_cnstr:
+                    LOGGER.warning(
+                        f'Propagation method does not account for via-link '
+                        f'access constraints (access_cnstr=True) for '
+                        f'{row.source}->{row.target}. Road disruptions between '
+                        f'source and target will not be detected. '
+                        f'Use access_check_method="routing" for accurate results.'
+                    )
                 self._propagate_check_fail(row.source, row.target, row.type_I, row.thresh_func)
             else:
                 raise ValueError("Invalid access check method specified!")
@@ -1514,9 +1535,8 @@ class NetworkCalcs():
 
         LOGGER.info('Ended functional state update.' +
                     ' Proceeding to end-user update.')
-        if (cycles > 1) or initial:
-            self.graph_calc._update_enduser_dependencies(
-                self.dep_table, friction_surf, rerouting=rerouting, access_check_method=access_check_method)
+        self.graph_calc._update_enduser_dependencies(
+            self.dep_table, friction_surf, rerouting=rerouting, access_check_method=access_check_method)
 
         #reset ids as new edges may have been created
         self.network = reset_ids(self.network)
