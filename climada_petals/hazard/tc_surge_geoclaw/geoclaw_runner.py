@@ -506,7 +506,7 @@ include $(CLAW)/clawutil/src/Makefile.common
             [
                 clawdata.lower,
                 clawdata.upper,
-                [np.infty, 0.0, -np.infty],
+                [np.inf, 0.0, -np.inf],
                 [0.050, 0.025],
             ]
         )
