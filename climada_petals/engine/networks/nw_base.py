@@ -62,7 +62,7 @@ class Network:
         Attributes
         ----------
         edges : gpd.GeoDataFrame
-            Network edges with 'from_id', 'to_id', 'id', 'orig_id', 'osm_id', and 'geometry' columns
+            Network edges with 'from_id', 'to_id', 'id', 'orig_id', and 'geometry' columns
         nodes : gpd.GeoDataFrame
             Network nodes with 'id', 'orig_id', and 'geometry' columns
 
@@ -94,9 +94,6 @@ class Network:
             edges['id'] = range(len(edges))
         if 'id' not in nodes.columns:
             nodes['id'] = range(len(nodes))
-
-        if 'osm_id' not in edges.columns:
-            edges['osm_id'] = range(len(edges))
 
         self.edges = edges
         self.nodes = nodes
