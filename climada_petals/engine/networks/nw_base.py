@@ -267,7 +267,7 @@ class Network:
         edges = gpd.GeoDataFrame()
 
         if not zip_path.exists():
-            print(f"Archive {zip_path} not found")
+            LOGGER.info("Archive %s not found", zip_path)
             return Network(edges=edges, nodes=nodes)
 
         with ZipFile(zip_path, mode="r") as zf:
@@ -278,13 +278,13 @@ class Network:
                 with zf.open(nodes_name) as f:
                     nodes = gpd.read_feather(io.BytesIO(f.read()))
             else:
-                print(f"Nodes file {nodes_name} not found in archive")
+                LOGGER.info("Nodes file %s not found in archive", nodes_name)
 
             if edges_name in zf.namelist():
                 with zf.open(edges_name) as f:
                     edges = gpd.read_feather(io.BytesIO(f.read()))
             else:
-                print(f"Edges file {edges_name} not found in archive")
+                LOGGER.info("Edges file %s not found in archive", edges_name)
 
         return cls(edges=edges, nodes=nodes)
     def update_network_from_graphs(self, graphs):
