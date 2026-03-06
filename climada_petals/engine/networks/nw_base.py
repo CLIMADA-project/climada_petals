@@ -287,11 +287,11 @@ class Network:
                 LOGGER.info("Edges file %s not found in archive", edges_name)
 
         return cls(edges=edges, nodes=nodes)
-    def update_network_from_graphs(self, graphs):
-        """Update network from an igraph.Graph object
+    @classmethod
+    def from_graphs(cls, graphs):
+        """Create network from an igraph.Graph object
 
-        Synchronizes the Network's nodes and edges GeoDataFrames with the current
-        state of an igraph.Graph object. This is typically used after graph-based
+        Creates a new Network instance from an igraph.Graph object. This is typically used after graph-based
         operations (e.g., adding edges, updating attributes) to reflect changes
         back to the Network structure.
 
@@ -307,26 +307,24 @@ class Network:
         - Renames graph columns 'source'/'target' to 'from_id'/'to_id' for edges
         - Resets node index and renames 'vertex ID' to 'id'
         - Maintains EPSG:4326 CRS
-        - Overwrites existing edges and nodes in the Network
+        - Creates new Network instance with updated edges and nodes
 
         See Also
         --------
         to_graph : Convert Network to igraph.Graph
         """
 
-        new_edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
+        edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
             {'source': 'from_id', 'target': 'to_id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
-        new_nodes = graphs.get_vertex_dataframe()
-        if 'id' in new_nodes.columns:
-            new_nodes.pop('id')
-        new_nodes = gpd.GeoDataFrame(new_nodes.reset_index().rename(
+        nodes = graphs.get_vertex_dataframe()
+        if 'id' in nodes.columns:
+            nodes.pop('id')
+        nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
             {'vertex ID': 'id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
 
-
-        self.edges = new_edges
-        self.nodes = new_nodes
+        return cls(edges=edges, nodes=nodes)
 
     def to_graph(self, directed=False):
         """Convert Network to an igraph.Graph object
@@ -355,7 +353,7 @@ class Network:
 
         See Also
         --------
-        update_network_from_graphs : Synchronize Network from Graph
+        from_graph : Create network from an igraph.Graph object
         igraph.Graph.DataFrame : Underlying graph construction method
         """
         self.directed = directed

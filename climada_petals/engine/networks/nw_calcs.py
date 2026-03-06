@@ -1398,7 +1398,7 @@ class NetworkCalcs():
         while (n_clusters>1) and (iter_count<max_iter):
             self.graph_calc.link_clusters(dist_thresh=dist_thresh, link_attrs={'ci_type':ci_type})
             iter_count+=1
-            self.network.update_network_from_graphs(self.graph)
+            self.network = Network.from_graphs(self.graph)
             self.network = reset_ids(self.network)
             self.graph_calc.full_reset()
         n_clusters = len(self.graph_calc.graph.connected_components())
@@ -1424,8 +1424,8 @@ class NetworkCalcs():
                                          bidir=True,
                                          k=row['n_links'])
 
-        ##TODO refactor the reformating of the network
-        self.network.update_network_from_graphs(self.graph)
+        ##update network
+        self.network = Network.from_graphs(self.graph)
 
         ##need to have all ids reset after new road edges have been added
         self.network = reset_ids(self.network)
@@ -1471,9 +1471,8 @@ class NetworkCalcs():
             self.graph_calc.graph.vs[targets][f'actual_supply_{row.source}_{row.target}'] = 1
         #reset ids as new edges have been created
         self.network = reset_ids(self.network)
-
         #update network
-        self.network.update_network_from_graphs(self.graph)
+        self.network = Network.from_graphs(self.graph)
         # Invalidate cached graph
         self.graph_calc.full_reset()
 
@@ -1541,6 +1540,6 @@ class NetworkCalcs():
         #reset ids as new edges may have been created
         self.network = reset_ids(self.network)
         #update network
-        self.network.update_network_from_graphs(self.graph)
+        self.network = Network.from_graphs(self.graph)
         # Invalidate cached graph
         self.graph_calc.full_reset()
