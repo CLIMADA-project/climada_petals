@@ -16,13 +16,9 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 """
 import logging
-import igraph as ig
 import numpy as np
-import pandas as pd
 import geopandas as gpd
 import pyproj
-from tqdm import tqdm
-import timeit
 import gc
 
 
@@ -31,8 +27,7 @@ import scipy
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
                                                      _ckdnearest)
-from climada_petals.engine.networks.nw_preps import (reset_ids,
-                                                     ordered_network)
+from climada_petals.engine.networks.nw_preps import (reset_ids)
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -1372,7 +1367,6 @@ class NetworkCalcs():
         self.network = network
         self.dep_table = dep_table
         self.graph_calc = GraphCalcs(parent=self, directed=directed, friction_surf=friction_surf)
-
 
     @property
     def graph(self):
