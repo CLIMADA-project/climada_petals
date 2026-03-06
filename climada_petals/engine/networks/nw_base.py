@@ -356,14 +356,15 @@ class Network:
         from_graph : Create network from an igraph.Graph object
         igraph.Graph.DataFrame : Underlying graph construction method
         """
-        self.directed = directed
+
         if not self.edges.empty:
             graph = self._from_es(
-                gdf_edges=self.edges, gdf_nodes=self.nodes)
+                gdf_edges=self.edges, gdf_nodes=self.nodes, directed=directed)
         else:
             graph = self._from_vs(
-                gdf_nodes=self.nodes)
+                gdf_nodes=self.nodes, directed=directed)
         return graph
+
     def _remove_namecol(self, gdf_nodes):
         """Remove 'name' column from GeoDataFrame to avoid igraph conflicts
 
@@ -386,7 +387,7 @@ class Network:
                 gdf_nodes = gdf_nodes.drop('name', axis=1)
         return gdf_nodes
 
-    def _from_es(self, gdf_edges, gdf_nodes=None):
+    def _from_es(self, gdf_edges, gdf_nodes=None, directed=False):
         """Construct igraph.Graph from edges with optional nodes
 
         Parameters
@@ -395,6 +396,8 @@ class Network:
             Edge data with 'from_id', 'to_id', and other attributes
         gdf_nodes : gpd.GeoDataFrame, optional
             Node data. If None, nodes are inferred from edge endpoints.
+        directed : bool, optional
+            Whether to create a directed graph. Defaults to False (undirected).
 
         Returns
         -------
@@ -404,9 +407,9 @@ class Network:
         return ig.Graph.DataFrame(
             gdf_edges,
             vertices=self._remove_namecol(gdf_nodes),
-            directed=self.directed)
+            directed=directed)
 
-    def _from_vs(self, gdf_nodes):
+    def _from_vs(self, gdf_nodes, directed=False):
         """Construct igraph.Graph from vertices only (no edges)
 
         Creates a graph with isolated vertices when no edge information is available.
@@ -415,6 +418,8 @@ class Network:
         ----------
         gdf_nodes : gpd.GeoDataFrame
             Node data with all vertex attributes
+        directed : bool, optional
+            Whether to create a directed graph. Defaults to False (undirected).
 
         Returns
         -------
@@ -426,7 +431,7 @@ class Network:
         return ig.Graph(
             n=len(gdf_nodes),
             vertex_attrs=vertex_attrs,
-            directed=self.directed)
+            directed=directed)
 
     def initialize_funcstates(self):
         """Initialize functional state attributes for network components
