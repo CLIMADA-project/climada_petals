@@ -158,15 +158,9 @@ class Network:
         All input networks must have the same CRS (defaults to EPSG:4326).
         Node IDs are renumbered sequentially across all networks.
         """
-        edges = gpd.GeoDataFrame(
-            columns=['from_id', 'to_id', 'orig_id', 'geometry'],
-            geometry='geometry', crs='EPSG:4326')
-        nodes = gpd.GeoDataFrame(
-            columns=['id', 'orig_id', 'geometry'],
-            geometry='geometry', crs='EPSG:4326')
-
         id_counter_nodes = 0
-
+        edges = []
+        nodes = []
         for net in networks:
             edge_gdf = net.edges.reset_index(drop=True)
             node_gdf = net.nodes.reset_index(drop=True)
@@ -175,8 +169,10 @@ class Network:
             node_gdf['id'] = range(id_counter_nodes,
                                    id_counter_nodes+len(node_gdf))
             id_counter_nodes += len(node_gdf)
-            edges = pd.concat([edges, edge_gdf])
-            nodes = pd.concat([nodes, node_gdf])
+            edges.append(edge_gdf)
+            nodes.append(node_gdf)
+        edges = pd.concat(edges)
+        nodes = pd.concat(nodes)
         edges[['from_id', 'to_id']] = edges[['from_id', 'to_id']].astype(int)
 
         return Network(edges=edges.reset_index(drop=True),
