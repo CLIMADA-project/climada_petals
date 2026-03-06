@@ -124,7 +124,7 @@ class Network:
         self.edges = self.edges.to_crs(crs)
 
     @classmethod
-    def from_nws(cls, networks):
+    def from_networks(cls, networks):
         """Combine multiple Network objects into a single unified Network
 
         Concatenates edges and nodes from multiple networks, automatically adjusting
@@ -148,7 +148,7 @@ class Network:
         >>> road_network = Network(edges=road_edges)
         >>> health_network = Network(nodes=health_nodes)
         >>> people_network = Network(nodes=people_nodes)
-        >>> combined = Network.from_nws([road_network, health_network, people_network])
+        >>> combined = Network.from_networks([road_network, health_network, people_network])
 
         Notes
         -----
