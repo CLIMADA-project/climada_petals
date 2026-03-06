@@ -88,8 +88,8 @@ class GraphCalcs():
             return self.build_graph()
         return self._graph
 
-    def invalidate(self):
-        """Invalidate cached graph edges
+    def reset_graph_edges(self):
+        """Reset cached graph edges
 
         Notes
         -----
