@@ -40,8 +40,8 @@ class Network:
     plot_access = access_plot
 
     def __init__(self,
-                 edges=gpd.GeoDataFrame(),
-                 nodes=gpd.GeoDataFrame()):
+                 edges=None,
+                 nodes=None):
         """Initialize a network object from edges and nodes GeoDataFrames
 
         Creates a Network instance with optional edges (line features) and nodes (point features).
@@ -76,26 +76,26 @@ class Network:
         >>> nodes_gdf = gpd.GeoDataFrame(...)
         >>> network = Network(edges=edges_gdf, nodes=nodes_gdf)
         """
-        if edges.empty:
+        if edges is None:
             edges = gpd.GeoDataFrame(
                 columns=['from_id', 'to_id', 'id', 'orig_id', 'geometry'],
                 geometry='geometry', crs='EPSG:4326')
-        if nodes.empty:
+        if nodes is None:
             nodes = gpd.GeoDataFrame(
                 columns=['id', 'orig_id', 'geometry'],
                 geometry='geometry', crs='EPSG:4326')
 
-        if not hasattr(edges, 'orig_id'):
+        if 'orig_id' not in edges.columns:
             edges['orig_id'] = range(len(edges))
-        if not hasattr(nodes, 'orig_id'):
+        if 'orig_id' not in nodes.columns:
             nodes['orig_id'] = range(len(nodes))
 
-        if not hasattr(edges, 'id'):
+        if 'id' not in edges.columns:
             edges['id'] = range(len(edges))
-        if not hasattr(nodes, 'id'):
+        if 'id' not in nodes.columns:
             nodes['id'] = range(len(nodes))
 
-        if not hasattr(edges, 'osm_id'):
+        if 'osm_id' not in edges.columns:
             edges['osm_id'] = range(len(edges))
 
         self.edges = edges
