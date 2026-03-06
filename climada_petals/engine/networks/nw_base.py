@@ -383,7 +383,7 @@ class Network:
             GeoDataFrame with 'name' column removed if it existed, or None
         """
         if gdf_nodes is not None:
-            if hasattr(gdf_nodes, 'name'):
+            if 'name' in gdf_nodes.columns:
                 gdf_nodes = gdf_nodes.drop('name', axis=1)
         return gdf_nodes
 
