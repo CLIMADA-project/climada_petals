@@ -42,12 +42,12 @@ LOGGER.setLevel('INFO')
 PHYSICAL_SOURCES = ['road', 'rail']
 
 class GraphCalcs():
-    def __init__(self, parent, directed=True, friction_surf=None):
+    def __init__(self, network_calc, directed=True, friction_surf=None):
         """Create graph-calculation helper for a network
 
         Parameters
         ----------
-        parent : NetworkCalcs
+        network_calc : NetworkCalcs
             Parent wrapper holding the :class:`~climada_petals.engine.networks.nw_base.Network`.
         directed : bool, optional
             Whether to build a directed igraph representation. Default is ``True``.
@@ -58,7 +58,7 @@ class GraphCalcs():
         -----
         The graph is lazily built and cached on first access via `graph`.
         """
-        self.parent = parent #parent nw calc object
+        self.network_calc = network_calc #parent nw calc object
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
@@ -68,7 +68,7 @@ class GraphCalcs():
 
     @property
     def network(self):
-        return self.parent.network
+        return self.network_calc.network
 
     def build_graph(self):
         """Build and cache an igraph representation of the network
