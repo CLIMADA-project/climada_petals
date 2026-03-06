@@ -1358,7 +1358,7 @@ class NetworkCalcs():
     def __init__(self, network, dep_table, friction_surf=None, directed=True):
         self.network = network
         self.dep_table = dep_table
-        self.graph_calc = GraphCalcs(parent=self, directed=directed, friction_surf=friction_surf)
+        self.graph_calc = GraphCalcs(network_calc=self, directed=directed, friction_surf=friction_surf)
 
     @property
     def graph(self):
