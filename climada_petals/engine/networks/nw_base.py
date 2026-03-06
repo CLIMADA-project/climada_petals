@@ -386,6 +386,29 @@ class Network:
             if 'name' in gdf_nodes.columns:
                 gdf_nodes = gdf_nodes.drop('name', axis=1)
         return gdf_nodes
+    #copied from nw_preps
+    #TODO : decide if this should be a method of nw_preps or nw_base
+    def _ecols_to_graphorder(self, gdf_edges):
+        """
+        order columns as igraph expects them for building a graph
+
+        Parameters
+        ----------
+        """
+        return gdf_edges.reindex(['from_id', 'to_id'] +
+                             [x for x in list(gdf_edges)
+                              if x not in ['from_id', 'to_id']], axis=1)
+
+
+    def _vcols_to_graphorder(self, gdf_nodes):
+        """
+        order columns as igraph expects them for building a graph
+
+        Parameters
+        ----------
+        """
+        return gdf_nodes.reindex(['id'] + [x for x in list(gdf_nodes)
+                             if x not in ['id']], axis=1)
 
     def _from_es(self, gdf_edges, gdf_nodes=None, directed=False):
         """Construct igraph.Graph from edges with optional nodes
@@ -404,9 +427,12 @@ class Network:
         igraph.Graph
             Graph constructed from edge list
         """
+        gdf_edges = self._ecols_to_graphorder(gdf_edges)
+        gdf_nodes = self._remove_namecol(gdf_nodes)
+        gdf_nodes = self._vcols_to_graphorder(gdf_nodes)
         return ig.Graph.DataFrame(
             gdf_edges,
-            vertices=self._remove_namecol(gdf_nodes),
+            vertices=gdf_nodes,
             directed=directed)
 
     def _from_vs(self, gdf_nodes, directed=False):
@@ -427,6 +453,7 @@ class Network:
             Graph with n vertices and 0 edges, where n = len(gdf_nodes)
         """
         gdf_nodes = self._remove_namecol(gdf_nodes)
+        gdf_nodes = self._vcols_to_graphorder(gdf_nodes)
         vertex_attrs = gdf_nodes.to_dict('list')
         return ig.Graph(
             n=len(gdf_nodes),

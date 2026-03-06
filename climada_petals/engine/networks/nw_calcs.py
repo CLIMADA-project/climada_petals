@@ -78,15 +78,7 @@ class GraphCalcs():
         igraph.Graph
             Graph generated from the current network nodes and edges.
 
-        Notes
-        -----
-        The method warns if node/edge columns are not ordered as expected by igraph.
         """
-        if self.network.nodes.columns[0] != 'id' or \
-              self.network.edges.columns[0] != 'from_id' or self.network.edges.columns[1] != 'to_id':
-            LOGGER.warning("Network nodes or edges columns are not properly ordered for graph generation." \
-            "igraph expects 'id' in position 0 for nodes and 'from_id', 'to_id' in position 0 and 1 respectively for edges."
-            "Please reorder the columns of your nodes and edges using ordered_network() function.")
         self._graph = self.network.to_graph(directed=self.directed)
         return self._graph
 
