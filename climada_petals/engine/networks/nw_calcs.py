@@ -16,13 +16,9 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 """
 import logging
-import igraph as ig
 import numpy as np
-import pandas as pd
 import geopandas as gpd
 import pyproj
-from tqdm import tqdm
-import timeit
 import gc
 
 
@@ -31,8 +27,7 @@ import scipy
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import (make_edge_geometries,
                                                      _ckdnearest)
-from climada_petals.engine.networks.nw_preps import (reset_ids,
-                                                     ordered_network)
+from climada_petals.engine.networks.nw_preps import (reset_ids)
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -47,12 +42,12 @@ LOGGER.setLevel('INFO')
 PHYSICAL_SOURCES = ['road', 'rail']
 
 class GraphCalcs():
-    def __init__(self, parent, directed=True, friction_surf=None):
+    def __init__(self, network_calc, directed=True, friction_surf=None):
         """Create graph-calculation helper for a network
 
         Parameters
         ----------
-        parent : NetworkCalcs
+        network_calc : NetworkCalcs
             Parent wrapper holding the :class:`~climada_petals.engine.networks.nw_base.Network`.
         directed : bool, optional
             Whether to build a directed igraph representation. Default is ``True``.
@@ -63,7 +58,7 @@ class GraphCalcs():
         -----
         The graph is lazily built and cached on first access via `graph`.
         """
-        self.parent = parent #parent nw calc object
+        self.network_calc = network_calc #parent nw calc object
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
@@ -73,7 +68,7 @@ class GraphCalcs():
 
     @property
     def network(self):
-        return self.parent.network
+        return self.network_calc.network
 
     def build_graph(self):
         """Build and cache an igraph representation of the network
@@ -83,15 +78,7 @@ class GraphCalcs():
         igraph.Graph
             Graph generated from the current network nodes and edges.
 
-        Notes
-        -----
-        The method warns if node/edge columns are not ordered as expected by igraph.
         """
-        if self.network.nodes.columns[0] != 'id' or \
-              self.network.edges.columns[0] != 'from_id' or self.network.edges.columns[1] != 'to_id':
-            LOGGER.warning("Network nodes or edges columns are not properly ordered for graph generation." \
-            "igraph expects 'id' in position 0 for nodes and 'from_id', 'to_id' in position 0 and 1 respectively for edges."
-            "Please reorder the columns of your nodes and edges using ordered_network() function.")
         self._graph = self.network.to_graph(directed=self.directed)
         return self._graph
 
@@ -101,8 +88,8 @@ class GraphCalcs():
             return self.build_graph()
         return self._graph
 
-    def invalidate(self):
-        """Invalidate cached graph edges
+    def reset_graph_edges(self):
+        """Reset cached graph edges
 
         Notes
         -----
@@ -1407,7 +1394,6 @@ class NetworkCalcs():
         self.dep_table = dep_table
         self.graph_calc = GraphCalcs(parent=self, directed=directed, friction_surf=friction_surf)
 
-
     @property
     def graph(self):
         """Return cached igraph representation"""
@@ -1432,7 +1418,7 @@ class NetworkCalcs():
         while (n_clusters>1) and (iter_count<max_iter):
             self.graph_calc.link_clusters(dist_thresh=dist_thresh, link_attrs={'ci_type':ci_type})
             iter_count+=1
-            self.network.update_network_from_graphs(self.graph)
+            self.network = Network.from_graphs(self.graph)
             self.network = reset_ids(self.network)
             self.graph_calc.full_reset()
         n_clusters = len(self.graph_calc.graph.connected_components())
@@ -1458,8 +1444,8 @@ class NetworkCalcs():
                                          bidir=True,
                                          k=row['n_links'])
 
-        ##TODO refactor the reformating of the network
-        self.network.update_network_from_graphs(self.graph)
+        ##update network
+        self.network = Network.from_graphs(self.graph)
 
         ##need to have all ids reset after new road edges have been added
         self.network = reset_ids(self.network)
@@ -1505,9 +1491,8 @@ class NetworkCalcs():
             self.graph_calc.graph.vs[targets][f'actual_supply_{row.source}_{row.target}'] = 1
         #reset ids as new edges have been created
         self.network = reset_ids(self.network)
-
         #update network
-        self.network.update_network_from_graphs(self.graph)
+        self.network = Network.from_graphs(self.graph)
         # Invalidate cached graph
         self.graph_calc.full_reset()
 
@@ -1575,6 +1560,6 @@ class NetworkCalcs():
         #reset ids as new edges may have been created
         self.network = reset_ids(self.network)
         #update network
-        self.network.update_network_from_graphs(self.graph)
+        self.network = Network.from_graphs(self.graph)
         # Invalidate cached graph
         self.graph_calc.full_reset()
