@@ -691,7 +691,7 @@ class GraphCalcs():
 
             return friction.eai_exp
 
-    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, dur_thresh, k, bidir_link):
+    def calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, dur_thresh, k, bidir_link):
         """Dispatch dependency creation based on link condition
 
         Parameters
@@ -829,7 +829,7 @@ class GraphCalcs():
             new_func = np.minimum(target_capa_suff, orig_func)
             self.graph.vs[target_graph_ids]['func_tot'] = new_func.tolist()
 
-    def _funcstates_sum(self):
+    def funcstates_sum(self):
         """Sum functional states across vertices and edges
 
         Returns
@@ -841,7 +841,7 @@ class GraphCalcs():
                 sum(self.graph.es.get_attribute_values('func_tot')))
 
 
-    def _update_internal_dependencies(self, p_source, p_sink, source_var,
+    def update_internal_dependencies(self, p_source, p_sink, source_var,
                                       demand_var):
         """Update internal dependencies for networked CI types
 
@@ -885,7 +885,7 @@ class GraphCalcs():
             self.powercap_from_clusters(p_source=p_source, p_sink=p_sink,
                                         demand_ci='people', source_var=source_var, demand_var=demand_var)
 
-    def _update_functional_dependencies(self, df_dependencies):
+    def update_functional_dependencies(self, df_dependencies):
         """Update functional CI-to-CI dependencies
 
         Parameters
@@ -905,7 +905,7 @@ class GraphCalcs():
             self._propagate_check_fail(row.source, row.target, row.type_I, row.thresh_func)
 
 
-    def _update_enduser_dependencies(self, df_dependencies,
+    def update_enduser_dependencies(self, df_dependencies,
                                      friction_surf,
                                      access_check_method="routing",
                                      rerouting=True):
@@ -987,7 +987,7 @@ class GraphCalcs():
         if row.access_cnstr:
             via_attrs_dict['func_tot'] = 1
 
-        self._calc_dependencies(
+        self.calc_dependencies(
             source_attrs={'ci_type': row['source'], 'func_tot': 1},
             target_attrs={'ci_type': row['target']},
             via_attrs=via_attrs_dict,
@@ -1003,7 +1003,7 @@ class GraphCalcs():
         if row.access_cnstr:
             # Compute dependencies without requiring functional via edges to identify
             # people who could have access if via links were functional
-            self._calc_dependencies(
+            self.calc_dependencies(
                 source_attrs={'ci_type': row['source'], 'func_tot': 1},
                 target_attrs={'ci_type': row['target']},
                 via_attrs={'ci_type': row['via_link']},  # No func_tot requirement
