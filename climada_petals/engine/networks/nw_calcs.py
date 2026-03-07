@@ -113,7 +113,7 @@ class GraphCalcs():
     # Making links
     # =============================================================================
 
-    def link_clusters(self, dist_thresh=np.inf, link_attrs=None):
+    def link_clusters(self, dist_thresh=np.inf, graph_connectivity_mode="weak", link_attrs=None):
         """Link connected components into a single graph
 
         For each component, the method connects the nearest node in that
@@ -123,6 +123,8 @@ class GraphCalcs():
         ----------
         dist_thresh : float, optional
             Maximum distance (in meters) to allow cluster linking. Default is ``np.inf``.
+        graph_connectivity_mode : str, optional
+            Connectivity mode for the graph. Default is ``"weak"``.
         link_attrs : dict, optional
             Edge attributes to set for newly created links.
 
@@ -133,11 +135,7 @@ class GraphCalcs():
         """
 
         gdf_vs = self.graph.get_vertex_dataframe()
-        #if ci_type is not None:#filter to ci_type
-        #    gdf_vs = gdf_vs[gdf_vs.ci_type==ci_type]
-        # Use 'weak' mode for directed graphs to treat them as undirected for connectivity
-        mode = 'weak' if self.graph.is_directed() else None
-        gdf_vs['membership'] = self.graph.connected_components(mode=mode).membership
+        gdf_vs['membership'] = self.graph.connected_components(mode=graph_connectivity_mode).membership
 
         v_ids_source = []
         v_ids_target = []
@@ -1365,7 +1363,7 @@ class NetworkCalcs():
         """Return cached igraph representation"""
         return self.graph_calc.graph
 
-    def merge_clusters(self, ci_type, max_iter, dist_thresh=30000):
+    def merge_clusters(self, ci_type, max_iter, dist_thresh=30000, graph_connectivity_mode="weak"):
         """Iteratively merge disconnected clusters
 
         Parameters
@@ -1376,13 +1374,15 @@ class NetworkCalcs():
             Maximum number of merge iterations.
         dist_thresh : float, optional
             Maximum distance (meters) for cluster linking. Default is ``30000``.
+        graph_connectivity_mode : str, optional
+            Connectivity mode for the graph. Default is ``"weak"``.
         """
         iter_count = 0
         n_clusters = len(self.graph_calc.graph.connected_components())
         LOGGER.info(print(f'Number of clusters in the network before merging: {n_clusters}'))
         #dist_thresh = cntry_shape.area / nclusters
         while (n_clusters>1) and (iter_count<max_iter):
-            self.graph_calc.link_clusters(dist_thresh=dist_thresh, link_attrs={'ci_type':ci_type})
+            self.graph_calc.link_clusters(dist_thresh=dist_thresh, graph_connectivity_mode=graph_connectivity_mode, link_attrs={'ci_type':ci_type})
             iter_count+=1
             self.network = Network.from_graphs(self.graph)
             self.network = reset_ids(self.network)
