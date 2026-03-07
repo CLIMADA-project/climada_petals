@@ -20,7 +20,6 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 import pyproj
-import gc
 
 
 import scipy
@@ -829,10 +828,6 @@ class GraphCalcs():
                 self.graph.vs[target_graph_ids]['func_tot'], dtype=float)
             new_func = np.minimum(target_capa_suff, orig_func)
             self.graph.vs[target_graph_ids]['func_tot'] = new_func.tolist()
-
-        # Delete large objects to avoid memory issues
-        del capa_rec, func_capa, capa_suff, adj_sub, func_thresh
-        gc.collect()
 
     def _funcstates_sum(self):
         """Sum functional states across vertices and edges
