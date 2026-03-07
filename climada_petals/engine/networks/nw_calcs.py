@@ -170,8 +170,8 @@ class GraphCalcs():
             self._edges_from_vlists(
                 v_ids_source, v_ids_target, link_attrs)
 
-    def link_vertices_closest_k(self, source_attrs, target_attrs, link_attrs=None,
-                                dist_thresh=np.inf, bidir=False, k=5):
+    def link_vertices_closest_k(self, source_attrs, target_attrs, dist_thresh,
+                                k, link_attrs=None, bidir=False):
         """Link each target to its closest ``k`` sources
 
         Parameters
@@ -180,14 +180,14 @@ class GraphCalcs():
             Vertex attribute filters for source candidates.
         target_attrs : dict
             Vertex attribute filters for target candidates.
+        dist_thresh : float
+            Maximum distance (in meters) to allow links.
+        k : int
+            Number of nearest sources per target.
         link_attrs : dict, optional
-            Edge attributes for created links.
-        dist_thresh : float, optional
-            Maximum distance (in meters) to allow links. Default is ``np.inf``.
+            Edge attributes for created links. Default is ``None``.
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
-        k : int, optional
-            Number of nearest sources per target. Default is ``5``.
         """
 
         # select only those for which specified attrs apply
@@ -254,8 +254,8 @@ class GraphCalcs():
             self._edges_from_vlists(targets, sources, link_attrs)
 
     def link_vertices_shortest_paths(self, source_attrs, target_attrs, via_attrs,
-                                     link_attrs, dist_thresh=10e6, criterion='distance',
-                                     k=1, bidir=False):
+                                     link_attrs, dist_thresh, k,
+                                     criterion='distance', bidir=False):
         """Link targets to sources via shortest paths
 
         Computes shortest-path distances within a subgraph of allowed vertices
@@ -271,12 +271,12 @@ class GraphCalcs():
             Edge attribute filters for allowable paths.
         link_attrs : dict
             Edge attributes for created dependency links.
-        dist_thresh : float, optional
-            Maximum path length to allow links. Default is ``10e6``.
+        dist_thresh : float
+            Maximum path length to allow links.
+        k : int
+            Number of links per target. If ``1``, only shortest link is used.
         criterion : str, optional
             Edge weight attribute used for shortest paths. Default is ``"distance"``.
-        k : int, optional
-            Number of links per target. If ``1``, only shortest link is used.
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
         """
@@ -330,9 +330,8 @@ class GraphCalcs():
             if bidir:
                self._edges_from_vlists(v_ids_target.tolist(), v_ids_source.tolist(), link_attrs)
 
-    def link_vertices_friction_surf(self, source_ci, target_ci,
-                                        link_name=None, dist_thresh=None,
-                                        bidir=False, k=5, dur_thresh=None):
+    def link_vertices_friction_surf(self, source_ci, target_ci, dur_thresh,
+                                    dist_thresh, k, link_name=None, bidir=False):
             """Link vertices using a friction surface duration constraint
 
             Parameters
@@ -341,16 +340,16 @@ class GraphCalcs():
                 Source infrastructure type.
             target_ci : str
                 Target infrastructure type.
+            dur_thresh : float
+                Maximum travel duration to allow a link.
+            dist_thresh : float
+                Maximum geographic distance (meters) for candidate links.
+            k : int
+                Number of nearest sources per target to consider.
             link_name : str, optional
                 Edge type name to assign. Default creates ``dependency_{source}_{target}``.
-            dist_thresh : float, optional
-                Maximum geographic distance (meters) for candidate links.
             bidir : bool, optional
                 If ``True``, add reverse links as well. Default is ``False``.
-            k : int, optional
-                Number of nearest sources per target to consider. Default is ``5``.
-            dur_thresh : float, optional
-                Maximum travel duration to allow a link.
             """
             if not self.friction_surf:
                 LOGGER.error("No friction surface provided!")
