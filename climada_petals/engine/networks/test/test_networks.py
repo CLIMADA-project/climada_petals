@@ -563,7 +563,7 @@ class TestGraphCalcs:
         """Test summing functional states"""
         graph_calcs.build_graph()
 
-        v_sum, e_sum = graph_calcs._funcstates_sum()
+        v_sum, e_sum = graph_calcs.funcstates_sum()
 
         assert isinstance(v_sum, (int, float))
         assert isinstance(e_sum, (int, float))
@@ -820,7 +820,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
         initial_edge_count = graph_calcs.graph.ecount()
 
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -840,7 +840,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
         initial_edge_count = graph_calcs.graph.ecount()
 
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'road'},
             target_attrs={'ci_type': 'people'},
             via_attrs={},
@@ -861,7 +861,7 @@ class TestGraphCalcs:
         graph_calcs_with_edge_ci_fail.build_graph()
         initial_edge_count = graph_calcs_with_edge_ci_fail.graph.ecount()
 
-        graph_calcs_with_edge_ci_fail._calc_dependencies(
+        graph_calcs_with_edge_ci_fail.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road', 'func_tot': 1},
@@ -884,7 +884,7 @@ class TestGraphCalcs:
         graph_calcs.graph.vs[1]['func_tot'] = 0
         graph_calcs.graph.es[0]['func_tot'] = 0
 
-        v_sum, e_sum = graph_calcs._funcstates_sum()
+        v_sum, e_sum = graph_calcs.funcstates_sum()
 
         # Should reflect the failures
         assert v_sum < graph_calcs.graph.vcount()
@@ -899,7 +899,7 @@ class TestGraphCalcs:
 
         # Get first dependency row (road -> people)
         for _, row in dependency_table.loc[dependency_table['target'] == 'people'].iterrows():
-            graph_calcs._calc_dependencies(
+            graph_calcs.calc_dependencies(
                 source_attrs={'ci_type': row.source},
                 target_attrs={'ci_type': row.target},
                 via_attrs={'ci_type': 'road'},
@@ -929,7 +929,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         for _, row in dependency_table.loc[dependency_table['target'] == 'people'].iterrows():
-            graph_calcs._calc_dependencies(
+            graph_calcs.calc_dependencies(
                 source_attrs={'ci_type': row.source},
                 target_attrs={'ci_type': row.target},
                 via_attrs={'ci_type': 'road'},
@@ -960,7 +960,7 @@ class TestGraphCalcs:
 
         row = dependency_table.iloc[1]
 
-        graph_calcs_with_remote_node._calc_dependencies(
+        graph_calcs_with_remote_node.calc_dependencies(
             source_attrs={'ci_type': row.source},
             target_attrs={'ci_type': row.target},
             via_attrs={'ci_type': 'road'},
@@ -995,7 +995,7 @@ class TestGraphCalcs:
 
         row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
 
-        graph_calcs_with_remote_node._calc_dependencies(
+        graph_calcs_with_remote_node.calc_dependencies(
             source_attrs={'ci_type': row.source},
             target_attrs={'ci_type': row.target},
             via_attrs={'ci_type': 'road'},
@@ -1030,7 +1030,7 @@ class TestGraphCalcs:
 
         row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
 
-        graph_calcs_with_remote_node._calc_dependencies(
+        graph_calcs_with_remote_node.calc_dependencies(
             source_attrs={'ci_type': row.source},
             target_attrs={'ci_type': row.target},
             via_attrs={'ci_type': 'road'},
@@ -1065,7 +1065,7 @@ class TestGraphCalcs:
 
         row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
 
-        graph_calcs_with_remote_node._calc_dependencies(
+        graph_calcs_with_remote_node.calc_dependencies(
             source_attrs={'ci_type': row.source},
             target_attrs={'ci_type': row.target},
             via_attrs={'ci_type': 'road'},
@@ -1100,7 +1100,7 @@ class TestGraphCalcs:
 
         row = dependency_table.iloc[1]
 
-        graph_calcs_with_remote_node._calc_dependencies(
+        graph_calcs_with_remote_node.calc_dependencies(
             source_attrs={'ci_type': row.source},
             target_attrs={'ci_type': row.target},
             via_attrs={'ci_type': 'road'},
@@ -1134,7 +1134,7 @@ class TestGraphCalcs:
         graph_calcs_with_remote_node.build_graph()
 
         for _, row in dependency_table.loc[dependency_table['target'] == 'people'].iterrows():
-            graph_calcs_with_remote_node._calc_dependencies(
+            graph_calcs_with_remote_node.calc_dependencies(
                 source_attrs={'ci_type': row.source},
                 target_attrs={'ci_type': row.target},
                 via_attrs={'ci_type': 'road'},
@@ -1168,7 +1168,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create initial dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1212,7 +1212,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create initial dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1259,7 +1259,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create initial dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1315,7 +1315,7 @@ class TestGraphCalcs:
             v['capacity_road_people'] = -1  # Need positive capacity to receive supply
 
         #add dependency edge for propagation
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'road'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1353,7 +1353,7 @@ class TestGraphCalcs:
             v['capacity_road_healthcare'] = -1
 
         #add dependency edge for propagation
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'road'},
             target_attrs={'ci_type': 'healthcare'},
             via_attrs={'ci_type': 'road'},
@@ -1392,7 +1392,7 @@ class TestGraphCalcs:
             v['capacity_road_healthcare'] = -1
 
         #add dependency edge for propagation
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'road'},
             target_attrs={'ci_type': 'healthcare'},
             via_attrs={'ci_type': 'road'},
@@ -1430,7 +1430,7 @@ class TestGraphCalcs:
             v['capacity_healthcare_people'] = -1
 
         #add dependency edge for propagation
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1462,7 +1462,7 @@ class TestGraphCalcs:
         # Set some edge functionality
         graph_calcs.graph.es['func_tot'] = 0
 
-        graph_calcs._update_internal_dependencies(
+        graph_calcs.update_internal_dependencies(
             p_source='powerstation',
             p_sink='powerline',
             source_var='capacity',
@@ -1497,14 +1497,14 @@ class TestGraphCalcs:
         for v in graph_calcs.graph.vs.select(ci_type='healthcare'):
             v['capacity_road_healthcare'] = -1
 
-        graph_calcs._update_functional_dependencies(df_dependencies)
+        graph_calcs.update_functional_dependencies(df_dependencies)
         assert all(v['func_tot'] == 1 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
 
         #repeat with road failure
         #set all road nodes as failed
         for v in graph_calcs.graph.vs.select(ci_type='road'):
             v['func_tot'] = 0
-        graph_calcs._update_functional_dependencies(df_dependencies)
+        graph_calcs.update_functional_dependencies(df_dependencies)
         assert all(v['func_tot'] == 0 for v in graph_calcs.graph.vs.select(ci_type='healthcare'))
 
     def test_update_enduser_dependencies_routing(self, graph_calcs_with_source_fail):
@@ -1526,7 +1526,7 @@ class TestGraphCalcs:
             'n_links': [1, 1]
         })
 
-        graph_calcs_with_source_fail._update_enduser_dependencies(
+        graph_calcs_with_source_fail.update_enduser_dependencies(
             df_dependencies,
             friction_surf=None,
             rerouting=False,
@@ -1557,7 +1557,7 @@ class TestGraphCalcs:
          graph_calcs_with_source_fail.network_calc.network.initialize_supply(df_dependencies)
          graph_calcs_with_source_fail.build_graph()
 
-         graph_calcs_with_source_fail._update_enduser_dependencies(
+         graph_calcs_with_source_fail.update_enduser_dependencies(
              df_dependencies,
              friction_surf=None,
              rerouting=False,
@@ -1586,7 +1586,7 @@ class TestGraphCalcs:
          })
 
          with pytest.raises(ValueError, match="Invalid access check method specified!"):
-            graph_calcs_with_source_fail._update_enduser_dependencies(
+            graph_calcs_with_source_fail.update_enduser_dependencies(
                 df_dependencies,
                 friction_surf=None,
                 rerouting=False,
@@ -1599,7 +1599,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1635,7 +1635,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create initial dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1674,7 +1674,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create initial dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1717,7 +1717,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create initial dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -1773,7 +1773,7 @@ class TestGraphCalcs:
         })
 
         # Create dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': row['source']},
             target_attrs={'ci_type': row['target']},
             via_attrs={'ci_type': row['via_link']},
@@ -1825,7 +1825,7 @@ class TestGraphCalcs:
         })
 
         # Create dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': row['source']},
             target_attrs={'ci_type': row['target']},
             via_attrs={'ci_type': row['via_link']},
@@ -1882,7 +1882,7 @@ class TestGraphCalcs:
         dependency_name = 'dependency_' + row['source'] + '_' + row['target']
 
         # Create dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': row['source']},
             target_attrs={'ci_type': row['target']},
             via_attrs={'ci_type': row['via_link']},
@@ -1913,7 +1913,7 @@ class TestGraphCalcs:
         graph_calcs.build_graph()
 
         # Create dependencies
-        graph_calcs._calc_dependencies(
+        graph_calcs.calc_dependencies(
             source_attrs={'ci_type': 'healthcare'},
             target_attrs={'ci_type': 'people'},
             via_attrs={'ci_type': 'road'},
@@ -2041,7 +2041,7 @@ class TestNetworkCalcs:
 
         assert nc.network == network_with_ci_types
         assert nc.dep_table is dependency_table
-        assert isinstance(nc.graph_calc, GraphCalcs)
+        assert isinstance(nc._graph_calc, GraphCalcs)
 
     def test_initialize_base_state(self, network_calcs):
         """Test initialization of base functional state"""
@@ -2055,7 +2055,7 @@ class TestNetworkCalcs:
     def test_merge_clusters(self, network_calcs):
         """Test merging clusters when network is already connected"""
 
-        network_calcs.graph_calc.build_graph()
+        network_calcs._graph_calc.build_graph()
         init_node_count = len(network_calcs.network.nodes)
         init_edge_count = len(network_calcs.network.edges)
 
@@ -2065,7 +2065,7 @@ class TestNetworkCalcs:
         # Verify network structure is maintained
         assert len(network_calcs.network.nodes) == init_node_count
         assert len(network_calcs.network.edges) >= init_edge_count #! double edges may be added
-        assert len(network_calcs.graph_calc.graph.connected_components(mode='weak')) == 1
+        assert len(network_calcs._graph_calc.graph.connected_components(mode='weak')) == 1
 
     def test_add_physical_links(self, network_calcs):
         """Test adding physical links to network"""

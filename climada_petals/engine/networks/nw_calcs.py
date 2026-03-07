@@ -1345,12 +1345,12 @@ class NetworkCalcs():
     def __init__(self, network, dep_table, friction_surf=None, directed=True):
         self.network = network
         self.dep_table = dep_table
-        self.graph_calc = GraphCalcs(network_calc=self, directed=directed, friction_surf=friction_surf)
+        self._graph_calc = GraphCalcs(network_calc=self, directed=directed, friction_surf=friction_surf)
 
     @property
     def graph(self):
         """Return cached igraph representation"""
-        return self.graph_calc.graph
+        return self._graph_calc.graph
 
     def merge_clusters(self, ci_type, max_iter, dist_thresh=30000, graph_connectivity_mode="weak"):
         """Iteratively merge disconnected clusters
@@ -1367,16 +1367,16 @@ class NetworkCalcs():
             Connectivity mode for the graph. Default is ``"weak"``.
         """
         iter_count = 0
-        n_clusters = len(self.graph_calc.graph.connected_components())
+        n_clusters = len(self.graph.connected_components())
         LOGGER.info(print('Number of clusters in the network before merging: %i', n_clusters))
         #dist_thresh = cntry_shape.area / nclusters
         while (n_clusters>1) and (iter_count<max_iter):
-            self.graph_calc.link_clusters(dist_thresh=dist_thresh, graph_connectivity_mode=graph_connectivity_mode, link_attrs={'ci_type':ci_type})
+            self._graph_calc.link_clusters(dist_thresh=dist_thresh, graph_connectivity_mode=graph_connectivity_mode, link_attrs={'ci_type':ci_type})
             iter_count+=1
             self.network = Network.from_graphs(self.graph)
             self.network = reset_ids(self.network)
-            self.graph_calc.full_reset()
-        n_clusters = len(self.graph_calc.graph.connected_components())
+            self._graph_calc.full_reset()
+        n_clusters = len(self.graph.connected_components())
         LOGGER.info(print('Number of clusters in the network after merging: %i', n_clusters))
 
     def add_physical_links(self):
@@ -1388,7 +1388,7 @@ class NetworkCalcs():
             (self.dep_table['source'].isin(PHYSICAL_SOURCES))
         ]
         for i, row in physical_dependencies.iterrows():
-            self.graph_calc.link_vertices_closest_k(
+            self._graph_calc.link_vertices_closest_k(
                                          source_attrs={
                                              'ci_type': row['source']},
                                          target_attrs={
@@ -1406,7 +1406,7 @@ class NetworkCalcs():
         self.network = reset_ids(self.network)
 
         # Invalidate cached graph
-        self.graph_calc.full_reset()
+        self._graph_calc.full_reset()
 
     def initialize_base_state(self):
         """Initialize functional, capacity, and supply base state"""
@@ -1421,7 +1421,7 @@ class NetworkCalcs():
         """Create dependency links and initialize end-user access"""
         for i, row in self.dep_table.iterrows():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
-            self.graph_calc._calc_dependencies(
+            self._graph_calc._calc_dependencies(
                 source_attrs={
                     'ci_type': row['source']},
                 target_attrs={
@@ -1440,18 +1440,18 @@ class NetworkCalcs():
         enduser_rows = self.dep_table[self.dep_table['type_I'] == 'enduser']
         for __, row in enduser_rows.iterrows():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
-            dep_edges = self.graph_calc.graph.es.select(ci_type=dependency_name)
+            dep_edges = self.graph.es.select(ci_type=dependency_name)
             if len(dep_edges) == 0:
                 continue
             targets = [edge.target for edge in dep_edges]
-            self.graph_calc.graph.vs[targets][f'access_state_{row.source}_{row.target}'] = "access undisrupted"
-            self.graph_calc.graph.vs[targets][f'actual_supply_{row.source}_{row.target}'] = 1
+            self.graph.vs[targets][f'access_state_{row.source}_{row.target}'] = "access undisrupted"
+            self.graph.vs[targets][f'actual_supply_{row.source}_{row.target}'] = 1
         #reset ids as new edges have been created
         self.network = reset_ids(self.network)
         #update network
         self.network = Network.from_graphs(self.graph)
         # Invalidate cached graph
-        self.graph_calc.full_reset()
+        self._graph_calc.full_reset()
 
 
     def cascade(self, p_source='power_plant',
@@ -1499,19 +1499,19 @@ class NetworkCalcs():
         while delta != 0:
             LOGGER.info(
                 'Updating functional states. Current delta: %i', delta)
-            func_states_vs, func_states_es = self.graph_calc._funcstates_sum()
-            self.graph_calc._update_internal_dependencies(
+            func_states_vs, func_states_es = self._graph_calc._funcstates_sum()
+            self._graph_calc._update_internal_dependencies(
                 p_source=p_source, p_sink=p_sink, source_var=source_var, demand_var=demand_var)
 
-            self.graph_calc._update_functional_dependencies(self.dep_table)
-            func_states_vs2, func_states_es2 = self.graph_calc._funcstates_sum()
+            self._graph_calc._update_functional_dependencies(self.dep_table)
+            func_states_vs2, func_states_es2 = self._graph_calc._funcstates_sum()
             delta = max(abs(func_states_vs-func_states_vs2),
                         abs(func_states_es-func_states_es2))
             cycles += 1
 
         LOGGER.info('Ended functional state update.' +
                     ' Proceeding to end-user update.')
-        self.graph_calc._update_enduser_dependencies(
+        self._graph_calc._update_enduser_dependencies(
             self.dep_table, friction_surf, rerouting=rerouting, access_check_method=access_check_method)
 
         #reset ids as new edges may have been created
@@ -1519,4 +1519,4 @@ class NetworkCalcs():
         #update network
         self.network = Network.from_graphs(self.graph)
         # Invalidate cached graph
-        self.graph_calc.full_reset()
+        self._graph_calc.full_reset()
