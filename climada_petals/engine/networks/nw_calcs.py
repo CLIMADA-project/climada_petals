@@ -17,6 +17,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 """
 import logging
 import numpy as np
+import pandas as pd
 import geopandas as gpd
 import pyproj
 import gc
@@ -62,8 +63,6 @@ class GraphCalcs():
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
-        self._edge_cache = {}  # Add edge cache
-        self._vertex_cache = {}  # Add vertex cache
 
 
     @property
@@ -96,7 +95,6 @@ class GraphCalcs():
         Use when edges are added/removed but vertices remain unchanged.
         """
         self._graph = None
-        self._edge_cache = {}
 
     def full_reset(self):
         """Clear all graph and cache state
@@ -106,8 +104,6 @@ class GraphCalcs():
         Use when vertices are added/removed or the graph must be rebuilt.
         """
         self._graph = None
-        self._edge_cache = {}
-        self._vertex_cache = {}
 
     # =============================================================================
     # Making links
@@ -292,9 +288,9 @@ class GraphCalcs():
         graph_ids = np.array([subgraph_graph_vsdict[k] for k in subgraph_ids])
 
         # select only those for which specified attrs apply
-        cache = {}
-        df_vs_target = GraphCalcs._filter_vertices(subgraph, target_attrs, cache)
-        df_vs_source = GraphCalcs._filter_vertices(subgraph, source_attrs, cache)
+        df_vs = subgraph.get_vertex_dataframe()
+        df_vs_target = GraphCalcs._filter_vertices(df_vs, target_attrs)
+        df_vs_source = GraphCalcs._filter_vertices(df_vs, source_attrs)
 
         path_dists = subgraph.distances(
             source=df_vs_source.index.values, target=df_vs_target.index.values,
@@ -381,30 +377,26 @@ class GraphCalcs():
     # Helper funcs for making links
     # =============================================================================
     @staticmethod
-    def _filter_vertices(graph, attr_dict, cache=None):
+    def _filter_vertices(graph_or_df, attr_dict):
         """Filter vertices by attribute values
 
         Parameters
         ----------
-        graph : igraph.Graph
-            Graph to filter.
+        graph_or_df : igraph.Graph or pd.DataFrame
+            Graph whose vertices to filter, or a pre-built vertex
+            dataframe (from ``graph.get_vertex_dataframe()``).
         attr_dict : dict
             Attribute filters as ``{key: value}`` pairs.
-        cache : dict, optional
-            Cache holding a precomputed vertex dataframe under key ``"vertex_df"``.
 
         Returns
         -------
         pd.DataFrame
             Vertex dataframe subset matching all filters.
         """
-        # Use cached vertex dataframe if available
-        if cache is not None and 'vertex_df' in cache:
-            df_vs = cache['vertex_df']
+        if isinstance(graph_or_df, pd.DataFrame):
+            df_vs = graph_or_df
         else:
-            df_vs = graph.get_vertex_dataframe()
-            if cache is not None:
-                cache['vertex_df'] = df_vs
+            df_vs = graph_or_df.get_vertex_dataframe()
 
         # Apply filters using numpy operations for speed
         mask = np.ones(len(df_vs), dtype=bool)
@@ -539,13 +531,13 @@ class GraphCalcs():
         link_vertices_shortest_paths : Link using shortest paths in a subgraph
         """
 
-        # Cache vertex dataframe to avoid multiple get_vertex_dataframe calls
-        cache = {}
+        # Get vertex dataframe once and reuse for all filters
+        df_vs = self.graph.get_vertex_dataframe()
 
         # select only those for which specified attrs apply
-        df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs, cache)
-        df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs, cache)
-        df_vs_via = GraphCalcs._filter_vertices(self.graph, via_attrs, cache)
+        df_vs_source = GraphCalcs._filter_vertices(df_vs, source_attrs)
+        df_vs_target = GraphCalcs._filter_vertices(df_vs, target_attrs)
+        df_vs_via = GraphCalcs._filter_vertices(df_vs, via_attrs)
 
         # Use efficient numpy operations instead of list concatenation
         vs_keep = np.unique(np.concatenate((df_vs_source.index.values,
@@ -700,7 +692,7 @@ class GraphCalcs():
 
             return friction.eai_exp
 
-    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, bidir_link):
+    def _calc_dependencies(self, source_attrs, target_attrs, via_attrs, link_attrs, link_condition, dist_thresh, dur_thresh, k, bidir_link):
         """Dispatch dependency creation based on link condition
 
         Parameters
@@ -717,6 +709,10 @@ class GraphCalcs():
             Condition type (e.g., ``"distance"``, ``"duration"``, ``"edgecond"``).
         dist_thresh : float
             Threshold for distance or duration (depending on condition).
+        dur_thresh : float
+            Threshold for duration (depending on condition).
+        k : int
+            Number of shortest paths to consider.
         bidir_link : bool
             Whether to add reverse links.
         """
@@ -727,6 +723,7 @@ class GraphCalcs():
                 via_attrs=via_attrs,
                 link_attrs=link_attrs,
                 dist_thresh=dist_thresh,
+                k=k,
                 bidir=bidir_link
             )
         elif "duration" in link_condition:
@@ -735,6 +732,8 @@ class GraphCalcs():
                 target_ci=target_attrs,
                 link_name=link_attrs,
                 dist_thresh=dist_thresh,
+                dur_thresh=dur_thresh,
+                k=k,
                 bidir=bidir_link
             )
         elif "edgecond" in link_condition:
@@ -769,20 +768,10 @@ class GraphCalcs():
         -----
         Updates ``func_tot`` or ``actual_supply`` on target nodes in-place.
         """
-        # Cache vertex selections and convert to numpy arrays immediately
-        if not hasattr(self, '_vertex_cache'):
-            self._vertex_cache = {}
-
-        cache_key = (source, target)
-        if cache_key not in self._vertex_cache:
-            self._vertex_cache[cache_key] = {
-                'source_ids': np.array([v.index for v in self.graph.vs.select(ci_type=source)]),
-                'target_ids': np.array([v.index for v in self.graph.vs.select(ci_type=target)])
-            }
-
-        cached = self._vertex_cache[cache_key]
-        source_ids = cached['source_ids']
-        target_ids = cached['target_ids']
+        # Vectorized vertex selection by ci_type
+        ci_types = np.array(self.graph.vs['ci_type'])
+        source_ids = np.where(ci_types == source)[0]
+        target_ids = np.where(ci_types == target)[0]
         all_ids = np.concatenate([source_ids, target_ids])
         all_ids_list = all_ids.tolist()
 
@@ -1009,6 +998,8 @@ class GraphCalcs():
             link_attrs={'ci_type': dependency_name},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=row['thresh_dur'],
+            k=row['n_links'],
             bidir_link=row['bidir_link']
         )
 
@@ -1023,6 +1014,8 @@ class GraphCalcs():
                 link_attrs={'ci_type': "new_"+dependency_name},
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
+                dur_thresh=row['thresh_dur'],
+                k=row['n_links'],
                 bidir_link=row['bidir_link']
             )
 
@@ -1443,6 +1436,8 @@ class NetworkCalcs():
                     'ci_type': dependency_name},
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
+                dur_thresh=row['thresh_dur'],
+                k=row['n_links'],
                 bidir_link=row['bidir_link']
             )
         # initialize base access and supply for enduser dependencies
