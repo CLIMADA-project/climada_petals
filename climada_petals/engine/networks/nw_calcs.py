@@ -879,9 +879,9 @@ class GraphCalcs():
             eids = self.graph.get_eids(pairs=reverse_edges, path=None,
                                        directed=True, error=True)
             self.graph.es[eids]['func_tot'] = 0
-            LOGGER.info(f"""Using updated power line algorithm: dysfunc edges before:
-                  {len(edges_dys)}, after: {len(self.graph.es.select(ci_type='power_line'
-                                             ).select(func_tot_eq=0))}""")
+            LOGGER.info("Using updated power line algorithm: dysfunc edges before: \
+                  %i, after: %i", len(edges_dys), len(self.graph.es.select(ci_type='power_line'
+                                             ).select(func_tot_eq=0)) )
             self.powercap_from_clusters(p_source=p_source, p_sink=p_sink,
                                         demand_ci='people', source_var=source_var, demand_var=demand_var)
 
@@ -931,11 +931,12 @@ class GraphCalcs():
             elif access_check_method == "propagation":
                 if row.access_cnstr:
                     LOGGER.warning(
-                        f'Propagation method does not account for via-link '
-                        f'access constraints (access_cnstr=True) for '
-                        f'{row.source}->{row.target}. Road disruptions between '
-                        f'source and target will not be detected. '
-                        f'Use access_check_method="routing" for accurate results.'
+                        'Propagation method does not account for via-link '
+                        'access constraints (access_cnstr=True) for '
+                        '%s->%s. Road disruptions between '
+                        'source and target will not be detected. '
+                        'Use access_check_method="routing" for accurate results.',
+                        row.source, row.target
                     )
                 self._propagate_check_fail(row.source, row.target, row.type_I, row.thresh_func)
             else:
@@ -1367,7 +1368,7 @@ class NetworkCalcs():
         """
         iter_count = 0
         n_clusters = len(self.graph_calc.graph.connected_components())
-        LOGGER.info(print(f'Number of clusters in the network before merging: {n_clusters}'))
+        LOGGER.info(print('Number of clusters in the network before merging: %i', n_clusters))
         #dist_thresh = cntry_shape.area / nclusters
         while (n_clusters>1) and (iter_count<max_iter):
             self.graph_calc.link_clusters(dist_thresh=dist_thresh, graph_connectivity_mode=graph_connectivity_mode, link_attrs={'ci_type':ci_type})
@@ -1376,7 +1377,7 @@ class NetworkCalcs():
             self.network = reset_ids(self.network)
             self.graph_calc.full_reset()
         n_clusters = len(self.graph_calc.graph.connected_components())
-        LOGGER.info(print(f'Number of clusters in the network after merging: {n_clusters}'))
+        LOGGER.info(print('Number of clusters in the network after merging: %i', n_clusters))
 
     def add_physical_links(self):
         """Add physical links based on dependency table"""
@@ -1497,7 +1498,7 @@ class NetworkCalcs():
         cycles = 0
         while delta != 0:
             LOGGER.info(
-                f'Updating functional states. Current delta: {delta}')
+                'Updating functional states. Current delta: %i', delta)
             func_states_vs, func_states_es = self.graph_calc._funcstates_sum()
             self.graph_calc._update_internal_dependencies(
                 p_source=p_source, p_sink=p_sink, source_var=source_var, demand_var=demand_var)
