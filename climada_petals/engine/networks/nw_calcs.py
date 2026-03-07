@@ -155,14 +155,15 @@ class GraphCalcs():
             try:
                 dists, ix_match = _ckdnearest(
                     gdf_a, gdf_b, dist_thresh=dist_thresh)
-                source = gdf_a.iloc[np.where(dists == min(dists))[
+                min_dist = min(dists)
+                source = gdf_a.iloc[np.where(dists == min_dist)[
                     0]].index[0]
-                target = gdf_b.loc[ix_match[np.where(dists == min(dists))[
+                target = gdf_b.loc[ix_match[np.where(dists == min_dist)[
                     0]]].index[0]
                 v_ids_source.append(source)
                 v_ids_target.append(target)
             except (IndexError, KeyError):
-                # if no match within given distance
+                LOGGER.info("No valid link found within distance threshold. Minimum distance: %f", min_dist)
                 continue
 
         if len(v_ids_source) > 0:
