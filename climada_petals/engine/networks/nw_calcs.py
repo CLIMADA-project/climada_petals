@@ -1421,7 +1421,7 @@ class NetworkCalcs():
         """Create dependency links and initialize end-user access"""
         for i, row in self.dep_table.iterrows():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
-            self._graph_calc._calc_dependencies(
+            self._graph_calc.calc_dependencies(
                 source_attrs={
                     'ci_type': row['source']},
                 target_attrs={
@@ -1499,19 +1499,19 @@ class NetworkCalcs():
         while delta != 0:
             LOGGER.info(
                 'Updating functional states. Current delta: %i', delta)
-            func_states_vs, func_states_es = self._graph_calc._funcstates_sum()
-            self._graph_calc._update_internal_dependencies(
+            func_states_vs, func_states_es = self._graph_calc.funcstates_sum()
+            self._graph_calc.update_internal_dependencies(
                 p_source=p_source, p_sink=p_sink, source_var=source_var, demand_var=demand_var)
 
-            self._graph_calc._update_functional_dependencies(self.dep_table)
-            func_states_vs2, func_states_es2 = self._graph_calc._funcstates_sum()
+            self._graph_calc.update_functional_dependencies(self.dep_table)
+            func_states_vs2, func_states_es2 = self._graph_calc.funcstates_sum()
             delta = max(abs(func_states_vs-func_states_vs2),
                         abs(func_states_es-func_states_es2))
             cycles += 1
 
         LOGGER.info('Ended functional state update.' +
                     ' Proceeding to end-user update.')
-        self._graph_calc._update_enduser_dependencies(
+        self._graph_calc.update_enduser_dependencies(
             self.dep_table, friction_surf, rerouting=rerouting, access_check_method=access_check_method)
 
         #reset ids as new edges may have been created
