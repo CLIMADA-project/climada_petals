@@ -827,6 +827,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dep_link'},
             link_condition='distance',
             dist_thresh=1E7,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False,
         )
 
@@ -845,6 +847,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'edge_cond_link'},
             link_condition='edgecond',
             dist_thresh=None,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False,
         )
 
@@ -864,6 +868,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dep_link'},
             link_condition='distance',
             dist_thresh=1E7,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False,
         )
 
@@ -900,6 +906,8 @@ class TestGraphCalcs:
                 link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
+                dur_thresh=np.inf,
+                k=1,
                 bidir_link=row['bidir_link'],
             )
 
@@ -928,6 +936,8 @@ class TestGraphCalcs:
                 link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
+                dur_thresh=np.inf,
+                k=1,
                 bidir_link=row['bidir_link'],
             )
 
@@ -957,6 +967,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=row['bidir_link'],
         )
 
@@ -990,6 +1002,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=row['bidir_link'],
         )
 
@@ -1023,6 +1037,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=row['bidir_link'],
         )
 
@@ -1056,6 +1072,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=row['bidir_link'],
         )
 
@@ -1089,6 +1107,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=row['bidir_link'],
         )
 
@@ -1121,6 +1141,8 @@ class TestGraphCalcs:
                 link_attrs={'ci_type': f'dependency_{row.source}_{row.target}'},
                 link_condition=row['link_condition'],
                 dist_thresh=row['thresh_dist'],
+                dur_thresh=np.inf,
+                k=1,
                 bidir_link=row['bidir_link'],
             )
             #deactivate access constraints
@@ -1153,6 +1175,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1169,7 +1193,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Check access with no rerouting
@@ -1193,6 +1219,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1212,7 +1240,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Check access with no rerouting
@@ -1236,6 +1266,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1255,7 +1287,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': False
+            'access_cnstr': False,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Check access with no rerouting
@@ -1288,6 +1322,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_road_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False,
         )
 
@@ -1324,6 +1360,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_road_healthcare'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False,
         )
 
@@ -1361,6 +1399,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_road_healthcare'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False,
         )
         # Run propagation
@@ -1397,6 +1437,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False,
         )
 
@@ -1478,8 +1520,10 @@ class TestGraphCalcs:
             'via_link': ['none', 'road'],
             'link_condition': ['edgecond', 'distance'],
             'thresh_dist': [10E6, 10E6],
+            'thresh_dur': [np.inf, np.inf],
             'bidir_link': [False, False],
-            'thresh_func': [1.0, 1.0]
+            'thresh_func': [1.0, 1.0],
+            'n_links': [1, 1]
         })
 
         graph_calcs_with_source_fail._update_enduser_dependencies(
@@ -1503,8 +1547,10 @@ class TestGraphCalcs:
              'via_link': ['none', 'road'],
              'link_condition': ['edgecond', 'distance'],
              'thresh_dist': [10E6, 10E6],
+             'thresh_dur': [np.inf, np.inf],
              'bidir_link': [False, False],
-             'thresh_func': [1.0, 1.0]
+             'thresh_func': [1.0, 1.0],
+             'n_links': [1, 1]
          })
          graph_calcs_with_source_fail.network_calc.network.initialize_funcstates()
          graph_calcs_with_source_fail.network_calc.network.initialize_capacity(df_dependencies)
@@ -1533,8 +1579,10 @@ class TestGraphCalcs:
              'via_link': ['none', 'road'],
              'link_condition': ['edgecond', 'distance'],
              'thresh_dist': [10E6, 10E6],
+             'thresh_dur': [np.inf, np.inf],
              'bidir_link': [False, False],
-             'thresh_func': [1.0, 1.0]
+             'thresh_func': [1.0, 1.0],
+             'n_links': [1, 1]
          })
 
          with pytest.raises(ValueError, match="Invalid access check method specified!"):
@@ -1558,6 +1606,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1592,6 +1642,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1602,7 +1654,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Recompute with rerouting
@@ -1627,6 +1681,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1637,7 +1693,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Fail the healthcare source
@@ -1666,6 +1724,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1676,7 +1736,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Fail the via link
@@ -1705,7 +1767,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Create dependencies
@@ -1716,6 +1780,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_' + row['source'] + '_' + row['target']},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1753,7 +1819,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         # Create dependencies
@@ -1764,6 +1832,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_' + row['source'] + '_' + row['target']},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1804,7 +1874,9 @@ class TestGraphCalcs:
             'link_condition': 'distance',
             'thresh_dist': 10E6,
             'bidir_link': False,
-            'access_cnstr': True
+            'access_cnstr': True,
+        'thresh_dur': np.inf,
+        'n_links': 1
         })
 
         dependency_name = 'dependency_' + row['source'] + '_' + row['target']
@@ -1817,6 +1889,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': dependency_name},
             link_condition=row['link_condition'],
             dist_thresh=row['thresh_dist'],
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1846,6 +1920,8 @@ class TestGraphCalcs:
             link_attrs={'ci_type': 'dependency_healthcare_people'},
             link_condition='distance',
             dist_thresh=10E6,
+            dur_thresh=np.inf,
+            k=1,
             bidir_link=False
         )
 
@@ -1898,6 +1974,7 @@ def dependency_table():
         'thresh_func': [1, 1, 1],
         'link_condition': ['edgecond', 'distance', 'edgecond'],
         'thresh_dist': [5E6, 10E6, 10E6],
+        'thresh_dur': [np.inf, np.inf, np.inf],
         'bidir_link': [False, False, False],
         'access_cnstr': [False, True, False],
         'n_links': [1, 1, 1]
@@ -2060,7 +2137,7 @@ class TestNetworkCalcs:
 
         # Verify cascade completed
         assert np.all(network_calcs_source_fail.network.nodes.loc[network_calcs_source_fail.network.nodes["ci_type"]=="people",'actual_supply_road_people']) == 1
-        assert np.all(network_calcs_source_fail.network.nodes.loc[network_calcs_source_fail.network.nodes["ci_type"]=="people",'actual_supply_healthcare_people']) == 1
+        assert np.all(network_calcs_source_fail.network.nodes.loc[network_calcs_source_fail.network.nodes["ci_type"]=="people",'actual_supply_healthcare_people']) == 0
 
 class TestNetworkCalcsAdvanced:
     """Advanced test cases for NetworkCalcs"""
