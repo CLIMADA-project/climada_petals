@@ -189,7 +189,7 @@ class GraphCalcs():
         df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
 
         v_ids_source, v_ids_target = self._select_closest_k(
-            df_vs_source, df_vs_target, dist_thresh, bidir, k)
+            df_vs_source, df_vs_target, dist_thresh, k, bidir)
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
 
@@ -462,7 +462,7 @@ class GraphCalcs():
 
     @staticmethod
     def _select_closest_k(gdf_vs_source, gdf_vs_target, dist_thresh,
-                          bidir=False, k=5):
+                          k, bidir=False):
         """Select closest source vertices for each target
 
         Parameters
@@ -473,10 +473,10 @@ class GraphCalcs():
             Target vertex dataframe.
         dist_thresh : float
             Maximum distance (in meters) for matches.
+        k : int
+            Number of closest sources per target.
         bidir : bool, optional
             If ``True``, append reverse links. Default is ``False``.
-        k : int, optional
-            Number of closest sources per target. Default is ``5``.
 
         Returns
         -------
