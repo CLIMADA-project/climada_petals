@@ -26,7 +26,12 @@ import pandas as pd
 from zipfile import ZipFile, ZIP_DEFLATED
 import io
 from pathlib import Path
-from climada_petals.engine.networks.nw_utils import infra_plot, population_plot, dep_plot, access_plot
+from climada_petals.engine.networks.nw_utils import (
+    infra_plot,
+    population_plot,
+    dep_plot,
+    access_plot,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,9 +44,7 @@ class Network:
     plot_dep = dep_plot
     plot_access = access_plot
 
-    def __init__(self,
-                 edges=None,
-                 nodes=None):
+    def __init__(self, edges=None, nodes=None):
         """Initialize a network object from edges and nodes GeoDataFrames
 
         Creates a Network instance with optional edges (line features) and nodes (point features).
@@ -78,22 +81,26 @@ class Network:
         """
         if edges is None:
             edges = gpd.GeoDataFrame(
-                columns=['from_id', 'to_id', 'id', 'orig_id', 'geometry'],
-                geometry='geometry', crs='EPSG:4326')
+                columns=["from_id", "to_id", "id", "orig_id", "geometry"],
+                geometry="geometry",
+                crs="EPSG:4326",
+            )
         if nodes is None:
             nodes = gpd.GeoDataFrame(
-                columns=['id', 'orig_id', 'geometry'],
-                geometry='geometry', crs='EPSG:4326')
+                columns=["id", "orig_id", "geometry"],
+                geometry="geometry",
+                crs="EPSG:4326",
+            )
 
-        if 'orig_id' not in edges.columns:
-            edges['orig_id'] = range(len(edges))
-        if 'orig_id' not in nodes.columns:
-            nodes['orig_id'] = range(len(nodes))
+        if "orig_id" not in edges.columns:
+            edges["orig_id"] = range(len(edges))
+        if "orig_id" not in nodes.columns:
+            nodes["orig_id"] = range(len(nodes))
 
-        if 'id' not in edges.columns:
-            edges['id'] = range(len(edges))
-        if 'id' not in nodes.columns:
-            nodes['id'] = range(len(nodes))
+        if "id" not in edges.columns:
+            edges["id"] = range(len(edges))
+        if "id" not in nodes.columns:
+            nodes["id"] = range(len(nodes))
 
         self.edges = edges
         self.nodes = nodes
@@ -161,19 +168,19 @@ class Network:
         for net in networks:
             edge_gdf = net.edges.reset_index(drop=True)
             node_gdf = net.nodes.reset_index(drop=True)
-            edge_gdf['from_id'] = edge_gdf['from_id'] + id_counter_nodes
-            edge_gdf['to_id'] = edge_gdf['to_id'] + id_counter_nodes
-            node_gdf['id'] = range(id_counter_nodes,
-                                   id_counter_nodes+len(node_gdf))
+            edge_gdf["from_id"] = edge_gdf["from_id"] + id_counter_nodes
+            edge_gdf["to_id"] = edge_gdf["to_id"] + id_counter_nodes
+            node_gdf["id"] = range(id_counter_nodes, id_counter_nodes + len(node_gdf))
             id_counter_nodes += len(node_gdf)
             edges.append(edge_gdf)
             nodes.append(node_gdf)
         edges = pd.concat(edges)
         nodes = pd.concat(nodes)
-        edges[['from_id', 'to_id']] = edges[['from_id', 'to_id']].astype(int)
+        edges[["from_id", "to_id"]] = edges[["from_id", "to_id"]].astype(int)
 
-        return Network(edges=edges.reset_index(drop=True),
-                       nodes=nodes.reset_index(drop=True))
+        return Network(
+            edges=edges.reset_index(drop=True), nodes=nodes.reset_index(drop=True)
+        )
 
     def save_network_zip(self, path_save, savename):
         """Save network to a compressed zip archive with Feather format
@@ -283,6 +290,7 @@ class Network:
                 LOGGER.info("Edges file %s not found in archive", edges_name)
 
         return cls(edges=edges, nodes=nodes)
+
     @classmethod
     def from_graphs(cls, graphs):
         """Create network from an igraph.Graph object
@@ -310,15 +318,21 @@ class Network:
         to_graph : Convert Network to igraph.Graph
         """
 
-        edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
-            {'source': 'from_id', 'target': 'to_id'}, axis=1),
-            geometry='geometry', crs='EPSG:4326')
+        edges = gpd.GeoDataFrame(
+            graphs.get_edge_dataframe().rename(
+                {"source": "from_id", "target": "to_id"}, axis=1
+            ),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
         nodes = graphs.get_vertex_dataframe()
-        if 'id' in nodes.columns:
-            nodes.pop('id')
-        nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
-            {'vertex ID': 'id'}, axis=1),
-            geometry='geometry', crs='EPSG:4326')
+        if "id" in nodes.columns:
+            nodes.pop("id")
+        nodes = gpd.GeoDataFrame(
+            nodes.reset_index().rename({"vertex ID": "id"}, axis=1),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
 
         return cls(edges=edges, nodes=nodes)
 
@@ -355,10 +369,10 @@ class Network:
 
         if not self.edges.empty:
             graph = self._from_es(
-                gdf_edges=self.edges, gdf_nodes=self.nodes, directed=directed)
+                gdf_edges=self.edges, gdf_nodes=self.nodes, directed=directed
+            )
         else:
-            graph = self._from_vs(
-                gdf_nodes=self.nodes, directed=directed)
+            graph = self._from_vs(gdf_nodes=self.nodes, directed=directed)
         return graph
 
     def _remove_namecol(self, gdf_nodes):
@@ -379,11 +393,12 @@ class Network:
             GeoDataFrame with 'name' column removed if it existed, or None
         """
         if gdf_nodes is not None:
-            if 'name' in gdf_nodes.columns:
-                gdf_nodes = gdf_nodes.drop('name', axis=1)
+            if "name" in gdf_nodes.columns:
+                gdf_nodes = gdf_nodes.drop("name", axis=1)
         return gdf_nodes
-    #copied from nw_preps
-    #TODO : decide if this should be a method of nw_preps or nw_base
+
+    # copied from nw_preps
+    # TODO : decide if this should be a method of nw_preps or nw_base
     def _ecols_to_graphorder(self, gdf_edges):
         """
         order columns as igraph expects them for building a graph
@@ -391,10 +406,11 @@ class Network:
         Parameters
         ----------
         """
-        return gdf_edges.reindex(['from_id', 'to_id'] +
-                             [x for x in list(gdf_edges)
-                              if x not in ['from_id', 'to_id']], axis=1)
-
+        return gdf_edges.reindex(
+            ["from_id", "to_id"]
+            + [x for x in list(gdf_edges) if x not in ["from_id", "to_id"]],
+            axis=1,
+        )
 
     def _vcols_to_graphorder(self, gdf_nodes):
         """
@@ -403,8 +419,9 @@ class Network:
         Parameters
         ----------
         """
-        return gdf_nodes.reindex(['id'] + [x for x in list(gdf_nodes)
-                             if x not in ['id']], axis=1)
+        return gdf_nodes.reindex(
+            ["id"] + [x for x in list(gdf_nodes) if x not in ["id"]], axis=1
+        )
 
     def _from_es(self, gdf_edges, gdf_nodes=None, directed=False):
         """Construct igraph.Graph from edges with optional nodes
@@ -426,10 +443,7 @@ class Network:
         gdf_edges = self._ecols_to_graphorder(gdf_edges)
         gdf_nodes = self._remove_namecol(gdf_nodes)
         gdf_nodes = self._vcols_to_graphorder(gdf_nodes)
-        return ig.Graph.DataFrame(
-            gdf_edges,
-            vertices=gdf_nodes,
-            directed=directed)
+        return ig.Graph.DataFrame(gdf_edges, vertices=gdf_nodes, directed=directed)
 
     def _from_vs(self, gdf_nodes, directed=False):
         """Construct igraph.Graph from vertices only (no edges)
@@ -450,11 +464,8 @@ class Network:
         """
         gdf_nodes = self._remove_namecol(gdf_nodes)
         gdf_nodes = self._vcols_to_graphorder(gdf_nodes)
-        vertex_attrs = gdf_nodes.to_dict('list')
-        return ig.Graph(
-            n=len(gdf_nodes),
-            vertex_attrs=vertex_attrs,
-            directed=directed)
+        vertex_attrs = gdf_nodes.to_dict("list")
+        return ig.Graph(n=len(gdf_nodes), vertex_attrs=vertex_attrs, directed=directed)
 
     def initialize_funcstates(self):
         """Initialize functional state attributes for network components
@@ -478,10 +489,10 @@ class Network:
         >>> network.nodes['func_tot']  # All values are 1
         >>> network.edges['imp_dir']   # All values are 0
         """
-        self.edges[['func_internal','func_tot']] = 1
-        self.nodes[['func_internal','func_tot']] = 1
-        self.edges['imp_dir'] = 0
-        self.nodes['imp_dir'] = 0
+        self.edges[["func_internal", "func_tot"]] = 1
+        self.nodes[["func_internal", "func_tot"]] = 1
+        self.edges["imp_dir"] = 0
+        self.nodes["imp_dir"] = 0
 
     def initialize_capacity(self, dep_table):
         """Initialize capacity attributes for dependency relationships
@@ -517,11 +528,15 @@ class Network:
         initialize_supply : Initialize supply attributes for enduser dependencies
         """
         for __, row in dep_table.iterrows():
-            source = row['source']
-            target = row['target']
-            self.nodes[f'capacity_{source}_{target}'] = 0
-            self.nodes.loc[self.nodes['ci_type']==f'{source}',f'capacity_{source}_{target}'] = 1
-            self.nodes.loc[self.nodes['ci_type']==f'{target}',f'capacity_{source}_{target}'] = -1
+            source = row["source"]
+            target = row["target"]
+            self.nodes[f"capacity_{source}_{target}"] = 0
+            self.nodes.loc[
+                self.nodes["ci_type"] == f"{source}", f"capacity_{source}_{target}"
+            ] = 1
+            self.nodes.loc[
+                self.nodes["ci_type"] == f"{target}", f"capacity_{source}_{target}"
+            ] = -1
 
     def initialize_supply(self, dep_table):
         """Initialize supply and access state attributes for enduser dependencies
@@ -559,8 +574,11 @@ class Network:
         initialize_capacity : Initialize capacity attributes
         initialize_funcstates : Initialize functional state attributes
         """
-        for __, row in dep_table.loc[dep_table['type_I'] == 'enduser'].iterrows():
+        for __, row in dep_table.loc[dep_table["type_I"] == "enduser"].iterrows():
             self.nodes[f'access_state_{row["source"]}_people'] = "undefined"
             self.nodes[f'actual_supply_{row["source"]}_people'] = 0
-            #self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row["source"]}_people'] = 1
-            self.nodes.loc[self.nodes['ci_type']=='people',f'access_state_{row["source"]}_people'] = "no base access"
+            # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row["source"]}_people'] = 1
+            self.nodes.loc[
+                self.nodes["ci_type"] == "people",
+                f'access_state_{row["source"]}_people',
+            ] = "no base access"
