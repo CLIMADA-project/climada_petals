@@ -31,7 +31,7 @@ import pyproj
 from climada_petals.engine.networks.nw_base import Network
 
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel('INFO')
+LOGGER.setLevel("INFO")
 
 
 # =============================================================================
@@ -44,7 +44,7 @@ https://github.com/ElcoK/trails/blob/main/src/trails/simplify.py
 """
 
 
-def add_ids(network, id_col='id'):
+def add_ids(network, id_col="id"):
     """
     Add or replace an id column with ascending ids
 
@@ -72,7 +72,7 @@ def add_ids(network, id_col='id'):
     return Network(edges, nodes)
 
 
-def add_topology(network, id_col='id'):
+def add_topology(network, id_col="id"):
     """
     Add or replace from_id, to_id to edges
 
@@ -96,8 +96,7 @@ def add_topology(network, id_col='id'):
     edges = network.edges.copy()
 
     sindex = shapely.STRtree(nodes.geometry)
-    for edge in tqdm(
-            edges.itertuples(), desc="topology", total=len(edges)):
+    for edge in tqdm(edges.itertuples(), desc="topology", total=len(edges)):
         start, end = line_endpoints(edge.geometry)
         try:
             start_node = nearest_node(start, nodes, sindex)
@@ -112,8 +111,8 @@ def add_topology(network, id_col='id'):
             bugs.append(edge.id)
             to_ids.append(-1)
 
-    edges['from_id'] = from_ids
-    edges['to_id'] = to_ids
+    edges["from_id"] = from_ids
+    edges["to_id"] = to_ids
     edges = edges.loc[~(edges.id.isin(list(bugs)))].reset_index(drop=True)
 
     return Network(edges, nodes)
@@ -153,7 +152,7 @@ def nearest(geom, dataframe, sindex):
     matches_idx = sindex.query(geom)
     nearest_geom = min(
         [dataframe.iloc[match_idx] for match_idx in matches_idx],
-        key=lambda match: shapely.measurement.distance(match.geometry, geom)
+        key=lambda match: shapely.measurement.distance(match.geometry, geom),
     )
     return nearest_geom
 
@@ -190,13 +189,12 @@ def get_endpoints(network):
     """
     endpoints = []
     for edge in tqdm(
-            network.edges.itertuples(),
-            desc="endpoints",
-            total=len(network.edges)):
+        network.edges.itertuples(), desc="endpoints", total=len(network.edges)
+    ):
         if edge.geometry is None:
             continue
         # 5 is MULTILINESTRING
-        if shapely.get_type_id(edge.geometry) == '5':
+        if shapely.get_type_id(edge.geometry) == "5":
             for line in edge.geometry.geoms:
                 start, end = line_endpoints(line)
                 endpoints.append(start)
@@ -207,7 +205,7 @@ def get_endpoints(network):
             endpoints.append(end)
 
     # create dataframe to match the nodes geometry column name
-    return gpd.GeoDataFrame(geometry=endpoints, crs='EPSG:4326')
+    return gpd.GeoDataFrame(geometry=endpoints, crs="EPSG:4326")
 
 
 def add_endpoints(network):
@@ -252,8 +250,7 @@ def merge_multilinestrings(network):
     nodes = network.nodes.copy()
     edges = network.edges.copy()
 
-    edges['geometry'] = edges.geometry.apply(
-        lambda x: merge_multilinestring(x))
+    edges["geometry"] = edges.geometry.apply(lambda x: merge_multilinestring(x))
 
     return Network(edges, nodes)
 
@@ -271,7 +268,7 @@ def merge_multilinestring(geom):
     geom (shapely.geometry): A shapely linestring geometry if merge was
         succesful. If not, it returns the input.
     """
-    if shapely.get_type_id(geom) == '5':
+    if shapely.get_type_id(geom) == "5":
         geom_inb = shapely.line_merge(geom)
         if geom_inb.is_ring:  # still something to fix if desired
             return geom_inb
@@ -316,28 +313,26 @@ def clean_roundabouts(network):
     edges = network.edges.copy()
     nodes = network.nodes.copy()
 
-    sindex = shapely.STRtree(edges['geometry'])
+    sindex = shapely.STRtree(edges["geometry"])
     new_edge = []
     remove_edge = []
     new_edge_id = []
-    attributes = [x for x in edges.columns if x not in [
-        'geometry', 'osm_id']]
+    attributes = [x for x in edges.columns if x not in ["geometry", "osm_id"]]
 
     roundabouts = find_roundabouts(network)
     for roundabout in roundabouts:
         round_centroid = shapely.constructive.centroid(roundabout.geometry)
         remove_edge.append(roundabout.Index)
 
-        edges_intersect = _intersects(
-            roundabout.geometry, edges['geometry'], sindex)
+        edges_intersect = _intersects(roundabout.geometry, edges["geometry"], sindex)
         # index at e[0] geometry at e[1] of edges that intersect with
         for edg in edges_intersect.items():
             edge = edges.iloc[edg[0]]
             start = shapely.get_point(edg[1], 0)
             end = shapely.get_point(edg[1], -1)
-            first_co_is_closer = \
-                shapely.measurement.distance(end, round_centroid) > \
-                shapely.measurement.distance(start, round_centroid)
+            first_co_is_closer = shapely.measurement.distance(
+                end, round_centroid
+            ) > shapely.measurement.distance(start, round_centroid)
             co_ords = shapely.coordinates.get_coordinates(edge.geometry)
             centroid_co = shapely.coordinates.get_coordinates(round_centroid)
             if first_co_is_closer:
@@ -360,9 +355,9 @@ def clean_roundabouts(network):
                 double_edge = new_edge.pop(a)
                 start = shapely.get_point(double_edge[-1], 0)
                 end = shapely.get_point(double_edge[-1], -1)
-                first_co_is_closer = \
-                    shapely.measurement.distance(end, round_centroid) > \
-                    shapely.measurement.distance(start, round_centroid)
+                first_co_is_closer = shapely.measurement.distance(
+                    end, round_centroid
+                ) > shapely.measurement.distance(start, round_centroid)
                 co_ords = shapely.coordinates.get_coordinates(double_edge[-1])
                 if first_co_is_closer:
                     new_co = np.concatenate((centroid_co, co_ords))
@@ -370,15 +365,17 @@ def clean_roundabouts(network):
                     new_co = np.concatenate((co_ords, centroid_co))
                 snap_line = shapely.linestrings(new_co)
                 new_edge.append(
-                    [edge.osm_id]+list(edge[list(attributes)])+[snap_line])
+                    [edge.osm_id] + list(edge[list(attributes)]) + [snap_line]
+                )
 
             else:
                 new_edge.append(
-                    [edge.osm_id]+list(edge[list(attributes)])+[snap_line])
+                    [edge.osm_id] + list(edge[list(attributes)]) + [snap_line]
+                )
                 new_edge_id.append(edge.osm_id)
             remove_edge.append(edg[0])
 
-    new = pd.DataFrame(new_edge, columns=['osm_id']+attributes+['geometry'])
+    new = pd.DataFrame(new_edge, columns=["osm_id"] + attributes + ["geometry"])
     edges = edges.loc[~edges.index.isin(remove_edge)]
     edges = pd.concat([edges, new]).reset_index(drop=True)
 
@@ -400,13 +397,14 @@ def calculate_degree(network):
     Connectivity degree (numpy.array): [description]
     """
     if network.edges.empty:
-        return [0]*len(network.nodes)
+        return [0] * len(network.nodes)
     # the number of nodes(from index) to use as the number of bins
     ndC = len(network.nodes.index)
-    if ndC-1 > max(network.edges.from_id) and ndC-1 > max(network.edges.to_id):
+    if ndC - 1 > max(network.edges.from_id) and ndC - 1 > max(network.edges.to_id):
         print("Calculate_degree possibly unhappy")
-    return (np.bincount(network.edges['from_id'], None, ndC) +
-            np.bincount(network.edges['to_id'], None, ndC))
+    return np.bincount(network.edges["from_id"], None, ndC) + np.bincount(
+        network.edges["to_id"], None, ndC
+    )
 
 
 def add_degree(network):
@@ -425,7 +423,7 @@ def add_degree(network):
 
     edges = network.edges.copy()
     nodes = network.nodes.copy()
-    nodes['degree'] = degree
+    nodes["degree"] = degree
 
     return Network(edges, nodes)
 
@@ -464,11 +462,15 @@ def find_closest_2_edges(edgeIDs, edges, nodGeometry):
     -------
         [type]: [description]
     """
-    edge_path_1 = min([edges.iloc[match_idx] for match_idx in edgeIDs],
-                      key=lambda match: shapely.distance(nodGeometry, match.geometry))
+    edge_path_1 = min(
+        [edges.iloc[match_idx] for match_idx in edgeIDs],
+        key=lambda match: shapely.distance(nodGeometry, match.geometry),
+    )
     edgeIDs.remove(edge_path_1.name)
-    edge_path_2 = min([edges.iloc[match_idx] for match_idx in edgeIDs],
-                      key=lambda match:  shapely.distance(nodGeometry, match.geometry))
+    edge_path_2 = min(
+        [edges.iloc[match_idx] for match_idx in edgeIDs],
+        key=lambda match: shapely.distance(nodGeometry, match.geometry),
+    )
     return edge_path_1, edge_path_2
 
 
@@ -498,17 +500,18 @@ def merge_edges(network, print_err=False):
     edges = network.edges.copy()
 
     optional_cols = edges.columns.difference(
-        ['osm_id', 'geometry', 'from_id', 'to_id', 'id'])
+        ["osm_id", "geometry", "from_id", "to_id", "id"]
+    )
     edg_sindex = shapely.STRtree(edges.geometry)
 
-    if 'degree' not in nodes.columns:
+    if "degree" not in nodes.columns:
         deg = calculate_degree(network)
     else:
-        deg = nodes['degree'].to_numpy()
+        deg = nodes["degree"].to_numpy()
     degree2 = np.where(deg == 2)
-    n2 = set((nodes['id'].iloc[degree2]))
+    n2 = set((nodes["id"].iloc[degree2]))
 
-    nodGeom = nodes['geometry']
+    nodGeom = nodes["geometry"]
     eIDtoRemove = []
 
     # make progressbar with tqdm(total=len(n2))
@@ -521,20 +524,23 @@ def merge_edges(network, print_err=False):
         pos_0_deg.append(nodeID)
         # Co-ordinates of current node
         node_geometry = nodGeom[nodeID]
-        eID = set(edg_sindex.query(node_geometry, predicate='intersects'))
+        eID = set(edg_sindex.query(node_geometry, predicate="intersects"))
         # Find the nearest 2 edges, unless there is an error in the dataframe
         # this will return the connected edges using spatial indexing
         if len(eID) > 2:
-            edge_path_1, edge_path_2 = find_closest_2_edges(
-                eID, edges, node_geometry)
+            edge_path_1, edge_path_2 = find_closest_2_edges(eID, edges, node_geometry)
         elif len(eID) < 2:
             continue
         else:
             edge_path_1 = edges.iloc[eID.pop()]
             edge_path_2 = edges.iloc[eID.pop()]
         # For the two edges found, identify the next 2 nodes in either direction
-        next_node_1 = edge_path_1.to_id if edge_path_1.from_id == nodeID else edge_path_1.from_id
-        next_node_2 = edge_path_2.to_id if edge_path_2.from_id == nodeID else edge_path_2.from_id
+        next_node_1 = (
+            edge_path_1.to_id if edge_path_1.from_id == nodeID else edge_path_1.from_id
+        )
+        next_node_2 = (
+            edge_path_2.to_id if edge_path_2.from_id == nodeID else edge_path_2.from_id
+        )
         if next_node_1 == next_node_2:
             continue
         possibly_delete.append(edge_path_2.id)
@@ -547,17 +553,24 @@ def merge_edges(network, print_err=False):
             if next_node_1 in pos_0_deg:
                 break
             next_node_1Geom = nodGeom[next_node_1]
-            eID = set(edg_sindex.query(
-                next_node_1Geom, predicate='intersects'))
+            eID = set(edg_sindex.query(next_node_1Geom, predicate="intersects"))
             eID.discard(edge_path_1.id)
             try:
-                edge_path_1 = min([edges.iloc[match_idx] for match_idx in eID],
-                                  key=lambda match: shapely.distance(next_node_1Geom, (match.geometry)))
+                edge_path_1 = min(
+                    [edges.iloc[match_idx] for match_idx in eID],
+                    key=lambda match: shapely.distance(
+                        next_node_1Geom, (match.geometry)
+                    ),
+                )
             except:
                 continue
             pos_0_deg.append(next_node_1)
             n2.discard(next_node_1)
-            next_node_1 = edge_path_1.to_id if edge_path_1.from_id == next_node_1 else edge_path_1.from_id
+            next_node_1 = (
+                edge_path_1.to_id
+                if edge_path_1.from_id == next_node_1
+                else edge_path_1.from_id
+            )
             newEdge.append(edge_path_1.geometry)
             possibly_delete.append(edge_path_1.id)
 
@@ -565,42 +578,52 @@ def merge_edges(network, print_err=False):
             if next_node_2 in pos_0_deg:
                 break
             next_node_2Geom = nodGeom[next_node_2]
-            eID = set(edg_sindex.query(
-                next_node_2Geom, predicate='intersects'))
+            eID = set(edg_sindex.query(next_node_2Geom, predicate="intersects"))
             eID.discard(edge_path_2.id)
             try:
-                edge_path_2 = min([edges.iloc[match_idx] for match_idx in eID],
-                                  key=lambda match: shapely.distance(next_node_2Geom, (match.geometry)))
+                edge_path_2 = min(
+                    [edges.iloc[match_idx] for match_idx in eID],
+                    key=lambda match: shapely.distance(
+                        next_node_2Geom, (match.geometry)
+                    ),
+                )
             except:
                 continue
             pos_0_deg.append(next_node_2)
             n2.discard(next_node_2)
-            next_node_2 = edge_path_2.to_id if edge_path_2.from_id == next_node_2 else edge_path_2.from_id
+            next_node_2 = (
+                edge_path_2.to_id
+                if edge_path_2.from_id == next_node_2
+                else edge_path_2.from_id
+            )
             newEdge.append(edge_path_2.geometry)
             possibly_delete.append(edge_path_2.id)
         # Update the information of the first edge
-        new_merged_geom = shapely.line_merge(
-            shapely.multilinestrings([newEdge]))
+        new_merged_geom = shapely.line_merge(shapely.multilinestrings([newEdge]))
         if shapely.get_type_id(new_merged_geom) == 1:
-            edges.at[info_first_edge, 'geometry'] = new_merged_geom
+            edges.at[info_first_edge, "geometry"] = new_merged_geom
             if nodGeom[next_node_1] == shapely.get_point(new_merged_geom, 0):
-                edges.at[info_first_edge, 'from_id'] = next_node_1
-                edges.at[info_first_edge, 'to_id'] = next_node_2
+                edges.at[info_first_edge, "from_id"] = next_node_1
+                edges.at[info_first_edge, "to_id"] = next_node_2
             else:
-                edges.at[info_first_edge, 'from_id'] = next_node_2
-                edges.at[info_first_edge, 'to_id'] = next_node_1
+                edges.at[info_first_edge, "from_id"] = next_node_2
+                edges.at[info_first_edge, "to_id"] = next_node_1
             eIDtoRemove += possibly_delete
             possibly_delete.append(info_first_edge)
             for x in pos_0_deg:
                 deg[x] = 0
             mode_edges = edges.loc[edges.id.isin(possibly_delete)]
-            edges.loc[info_first_edge, optional_cols] = mode_edges[optional_cols].mode(
-            ).iloc[0].values
+            edges.loc[info_first_edge, optional_cols] = (
+                mode_edges[optional_cols].mode().iloc[0].values
+            )
         else:
             if print_err:
-                print("Line", info_first_edge,
-                      "failed to merge, has shapely type ",
-                      shapely.get_type_id(edges.at[info_first_edge, 'geometry']))
+                print(
+                    "Line",
+                    info_first_edge,
+                    "failed to merge, has shapely type ",
+                    shapely.get_type_id(edges.at[info_first_edge, "geometry"]),
+                )
 
     edges = edges.loc[~(edges.id.isin(eIDtoRemove))].reset_index(drop=True)
 
@@ -625,13 +648,11 @@ def node_connectivity_degree(node, network):
         type]: [description]
     """
     return len(
-        network.edges[
-            (network.edges.from_id == node) | (network.edges.to_id == node)
-        ]
+        network.edges[(network.edges.from_id == node) | (network.edges.to_id == node)]
     )
 
 
-def drop_duplicate_geometries(dataframe, keep='first'):
+def drop_duplicate_geometries(dataframe, keep="first"):
     """
     Drop duplicate geometries from a dataframe
 
@@ -675,15 +696,15 @@ def reset_ids(network):
     new_node_ids = np.arange(len(nodes))
 
     # Map old node IDs to new IDs using a dictionary
-    id_map = dict(zip(nodes['id'], new_node_ids))
+    id_map = dict(zip(nodes["id"], new_node_ids))
 
     # Efficiently map old IDs to new IDs in 'to_id' and 'from_id' columns
-    edges['from_id'] = edges['from_id'].map(id_map)
-    edges['to_id'] = edges['to_id'].map(id_map)
+    edges["from_id"] = edges["from_id"].map(id_map)
+    edges["to_id"] = edges["to_id"].map(id_map)
 
     # Update node and edge IDs
-    nodes['id'] = new_node_ids
-    edges['id'] = np.arange(len(edges))
+    nodes["id"] = new_node_ids
+    edges["id"] = np.arange(len(edges))
 
     # Reset indices to ensure a clean, sequential index
     edges.reset_index(drop=True, inplace=True)
@@ -696,52 +717,79 @@ def split_edges_at_nodes(network):
     """
     Split network edges where they intersect node geometries
     """
-    sindex_nodes = shapely.STRtree(network.nodes['geometry'])
-    sindex_edges = shapely.STRtree(network.edges['geometry'])
-    attributes = [x for x in network.edges.columns if x not in [
-        'index', 'geometry', 'osm_id']]
+    sindex_nodes = shapely.STRtree(network.nodes["geometry"])
+    sindex_edges = shapely.STRtree(network.edges["geometry"])
+    attributes = [
+        x for x in network.edges.columns if x not in ["index", "geometry", "osm_id"]
+    ]
     grab_all_edges = []
 
     # TODO: this takes really long. Rewrite?
-    for edge in tqdm(network.edges.itertuples(index=False), desc="splitting",
-                     total=len(network.edges)):
+    for edge in tqdm(
+        network.edges.itertuples(index=False),
+        desc="splitting",
+        total=len(network.edges),
+    ):
         hits_nodes = nodes_intersecting(
-            edge.geometry, network.nodes['geometry'], sindex_nodes, tolerance=1e-9)
+            edge.geometry, network.nodes["geometry"], sindex_nodes, tolerance=1e-9
+        )
         hits_edges = nodes_intersecting(
-            edge.geometry, network.edges['geometry'], sindex_edges, tolerance=1e-9)
-        hits_edges = shapely.set_operations.intersection(
-            edge.geometry, hits_edges)
+            edge.geometry, network.edges["geometry"], sindex_edges, tolerance=1e-9
+        )
+        hits_edges = shapely.set_operations.intersection(edge.geometry, hits_edges)
         try:
-            hits_edges = (
-                hits_edges[~(shapely.predicates.covers(hits_edges, edge.geometry))])
-            hits_edges = pd.Series([shapely.points(item) for sublist in [shapely.get_coordinates(
-                x) for x in hits_edges] for item in sublist], name='geometry')
-            hits = [shapely.points(x) for x in
-                    shapely.coordinates.get_coordinates(
-                        shapely.constructive.extract_unique_points
-                        (shapely.multipoints(pd.concat([hits_nodes, hits_edges]
-                                                       ).values)))]
+            hits_edges = hits_edges[
+                ~(shapely.predicates.covers(hits_edges, edge.geometry))
+            ]
+            hits_edges = pd.Series(
+                [
+                    shapely.points(item)
+                    for sublist in [shapely.get_coordinates(x) for x in hits_edges]
+                    for item in sublist
+                ],
+                name="geometry",
+            )
+            hits = [
+                shapely.points(x)
+                for x in shapely.coordinates.get_coordinates(
+                    shapely.constructive.extract_unique_points(
+                        shapely.multipoints(pd.concat([hits_nodes, hits_edges]).values)
+                    )
+                )
+            ]
         except TypeError:
             return hits_edges
-        hits = pd.DataFrame(hits, columns=['geometry'])
+        hits = pd.DataFrame(hits, columns=["geometry"])
         # get points and geometry as list of coordinates
         split_points = shapely.coordinates.get_coordinates(
-            shapely.snap(hits, edge.geometry, tolerance=1e-9))
+            shapely.snap(hits, edge.geometry, tolerance=1e-9)
+        )
         coor_geom = shapely.coordinates.get_coordinates(edge.geometry)
         # potentially split to multiple edges
-        split_locs = np.argwhere(
-            np.isin(coor_geom, split_points).all(axis=1))[:, 0]
+        split_locs = np.argwhere(np.isin(coor_geom, split_points).all(axis=1))[:, 0]
         split_locs = list(zip(split_locs.tolist(), split_locs.tolist()[1:]))
-        new_edges = [coor_geom[split_loc[0]:split_loc[1]+1]
-                     for split_loc in split_locs]
-        grab_all_edges.append([[edge.osm_id]*len(new_edges), [shapely.linestrings(edge)
-                              for edge in new_edges], [edge[1:-1]]*len(new_edges)])
+        new_edges = [
+            coor_geom[split_loc[0] : split_loc[1] + 1] for split_loc in split_locs
+        ]
+        grab_all_edges.append(
+            [
+                [edge.osm_id] * len(new_edges),
+                [shapely.linestrings(edge) for edge in new_edges],
+                [edge[1:-1]] * len(new_edges),
+            ]
+        )
 
     big_list = [list(zip(x[0], x[1], x[2])) for x in grab_all_edges]
 
     # combine all new edges
-    edges = pd.DataFrame([[item[0], item[1]]+list(item[2]) for sublist in big_list for item in sublist],
-                         columns=['osm_id', 'geometry']+attributes)
+    edges = pd.DataFrame(
+        [
+            [item[0], item[1]] + list(item[2])
+            for sublist in big_list
+            for item in sublist
+        ],
+        columns=["osm_id", "geometry"] + attributes,
+    )
     nodes = network.nodes.copy()
 
     return Network(edges, nodes)
@@ -788,7 +836,7 @@ def _intersects_dataframe(geom, dataframe, sindex):
     -------
     [type]: [description]
     """
-    return dataframe[sindex.query(geom, 'intersects')]
+    return dataframe[sindex.query(geom, "intersects")]
 
 
 def intersects(geom, dataframe, sindex, tolerance=1e-9):
@@ -848,21 +896,22 @@ def add_distances(network):
         return Network(edges, nodes)
     # Find crs of current dataframe and arbitrary point(lat,lon) for new crs
     current_crs = "epsg:4326"
-    lat = shapely.get_y(network.nodes['geometry'].iloc[0])
-    lon = shapely.get_x(network.nodes['geometry'].iloc[0])
+    lat = shapely.get_y(network.nodes["geometry"].iloc[0])
+    lon = shapely.get_x(network.nodes["geometry"].iloc[0])
     # formula below based on :https://gis.stackexchange.com/a/190209/80697
-    approximate_crs = "epsg:" +\
-        str(int(32700-np.round((45+lat)/90, 0)*100+np.round((183+lon)/6, 0)))
+    approximate_crs = "epsg:" + str(
+        int(32700 - np.round((45 + lat) / 90, 0) * 100 + np.round((183 + lon) / 6, 0))
+    )
     # from shapely/issues/95
-    coords = shapely.get_coordinates(edges['geometry'])
+    coords = shapely.get_coordinates(edges["geometry"])
     transformer = pyproj.Transformer.from_crs(
-        current_crs, approximate_crs, always_xy=True)
+        current_crs, approximate_crs, always_xy=True
+    )
     new_coords = transformer.transform(coords[:, 0], coords[:, 1])
-    result = shapely.set_coordinates(
-        edges['geometry'].copy(), np.array(new_coords).T)
+    result = shapely.set_coordinates(edges["geometry"].copy(), np.array(new_coords).T)
     dist = shapely.length(result)
 
-    edges['distance'] = dist
+    edges["distance"] = dist
 
     return Network(edges, nodes)
 
@@ -874,9 +923,11 @@ def _ecols_to_graphorder(edges):
     Parameters
     ----------
     """
-    return edges.reindex(['from_id', 'to_id'] +
-                         [x for x in list(edges)
-                          if x not in ['from_id', 'to_id']], axis=1)
+    return edges.reindex(
+        ["from_id", "to_id"]
+        + [x for x in list(edges) if x not in ["from_id", "to_id"]],
+        axis=1,
+    )
 
 
 def _vcols_to_graphorder(nodes):
@@ -886,13 +937,13 @@ def _vcols_to_graphorder(nodes):
     Parameters
     ----------
     """
-    return nodes.reindex(['id'] + [x for x in list(nodes)
-                         if x not in ['id']], axis=1)
+    return nodes.reindex(["id"] + [x for x in list(nodes) if x not in ["id"]], axis=1)
 
 
 # =============================================================================
 # Simplification wrappers
 # =============================================================================
+
 
 def simplified_network(network):
     """
@@ -915,10 +966,9 @@ def simplified_network(network):
     # network = add_endpoints(network)
     network_simp = add_ids(network_simp)
     network_simp = add_topology(network_simp)
-    network_simp.nodes['degree'] = calculate_degree(network_simp)
+    network_simp.nodes["degree"] = calculate_degree(network_simp)
     network_simp = merge_edges(network_simp)
-    network_simp.edges = drop_duplicate_geometries(
-        network_simp.edges,  keep='first')
+    network_simp.edges = drop_duplicate_geometries(network_simp.edges, keep="first")
     network_simp = reset_ids(network_simp)
     network_simp = add_distances(network_simp)
     network_simp = merge_multilinestrings(network_simp)
