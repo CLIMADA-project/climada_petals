@@ -190,8 +190,22 @@ def test_funcstates_sum(graph_calcs):
 
     assert isinstance(v_sum, (int, float))
     assert isinstance(e_sum, (int, float))
-    assert v_sum > 0
-    assert e_sum > 0
+    assert v_sum == 5
+    assert e_sum == 4
+
+def test_funcstates_sum_with_failures(graph_calcs):
+    """Test summing functional states with some failures"""
+    graph_calcs.build_graph()
+
+    # Set some vertices to failed state
+    graph_calcs.graph.vs[1]['func_tot'] = 0
+    graph_calcs.graph.es[0]['func_tot'] = 0
+
+    v_sum, e_sum = graph_calcs.funcstates_sum()
+
+    # Should reflect the failures
+    assert v_sum == 4
+    assert e_sum == 3
 
 def test_create_subgraph_filter(graph_calcs_with_remote_node):
     """Test creating subgraph with filtered vertices"""
@@ -301,6 +315,9 @@ def test_link_clusters_with_threshold_high(graph_calcs_with_remote_node_missing_
     # Verify method completes
     assert graph_calcs_with_remote_node_missing_edge.graph.ecount() == initial_edge_count + 1
     assert 'cluster_link' in graph_calcs_with_remote_node_missing_edge.graph.es['ci_type']
+    assert graph_calcs_with_remote_node_missing_edge.graph.es.select(ci_type='cluster_link')["geometry"][0].bounds[0:2] == (4,4)
+    assert graph_calcs_with_remote_node_missing_edge.graph.es.select(ci_type='cluster_link')["geometry"][0].bounds[2:4] == (4,50)
+
 
 def test_link_vertices_closest_k_low_thresh(graph_calcs):
     """Test linking vertices by k-nearest neighbors"""
@@ -316,7 +333,7 @@ def test_link_vertices_closest_k_low_thresh(graph_calcs):
         k=1
     )
 
-    # Should add at least one edge
+    # Should not add any edge
     assert graph_calcs.graph.ecount() == initial_edge_count
     assert 'link_road_people' not in graph_calcs.graph.es['ci_type']
 
@@ -498,20 +515,6 @@ def test_calc_dependencies_distance_via_fail(graph_calcs_with_edge_ci_fail):
 
     assert 'dep_link' not in graph_calcs_with_edge_ci_fail.graph.es['ci_type']
     assert graph_calcs_with_edge_ci_fail.graph.ecount() == initial_edge_count
-
-def test_funcstates_sum_with_failures(graph_calcs):
-    """Test summing functional states with some failures"""
-    graph_calcs.build_graph()
-
-    # Set some vertices to failed state
-    graph_calcs.graph.vs[1]['func_tot'] = 0
-    graph_calcs.graph.es[0]['func_tot'] = 0
-
-    v_sum, e_sum = graph_calcs.funcstates_sum()
-
-    # Should reflect the failures
-    assert v_sum < graph_calcs.graph.vcount()
-    assert e_sum < graph_calcs.graph.ecount()
 
 def test_check_access_basic_undisrupted(graph_calcs, dependency_table):
     """Test _check_access basic functionality"""
