@@ -40,8 +40,8 @@ class Network:
     plot_access = access_plot
 
     def __init__(self,
-                 edges=gpd.GeoDataFrame(),
-                 nodes=gpd.GeoDataFrame()):
+                 edges=None,
+                 nodes=None):
         """Initialize a network object from edges and nodes GeoDataFrames
 
         Creates a Network instance with optional edges (line features) and nodes (point features).
@@ -62,7 +62,7 @@ class Network:
         Attributes
         ----------
         edges : gpd.GeoDataFrame
-            Network edges with 'from_id', 'to_id', 'id', 'orig_id', 'osm_id', and 'geometry' columns
+            Network edges with 'from_id', 'to_id', 'id', 'orig_id', and 'geometry' columns
         nodes : gpd.GeoDataFrame
             Network nodes with 'id', 'orig_id', and 'geometry' columns
 
@@ -76,27 +76,24 @@ class Network:
         >>> nodes_gdf = gpd.GeoDataFrame(...)
         >>> network = Network(edges=edges_gdf, nodes=nodes_gdf)
         """
-        if edges.empty:
+        if edges is None:
             edges = gpd.GeoDataFrame(
                 columns=['from_id', 'to_id', 'id', 'orig_id', 'geometry'],
                 geometry='geometry', crs='EPSG:4326')
-        if nodes.empty:
+        if nodes is None:
             nodes = gpd.GeoDataFrame(
                 columns=['id', 'orig_id', 'geometry'],
                 geometry='geometry', crs='EPSG:4326')
 
-        if not hasattr(edges, 'orig_id'):
+        if 'orig_id' not in edges.columns:
             edges['orig_id'] = range(len(edges))
-        if not hasattr(nodes, 'orig_id'):
+        if 'orig_id' not in nodes.columns:
             nodes['orig_id'] = range(len(nodes))
 
-        if not hasattr(edges, 'id'):
+        if 'id' not in edges.columns:
             edges['id'] = range(len(edges))
-        if not hasattr(nodes, 'id'):
+        if 'id' not in nodes.columns:
             nodes['id'] = range(len(nodes))
-
-        if not hasattr(edges, 'osm_id'):
-            edges['osm_id'] = range(len(edges))
 
         self.edges = edges
         self.nodes = nodes
@@ -127,7 +124,7 @@ class Network:
         self.edges = self.edges.to_crs(crs)
 
     @classmethod
-    def from_nws(cls, networks):
+    def from_networks(cls, networks):
         """Combine multiple Network objects into a single unified Network
 
         Concatenates edges and nodes from multiple networks, automatically adjusting
@@ -151,22 +148,16 @@ class Network:
         >>> road_network = Network(edges=road_edges)
         >>> health_network = Network(nodes=health_nodes)
         >>> people_network = Network(nodes=people_nodes)
-        >>> combined = Network.from_nws([road_network, health_network, people_network])
+        >>> combined = Network.from_networks([road_network, health_network, people_network])
 
         Notes
         -----
         All input networks must have the same CRS (defaults to EPSG:4326).
         Node IDs are renumbered sequentially across all networks.
         """
-        edges = gpd.GeoDataFrame(
-            columns=['from_id', 'to_id', 'orig_id', 'geometry'],
-            geometry='geometry', crs='EPSG:4326')
-        nodes = gpd.GeoDataFrame(
-            columns=['id', 'orig_id', 'geometry'],
-            geometry='geometry', crs='EPSG:4326')
-
         id_counter_nodes = 0
-
+        edges = []
+        nodes = []
         for net in networks:
             edge_gdf = net.edges.reset_index(drop=True)
             node_gdf = net.nodes.reset_index(drop=True)
@@ -175,8 +166,10 @@ class Network:
             node_gdf['id'] = range(id_counter_nodes,
                                    id_counter_nodes+len(node_gdf))
             id_counter_nodes += len(node_gdf)
-            edges = pd.concat([edges, edge_gdf])
-            nodes = pd.concat([nodes, node_gdf])
+            edges.append(edge_gdf)
+            nodes.append(node_gdf)
+        edges = pd.concat(edges)
+        nodes = pd.concat(nodes)
         edges[['from_id', 'to_id']] = edges[['from_id', 'to_id']].astype(int)
 
         return Network(edges=edges.reset_index(drop=True),
@@ -270,7 +263,7 @@ class Network:
         edges = gpd.GeoDataFrame()
 
         if not zip_path.exists():
-            print(f"Archive {zip_path} not found")
+            LOGGER.info("Archive %s not found", zip_path)
             return Network(edges=edges, nodes=nodes)
 
         with ZipFile(zip_path, mode="r") as zf:
@@ -281,20 +274,20 @@ class Network:
                 with zf.open(nodes_name) as f:
                     nodes = gpd.read_feather(io.BytesIO(f.read()))
             else:
-                print(f"Nodes file {nodes_name} not found in archive")
+                LOGGER.info("Nodes file %s not found in archive", nodes_name)
 
             if edges_name in zf.namelist():
                 with zf.open(edges_name) as f:
                     edges = gpd.read_feather(io.BytesIO(f.read()))
             else:
-                print(f"Edges file {edges_name} not found in archive")
+                LOGGER.info("Edges file %s not found in archive", edges_name)
 
         return cls(edges=edges, nodes=nodes)
-    def update_network_from_graphs(self, graphs):
-        """Update network from an igraph.Graph object
+    @classmethod
+    def from_graphs(cls, graphs):
+        """Create network from an igraph.Graph object
 
-        Synchronizes the Network's nodes and edges GeoDataFrames with the current
-        state of an igraph.Graph object. This is typically used after graph-based
+        Creates a new Network instance from an igraph.Graph object. This is typically used after graph-based
         operations (e.g., adding edges, updating attributes) to reflect changes
         back to the Network structure.
 
@@ -310,26 +303,24 @@ class Network:
         - Renames graph columns 'source'/'target' to 'from_id'/'to_id' for edges
         - Resets node index and renames 'vertex ID' to 'id'
         - Maintains EPSG:4326 CRS
-        - Overwrites existing edges and nodes in the Network
+        - Creates new Network instance with updated edges and nodes
 
         See Also
         --------
         to_graph : Convert Network to igraph.Graph
         """
 
-        new_edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
+        edges = gpd.GeoDataFrame(graphs.get_edge_dataframe().rename(
             {'source': 'from_id', 'target': 'to_id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
-        new_nodes = graphs.get_vertex_dataframe()
-        if 'id' in new_nodes.columns:
-            new_nodes.pop('id')
-        new_nodes = gpd.GeoDataFrame(new_nodes.reset_index().rename(
+        nodes = graphs.get_vertex_dataframe()
+        if 'id' in nodes.columns:
+            nodes.pop('id')
+        nodes = gpd.GeoDataFrame(nodes.reset_index().rename(
             {'vertex ID': 'id'}, axis=1),
             geometry='geometry', crs='EPSG:4326')
 
-
-        self.edges = new_edges
-        self.nodes = new_nodes
+        return cls(edges=edges, nodes=nodes)
 
     def to_graph(self, directed=False):
         """Convert Network to an igraph.Graph object
@@ -358,17 +349,18 @@ class Network:
 
         See Also
         --------
-        update_network_from_graphs : Synchronize Network from Graph
+        from_graph : Create network from an igraph.Graph object
         igraph.Graph.DataFrame : Underlying graph construction method
         """
-        self.directed = directed
+
         if not self.edges.empty:
             graph = self._from_es(
-                gdf_edges=self.edges, gdf_nodes=self.nodes)
+                gdf_edges=self.edges, gdf_nodes=self.nodes, directed=directed)
         else:
             graph = self._from_vs(
-                gdf_nodes=self.nodes)
+                gdf_nodes=self.nodes, directed=directed)
         return graph
+
     def _remove_namecol(self, gdf_nodes):
         """Remove 'name' column from GeoDataFrame to avoid igraph conflicts
 
@@ -387,11 +379,34 @@ class Network:
             GeoDataFrame with 'name' column removed if it existed, or None
         """
         if gdf_nodes is not None:
-            if hasattr(gdf_nodes, 'name'):
+            if 'name' in gdf_nodes.columns:
                 gdf_nodes = gdf_nodes.drop('name', axis=1)
         return gdf_nodes
+    #copied from nw_preps
+    #TODO : decide if this should be a method of nw_preps or nw_base
+    def _ecols_to_graphorder(self, gdf_edges):
+        """
+        order columns as igraph expects them for building a graph
 
-    def _from_es(self, gdf_edges, gdf_nodes=None):
+        Parameters
+        ----------
+        """
+        return gdf_edges.reindex(['from_id', 'to_id'] +
+                             [x for x in list(gdf_edges)
+                              if x not in ['from_id', 'to_id']], axis=1)
+
+
+    def _vcols_to_graphorder(self, gdf_nodes):
+        """
+        order columns as igraph expects them for building a graph
+
+        Parameters
+        ----------
+        """
+        return gdf_nodes.reindex(['id'] + [x for x in list(gdf_nodes)
+                             if x not in ['id']], axis=1)
+
+    def _from_es(self, gdf_edges, gdf_nodes=None, directed=False):
         """Construct igraph.Graph from edges with optional nodes
 
         Parameters
@@ -400,18 +415,23 @@ class Network:
             Edge data with 'from_id', 'to_id', and other attributes
         gdf_nodes : gpd.GeoDataFrame, optional
             Node data. If None, nodes are inferred from edge endpoints.
+        directed : bool, optional
+            Whether to create a directed graph. Defaults to False (undirected).
 
         Returns
         -------
         igraph.Graph
             Graph constructed from edge list
         """
+        gdf_edges = self._ecols_to_graphorder(gdf_edges)
+        gdf_nodes = self._remove_namecol(gdf_nodes)
+        gdf_nodes = self._vcols_to_graphorder(gdf_nodes)
         return ig.Graph.DataFrame(
             gdf_edges,
-            vertices=self._remove_namecol(gdf_nodes),
-            directed=self.directed)
+            vertices=gdf_nodes,
+            directed=directed)
 
-    def _from_vs(self, gdf_nodes):
+    def _from_vs(self, gdf_nodes, directed=False):
         """Construct igraph.Graph from vertices only (no edges)
 
         Creates a graph with isolated vertices when no edge information is available.
@@ -420,6 +440,8 @@ class Network:
         ----------
         gdf_nodes : gpd.GeoDataFrame
             Node data with all vertex attributes
+        directed : bool, optional
+            Whether to create a directed graph. Defaults to False (undirected).
 
         Returns
         -------
@@ -427,11 +449,12 @@ class Network:
             Graph with n vertices and 0 edges, where n = len(gdf_nodes)
         """
         gdf_nodes = self._remove_namecol(gdf_nodes)
+        gdf_nodes = self._vcols_to_graphorder(gdf_nodes)
         vertex_attrs = gdf_nodes.to_dict('list')
         return ig.Graph(
             n=len(gdf_nodes),
             vertex_attrs=vertex_attrs,
-            directed=self.directed)
+            directed=directed)
 
     def initialize_funcstates(self):
         """Initialize functional state attributes for network components
