@@ -83,15 +83,6 @@ class GraphCalcs():
             return self.build_graph()
         return self._graph
 
-    def reset_graph_edges(self):
-        """Reset cached graph edges
-
-        Notes
-        -----
-        Use when edges are added/removed but vertices remain unchanged.
-        """
-        self._graph = None
-
     def full_reset(self):
         """Clear all graph and cache state
 
