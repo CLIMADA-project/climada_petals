@@ -278,7 +278,7 @@ def merge_multilinestring(geom):
         A shapely LineString geometry if the merge was successful.
         Otherwise, the original geometry is returned unchanged.
     """
-    if shapely.get_type_id(geom) == "5":
+    if shapely.get_type_id(geom) == 5:
         geom_inb = shapely.line_merge(geom)
         if geom_inb.is_ring:  # still something to fix if desired
             return geom_inb
