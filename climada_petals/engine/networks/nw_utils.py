@@ -122,8 +122,10 @@ def infra_plot(
     """Plot critical infrastructure network elements.
 
     Plots nodes and edges for each CI type with distinct markers, colors,
-    and line styles. When ``plot_col`` is not 'ci_type', a functional
-    status colorbar (disrupted/functioning) is added.
+    and line styles. Point infrastructure (non-people, non-line) is rendered
+    as a coloured disc with a white letter identifier on top for high
+    visibility. When ``plot_col`` is not 'ci_type', a functional status
+    colorbar (disrupted/functioning) is added.
 
     Parameters
     ----------
@@ -201,21 +203,42 @@ def infra_plot(
             )
         else:
             plot_df = self.nodes[self.nodes.ci_type == ci_type]
-            marker = f"${ci_type[0].upper()}$"
-            plot_df.plot(
-                plot_col,
-                ax=axes,
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
+            marker_letter = f"${ci_type[0].upper()}$"
+
+            # Background coloured disc for visibility
+            bg_kw = dict(
+                s=350,
+                marker="o",
+                transform=projection,
+                zorder=i + 1,
+                edgecolor="white",
+                linewidth=1.5,
+            )
+            if plot_col == "ci_type":
+                bg_kw["color"] = color
+            else:
+                bg_kw.update(
+                    c=plot_df[plot_col].values,
+                    cmap=cmap,
+                    vmin=vmin,
+                    vmax=vmax,
+                )
+            axes.scatter(
+                plot_df.geometry.x,
+                plot_df.geometry.y,
+                **bg_kw,
+                **ci_kwargs,
+            )
+            # White letter marker on top
+            axes.scatter(
+                plot_df.geometry.x,
+                plot_df.geometry.y,
+                s=100,
+                color="white",
+                marker=marker_letter,
                 transform=projection,
                 label=ci_type,
-                markersize=200,
-                zorder=i + 1,
-                marker=marker,
-                edgecolor="white",
-                linewidth=0.05,
-                **ci_kwargs,
+                zorder=i + 2,
             )
 
     axes.legend()
