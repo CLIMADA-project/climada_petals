@@ -117,6 +117,39 @@ def test_from_networks_multiple_networks(edges_gdf, nodes_gdf):
     assert combined.nodes["id"].max() == 9
 
 
+def test_from_networks_same_projected_crs(edges_projected_gdf, nodes_projected_gdf):
+    """Test combining multiple networks that share a projected CRS."""
+    network1 = Network(edges=edges_projected_gdf, nodes=nodes_projected_gdf)
+    network2 = Network(edges=edges_projected_gdf, nodes=nodes_projected_gdf)
+
+    combined = Network.from_networks([network1, network2])
+
+    assert len(combined.nodes) == 8  # 4 + 4
+    assert len(combined.edges) == 4  # 2 + 2
+    assert combined.crs.to_string() == "EPSG:32632"
+    assert combined.nodes.crs.to_string() == "EPSG:32632"
+    assert combined.edges.crs.to_string() == "EPSG:32632"
+    # Second network's node IDs should be offset by 4
+    assert combined.nodes["id"].tolist() == list(range(8))
+    assert combined.edges.iloc[2]["from_id"] == 4  # 0 + offset of 4
+    assert combined.edges.iloc[2]["to_id"] == 5  # 1 + offset of 4
+
+
+def test_from_networks_crs_mismatch_raises(
+    edges_gdf, nodes_gdf, edges_projected_gdf, nodes_projected_gdf
+):
+    """Test that combining networks with different CRS raises ValueError."""
+    network_geo = Network(edges=edges_gdf, nodes=nodes_gdf)
+    network_proj = Network(edges=edges_projected_gdf, nodes=nodes_projected_gdf)
+
+    with pytest.raises(ValueError):
+        Network.from_networks([network_geo, network_proj])
+
+    # Also check the reverse order
+    with pytest.raises(ValueError):
+        Network.from_networks([network_proj, network_geo])
+
+
 def test_to_graph_undirected(edges_gdf, nodes_gdf):
     """Test conversion to undirected igraph"""
     network = Network(edges=edges_gdf, nodes=nodes_gdf)
