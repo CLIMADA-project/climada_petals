@@ -260,7 +260,7 @@ def test_update_network_from_graphs(network_with_ci_types):
     graph.add_edge(2, 4)
 
     # Update network from graph
-    network_update = Network.from_graphs(graph)
+    network_update = Network.from_graphs(graph, crs=network_update.crs)
 
     assert len(network_update.nodes) == 6
     assert len(network_update.edges) == 5
