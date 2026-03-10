@@ -204,6 +204,77 @@ class TestEndpoints:
         # 4 edges connect 5 unique points (0..4)
         assert len(result.nodes) == 5
 
+    def test_get_endpoints_preserves_geographic_crs(self, simple_network):
+        """get_endpoints preserves geographic CRS (EPSG:4326)."""
+        assert simple_network.edges.crs.to_string() == "EPSG:4326"
+
+        endpoints = nw_preps.get_endpoints(simple_network)
+
+        assert endpoints.crs.to_string() == "EPSG:4326"
+
+    def test_get_endpoints_preserves_projected_crs(self):
+        """get_endpoints preserves projected CRS (EPSG:32632)."""
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [0, 1],
+                "to_id": [1, 2],
+                "id": [0, 1],
+                "osm_id": [100, 101],
+                "geometry": [
+                    LineString([(500000, 5000000), (501000, 5000000)]),
+                    LineString([(501000, 5000000), (502000, 5000000)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2],
+                "geometry": [
+                    Point(500000, 5000000),
+                    Point(501000, 5000000),
+                    Point(502000, 5000000),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert endpoints.crs.to_string() == "EPSG:32632"
+
+    def test_add_endpoints_preserves_projected_crs(self):
+        """add_endpoints preserves projected CRS through the full pipeline."""
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [0, 1],
+                "to_id": [1, 2],
+                "id": [0, 1],
+                "osm_id": [100, 101],
+                "geometry": [
+                    LineString([(500000, 5000000), (501000, 5000000)]),
+                    LineString([(501000, 5000000), (502000, 5000000)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        nodes = gpd.GeoDataFrame(
+            geometry=[],
+            crs="EPSG:32632",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        result = nw_preps.add_endpoints(network)
+
+        assert result.crs.to_string() == "EPSG:32632"
+        assert result.edges.crs.to_string() == "EPSG:32632"
+        assert result.nodes.crs.to_string() == "EPSG:32632"
+        assert len(result.nodes) == 3
+
 
 # ========================================================================
 # Tests: merge_multilinestring / merge_multilinestrings
@@ -802,6 +873,70 @@ class TestSimplifiedNetwork:
         ]
         assert (0.0, 0.0) in all_node_coords
         assert (4.0, 4.0) in all_node_coords
+
+
+# ========================================================================
+# Tests: split_edges_at_nodes
+# ========================================================================
+
+
+class TestSplitEdgesAtNodes:
+    def _make_crossing_network(self, crs):
+        """Build a network where an edge passes through an interior node.
+
+        Edge 0 goes from (0,0) to (2,0) passing through (1,0) which is a node.
+        Edge 1 is a short branch from (1,0) to (1,1).
+        This lets split_edges_at_nodes split edge 0 at the crossing node (1,0).
+        """
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [1, 2],
+                "from_id": [0, 2],
+                "to_id": [1, 2],
+                "id": [0, 1],
+                "geometry": [
+                    LineString([(0, 0), (1, 0), (2, 0)]),
+                    LineString([(1, 0), (1, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs=crs,
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2],
+                "geometry": [Point(0, 0), Point(2, 0), Point(1, 0)],
+            },
+            geometry="geometry",
+            crs=crs,
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    def test_preserves_geographic_crs(self):
+        """CRS is preserved through split_edges_at_nodes for geographic CRS."""
+        network = self._make_crossing_network("EPSG:4326")
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert result.edges.crs.to_string() == "EPSG:4326"
+        assert result.nodes.crs.to_string() == "EPSG:4326"
+
+    def test_preserves_projected_crs(self):
+        """CRS is preserved through split_edges_at_nodes for projected CRS."""
+        network = self._make_crossing_network("EPSG:32632")
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert result.edges.crs.to_string() == "EPSG:32632"
+        assert result.nodes.crs.to_string() == "EPSG:32632"
+
+    def test_edges_are_geodataframe(self):
+        """Result edges are a GeoDataFrame, not a plain DataFrame."""
+        network = self._make_crossing_network("EPSG:4326")
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert isinstance(result.edges, gpd.GeoDataFrame)
 
 
 # ========================================================================

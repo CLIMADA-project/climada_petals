@@ -216,8 +216,7 @@ def get_endpoints(network):
             endpoints.append(end)
 
     # create dataframe to match the nodes geometry column name
-    crs = network.edges.crs if network.edges.crs is not None else "EPSG:4326"
-    return gpd.GeoDataFrame(geometry=endpoints, crs=crs)
+    return gpd.GeoDataFrame(geometry=endpoints, crs=network.edges.crs)
 
 
 def add_endpoints(network):
@@ -824,13 +823,15 @@ def split_edges_at_nodes(network):
     big_list = [list(zip(x[0], x[1], x[2])) for x in grab_all_edges]
 
     # combine all new edges
-    edges = pd.DataFrame(
+    edges = gpd.GeoDataFrame(
         [
             [item[0], item[1]] + list(item[2])
             for sublist in big_list
             for item in sublist
         ],
         columns=["osm_id", "geometry"] + attributes,
+        geometry="geometry",
+        crs=network.edges.crs,
     )
     nodes = network.nodes.copy()
 
