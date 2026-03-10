@@ -149,7 +149,12 @@ def test_select_closest_k_basic():
     )
 
     v_ids_source, v_ids_target = GraphCalcs._select_closest_k(
-        gdf_vs_source, gdf_vs_target, dist_thresh=np.inf, bidir=False, k=1
+        gdf_vs_source,
+        gdf_vs_target,
+        dist_thresh=np.inf,
+        crs=gdf_vs_source.crs,
+        bidir=False,
+        k=1,
     )
 
     assert len(v_ids_source) > 0
@@ -173,7 +178,12 @@ def test_select_closest_k_dist():
     )
     dist_th = 2 * (ONE_LAT_KM * 1000)
     v_ids_source, v_ids_target = GraphCalcs._select_closest_k(
-        gdf_vs_source, gdf_vs_target, dist_thresh=dist_th, bidir=False, k=1
+        gdf_vs_source,
+        gdf_vs_target,
+        dist_thresh=dist_th,
+        crs=gdf_vs_source.crs,
+        bidir=False,
+        k=1,
     )
 
     assert len(v_ids_source) > 0

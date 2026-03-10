@@ -97,7 +97,11 @@ class GraphCalcs:
     # =============================================================================
 
     def link_clusters(
-        self, dist_thresh=np.inf, graph_connectivity_mode="weak", link_attrs=None
+        self,
+        dist_thresh=np.inf,
+        graph_connectivity_mode="weak",
+        link_attrs=None,
+        dist_auto_convert=True,
     ):
         """Link connected components into a single graph
 
@@ -112,6 +116,9 @@ class GraphCalcs:
             Connectivity mode for the graph. Default is ``"weak"``.
         link_attrs : dict, optional
             Edge attributes to set for newly created links.
+        dist_auto_convert : bool, optional
+            If ``True`` and the network is in a geographic CRS, automatically convert
+            the distance threshold from meters to degrees. Default is ``True``.
 
         Notes
         -----
@@ -127,8 +134,12 @@ class GraphCalcs:
         v_ids_source = []
         v_ids_target = []
 
-        # very rough conversion from metres to degrees
-        dist_thresh /= ONE_LAT_KM * 1000
+        if self.network.crs.is_geographic and dist_auto_convert:
+            dist_thresh /= ONE_LAT_KM * 1000
+            LOGGER.info(
+                "Network is in geographic CRS; automatically converting distance threshold to degrees: %f",
+                dist_thresh,
+            )
 
         members = np.unique(gdf_vs["membership"])
         if len(members) <= 1:
@@ -184,7 +195,7 @@ class GraphCalcs:
         df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
 
         v_ids_source, v_ids_target = self._select_closest_k(
-            df_vs_source, df_vs_target, dist_thresh, k, bidir
+            df_vs_source, df_vs_target, dist_thresh, k, self.network.crs, bidir
         )
 
         self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
@@ -380,7 +391,7 @@ class GraphCalcs:
 
         if not (gdf_vs_source.empty or gdf_vs_target.empty):
             v_ids_source, v_ids_target = self._select_closest_k(
-                gdf_vs_source, gdf_vs_target, dist_thresh, bidir, k
+                gdf_vs_source, gdf_vs_target, dist_thresh, k, self.network.crs, bidir
             )
 
             edge_geoms = make_edge_geometries(
@@ -491,7 +502,15 @@ class GraphCalcs:
         self.graph.add_edges(pairs, attributes=link_attrs)
 
     @staticmethod
-    def _select_closest_k(gdf_vs_source, gdf_vs_target, dist_thresh, k, bidir=False):
+    def _select_closest_k(
+        gdf_vs_source,
+        gdf_vs_target,
+        dist_thresh,
+        k,
+        crs,
+        bidir=False,
+        dist_auto_convert=True,
+    ):
         """Select closest source vertices for each target
 
         Parameters
@@ -504,8 +523,13 @@ class GraphCalcs:
             Maximum distance (in meters) for matches.
         k : int
             Number of closest sources per target.
+        crs : pyproj.CRS
+            Coordinate reference system for the data.
         bidir : bool, optional
             If ``True``, append reverse links. Default is ``False``.
+        dist_auto_convert : bool, optional
+            If ``True`` and the network is in a geographic CRS, automatically convert
+            the distance threshold from meters to degrees. Default is ``True``.
 
         Returns
         -------
@@ -513,8 +537,12 @@ class GraphCalcs:
             Source and target vertex indices for links.
         """
 
-        # crappy conversion of metres to degrees
-        dist_thresh /= ONE_LAT_KM * 1000
+        if crs.is_geographic and dist_auto_convert:
+            dist_thresh /= ONE_LAT_KM * 1000
+            LOGGER.info(
+                "Network is in geographic CRS; automatically converting distance threshold to degrees: %f",
+                dist_thresh,
+            )
 
         # index matches, in format (#target vs, k). nans for those without matches
         __, ix_matches = _ckdnearest(
