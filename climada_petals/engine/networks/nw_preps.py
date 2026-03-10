@@ -26,8 +26,8 @@ import numpy as np
 import logging
 import shapely
 from tqdm import tqdm
-import pyproj
 
+from climada.util.coordinates import compute_geodesic_lengths
 from climada_petals.engine.networks.nw_base import Network
 
 LOGGER = logging.getLogger(__name__)
@@ -205,7 +205,7 @@ def get_endpoints(network):
         if edge.geometry is None:
             continue
         # 5 is MULTILINESTRING
-        if shapely.get_type_id(edge.geometry) == "5":
+        if shapely.get_type_id(edge.geometry) == 5:
             for line in edge.geometry.geoms:
                 start, end = line_endpoints(line)
                 endpoints.append(start)
@@ -216,7 +216,8 @@ def get_endpoints(network):
             endpoints.append(end)
 
     # create dataframe to match the nodes geometry column name
-    return gpd.GeoDataFrame(geometry=endpoints, crs="EPSG:4326")
+    crs = network.edges.crs if network.edges.crs is not None else "EPSG:4326"
+    return gpd.GeoDataFrame(geometry=endpoints, crs=crs)
 
 
 def add_endpoints(network):
@@ -931,11 +932,48 @@ def nodes_intersecting(line, nodes, sindex, tolerance=1e-9):
     return intersects(line, nodes, sindex, tolerance)
 
 
+def _edge_lengths_metres(edges):
+    """Compute edge lengths in metres for any CRS.
+
+    For geographic CRS (coordinates in degrees), geodesic distances are
+    computed via :func:`climada.util.coordinates.compute_geodesic_lengths`.
+    For projected CRS (coordinates already in linear units such as metres),
+    ``shapely.length`` is used directly.
+
+    Parameters
+    ----------
+    edges : gpd.GeoDataFrame
+        Edge GeoDataFrame with a geometry column and a CRS set.
+
+    Returns
+    -------
+    np.ndarray
+        Edge lengths in metres.
+    """
+    if edges.crs is not None and not edges.crs.is_geographic:
+        # Projected CRS – shapely.length gives distances in CRS linear units.
+        # Convert to metres if the CRS unit is not already metres.
+        unit = edges.crs.axis_info[0].unit_name
+        lengths = shapely.length(edges.geometry)
+        if unit != "metre":
+            factor = edges.crs.axis_info[0].unit_conversion_factor
+            lengths = lengths * factor
+        return lengths
+
+    # Geographic CRS (or None → assume WGS 84) – use geodesic distances.
+    if edges.crs is None:
+        edges = edges.set_crs("EPSG:4326")
+    return compute_geodesic_lengths(edges).values
+
+
 def add_distances(network):
     """Add a distance column to edges in metres.
 
-    Reprojects edge geometries from EPSG:4326 to an approximate local CRS
-    derived from the first node's coordinates, then calculates edge lengths.
+    Handles both geographic CRS (e.g. EPSG:4326, coordinates in degrees)
+    and projected CRS (e.g. UTM, coordinates in metres).  For geographic
+    CRS, geodesic distances are computed via
+    :func:`climada.util.coordinates.compute_geodesic_lengths`.  For
+    projected CRS, ``shapely.length`` is used directly.
 
     Parameters
     ----------
@@ -947,30 +985,13 @@ def add_distances(network):
     Network
         Network with a 'distance' column (in metres) added to edges.
     """
-    # TODO: replace by climada-internal func (already exists)
     edges = network.edges.copy()
     nodes = network.nodes.copy()
 
     if edges.empty:
         return Network(edges, nodes)
-    # Find crs of current dataframe and arbitrary point(lat,lon) for new crs
-    current_crs = "epsg:4326"
-    lat = shapely.get_y(network.nodes["geometry"].iloc[0])
-    lon = shapely.get_x(network.nodes["geometry"].iloc[0])
-    # formula below based on :https://gis.stackexchange.com/a/190209/80697
-    approximate_crs = "epsg:" + str(
-        int(32700 - np.round((45 + lat) / 90, 0) * 100 + np.round((183 + lon) / 6, 0))
-    )
-    # from shapely/issues/95
-    coords = shapely.get_coordinates(edges["geometry"])
-    transformer = pyproj.Transformer.from_crs(
-        current_crs, approximate_crs, always_xy=True
-    )
-    new_coords = transformer.transform(coords[:, 0], coords[:, 1])
-    result = shapely.set_coordinates(edges["geometry"].copy(), np.array(new_coords).T)
-    dist = shapely.length(result)
 
-    edges["distance"] = dist
+    edges["distance"] = _edge_lengths_metres(edges)
 
     return Network(edges, nodes)
 

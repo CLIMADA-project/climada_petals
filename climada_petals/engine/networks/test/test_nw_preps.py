@@ -579,6 +579,84 @@ class TestAddDistances:
 
         assert result.edges.empty
 
+    def test_projected_crs(self):
+        """Distances are computed correctly for a projected (metric) CRS."""
+        # UTM zone 32N (EPSG:32632), coordinates in metres
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [0],
+                "to_id": [1],
+                "id": [0],
+                "geometry": [LineString([(500000, 5000000), (501000, 5000000)])],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1],
+                "geometry": [Point(500000, 5000000), Point(501000, 5000000)],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        network = Network(edges=edges, nodes=nodes)
+        result = nw_preps.add_distances(network)
+
+        # 1000 m horizontal line
+        np.testing.assert_allclose(result.edges["distance"].values, [1000.0], rtol=0.01)
+
+    def test_geographic_crs_values(self):
+        """Geodesic distances are reasonable for a known geographic edge."""
+        # One degree of longitude at equator ≈ 111 km
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [0],
+                "to_id": [1],
+                "id": [0],
+                "geometry": [LineString([(0, 0), (1, 0)])],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1],
+                "geometry": [Point(0, 0), Point(1, 0)],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+        result = nw_preps.add_distances(network)
+
+        # 1° longitude at equator ≈ 111 195 m (WGS-84 geodesic)
+        np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
+
+    def test_no_crs_treated_as_geographic(self):
+        """Edges without CRS are treated as geographic (EPSG:4326)."""
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [0],
+                "to_id": [1],
+                "id": [0],
+                "geometry": [LineString([(0, 0), (1, 0)])],
+            },
+            geometry="geometry",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1],
+                "geometry": [Point(0, 0), Point(1, 0)],
+            },
+            geometry="geometry",
+        )
+        network = Network(edges=edges, nodes=nodes)
+        result = nw_preps.add_distances(network)
+
+        # Should produce the same result as explicit EPSG:4326
+        np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
+
 
 # ========================================================================
 # Tests: _ecols_to_graphorder / _vcols_to_graphorder
