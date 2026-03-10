@@ -24,12 +24,13 @@ import tempfile
 import shutil
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, MultiLineString
 import copy as cp
 import numpy as np
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_calcs import NetworkCalcs
+
 
 @pytest.fixture
 def temp_dir():
@@ -44,12 +45,18 @@ def nodes_gdf():
     """Create simple test nodes"""
     return gpd.GeoDataFrame(
         {
-            'id': [0, 1, 2, 3, 4],
-            'orig_id': [0, 1, 2, 3, 4],
-            'geometry': [Point(0, 0), Point(1, 1), Point(2, 2), Point(3, 3), Point(4, 4)]
+            "id": [0, 1, 2, 3, 4],
+            "orig_id": [0, 1, 2, 3, 4],
+            "geometry": [
+                Point(0, 0),
+                Point(1, 1),
+                Point(2, 2),
+                Point(3, 3),
+                Point(4, 4),
+            ],
         },
-        geometry='geometry',
-        crs='EPSG:4326'
+        geometry="geometry",
+        crs="EPSG:4326",
     )
 
 
@@ -58,148 +65,292 @@ def edges_gdf():
     """Create simple test edges"""
     return gpd.GeoDataFrame(
         {
-            'from_id': [0, 1, 2, 3],
-            'to_id': [1, 2, 3, 4],
-            'id': [0, 1, 2, 3],
-            'orig_id': [0, 1, 2, 3],
-            'osm_id': [100, 101, 102, 103],
-            'distance': [157200, 157200, 157200, 157200],  # approx distances in meters
-            'geometry': [
-                LineString([(0, 0), (1, 1)]), #roads need to go from ci to user
+            "from_id": [0, 1, 2, 3],
+            "to_id": [1, 2, 3, 4],
+            "id": [0, 1, 2, 3],
+            "orig_id": [0, 1, 2, 3],
+            "osm_id": [100, 101, 102, 103],
+            "distance": [157200, 157200, 157200, 157200],  # approx distances in meters
+            "geometry": [
+                LineString([(0, 0), (1, 1)]),  # roads need to go from ci to user
                 LineString([(1, 1), (2, 2)]),
                 LineString([(2, 2), (3, 3)]),
-                LineString([(3, 3), (4, 4)])
-
-            ]
+                LineString([(3, 3), (4, 4)]),
+            ],
         },
-        geometry='geometry',
-        crs='EPSG:4326'
+        geometry="geometry",
+        crs="EPSG:4326",
     )
+
+
+@pytest.fixture
+def simple_network(edges_gdf, nodes_gdf):
+    """A simple chain network with 5 nodes and 4 edges (no CI metadata)."""
+    return Network(edges=edges_gdf.copy(), nodes=nodes_gdf.copy())
+
+
+@pytest.fixture
+def branching_nodes():
+    """6 nodes with a Y-branch: 0-1-2-3 and 2-4 and 2-5."""
+    return gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2, 3, 4, 5],
+            "geometry": [
+                Point(0, 0),
+                Point(1, 0),
+                Point(2, 0),
+                Point(3, 0),
+                Point(2, 1),
+                Point(2, -1),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def branching_edges():
+    """5 edges forming a Y-branch."""
+    return gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1, 2, 2, 2],
+            "to_id": [1, 2, 3, 4, 5],
+            "id": [0, 1, 2, 3, 4],
+            "osm_id": [10, 11, 12, 13, 14],
+            "geometry": [
+                LineString([(0, 0), (1, 0)]),
+                LineString([(1, 0), (2, 0)]),
+                LineString([(2, 0), (3, 0)]),
+                LineString([(2, 0), (2, 1)]),
+                LineString([(2, 0), (2, -1)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def branching_network(branching_edges, branching_nodes):
+    """Network with a Y-branch at node 2."""
+    return Network(edges=branching_edges, nodes=branching_nodes)
+
+
+@pytest.fixture
+def roundabout_network():
+    """A small network with a ring edge (roundabout) and 2 connecting edges."""
+    ring = LineString([(0.5, 1), (1, 1.5), (1.5, 1), (1, 0.5), (0.5, 1)])
+    spoke_left = LineString([(0, 1), (0.5, 1)])
+    spoke_right = LineString([(1.5, 1), (2, 1)])
+
+    edges = gpd.GeoDataFrame(
+        {
+            "osm_id": [1, 2, 3],
+            "id": [0, 1, 2],
+            "geometry": [ring, spoke_left, spoke_right],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2],
+            "geometry": [Point(0, 1), Point(1, 1), Point(2, 1)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def multilinestring_network():
+    """Network with a MultiLineString edge."""
+    mls = MultiLineString([[(0, 0), (1, 0)], [(1, 0), (2, 0)]])
+    edges = gpd.GeoDataFrame(
+        {
+            "from_id": [0],
+            "to_id": [1],
+            "id": [0],
+            "osm_id": [50],
+            "geometry": [mls],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1],
+            "geometry": [Point(0, 0), Point(2, 0)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def empty_network():
+    """A network with no edges and no nodes."""
+    return Network()
+
+
+@pytest.fixture
+def nodes_only_network():
+    """Network with only nodes, no edges."""
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2],
+            "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(nodes=nodes)
+
 
 @pytest.fixture
 def network_with_ci_types(edges_gdf, nodes_gdf):
     """Create a network with CI type information"""
     nodes = cp.deepcopy(nodes_gdf)
-    nodes['ci_type'] = ['people', 'road', 'road', 'road', 'healthcare']
+    nodes["ci_type"] = ["people", "road", "road", "road", "healthcare"]
     edges = cp.deepcopy(edges_gdf)
-    edges['ci_type'] = 'road'
-    nodes['func_tot'] = 1
-    edges['func_tot'] = 1
+    edges["ci_type"] = "road"
+    nodes["func_tot"] = 1
+    edges["func_tot"] = 1
     return Network(edges=edges, nodes=nodes)
+
 
 @pytest.fixture
 def network_with_remote_node_missing_edge(network_with_ci_types):
     """Create a network with CI type information"""
     network = cp.deepcopy(network_with_ci_types)
-    #add far away hospital node
+    # add far away hospital node
     new_node = gpd.GeoDataFrame(
         {
-            'id': [5],
-            'orig_id': [5],
-            'ci_type': ['healthcare'],
-            'func_tot': [1],
-            'geometry': [Point(4, 50)]
+            "id": [5],
+            "orig_id": [5],
+            "ci_type": ["healthcare"],
+            "func_tot": [1],
+            "geometry": [Point(4, 50)],
         },
-        geometry='geometry',
-        crs='EPSG:4326'
+        geometry="geometry",
+        crs="EPSG:4326",
     )
     network.nodes = pd.concat([network.nodes, new_node], ignore_index=True)
     return network
+
 
 @pytest.fixture
 def network_with_remote_node(network_with_remote_node_missing_edge):
     """Create a network with CI type information"""
     network = cp.deepcopy(network_with_remote_node_missing_edge)
-    #add edge from last road node to far away hospital node
+    # add edge from last road node to far away hospital node
     new_edge = gpd.GeoDataFrame(
         {
-            'from_id': [2],
-            'to_id': [5],
-            'id': [4],
-            'orig_id': [4],
-            'osm_id': [104],
-            'distance': [7000000],  # approx distances in meters
-            'ci_type': ['road'],
-            'func_tot': [1],
-            'geometry': [LineString([(2, 2), (4, 50)])]
+            "from_id": [2],
+            "to_id": [5],
+            "id": [4],
+            "orig_id": [4],
+            "osm_id": [104],
+            "distance": [7000000],  # approx distances in meters
+            "ci_type": ["road"],
+            "func_tot": [1],
+            "geometry": [LineString([(2, 2), (4, 50)])],
         },
-        geometry='geometry',
-        crs='EPSG:4326'
+        geometry="geometry",
+        crs="EPSG:4326",
     )
     network.edges = pd.concat([network.edges, new_edge], ignore_index=True)
     return network
+
 
 @pytest.fixture
 def network_with_edge_fail(network_with_remote_node):
     """Create a network with CI type information"""
     network = cp.deepcopy(network_with_remote_node)
-    network.edges.loc[3,'func_tot'] = 0  # ci fail for testing
-    network.nodes.loc[2, 'func_tot'] = 0  # road node needs to fail too
+    network.edges.loc[3, "func_tot"] = 0  # ci fail for testing
+    network.nodes.loc[2, "func_tot"] = 0  # road node needs to fail too
     return network
+
 
 @pytest.fixture
 def network_with_source_fail(network_with_remote_node):
     """Create a network with a failed source CI"""
     network = cp.deepcopy(network_with_remote_node)
-    network.nodes.loc[network.nodes['ci_type']=='healthcare','func_tot'] = 0  # ci fail for testing
+    network.nodes.loc[network.nodes["ci_type"] == "healthcare", "func_tot"] = (
+        0  # ci fail for testing
+    )
     return network
+
 
 # ========================================================================
 # Fixtures for GraphCalcs class
 # ========================================================================
 
+
 @pytest.fixture
 def graph_calcs(network_with_ci_types):
     """Create GraphCalcs instance with test network"""
-    nw_calcs_mock = type('obj', (object,), {'network': network_with_ci_types})()
+    nw_calcs_mock = type("obj", (object,), {"network": network_with_ci_types})()
     return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_source_fail(network_with_source_fail):
     """Create GraphCalcs instance with test network containing CI failures"""
-    nw_calcs_mock = type('obj', (object,), {'network': network_with_source_fail})()
+    nw_calcs_mock = type("obj", (object,), {"network": network_with_source_fail})()
     return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+
 
 @pytest.fixture
 def graph_calcs_with_edge_ci_fail(network_with_edge_fail):
     """Create GraphCalcs instance with test network containing edge CI failures"""
-    nw_calcs_mock = type('obj', (object,), {'network': network_with_edge_fail})()
+    nw_calcs_mock = type("obj", (object,), {"network": network_with_edge_fail})()
     return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+
 
 @pytest.fixture
 def graph_calcs_with_remote_node_missing_edge(network_with_remote_node_missing_edge):
     """Create GraphCalcs instance with test network containing missing edge"""
-    nw_calcs_mock = type('obj', (object,), {'network': network_with_remote_node_missing_edge})()
+    nw_calcs_mock = type(
+        "obj", (object,), {"network": network_with_remote_node_missing_edge}
+    )()
     return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+
 
 @pytest.fixture
 def graph_calcs_with_remote_node(network_with_remote_node):
     """Create GraphCalcs instance with test network containing remote node"""
-    nw_calcs_mock = type('obj', (object,), {'network': network_with_remote_node})()
+    nw_calcs_mock = type("obj", (object,), {"network": network_with_remote_node})()
     return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+
 
 # ========================================================================
 # Fixtures for NetworkCalcs class
 # ========================================================================
 
+
 @pytest.fixture
 def dependency_table():
     """Create a simple dependency table"""
-    return pd.DataFrame({
-        'source': ['road', 'healthcare', 'road'],
-        'target': ['people', 'people', 'healthcare'],
-        'type_I': ['enduser', 'enduser', 'functional'],
-        'type_II': ['logical', 'logical', 'logical'],
-        'via_link': ['none', 'road', 'none'],
-        'thresh_func': [1, 1, 1],
-        'link_condition': ['edgecond', 'distance', 'edgecond'],
-        'thresh_dist': [5E6, 10E6, 10E6],
-        'thresh_dur': [np.inf, np.inf, np.inf],
-        'bidir_link': [False, False, False],
-        'access_cnstr': [False, True, False],
-        'n_links': [1, 1, 1]
-    })
+    return pd.DataFrame(
+        {
+            "source": ["road", "healthcare", "road"],
+            "target": ["people", "people", "healthcare"],
+            "type_I": ["enduser", "enduser", "functional"],
+            "type_II": ["logical", "logical", "logical"],
+            "via_link": ["none", "road", "none"],
+            "thresh_func": [1, 1, 1],
+            "link_condition": ["edgecond", "distance", "edgecond"],
+            "thresh_dist": [5e6, 10e6, 10e6],
+            "thresh_dur": [np.inf, np.inf, np.inf],
+            "bidir_link": [False, False, False],
+            "access_cnstr": [False, True, False],
+            "n_links": [1, 1, 1],
+        }
+    )
 
 
 @pytest.fixture
@@ -207,22 +358,122 @@ def network_calcs(network_with_ci_types, dependency_table):
     """Create NetworkCalcs instance"""
     return NetworkCalcs(network=network_with_ci_types, dep_table=dependency_table)
 
+
 @pytest.fixture
 def network_calcs_edge_fail(network_with_edge_fail, dependency_table):
     """Create NetworkCalcs instance"""
     return NetworkCalcs(network=network_with_edge_fail, dep_table=dependency_table)
+
 
 @pytest.fixture
 def network_calcs_source_fail(network_with_source_fail, dependency_table):
     """Create NetworkCalcs instance"""
     return NetworkCalcs(network=network_with_source_fail, dep_table=dependency_table)
 
+
 @pytest.fixture
 def expected_dep_pairs():
     """Expected dependency edges between node pairs."""
     return {
-        'dependency_road_people': ([1,], [0,]), #sources targets
-        'dependency_healthcare_people': ([4,], [0,]),
-        'dependency_road_healthcare': ([3,], [4,]),
+        "dependency_road_people": (
+            [
+                1,
+            ],
+            [
+                0,
+            ],
+        ),  # sources targets
+        "dependency_healthcare_people": (
+            [
+                4,
+            ],
+            [
+                0,
+            ],
+        ),
+        "dependency_road_healthcare": (
+            [
+                3,
+            ],
+            [
+                4,
+            ],
+        ),
     }
 
+
+# ========================================================================
+# Fixtures for projected CRS (EPSG:32632 — UTM zone 32N)
+# ========================================================================
+
+
+@pytest.fixture
+def nodes_projected_gdf():
+    """Create test nodes in projected CRS (UTM zone 32N).
+
+    Layout (x-axis, all at y=5 000 000):
+    Node 0 (people)      — 500 000
+    Node 1 (road)        — 500 100   (100 m from node 0)
+    Node 2 (road)        — 500 200   (200 m from node 0)
+    Node 3 (healthcare)  — 501 000   (1 000 m from node 0, 800 m from node 2)
+    """
+    return gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2, 3],
+            "orig_id": [0, 1, 2, 3],
+            "geometry": [
+                Point(500000, 5000000),
+                Point(500100, 5000000),
+                Point(500200, 5000000),
+                Point(501000, 5000000),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+
+
+@pytest.fixture
+def edges_projected_gdf():
+    """Create test edges in projected CRS connecting nodes 0-1 and 1-2."""
+    return gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1],
+            "to_id": [1, 2],
+            "id": [0, 1],
+            "orig_id": [0, 1],
+            "osm_id": [100, 101],
+            "distance": [100, 100],
+            "geometry": [
+                LineString([(500000, 5000000), (500100, 5000000)]),
+                LineString([(500100, 5000000), (500200, 5000000)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+
+
+@pytest.fixture
+def network_projected_disconnected(edges_projected_gdf, nodes_projected_gdf):
+    """Network in projected CRS with a disconnected node.
+
+    Nodes 0-2 form a connected cluster; node 3 is isolated.
+    Closest gap: node 2 → node 3 = 800 m.
+    """
+    nodes = cp.deepcopy(nodes_projected_gdf)
+    nodes["ci_type"] = ["people", "road", "road", "healthcare"]
+    edges = cp.deepcopy(edges_projected_gdf)
+    edges["ci_type"] = "road"
+    nodes["func_tot"] = 1
+    edges["func_tot"] = 1
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def graph_calcs_projected_disconnected(network_projected_disconnected):
+    """GraphCalcs instance for a disconnected projected-CRS network."""
+    nw_calcs_mock = type(
+        "obj", (object,), {"network": network_projected_disconnected}
+    )()
+    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)

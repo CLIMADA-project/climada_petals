@@ -40,48 +40,117 @@ from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
 
 # Critical infrastructure charactersitics constants
-LINE_EXPOSURES = ['road', 'rail']
+LINE_EXPOSURES = ["road", "rail"]
 
 # Energy conversion factors
 TJ_TO_GWH = 0.277778
 HRS_PER_YEAR = 8760
 
-#Plots
+# Plots
 MPL_MARKERS = list(mpl.markers.MarkerStyle.markers.keys())
 # Use matplotlib-recognised linestyles to avoid ValueError when applying to plot()
 MPL_LINE_STYLES = [
-    'solid',
-    'dashed',
-    'dashdot',
-    'dotted',
+    "solid",
+    "dashed",
+    "dashdot",
+    "dotted",
 ]
-#list(Line2D.markers.keys())
+# list(Line2D.markers.keys())
 
 STATUS_MAP = {
-        "access undisrupted": -2,
-        "access new source": -1,
-        "no base access": 0,
-        "access disrupted via": 1,
-        "access disrupted source": 2,
-    }
+    "access undisrupted": -2,
+    "access new source": -1,
+    "no base access": 0,
+    "access disrupted via": 1,
+    "access disrupted source": 2,
+}
 LOGGER = logging.getLogger(__name__)
+
 
 # =============================================================================
 # Plots
 # =============================================================================
 def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
-    plot_df = self.nodes[self.nodes.ci_type=="people"]
+    """Plot population nodes as a scatter plot.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing nodes with ci_type 'people'.
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    **kwargs
+        Additional keyword arguments passed to ``axes.scatter``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the population plot.
+    """
+    plot_df = self.nodes[self.nodes.ci_type == "people"]
     if axes is None:
         fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
         fig = axes.get_figure()
-    axes.scatter(plot_df.geometry.x, plot_df.geometry.y,
-                               s=plot_df['value'], label="population",
-                               transform=projection, alpha=0.5, color="grey",**kwargs)
+    axes.scatter(
+        plot_df.geometry.x,
+        plot_df.geometry.y,
+        s=plot_df["value"],
+        label="population",
+        transform=projection,
+        alpha=0.5,
+        color="grey",
+        **kwargs,
+    )
     return fig, axes
 
-def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection=ccrs.PlateCarree(), pop_kwargs=dict(), ci_kwargs=dict(), cbar_kwargs=dict()):
-    """Infrastructure plots"""
+
+def infra_plot(
+    self,
+    ci_types=None,
+    plot_col="ci_type",
+    axes=None,
+    projection=ccrs.PlateCarree(),
+    pop_kwargs=dict(),
+    ci_kwargs=dict(),
+    cbar_kwargs=dict(),
+):
+    """Plot critical infrastructure network elements.
+
+    Plots nodes and edges for each CI type with distinct markers, colors,
+    and line styles. When ``plot_col`` is not 'ci_type', a functional
+    status colorbar (disrupted/functioning) is added.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing nodes and edges.
+    ci_types : list of str, optional
+        CI types to plot. If None, all unique ci_types in nodes are used.
+    plot_col : str, optional
+        Column to use for coloring. Default: 'ci_type'.
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    pop_kwargs : dict, optional
+        Additional keyword arguments for population scatter plot.
+    ci_kwargs : dict, optional
+        Additional keyword arguments for CI element plots.
+    cbar_kwargs : dict, optional
+        Additional keyword arguments for the colorbar.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the infrastructure plot.
+    """
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
     if axes is None:
@@ -91,7 +160,7 @@ def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection
     colors = ci_kwargs.pop("colors", mpl.cm.tab20.colors)
 
     # Define colormap based on plot_col
-    if plot_col == 'ci_type':
+    if plot_col == "ci_type":
         # Each CI type gets its own color
         use_status_colorbar = False
         vmin, vmax = None, None
@@ -107,23 +176,47 @@ def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection
         color = colors[i]
 
         # Set colormap for this CI type
-        if plot_col == 'ci_type':
+        if plot_col == "ci_type":
             cmap = mpl.colors.ListedColormap([color])
         else:
             cmap = status_cmap
 
-        if ci_type == 'people':
-            fig, axes = population_plot(self, axes=axes, projection=projection, zorder=0, **pop_kwargs)
+        if ci_type == "people":
+            fig, axes = population_plot(
+                self, axes=axes, projection=projection, zorder=0, **pop_kwargs
+            )
         elif ci_type in LINE_EXPOSURES:
-            plot_df = self.edges[self.edges.ci_type==ci_type]
-            plot_df.plot(plot_col, ax=axes, cmap=cmap, vmin=vmin, vmax=vmax,
-                        transform=projection, label=ci_type, linestyle=line_style, zorder=1, **ci_kwargs)
+            plot_df = self.edges[self.edges.ci_type == ci_type]
+            plot_df.plot(
+                plot_col,
+                ax=axes,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                transform=projection,
+                label=ci_type,
+                linestyle=line_style,
+                zorder=1,
+                **ci_kwargs,
+            )
         else:
-            plot_df = self.nodes[self.nodes.ci_type==ci_type]
+            plot_df = self.nodes[self.nodes.ci_type == ci_type]
             marker = f"${ci_type[0].upper()}$"
-            plot_df.plot(plot_col, ax=axes, cmap=cmap, vmin=vmin, vmax=vmax,
-                        transform=projection, label=ci_type, markersize=200,
-                        zorder=i+1, marker=marker, edgecolor='white', linewidth=0.05, **ci_kwargs)
+            plot_df.plot(
+                plot_col,
+                ax=axes,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                transform=projection,
+                label=ci_type,
+                markersize=200,
+                zorder=i + 1,
+                marker=marker,
+                edgecolor="white",
+                linewidth=0.05,
+                **ci_kwargs,
+            )
 
     axes.legend()
 
@@ -131,22 +224,68 @@ def infra_plot(self, ci_types = None, plot_col= "ci_type", axes=None, projection
     if use_status_colorbar:
         orientation = cbar_kwargs.pop("orientation", "horizontal")
         shrink = cbar_kwargs.pop("shrink", 0.55)
-        sm = mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=0, vmax=1), cmap=status_cmap)
+        sm = mpl.cm.ScalarMappable(
+            norm=mpl.colors.Normalize(vmin=0, vmax=1), cmap=status_cmap
+        )
         sm.set_array([])
-        cbar = fig.colorbar(sm, ax=axes, orientation=orientation, shrink=shrink, **cbar_kwargs)
+        cbar = fig.colorbar(
+            sm, ax=axes, orientation=orientation, shrink=shrink, **cbar_kwargs
+        )
         cbar.set_ticks([0, 1])
         cbar.set_ticklabels(["Disrupted", "Functioning"], rotation=30)
-        cbar.set_label('CI status')
+        cbar.set_label("CI status")
 
     return fig, axes
 
+
 def _get_dependencies(self, ci_types):
-    dep_list = [dep for dep in self.edges.ci_type for ci_type in ci_types if "dependency_" in dep and ci_type in dep]
+    """Get unique dependency edge types for the given CI types.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing edges.
+    ci_types : list of str
+        CI types to filter dependency edges for.
+
+    Returns
+    -------
+    np.ndarray
+        Array of unique dependency edge type names.
+    """
+    dep_list = [
+        dep
+        for dep in self.edges.ci_type
+        for ci_type in ci_types
+        if "dependency_" in dep and ci_type in dep
+    ]
     return np.unique(dep_list)
 
 
-def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(), **kwargs):
-    """dependencies plots"""
+def dep_plot(self, ci_types=None, axes=None, projection=ccrs.PlateCarree(), **kwargs):
+    """Plot dependency edges between CI types.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing edges with dependency types.
+    ci_types : list of str, optional
+        CI types to plot dependencies for. If None, all unique ci_types
+        in nodes are used.
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    **kwargs
+        Additional keyword arguments passed to ``GeoDataFrame.plot``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the dependency plot.
+    """
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
     if axes is None:
@@ -157,63 +296,165 @@ def dep_plot(self, ci_types = None, axes=None, projection=ccrs.PlateCarree(), **
     colors = kwargs.pop("colors", mpl.cm.tab20.colors)
     for i, dep in enumerate(dependencies):
         color = colors[i]
-        plot_df = self.edges[self.edges.ci_type==dep]
-        plot_df.plot(ax=axes, color=color, transform=projection, label=dep, alpha=0.5, zorder=10, **kwargs)
+        plot_df = self.edges[self.edges.ci_type == dep]
+        plot_df.plot(
+            ax=axes,
+            color=color,
+            transform=projection,
+            label=dep,
+            alpha=0.5,
+            zorder=10,
+            **kwargs,
+        )
     axes.legend()
-    #f.suptitle(title ,fontweight="bold",y=0.92)
+    # f.suptitle(title ,fontweight="bold",y=0.92)
     return fig, axes
 
-def access_plot(self, ci_type, axes=None, projection=ccrs.PlateCarree(), plot_kwargs=dict(), cbar_kwargs=dict()):
+
+def access_plot(
+    self,
+    ci_type,
+    axes=None,
+    projection=ccrs.PlateCarree(),
+    plot_kwargs=dict(),
+    cbar_kwargs=dict(),
+):
+    """Plot population access status for a given CI type.
+
+    Visualises the access state of population clusters to a specific
+    CI service, color-coded by access status and sized by population count.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing nodes with ci_type 'people' and
+        access state columns.
+    ci_type : str
+        The CI type to assess access for (e.g. 'healthcare', 'power').
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    plot_kwargs : dict, optional
+        Additional keyword arguments for ``axes.scatter``.
+    cbar_kwargs : dict, optional
+        Additional keyword arguments for the colorbar.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the access plot.
+    """
     if axes is None:
         fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
         fig = axes.figure
 
-    cmap= plot_kwargs.pop("cmap", ListedColormap(['#046582',"#158204",'grey',"#CF8018", '#BB8082']))
-    gdf_ppl = self.nodes[self.nodes.ci_type=="people"]
+    cmap = plot_kwargs.pop(
+        "cmap", ListedColormap(["#046582", "#158204", "grey", "#CF8018", "#BB8082"])
+    )
+    gdf_ppl = self.nodes[self.nodes.ci_type == "people"]
 
     service = f"access_state_{ci_type}_people"
 
     # lowercase for safety
     cvals = gdf_ppl[service].str.lower().map(STATUS_MAP).fillna(0)
-    scatter = axes.scatter(gdf_ppl.geometry.x, gdf_ppl.geometry.y, c=cvals,
-                           s=gdf_ppl['counts']/max(gdf_ppl['counts'])*100,
-                           transform=projection, cmap=cmap, vmin=-2, vmax=2, **plot_kwargs)
-    n_ppl_access_loss = gdf_ppl[gdf_ppl[service].isin(["access disrupted via", "access disrupted source"])].counts.sum()
-    n_ppl_no_base_access = gdf_ppl[gdf_ppl[service].isin(["no base access"])].counts.sum()
+    scatter = axes.scatter(
+        gdf_ppl.geometry.x,
+        gdf_ppl.geometry.y,
+        c=cvals,
+        s=gdf_ppl["counts"] / max(gdf_ppl["counts"]) * 100,
+        transform=projection,
+        cmap=cmap,
+        vmin=-2,
+        vmax=2,
+        **plot_kwargs,
+    )
+    n_ppl_access_loss = gdf_ppl[
+        gdf_ppl[service].isin(["access disrupted via", "access disrupted source"])
+    ].counts.sum()
+    n_ppl_no_base_access = gdf_ppl[
+        gdf_ppl[service].isin(["no base access"])
+    ].counts.sum()
 
-    text = f"{n_ppl_no_base_access:.2f} people without base access to {ci_type}" + \
-    f"\n{n_ppl_access_loss:.2f} people loosing access to {ci_type}"
-    axes.text(0.015, 0.015, text, transform=axes.transAxes, bbox=dict(
-                   ec='gray', fc='gray', alpha=0.2))
-    #add colorbar
+    text = (
+        f"{n_ppl_no_base_access:.2f} people without base access to {ci_type}"
+        + f"\n{n_ppl_access_loss:.2f} people loosing access to {ci_type}"
+    )
+    axes.text(
+        0.015,
+        0.015,
+        text,
+        transform=axes.transAxes,
+        bbox=dict(ec="gray", fc="gray", alpha=0.2),
+    )
+    # add colorbar
     orientation = cbar_kwargs.pop("orientation", "horizontal")
     shrink = cbar_kwargs.pop("shrink", 0.55)
-    cbar = fig.colorbar(scatter, ax=axes, orientation=orientation, shrink=shrink, **cbar_kwargs)
-    cbar.set_ticks([-8/5, -4/5, 0, 4/5, 8/5])
-    cbar.set_ticklabels(STATUS_MAP.keys(),rotation=30)#,fontweight="bold"#fontsize=18
-    cbar.set_label('Access to service')#,fontweight="bold" fontsize=24
+    cbar = fig.colorbar(
+        scatter, ax=axes, orientation=orientation, shrink=shrink, **cbar_kwargs
+    )
+    cbar.set_ticks([-8 / 5, -4 / 5, 0, 4 / 5, 8 / 5])
+    cbar.set_ticklabels(
+        STATUS_MAP.keys(), rotation=30
+    )  # ,fontweight="bold"#fontsize=18
+    cbar.set_label("Access to service")  # ,fontweight="bold" fontsize=24
     return fig, axes
+
+
 # =============================================================================
 # Spatial analysis util functions
 # =============================================================================
 
 
 def make_edge_geometries(vs_geoms_from, vs_geoms_to):
+    """Create straight LineString geometries between pairs of node geometries.
+
+    Parameters
+    ----------
+    vs_geoms_from : list of shapely.Point
+        Origin point geometries.
+    vs_geoms_to : list of shapely.Point
+        Destination point geometries.
+
+    Returns
+    -------
+    list of shapely.LineString
+        Straight-line geometries connecting each from-to pair.
     """
-    create straight shapely LineString geometries between lists of
-    from and to nodes, to be added to newly created edges as attributes
-    """
-    return [shapely.geometry.LineString([geom_from, geom_to]) for
-            geom_from, geom_to in
-            zip(vs_geoms_from, vs_geoms_to)]
+    return [
+        shapely.geometry.LineString([geom_from, geom_to])
+        for geom_from, geom_to in zip(vs_geoms_from, vs_geoms_to)
+    ]
 
 
 def _preselect_destinations(vs_assign, vs_base, dist_thresh):
-    points_base = np.array([(x.x, x.y) for x in vs_base['geometry']])
+    """Preselect candidate destination indices within a distance threshold.
+
+    Uses a cKDTree to find, for each point in ``vs_assign``, all points
+    in ``vs_base`` within ``dist_thresh``.
+
+    Parameters
+    ----------
+    vs_assign : gpd.GeoDataFrame
+        GeoDataFrame of points to assign.
+    vs_base : gpd.GeoDataFrame
+        GeoDataFrame of candidate destination points.
+    dist_thresh : float
+        Maximum distance threshold for candidate matching.
+
+    Returns
+    -------
+    list of list of int
+        For each point in ``vs_assign``, a list of indices into ``vs_base``
+        within ``dist_thresh``.
+    """
+    points_base = np.array([(x.x, x.y) for x in vs_base["geometry"]])
     point_tree = cKDTree(points_base)
 
-    points_assign = np.array([(x.x, x.y) for x in vs_assign['geometry']])
+    points_assign = np.array([(x.x, x.y) for x in vs_assign["geometry"]])
     ix_matches = []
     for assign_loc in points_assign:
         ix_matches.append(point_tree.query_ball_point(assign_loc, dist_thresh))
@@ -221,22 +462,32 @@ def _preselect_destinations(vs_assign, vs_base, dist_thresh):
 
 
 def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
-    """
-    see https://gis.stackexchange.com/a/301935
+    """Find the k nearest neighbours using a cKDTree.
+
+    See https://gis.stackexchange.com/a/301935.
 
     Parameters
     ----------
-    vs_assign : gpd.GeoDataFrame or Point
+    vs_assign : gpd.GeoDataFrame or pandas.Series
+        GeoDataFrame or single row with point geometries to assign.
     gdf_base : gpd.GeoDataFrame
+        GeoDataFrame of candidate destination points.
+    k : int, optional
+        Number of nearest neighbours to find. Default: 1.
+    dist_thresh : float, optional
+        Maximum distance for valid matches. Default: np.inf.
 
     Returns
-    ----------
-
+    -------
+    dist : np.ndarray
+        Distances to the k nearest neighbours.
+    vld_ind_formatted : np.ndarray
+        Indices into ``gdf_base`` of valid nearest neighbours. Invalid
+        matches (beyond ``dist_thresh``) are set to NaN.
     """
     # TODO: this mixed input options (1 vertex vs gdf) is not nicely solved
     if isinstance(vs_assign, (gpd.GeoDataFrame, pd.DataFrame)):
-        n_assign = np.array(
-            list(vs_assign.geometry.apply(lambda x: (x.x, x.y))))
+        n_assign = np.array(list(vs_assign.geometry.apply(lambda x: (x.x, x.y))))
     else:
         n_assign = np.array([(vs_assign.geometry.x, vs_assign.geometry.y)])
     n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
@@ -249,13 +500,59 @@ def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
     vld_ind_formatted[np.where(dist < np.inf)] = vld_ind
     return dist, vld_ind_formatted
 
+
 def window_from_extent(xmin, ymin, xmax, ymax, transform):
+    """Create a rasterio Window from geographic extent bounds.
+
+    Parameters
+    ----------
+    xmin : float
+        Minimum x coordinate (left).
+    ymin : float
+        Minimum y coordinate (bottom).
+    xmax : float
+        Maximum x coordinate (right).
+    ymax : float
+        Maximum y coordinate (top).
+    transform : rasterio.Affine
+        Affine transform of the raster.
+
+    Returns
+    -------
+    rasterio.windows.Window
+        Window corresponding to the given extent.
+    """
     col_start, row_start = ~transform * (xmin, ymax)
     col_stop, row_stop = ~transform * (xmax, ymin)
     return Window.from_slices((row_start, row_stop), (col_start, col_stop))
 
 
 def _resample_res(filepath, upscale_factor, nodata, extent=None):
+    """Resample a raster file to a different resolution.
+
+    Reads a raster, optionally crops to an extent, and resamples by the
+    given upscale factor using average resampling.
+
+    Parameters
+    ----------
+    filepath : str or pathlib.Path
+        Path to the raster file.
+    upscale_factor : float
+        Factor by which to upscale the resolution. Values > 1 increase
+        the number of pixels (finer resolution).
+    nodata : float
+        Nodata value to replace with 0.
+    extent : tuple of float, optional
+        Geographic extent as (xmin, ymin, xmax, ymax) to crop the raster.
+        Default: None (use full raster).
+
+    Returns
+    -------
+    arr : np.ndarray
+        Resampled raster array with nodata replaced by 0.
+    transform : rasterio.Affine
+        Affine transform of the resampled raster.
+    """
 
     with rasterio.open(filepath) as dataset:
         # Get the initial transform and metadata
@@ -278,13 +575,11 @@ def _resample_res(filepath, upscale_factor, nodata, extent=None):
         arr = dataset.read(
             out_shape=(dataset.count, window_height, window_width),
             resampling=Resampling.average,
-            window=window
+            window=window,
         )
         # Update metadata for the cropped and resampled array
         meta.update(
-            height=window_height,
-            width=window_width,
-            transform=window_transform
+            height=window_height, width=window_width, transform=window_transform
         )
 
         # Adjust the transform for the scaling
@@ -299,24 +594,49 @@ def _resample_res(filepath, upscale_factor, nodata, extent=None):
     return arr, transform
 
 
-def load_resampled_raster(filepath, upscale_factor, nodata=-99999., extent=None):
+def load_resampled_raster(filepath, upscale_factor, nodata=-99999.0, extent=None):
+    """Load a raster file, resample it, and return as a GeoDataFrame.
+
+    Resamples the raster by the given factor and converts non-zero cells
+    to point geometries with population counts. Applies a correction factor
+    to account for aggregation over/under-estimation.
+
+    Parameters
+    ----------
+    filepath : str or pathlib.Path
+        Path to the raster file.
+    upscale_factor : float
+        Factor by which to upscale the resolution.
+    nodata : float, optional
+        Nodata value in the raster. Default: -99999.0.
+    extent : tuple of float, optional
+        Geographic extent as (xmin, ymin, xmax, ymax). Default: None.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame with 'counts' and 'geometry' columns for non-zero
+        raster cells.
+    """
 
     arr, transform = _resample_res(filepath, upscale_factor, nodata, extent)
 
-    grid = u_coords.raster_to_meshgrid(transform, arr.shape[-1],
-                                       arr.shape[-2])
-    gdf = gpd.GeoDataFrame({'counts': arr.squeeze().flatten(),
-                            'geometry': gpd.points_from_xy(
-                                grid[0].flatten(), grid[1].flatten())})
+    grid = u_coords.raster_to_meshgrid(transform, arr.shape[-1], arr.shape[-2])
+    gdf = gpd.GeoDataFrame(
+        {
+            "counts": arr.squeeze().flatten(),
+            "geometry": gpd.points_from_xy(grid[0].flatten(), grid[1].flatten()),
+        }
+    )
     gdf = gdf[gdf.counts != 0].reset_index(drop=True)
 
     # manual correction for over-estimate after aggregation:
     arr_orig, __ = _resample_res(filepath, 1, nodata, extent)
-    corr_factor = arr_orig.squeeze().flatten().sum() / \
-        arr.squeeze().flatten().sum()
-    gdf['counts'] = gdf.counts * corr_factor
+    corr_factor = arr_orig.squeeze().flatten().sum() / arr.squeeze().flatten().sum()
+    gdf["counts"] = gdf.counts * corr_factor
 
     return gdf
+
 
 # =============================================================================
 # General results analysis util functions
@@ -324,25 +644,66 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999., extent=None)
 
 
 def service_dict():
-    return {'power': 'actual_supply_power_line_people',
-            'healthcare': 'actual_supply_healthcare_people',
-            'education': 'actual_supply_education_people',
-            'telecom': 'actual_supply_celltower_people',
-            'road': 'actual_supply_road_people',
-            'water': 'actual_supply_wastewater_people'}
+    """Return a mapping from service names to graph attribute keys.
+
+    Returns
+    -------
+    dict
+        Dictionary mapping service names (e.g. 'power', 'healthcare') to
+        the corresponding vertex attribute keys in the igraph graph.
+    """
+    return {
+        "power": "actual_supply_power_line_people",
+        "healthcare": "actual_supply_healthcare_people",
+        "education": "actual_supply_education_people",
+        "telecom": "actual_supply_celltower_people",
+        "road": "actual_supply_road_people",
+        "water": "actual_supply_wastewater_people",
+    }
 
 
 def number_noservice(service, graph):
+    """Calculate the population without access to a given service.
 
-    no_service = (1-np.array(graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    pop = np.array(graph.graph.vs.select(
-        ci_type='people')['counts'])
-    return (no_service*pop).sum()
+    Parameters
+    ----------
+    service : str
+        Service name (e.g. 'power', 'healthcare').
+    graph : GraphCalcs
+        Graph calculation object with an igraph graph attribute.
+
+    Returns
+    -------
+    float
+        Total population without access to the service.
+    """
+
+    no_service = 1 - np.array(
+        graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+    )
+    pop = np.array(graph.graph.vs.select(ci_type="people")["counts"])
+    return (no_service * pop).sum()
 
 
-def number_noservices(graph, services=['power', 'healthcare', 'education',
-                                       'telecom', 'mobility', 'water']):
+def number_noservices(
+    graph, services=["power", "healthcare", "education", "telecom", "mobility", "water"]
+):
+    """Calculate the population without access for multiple services.
+
+    Parameters
+    ----------
+    graph : GraphCalcs
+        Graph calculation object with an igraph graph attribute.
+    services : list of str, optional
+        Services to evaluate. Default: ['power', 'healthcare', 'education',
+        'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service name to the population count
+        without access.
+    """
 
     servstats_dict = {}
     for service in services:
@@ -351,34 +712,54 @@ def number_noservices(graph, services=['power', 'healthcare', 'education',
 
 
 def number_noservice_df(service, df, service_dict=service_dict()):
-    """
-    Number of population having '0' or '-1' in service state for a respective service
+    """Calculate the population without access to a service from a DataFrame.
+
+    Counts population having 0 or negative values in the service state column.
 
     Parameters
-    -----------
+    ----------
     service : str
-        the service to check (in-)availability for
-    df : dataframe
-        a (geo-)dataframe containing information on population clusters
-        and the respective state of certain sevices, e.g. from a df_res extracted
-        for saving from disrupted graph, or from network.nodes instance
+        Service name to check availability for (e.g. 'power', 'healthcare').
+    df : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame containing population clusters with columns 'ci_type',
+        'counts', and the service state columns.
+    service_dict : dict, optional
+        Mapping from service names to column names. Default: ``service_dict()``.
 
-    Note
-    -----
-    same as number_noservice, just that it's performed on a df, not on the graph
+    Returns
+    -------
+    float
+        Total population without access to the service.
+
+    See Also
+    --------
+    number_noservice : Same calculation performed on the igraph graph.
     """
-    return df[
-        (df.ci_type == 'people') &
-        (df[service_dict[service]] <= 0)
-    ].counts.sum()
+    return df[(df.ci_type == "people") & (df[service_dict[service]] <= 0)].counts.sum()
 
 
-def number_noservices_df(df, services=['power', 'healthcare', 'education',
-                                       'telecom', 'mobility', 'water']):
-    """
-    Note
-    -----
-    same as number_noservices, just that it's performed on a df, not on the graph
+def number_noservices_df(
+    df, services=["power", "healthcare", "education", "telecom", "mobility", "water"]
+):
+    """Calculate the population without access for multiple services from a DataFrame.
+
+    Parameters
+    ----------
+    df : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame containing population clusters and service state columns.
+    services : list of str, optional
+        Services to evaluate. Default: ['power', 'healthcare', 'education',
+        'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service name to the population count
+        without access.
+
+    See Also
+    --------
+    number_noservices : Same calculation performed on the igraph graph.
     """
     servstats_dict = {}
     for service in services:
@@ -387,71 +768,158 @@ def number_noservices_df(df, services=['power', 'healthcare', 'education',
 
 
 def disaster_impact_service_geoseries(service, pre_graph, post_graph):
+    """Get geometries of population clusters that lost access to a service.
 
-    no_service_post = (1-np.array(post_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    no_service_pre = (1-np.array(pre_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    geom = np.array(post_graph.graph.vs.select(
-        ci_type='people')['geom_wkt'])
+    Parameters
+    ----------
+    service : str
+        Service name (e.g. 'power', 'healthcare').
+    pre_graph : GraphCalcs
+        Graph calculation object representing the pre-disaster state.
+    post_graph : GraphCalcs
+        Graph calculation object representing the post-disaster state.
+
+    Returns
+    -------
+    gpd.GeoSeries
+        Geometries of population clusters that lost service access.
+    """
+
+    no_service_post = 1 - np.array(
+        post_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+    )
+    no_service_pre = 1 - np.array(
+        pre_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+    )
+    geom = np.array(post_graph.graph.vs.select(ci_type="people")["geom_wkt"])
     return gpd.GeoSeries.from_wkt(
-        geom[np.where((no_service_post-no_service_pre) > 0)])
+        geom[np.where((no_service_post - no_service_pre) > 0)]
+    )
 
 
 def disaster_impact_service(service, pre_graph, post_graph):
+    """Calculate population losing access to a service due to a disaster.
 
-    no_service_post = (1-np.array(post_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    no_service_pre = (1-np.array(pre_graph.graph.vs.select(
-        ci_type='people')[service_dict()[service]]))
-    pop = np.array(pre_graph.graph.vs.select(
-        ci_type='people')['counts'])
-    return ((no_service_post-no_service_pre)*pop).sum()
+    Parameters
+    ----------
+    service : str
+        Service name (e.g. 'power', 'healthcare').
+    pre_graph : GraphCalcs
+        Graph calculation object representing the pre-disaster state.
+    post_graph : GraphCalcs
+        Graph calculation object representing the post-disaster state.
+
+    Returns
+    -------
+    float
+        Total population that lost access to the service.
+    """
+
+    no_service_post = 1 - np.array(
+        post_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+    )
+    no_service_pre = 1 - np.array(
+        pre_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+    )
+    pop = np.array(pre_graph.graph.vs.select(ci_type="people")["counts"])
+    return ((no_service_post - no_service_pre) * pop).sum()
 
 
-def disaster_impact_allservices(pre_graph, post_graph,
-                                services=['power', 'healthcare', 'education',
-                                          'telecom', 'mobility', 'water']):
+def disaster_impact_allservices(
+    pre_graph,
+    post_graph,
+    services=["power", "healthcare", "education", "telecom", "mobility", "water"],
+):
+    """Calculate population losing access across all services due to a disaster.
+
+    Parameters
+    ----------
+    pre_graph : GraphCalcs
+        Graph calculation object representing the pre-disaster state.
+    post_graph : GraphCalcs
+        Graph calculation object representing the post-disaster state.
+    services : list of str, optional
+        Services to evaluate. Default: ['power', 'healthcare', 'education',
+        'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service to the change in population
+        without access (post minus pre).
+    """
 
     dict_pre = number_noservices(pre_graph, services)
     dict_post = number_noservices(post_graph, services)
     dict_delta = {}
     for key, value in dict_post.items():
-        dict_delta[key] = value-dict_pre[key]
+        dict_delta[key] = value - dict_pre[key]
     return dict_delta
 
 
-def disaster_impact_allservices_df(df_pre, df_post,
-                                   services=['power', 'healthcare', 'education',
-                                             'telecom', 'mobility', 'water']):
-    """
-    Note
-    -----
-    same as disaster_impact_allservices, just that it's performed on a df,
-    not on the graph
+def disaster_impact_allservices_df(
+    df_pre,
+    df_post,
+    services=["power", "healthcare", "education", "telecom", "mobility", "water"],
+):
+    """Calculate population losing access across all services from DataFrames.
+
+    Parameters
+    ----------
+    df_pre : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame representing the pre-disaster state.
+    df_post : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame representing the post-disaster state.
+    services : list of str, optional
+        Services to evaluate. If 'people' is included, directly affected
+        population is also computed. Default: ['power', 'healthcare',
+        'education', 'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service (with '_access' suffix) to the
+        change in population without access. If 'people' was in services,
+        also includes the directly impacted population count.
+
+    See Also
+    --------
+    disaster_impact_allservices : Same calculation on igraph graphs.
     """
     services = cp.deepcopy(services)
     dict_delta = {}
     if "people" in services:
         services.remove("people")
-        #directly affected people
-        dict_delta["people"] = sum(
-                    df_post[df_post.ci_type == "people"].imp_dir
-                )
+        # directly affected people
+        dict_delta["people"] = sum(df_post[df_post.ci_type == "people"].imp_dir)
     dict_pre = number_noservices_df(df_pre, services)
     dict_post = number_noservices_df(df_post, services)
     for key, value in dict_post.items():
-        dict_delta[key+"_access"] = value-dict_pre[key]
+        dict_delta[key + "_access"] = value - dict_pre[key]
     return dict_delta
 
 
 def get_graphstats(graph):
+    """Get summary statistics of a network graph.
+
+    Parameters
+    ----------
+    graph : GraphCalcs
+        Graph calculation object with an igraph graph attribute.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys 'no_edges', 'no_nodes', 'edge_types',
+        and 'node_types' (Counter objects for type distributions).
+    """
     from collections import Counter
+
     stats_dict = {}
-    stats_dict['no_edges'] = len(graph.graph.es)
-    stats_dict['no_nodes'] = len(graph.graph.vs)
-    stats_dict['edge_types'] = Counter(graph.graph.es['ci_type'])
-    stats_dict['node_types'] = Counter(graph.graph.vs['ci_type'])
+    stats_dict["no_edges"] = len(graph.graph.es)
+    stats_dict["no_nodes"] = len(graph.graph.vs)
+    stats_dict["edge_types"] = Counter(graph.graph.es["ci_type"])
+    stats_dict["node_types"] = Counter(graph.graph.vs["ci_type"])
     return stats_dict
 
 
@@ -459,40 +927,75 @@ def get_graphstats(graph):
 # Worldpop Data
 # =============================================================================
 def get_worldpop_data(iso3, save_path, res=100):
+    """Download WorldPop population raster data for a country.
+
+    Downloads UN-adjusted population data for 2020 from WorldPop at the
+    specified resolution. Skips download if the file already exists.
+
+    Parameters
+    ----------
+    iso3 : str
+        ISO 3166-1 alpha-3 country code.
+    save_path : str or pathlib.Path
+        Directory path to save the downloaded file.
+    res : int, optional
+        Resolution in metres: 100 or 1000. Default: 100.
+    """
 
     if res == 1000:
-        download_url = 'https://data.worldpop.org/GIS/Population/' + \
-            f'Global_2000_2020_1km_UNadj/2020/{iso3}/' + \
-            f'{iso3.lower()}_ppp_2020_1km_Aggregated_UNadj.tif'
+        download_url = (
+            "https://data.worldpop.org/GIS/Population/"
+            + f"Global_2000_2020_1km_UNadj/2020/{iso3}/"
+            + f"{iso3.lower()}_ppp_2020_1km_Aggregated_UNadj.tif"
+        )
     elif res == 100:
-        download_url = 'https://data.worldpop.org/GIS/Population/' + \
-            f'Global_2000_2020/2020/{iso3}/{iso3.lower()}_ppp_2020_UNadj.tif'
+        download_url = (
+            "https://data.worldpop.org/GIS/Population/"
+            + f"Global_2000_2020/2020/{iso3}/{iso3.lower()}_ppp_2020_UNadj.tif"
+        )
 
-    local_filepath = Path(save_path, download_url.split('/')[-1])
+    local_filepath = Path(save_path, download_url.split("/")[-1])
 
     if not Path(local_filepath).is_file():
-        LOGGER.info(f'Downloading file as {local_filepath}')
+        LOGGER.info(f"Downloading file as {local_filepath}")
         urllib.request.urlretrieve(download_url, local_filepath)
     else:
-        LOGGER.info(f'file already exists as {local_filepath}')
+        LOGGER.info(f"file already exists as {local_filepath}")
 
 
 def get_pop_cutoff(gdf_people, cutoff):
+    """Find population count cutoff for filtering low-density grid points.
+
+    Determines the maximum population value per grid point that cumulatively
+    accounts for less than a specified fraction of the total population.
+
+    Parameters
+    ----------
+    gdf_people : gpd.GeoDataFrame
+        GeoDataFrame with a 'counts' column representing population per
+        grid point.
+    cutoff : float
+        Cumulative population fraction threshold (0 to 1).
+
+    Returns
+    -------
+    float
+        Left boundary of the bin interval at which the cumulative
+        population fraction first exceeds ``cutoff``.
     """
-    find the maximum population value per grid point which accounts cumulatively across
-    the entire gdf for less than a cutoff fraction of the entire population number
-    to decrease the
-    """
-    #redefine bins as high res data might have less than 100 max count values
+    # redefine bins as high res data might have less than 100 max count values
     bins = list(np.arange(start=0, stop=gdf_people["counts"].max(), step=10))
-    #bins = [0, 10, 20, 35, 50, 75]
-    #bins.extend(
+    # bins = [0, 10, 20, 35, 50, 75]
+    # bins.extend(
     #    list(np.linspace(start=100, stop=gdf_people["counts"].max(), num=30)))
-    df_cum = gdf_people.groupby(
-        pd.cut(gdf_people["counts"], bins)).sum(numeric_only=True)/gdf_people["counts"].sum()
+    df_cum = (
+        gdf_people.groupby(pd.cut(gdf_people["counts"], bins)).sum(numeric_only=True)
+        / gdf_people["counts"].sum()
+    )
     cutoff_bool = (df_cum.cumsum() >= cutoff).counts.values
     cutoff_interval = df_cum.index.categories[cutoff_bool][0]
     return cutoff_interval.left
+
 
 # =============================================================================
 # Distance Threshold setting
@@ -500,73 +1003,100 @@ def get_pop_cutoff(gdf_people, cutoff):
 
 
 def set_travel_distance_threshs(df_dependencies, iso3, hrs_max=1):
-    """
-    set road travel distance threshold according to the average distance
-    covered within a specified amount of hours in the respective country.
+    """Set road travel distance thresholds based on country-specific speeds.
 
-    Data taken from Road Quality and Mean Speed Score
-    Author/Editor:Marian Moszoro ; Mauricio Soto
-    ISBN: 9798400210440/1018-5941
+    Sets the distance threshold (in metres) for health and education
+    dependencies to people, based on the average road speed in the
+    given country and a maximum travel time.
+
+    Data taken from *Road Quality and Mean Speed Score*,
+    Author/Editor: Marian Moszoro; Mauricio Soto,
+    ISBN: 9798400210440/1018-5941.
+
+    Parameters
+    ----------
+    df_dependencies : pd.DataFrame
+        Dependencies DataFrame with 'source', 'target', and 'thresh_dist'
+        columns.
+    iso3 : str
+        ISO 3166-1 alpha-3 country code.
+    hrs_max : float, optional
+        Maximum travel time in hours. Default: 1.
+
+    Returns
+    -------
+    pd.DataFrame
+        Updated dependencies DataFrame with 'thresh_dist' set for
+        health/education-to-people dependencies.
     """
     try:
-        thresh_dist = int(DICT_SPEEDS[iso3]*1000*hrs_max)
+        thresh_dist = int(DICT_SPEEDS[iso3] * 1000 * hrs_max)
     except KeyError:
-        thresh_dist = int(DICT_SPEEDS['other']*1000*hrs_max)
+        thresh_dist = int(DICT_SPEEDS["other"] * 1000 * hrs_max)
 
-    df_dependencies.loc[(df_dependencies.source == 'health') |
-                        (df_dependencies.source == 'education') &
-                        (df_dependencies.target == 'people'),
-                        'thresh_dist'] = thresh_dist
+    df_dependencies.loc[
+        (df_dependencies.source == "health")
+        | (df_dependencies.source == "education")
+        & (df_dependencies.target == "people"),
+        "thresh_dist",
+    ] = thresh_dist
 
     return df_dependencies
+
 
 # =============================================================================
 # Power Supply & Demand Data
 # =============================================================================
 
 
-class PowerFunctionalData():
+class PowerFunctionalData:
 
     def load_pplants_wri(self, path_pplants_wri, iso3):
         """
         load power plant gdf from an excel file containing the WRI global
         power plant database.
         """
-        gdf_pp_world = gpd.read_file(path_pplants_wri, crs='EPSG:4326')
-        gdf_pp = gdf_pp_world[gdf_pp_world.country == f'{iso3}'][
-            ['estimated_generation_gwh_2017', 'latitude', 'longitude',
-             'name']]
+        gdf_pp_world = gpd.read_file(path_pplants_wri, crs="EPSG:4326")
+        gdf_pp = gdf_pp_world[gdf_pp_world.country == f"{iso3}"][
+            ["estimated_generation_gwh_2017", "latitude", "longitude", "name"]
+        ]
         del gdf_pp_world
         if not gdf_pp.empty:
             gdf_pp = gpd.GeoDataFrame(
-                gdf_pp, geometry=gpd.points_from_xy(gdf_pp.longitude, gdf_pp.latitude))
-            gdf_pp = gdf_pp.drop(['latitude', 'longitude'], axis=1)
+                gdf_pp, geometry=gpd.points_from_xy(gdf_pp.longitude, gdf_pp.latitude)
+            )
+            gdf_pp = gdf_pp.drop(["latitude", "longitude"], axis=1)
 
         return gdf_pp
 
     def query_elaccess_wb(self, iso3):
-        ind = 'EG.ELC.ACCS.ZS'
-        query = f'http://api.worldbank.org/v2/country/{iso3.lower()}/indicator/{ind}?mrnev=1&format=json'
+        ind = "EG.ELC.ACCS.ZS"
+        query = f"http://api.worldbank.org/v2/country/{iso3.lower()}/indicator/{ind}?mrnev=1&format=json"
         trials = 0
         while trials < 5:
             trials += 1
             try:
                 response = requests.get(query)
-                return response.json()[1][0]['value']
+                return response.json()[1][0]["value"]
             except:
                 time.sleep(5)
-                LOGGER.info('Sleeping for 5 secs until next WB data query try')
+                LOGGER.info("Sleeping for 5 secs until next WB data query try")
 
     def load_eltargets(self, cntry_shape, path_et):
-        meta_et, arr_et = u_coords.read_raster(path_et, src_crs={'epsg': '4326'},
-                                               geometry=[cntry_shape])
-        grid = u_coords.raster_to_meshgrid(meta_et['transform'], meta_et['width'],
-                                           meta_et['height'])
-        gdf_et = gpd.GeoDataFrame({'counts': arr_et.squeeze().flatten(),
-                                   'geometry': gpd.points_from_xy(
-            grid[0].flatten(), grid[1].flatten())})
+        meta_et, arr_et = u_coords.read_raster(
+            path_et, src_crs={"epsg": "4326"}, geometry=[cntry_shape]
+        )
+        grid = u_coords.raster_to_meshgrid(
+            meta_et["transform"], meta_et["width"], meta_et["height"]
+        )
+        gdf_et = gpd.GeoDataFrame(
+            {
+                "counts": arr_et.squeeze().flatten(),
+                "geometry": gpd.points_from_xy(grid[0].flatten(), grid[1].flatten()),
+            }
+        )
         gdf_et = gdf_et[gdf_et.counts != 0].reset_index(drop=True)
-        gdf_et['geometry'] = gdf_et.geometry.buffer(meta_et['transform'][0]/2)
+        gdf_et["geometry"] = gdf_et.geometry.buffer(meta_et["transform"][0] / 2)
         return gdf_et
 
     def assign_el_targets(self, gdf_people, iso3, cntry_shape, path_et):
@@ -575,18 +1105,30 @@ class PowerFunctionalData():
 
         if el_rate < 90:
             gdf_et = self.load_eltargets(cntry_shape, path_et)
-            gdf_people['electrified'] = \
-                gdf_people.sjoin(gdf_et, how='left', predicate="within"
-                                 )['counts_right'].groupby(level=0).sum() > 0
+            gdf_people["electrified"] = (
+                gdf_people.sjoin(gdf_et, how="left", predicate="within")["counts_right"]
+                .groupby(level=0)
+                .sum()
+                > 0
+            )
             counter = 0
-            while (gdf_people[gdf_people['electrified']].counts.sum() < (gdf_people.counts.sum()*el_rate/100)
-                   and counter < 10):
-                gdf_et['geometry'] = gdf_et.geometry.buffer(0.01)
-                gdf_people['electrified'] = (gdf_people.sjoin(gdf_et, how='left', predicate="within")[
-                                             'counts_right'].groupby(level=0).sum() > 0)
+            while (
+                gdf_people[gdf_people["electrified"]].counts.sum()
+                < (gdf_people.counts.sum() * el_rate / 100)
+                and counter < 10
+            ):
+                gdf_et["geometry"] = gdf_et.geometry.buffer(0.01)
+                gdf_people["electrified"] = (
+                    gdf_people.sjoin(gdf_et, how="left", predicate="within")[
+                        "counts_right"
+                    ]
+                    .groupby(level=0)
+                    .sum()
+                    > 0
+                )
                 counter += 1
         else:
-            gdf_people['electrified'] = True
+            gdf_people["electrified"] = True
 
         return gdf_people.electrified
 
@@ -610,38 +1152,45 @@ class PowerFunctionalData():
         """
 
         # easiest default for population and power plants - assign count dummies
-        gdf_people['el_consumption'] = 0
-        gdf_people.loc[gdf_people.electrified, 'el_consumption'] = \
-            gdf_people.loc[gdf_people.electrified, 'counts']
-        gdf_pplants['el_generation'] = \
-            gdf_people['el_consumption'].sum()/len(gdf_pplants)
+        gdf_people["el_consumption"] = 0
+        gdf_people.loc[gdf_people.electrified, "el_consumption"] = gdf_people.loc[
+            gdf_people.electrified, "counts"
+        ]
+        gdf_pplants["el_generation"] = gdf_people["el_consumption"].sum() / len(
+            gdf_pplants
+        )
 
         # check if better data available from IEA & WRI
         df_final_cons = pd.read_csv(path_final_cons)
         final_cons = np.nan
         if iso3 in df_final_cons.ISO3.values:
-            final_cons = df_final_cons[df_final_cons.ISO3 == iso3
-                                       ].el_consumption.values[0]
+            final_cons = df_final_cons[
+                df_final_cons.ISO3 == iso3
+            ].el_consumption.values[0]
         if not np.isnan(final_cons):
             # assign electricity consumption to population
-            gdf_people.loc[gdf_people.electrified, 'el_consumption'] = \
-                gdf_people.loc[gdf_people.electrified, 'counts'] /\
-                gdf_people.loc[gdf_people.electrified, 'counts'].sum(
-            )*final_cons
-            if 'estimated_generation_gwh_2017' in gdf_pplants.columns:
+            gdf_people.loc[gdf_people.electrified, "el_consumption"] = (
+                gdf_people.loc[gdf_people.electrified, "counts"]
+                / gdf_people.loc[gdf_people.electrified, "counts"].sum()
+                * final_cons
+            )
+            if "estimated_generation_gwh_2017" in gdf_pplants.columns:
                 # assign electricity generation to power plants
-                gdf_pplants['estimated_generation_gwh_2017'] = pd.to_numeric(
-                    gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
-                gdf_pplants['estimated_generation_gwh_2017'].fillna(
-                    np.nanmean(gdf_pplants['estimated_generation_gwh_2017']),
-                    inplace=True)
-                gdf_pplants['el_generation'] = (
-                    gdf_pplants.estimated_generation_gwh_2017 /
-                    gdf_pplants.estimated_generation_gwh_2017.sum()*final_cons)
-                gdf_pplants = gdf_pplants.drop('estimated_generation_gwh_2017',
-                                               axis=1)
+                gdf_pplants["estimated_generation_gwh_2017"] = pd.to_numeric(
+                    gdf_pplants.estimated_generation_gwh_2017, errors="coerce"
+                )
+                gdf_pplants["estimated_generation_gwh_2017"].fillna(
+                    np.nanmean(gdf_pplants["estimated_generation_gwh_2017"]),
+                    inplace=True,
+                )
+                gdf_pplants["el_generation"] = (
+                    gdf_pplants.estimated_generation_gwh_2017
+                    / gdf_pplants.estimated_generation_gwh_2017.sum()
+                    * final_cons
+                )
+                gdf_pplants = gdf_pplants.drop("estimated_generation_gwh_2017", axis=1)
             else:
-                gdf_pplants['el_generation'] = final_cons/len(gdf_pplants)
+                gdf_pplants["el_generation"] = final_cons / len(gdf_pplants)
 
         return gdf_people, gdf_pplants
 
@@ -657,16 +1206,20 @@ class PowerFunctionalData():
 
         df_el_cons = pd.read_csv(path_elcons_iea, skiprows=4)
 
-        if df_el_cons.Units.iloc[0] != 'MWh/capita':
-            LOGGER.warning('Units of per capita electricity consumption are' +
-                           f'different than expected. ({df_el_cons.Units.iloc[0]})')
+        if df_el_cons.Units.iloc[0] != "MWh/capita":
+            LOGGER.warning(
+                "Units of per capita electricity consumption are"
+                + f"different than expected. ({df_el_cons.Units.iloc[0]})"
+            )
 
-        per_cap_cons = df_el_cons['Electricity consumption/population'].iloc[-1]
-        LOGGER.info("Taking per capita electricity consumption value for year" +
-                    f" {df_el_cons['Unnamed: 0'].iloc[-1]}")
-        return gdf_people.counts * per_cap_cons/1000
+        per_cap_cons = df_el_cons["Electricity consumption/population"].iloc[-1]
+        LOGGER.info(
+            "Taking per capita electricity consumption value for year"
+            + f" {df_el_cons['Unnamed: 0'].iloc[-1]}"
+        )
+        return gdf_people.counts * per_cap_cons / 1000
 
-    def assign_esupply_iea(self, gdf_pplants,  path_elgen_iea):
+    def assign_esupply_iea(self, gdf_pplants, path_elgen_iea):
         """
         Assigns annual electricity generation (in GWh) to each power plant
         reported in the global power plant database from the WRI.
@@ -679,21 +1232,26 @@ class PowerFunctionalData():
         df_el_gen = pd.read_csv(path_elgen_iea, skiprows=4)
 
         # Latest Electricity Generation data from the IEA (2019)
-        if df_el_gen.iloc[-1]['Units'] != 'GWh':
-            LOGGER.warning('Expected different units for generation.')
-        gen = np.nansum(df_el_gen[
-            list(set(df_el_gen.columns.values).difference(
-                {'Units', 'Unnamed: 0'}))
-        ].iloc[-1].values)
+        if df_el_gen.iloc[-1]["Units"] != "GWh":
+            LOGGER.warning("Expected different units for generation.")
+        gen = np.nansum(
+            df_el_gen[
+                list(set(df_el_gen.columns.values).difference({"Units", "Unnamed: 0"}))
+            ]
+            .iloc[-1]
+            .values
+        )
 
         # generation from WRI power plants database (usually incomplete)
         gdf_pplants.estimated_generation_gwh_2017 = pd.to_numeric(
-            gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
+            gdf_pplants.estimated_generation_gwh_2017, errors="coerce"
+        )
 
         plant_gen = gdf_pplants.estimated_generation_gwh_2017.fillna(
-            np.nanmean(gdf_pplants.estimated_generation_gwh_2017))
+            np.nanmean(gdf_pplants.estimated_generation_gwh_2017)
+        )
 
-        return np.array(plant_gen/sum(plant_gen)*gen)
+        return np.array(plant_gen / sum(plant_gen) * gen)
 
     def assign_impexp_iea(self, gdf_pplants, path_elimpexp_iea, var_name):
         """
@@ -703,38 +1261,48 @@ class PowerFunctionalData():
         # Latest annual Import/Export data from the IEA (2019)
         df_el_impexp = pd.read_csv(path_elimpexp_iea, skiprows=4)
 
-        if df_el_impexp.iloc[-1]['Units'] != 'TJ':
-            LOGGER.warning('Expected different units for import/export.')
-        if 'Exports' not in df_el_impexp.columns:
-            df_el_impexp['Exports'] = 0
-            LOGGER.warning('No export column. Setting exports to 0.')
-        if 'Imports' not in df_el_impexp.columns:
-            df_el_impexp['Imports'] = 0
-            LOGGER.warning('No import column. Setting imports to 0.')
+        if df_el_impexp.iloc[-1]["Units"] != "TJ":
+            LOGGER.warning("Expected different units for import/export.")
+        if "Exports" not in df_el_impexp.columns:
+            df_el_impexp["Exports"] = 0
+            LOGGER.warning("No export column. Setting exports to 0.")
+        if "Imports" not in df_el_impexp.columns:
+            df_el_impexp["Imports"] = 0
+            LOGGER.warning("No import column. Setting imports to 0.")
 
-        el_imp = df_el_impexp.iloc[-1]['Imports']*TJ_TO_GWH
-        el_exp = df_el_impexp.iloc[-1]['Exports']*TJ_TO_GWH
+        el_imp = df_el_impexp.iloc[-1]["Imports"] * TJ_TO_GWH
+        el_exp = df_el_impexp.iloc[-1]["Exports"] * TJ_TO_GWH
         imp_exp = el_imp + el_exp
 
-        return gpd.GeoDataFrame({'geometry': [shapely.geometry.Point(max(gdf_pplants.geometry.x)+1,
-                                                                     max(gdf_pplants.geometry.y)+1)],
-                                 'name': ['imp_exp_balance'],
-                                 f'{var_name}': [imp_exp]})
+        return gpd.GeoDataFrame(
+            {
+                "geometry": [
+                    shapely.geometry.Point(
+                        max(gdf_pplants.geometry.x) + 1, max(gdf_pplants.geometry.y) + 1
+                    )
+                ],
+                "name": ["imp_exp_balance"],
+                f"{var_name}": [imp_exp],
+            }
+        )
 
     def balance_el_generation(self, gdf_pplants, per_cap_cons, pop_no):
 
         gdf_pplants.estimated_generation_gwh_2017 = pd.to_numeric(
-            gdf_pplants.estimated_generation_gwh_2017, errors='coerce')
+            gdf_pplants.estimated_generation_gwh_2017, errors="coerce"
+        )
 
-        tot_cons_mw = per_cap_cons*pop_no/HRS_PER_YEAR
-        tot_prod_mw = gdf_pplants.estimated_generation_gwh_2017.sum()*1000/HRS_PER_YEAR
+        tot_cons_mw = per_cap_cons * pop_no / HRS_PER_YEAR
+        tot_prod_mw = (
+            gdf_pplants.estimated_generation_gwh_2017.sum() * 1000 / HRS_PER_YEAR
+        )
 
         unassigned = tot_cons_mw - tot_prod_mw
         nans = np.isnan(gdf_pplants.estimated_generation_gwh_2017).sum()
 
-        gdf_pplants['el_gen_mw'] = gdf_pplants.estimated_generation_gwh_2017 * \
-            1000/HRS_PER_YEAR
-        gdf_pplants['el_gen_mw'][np.isnan(
-            gdf_pplants.el_gen_mw)] = unassigned/nans
+        gdf_pplants["el_gen_mw"] = (
+            gdf_pplants.estimated_generation_gwh_2017 * 1000 / HRS_PER_YEAR
+        )
+        gdf_pplants["el_gen_mw"][np.isnan(gdf_pplants.el_gen_mw)] = unassigned / nans
 
         return gdf_pplants
