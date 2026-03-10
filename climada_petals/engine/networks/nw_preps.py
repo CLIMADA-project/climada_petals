@@ -389,7 +389,9 @@ def clean_roundabouts(network):
                 new_edge_id.append(edge.osm_id)
             remove_edge.append(edg[0])
 
-    new = pd.DataFrame(new_edge, columns=["osm_id"] + attributes + ["geometry"])
+    new = gpd.GeoDataFrame(
+        new_edge, columns=["osm_id"] + attributes + ["geometry"], crs=edges.crs
+    )
     edges = edges.loc[~edges.index.isin(remove_edge)]
     edges = pd.concat([edges, new]).reset_index(drop=True)
 

@@ -823,3 +823,59 @@ class TestCleanRoundabouts:
         # The ring edge should be removed
         for edge in result.edges.itertuples():
             assert not shapely.predicates.is_ring(edge.geometry)
+
+    def test_preserves_geographic_crs(self, roundabout_network):
+        """CRS is preserved through clean_roundabouts for geographic CRS."""
+        assert roundabout_network.crs.to_string() == "EPSG:4326"
+
+        result = nw_preps.clean_roundabouts(roundabout_network)
+
+        assert result.crs.to_string() == "EPSG:4326"
+        assert result.edges.crs.to_string() == "EPSG:4326"
+        assert result.nodes.crs.to_string() == "EPSG:4326"
+
+    def test_preserves_projected_crs(self):
+        """CRS is preserved through clean_roundabouts for projected CRS."""
+        # Roundabout in UTM zone 32N (EPSG:32632)
+        ring = LineString(
+            [
+                (500000, 5000100),
+                (500100, 5000200),
+                (500200, 5000100),
+                (500100, 5000000),
+                (500000, 5000100),
+            ]
+        )
+        spoke_left = LineString([(499800, 5000100), (500000, 5000100)])
+        spoke_right = LineString([(500200, 5000100), (500400, 5000100)])
+
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [1, 2, 3],
+                "id": [0, 1, 2],
+                "geometry": [ring, spoke_left, spoke_right],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2],
+                "geometry": [
+                    Point(499800, 5000100),
+                    Point(500100, 5000100),
+                    Point(500400, 5000100),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        network = Network(edges=edges, nodes=nodes)
+        result = nw_preps.clean_roundabouts(network)
+
+        assert result.crs.to_string() == "EPSG:32632"
+        assert result.edges.crs.to_string() == "EPSG:32632"
+        assert result.nodes.crs.to_string() == "EPSG:32632"
+        # Ring should be removed
+        for edge in result.edges.itertuples():
+            assert not shapely.predicates.is_ring(edge.geometry)
