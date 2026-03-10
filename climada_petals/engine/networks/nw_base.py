@@ -58,12 +58,11 @@ class Network:
         edges : gpd.GeoDataFrame, optional
             GeoDataFrame containing network edges (e.g., roads, power lines).
             Must have columns 'from_id', 'to_id', and 'geometry'.
-            Defaults to an empty GeoDataFrame with EPSG:4326 CRS.
+            Defaults to an empty GeoDataFrame with EPSG:4326 CRS or the CRS of the other GeoDataFrame.
         nodes : gpd.GeoDataFrame, optional
             GeoDataFrame containing network nodes (e.g., infrastructure facilities, people).
             Must have columns 'id' and 'geometry'.
-            Defaults to an empty GeoDataFrame with EPSG:4326 CRS.
-
+            Defaults to an empty GeoDataFrame with EPSG:4326 CRS or the CRS of the other GeoDataFrame.
         Attributes
         ----------
         edges : gpd.GeoDataFrame
@@ -81,24 +80,33 @@ class Network:
         >>> nodes_gdf = gpd.GeoDataFrame(...)
         >>> network = Network(edges=edges_gdf, nodes=nodes_gdf)
         """
+        crs_edges = edges.crs if edges is not None else None
+        crs_nodes = nodes.crs if nodes is not None else None
+        if crs_edges and not crs_nodes:
+            crs_nodes = crs_edges
+        elif crs_nodes and not crs_edges:
+            crs_edges = crs_nodes
+        elif not crs_edges and not crs_nodes:
+            crs_edges = "EPSG:4326"
+            crs_nodes = "EPSG:4326"
+        else:
+            if not equal_crs(crs_edges, crs_nodes):
+                raise ValueError(
+                    "Edges and nodes must have the same CRS %s, %s",
+                    crs_edges,
+                    crs_nodes,
+                )
         if edges is None:
             edges = gpd.GeoDataFrame(
                 columns=["from_id", "to_id", "id", "orig_id", "geometry"],
                 geometry="geometry",
-                crs="EPSG:4326",
+                crs=crs_edges,
             )
         if nodes is None:
             nodes = gpd.GeoDataFrame(
                 columns=["id", "orig_id", "geometry"],
                 geometry="geometry",
-                crs="EPSG:4326",
-            )
-
-        if not equal_crs(edges.crs, nodes.crs):
-            raise ValueError(
-                "Edges and nodes must have the same CRS %s, %s",
-                edges.crs,
-                nodes.crs,
+                crs=crs_nodes,
             )
 
         if "orig_id" not in edges.columns:
