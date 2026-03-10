@@ -45,17 +45,19 @@ https://github.com/ElcoK/trails/blob/main/src/trails/simplify.py
 
 
 def add_ids(network, id_col="id"):
-    """
-    Add or replace an id column with ascending ids
+    """Add or replace an id column with ascending ids.
 
     Parameters
-        network (class): A network composed of nodes (points in space) and
-            edges (lines)
-        id_col (str, optional): [description]. Defaults to 'id'.
+    ----------
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
+    id_col : str, optional
+        Column name for the id. Default: 'id'.
 
     Returns
     -------
-        Network (class):
+    Network
+        Network with reset indices and new id columns.
     """
     nodes = network.nodes.copy()
     edges = network.edges.copy()
@@ -73,19 +75,19 @@ def add_ids(network, id_col="id"):
 
 
 def add_topology(network, id_col="id"):
-    """
-    Add or replace from_id, to_id to edges
+    """Add or replace from_id, to_id columns to edges.
 
     Parameters
-    -------
-    network (class): A network composed of nodes (points in space) and
-        edges (lines)
-    id_col (str, optional): [description]. Defaults to 'id'.
+    ----------
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
+    id_col : str, optional
+        Column name for the id. Default: 'id'.
 
     Returns
     -------
-        Network (class): A network composed of nodes (points in space) and
-            edges (lines)
+    Network
+        Network with from_id and to_id columns added to edges.
     """
 
     from_ids = []
@@ -119,16 +121,19 @@ def add_topology(network, id_col="id"):
 
 
 def line_endpoints(line):
-    """
-    Return points at first and last vertex of a line
+    """Return points at first and last vertex of a line.
 
     Parameters
-    -------
-    line ([type]): [description]
+    ----------
+    line : shapely.LineString
+        A line geometry.
 
     Returns
     -------
-        [type]: [description]
+    start : shapely.Point
+        Point at the start of the line.
+    end : shapely.Point
+        Point at the end of the line.
     """
     start = shapely.get_point(line, 0)
     end = shapely.get_point(line, -1)
@@ -136,18 +141,21 @@ def line_endpoints(line):
 
 
 def nearest(geom, dataframe, sindex):
-    """
-    Find the element of a DataFrame nearest a geometry
+    """Find the element of a GeoDataFrame nearest a geometry.
 
     Parameters
-    -------
-    geom (shapely.geometry): [description]
-    dataframe (pandas.DataFrame): [description]
-    sindex ([type]): [description]
+    ----------
+    geom : shapely.Geometry
+        Reference geometry to find the nearest element to.
+    dataframe : gpd.GeoDataFrame
+        GeoDataFrame with geometries to search.
+    sindex : shapely.STRtree
+        Spatial index of the dataframe geometries.
 
     Returns
     -------
-        [type]: [description]
+    pandas.Series
+        Row from the dataframe nearest to ``geom``.
     """
     matches_idx = sindex.query(geom)
     nearest_geom = min(
@@ -158,34 +166,37 @@ def nearest(geom, dataframe, sindex):
 
 
 def nearest_node(point, nodes, sindex):
-    """
-    Find nearest node to a point
+    """Find the nearest node to a point.
 
     Parameters
-    -------
-    point *shapely.geometry): [description]
-    nodes (network.nodes): [description]
-    sindex ([type]): [description]
+    ----------
+    point : shapely.Point
+        Reference point geometry.
+    nodes : gpd.GeoDataFrame
+        GeoDataFrame of network nodes.
+    sindex : shapely.STRtree
+        Spatial index of the node geometries.
 
     Returns
     -------
-        [type]: [description]
+    pandas.Series
+        Row from nodes nearest to ``point``.
     """
     return nearest(point, nodes, sindex)
 
 
 def get_endpoints(network):
-    """
-    Get nodes for each edge endpoint
+    """Get nodes for each edge endpoint.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and
-        edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-        [type]: [description]
+    gpd.GeoDataFrame
+        GeoDataFrame with point geometries at each edge endpoint.
     """
     endpoints = []
     for edge in tqdm(
@@ -209,18 +220,17 @@ def get_endpoints(network):
 
 
 def add_endpoints(network):
-    """
-    Add nodes at line endpoints
+    """Add nodes at line endpoints.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and
-        edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    Network (class): A network composed of nodes (points in space) and
-        edges (lines)
+    Network
+        Network with endpoint nodes added.
     """
 
     endpoints = get_endpoints(network)
@@ -234,18 +244,17 @@ def add_endpoints(network):
 
 
 def merge_multilinestrings(network):
-    """
-    Try to merge all multilinestring geometries into linestring geometries.
+    """Merge all MultiLineString geometries into LineString geometries.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and
-        edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    Network (class): A network composed of nodes (points in space) and
-        edges (lines)
+    Network
+        Network with merged edge geometries.
     """
     nodes = network.nodes.copy()
     edges = network.edges.copy()
@@ -256,17 +265,18 @@ def merge_multilinestrings(network):
 
 
 def merge_multilinestring(geom):
-    """Merge a MultiLineString to LineString
+    """Merge a MultiLineString to a LineString.
 
     Parameters
     ----------
-    geom (shapely.geometry): A shapely geometry, most likely a linestring or
-        a multilinestring
+    geom : shapely.Geometry
+        A shapely geometry, most likely a LineString or a MultiLineString.
 
     Returns
     -------
-    geom (shapely.geometry): A shapely linestring geometry if merge was
-        succesful. If not, it returns the input.
+    shapely.Geometry
+        A shapely LineString geometry if the merge was successful.
+        Otherwise, the original geometry is returned unchanged.
     """
     if shapely.get_type_id(geom) == "5":
         geom_inb = shapely.line_merge(geom)
@@ -277,16 +287,17 @@ def merge_multilinestring(geom):
 
 
 def find_roundabouts(network):
-    """
-    Methods to find roundabouts
+    """Find roundabout edges in the network.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    roundabouts (list): Returns the edges that can be identified as roundabouts
+    list
+        Edges that can be identified as roundabouts (ring geometries).
     """
     roundabouts = []
     for edge in network.edges.itertuples():
@@ -296,17 +307,19 @@ def find_roundabouts(network):
 
 
 def clean_roundabouts(network):
-    """
-    Methods to clean roundabouts and junctions should be done before
-        splitting edges at nodes to avoid logic conflicts
+    """Clean roundabouts and junctions in the network.
+
+    Should be called before splitting edges at nodes to avoid logic conflicts.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    Network
+        Network with roundabout geometries replaced by centroid connections.
     """
     # TODO: Is reference to osm_id really necessary? Remove by alternative?
 
@@ -383,18 +396,20 @@ def clean_roundabouts(network):
 
 
 def calculate_degree(network):
-    """
-    Calculates the degree of the nodes from the from and to ids. It
-    is not wise to call this method after removing nodes or edges
-    without first resetting the ids
+    """Calculate the degree of each node from from_id and to_id columns.
+
+    Should not be called after removing nodes or edges without first
+    resetting the ids.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    Connectivity degree (numpy.array): [description]
+    np.ndarray
+        Array of connectivity degrees for each node.
     """
     if network.edges.empty:
         return [0] * len(network.nodes)
@@ -408,16 +423,17 @@ def calculate_degree(network):
 
 
 def add_degree(network):
-    """
-    Adds a degree column to the node dataframe
+    """Add a degree column to the node GeoDataFrame.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    Network
+        Network with a 'degree' column added to nodes.
     """
     degree = calculate_degree(network)
 
@@ -429,17 +445,19 @@ def add_degree(network):
 
 
 def concat_dedup(dataframes):
-    """
-    Concatenate a list of GeoDataFrames, dropping duplicate geometries
-    - note: repeatedly drops indexes for deduplication to work
+    """Concatenate a list of GeoDataFrames, dropping duplicate geometries.
+
+    Repeatedly drops indices for deduplication to work.
 
     Parameters
     ----------
-        dataframes ([type]): [description]
+    dataframes : list of gpd.GeoDataFrame
+        GeoDataFrames to concatenate.
 
     Returns
     -------
-        [type]: [description]
+    gpd.GeoDataFrame
+        Concatenated GeoDataFrame with duplicate geometries removed.
     """
     cat = pd.concat(dataframes, axis=0, sort=False)
     cat.reset_index(drop=True, inplace=True)
@@ -449,18 +467,23 @@ def concat_dedup(dataframes):
 
 
 def find_closest_2_edges(edgeIDs, edges, nodGeometry):
-    """
-    Returns the 2 edges connected to the current node
+    """Find the two edges closest to a given node geometry.
 
     Parameters
     ----------
-    edgeIDs ([type]): [description]
-    edges ([type]): [description]
-    nodGeometry ([type]): [description]
+    edgeIDs : list of int
+        Indices of candidate edges. Modified in-place (first match removed).
+    edges : gpd.GeoDataFrame
+        GeoDataFrame of network edges.
+    nodGeometry : shapely.Point
+        Geometry of the node to find connected edges for.
 
     Returns
     -------
-        [type]: [description]
+    edge_path_1 : pandas.Series
+        The closest edge to the node.
+    edge_path_2 : pandas.Series
+        The second closest edge to the node.
     """
     edge_path_1 = min(
         [edges.iloc[match_idx] for match_idx in edgeIDs],
@@ -475,23 +498,25 @@ def find_closest_2_edges(edgeIDs, edges, nodGeometry):
 
 
 def merge_edges(network, print_err=False):
-    """
-    This method removes all degree 2 nodes and merges their associated edges, at
-    the moment it arbitrarily uses the first edge's attributes for the new edges
-    column attributes, in the future the mean or another measure can be used
-    to set these new values. The general strategy is to find a node of degree 2,
-    and the associated 2 edges, then traverse edges and nodes in both directions
-    until a node of degree !=2 is found, at this point stop in this direction. Reset the
-    geometry and from/to ids for this edge, delete the nodes and edges traversed.
+    """Remove degree-2 nodes and merge their associated edges.
+
+    Finds nodes of degree 2 and their associated 2 edges, then traverses
+    edges and nodes in both directions until a node of degree != 2 is found.
+    Resets the geometry and from/to ids for the merged edge, and deletes the
+    traversed nodes and edges. Uses the mode of edge attributes for the
+    merged edge's column values.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and edges (lines)
-    print_err (bool, optional): [description]. Defaults to False.
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
+    print_err : bool, optional
+        Whether to print error messages for failed merges. Default: False.
 
     Returns
     -------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    Network
+        Network with degree-2 nodes removed and edges merged.
     """
     if network.edges.empty:
         return network
@@ -634,18 +659,19 @@ def merge_edges(network, print_err=False):
 
 
 def node_connectivity_degree(node, network):
-    """
-    Get the degree of connectivity for a node.
+    """Get the degree of connectivity for a node.
 
     Parameters
     ----------
-    node ([type]): [description]
-    network (class): A network composed of nodes (points in space) and
-        edges (lines)
+    node : int
+        Node id to query.
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-        type]: [description]
+    int
+        Number of edges connected to the node.
     """
     return len(
         network.edges[(network.edges.from_id == node) | (network.edges.to_id == node)]
@@ -653,20 +679,22 @@ def node_connectivity_degree(node, network):
 
 
 def drop_duplicate_geometries(dataframe, keep="first"):
-    """
-    Drop duplicate geometries from a dataframe
+    """Drop duplicate geometries from a GeoDataFrame.
 
-    Convert to wkb so drop_duplicates will work as discussed
-    in https://github.com/geopandas/geopandas/issues/521
+    Converts geometries to WKB so that ``drop_duplicates`` works correctly,
+    as discussed in https://github.com/geopandas/geopandas/issues/521.
 
     Parameters
     ----------
-        dataframe (pandas.DataFrame): [description]
-        keep (str, optional): [description]. Defaults to 'first'.
+    dataframe : gpd.GeoDataFrame
+        GeoDataFrame from which to remove duplicate geometries.
+    keep : str, optional
+        Which duplicates to keep. Default: 'first'.
 
     Returns
     -------
-        [type]: [description]
+    gpd.GeoDataFrame
+        GeoDataFrame with duplicate geometries removed.
     """
 
     mask = dataframe.geometry.apply(lambda geom: shapely.to_wkb(geom))
@@ -675,18 +703,20 @@ def drop_duplicate_geometries(dataframe, keep="first"):
 
 
 def reset_ids(network):
-    """
-    Resets the ids of the nodes and edges, editing the refereces in edge table
-    using dict masking
+    """Reset the ids of nodes and edges to sequential integers.
+
+    Updates from_id and to_id references in the edge table using
+    dictionary mapping.
 
     Parameters
     ----------
-        network (class): A network composed of nodes (points in space) and
-            edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-        [type]: [description]
+    Network
+        Network with sequentially renumbered node and edge ids.
     """
     # Copy nodes and edges to avoid modifying the original data
     nodes = network.nodes.copy()
@@ -714,8 +744,17 @@ def reset_ids(network):
 
 
 def split_edges_at_nodes(network):
-    """
-    Split network edges where they intersect node geometries
+    """Split network edges where they intersect node geometries.
+
+    Parameters
+    ----------
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
+
+    Returns
+    -------
+    Network
+        Network with edges split at node intersection points.
     """
     sindex_nodes = shapely.STRtree(network.nodes["geometry"])
     sindex_edges = shapely.STRtree(network.edges["geometry"])
@@ -796,19 +835,25 @@ def split_edges_at_nodes(network):
 
 
 def _intersects(geom, dataframe, sindex, tolerance=1e-9):
-    """
-    [summary]
+    """Find elements of a GeoSeries intersecting with a geometry.
+
+    Buffers the geometry by a tolerance before querying the spatial index.
 
     Parameters
     ----------
-    geom (shapely.geometry): [description]
-    dataframe ([type]): [description]
-    sindex ([type]): [description]
-    tolerance ([type], optional): [description]. Defaults to 1e-9.
+    geom : shapely.Geometry
+        Geometry to test for intersection.
+    dataframe : gpd.GeoSeries
+        GeoSeries of geometries to search.
+    sindex : shapely.STRtree
+        Spatial index of the dataframe geometries.
+    tolerance : float, optional
+        Buffer distance for intersection test. Default: 1e-9.
 
     Returns
     -------
-        [type]: [description]
+    gpd.GeoSeries
+        Subset of ``dataframe`` that intersects with ``geom``.
     """
     buffer = shapely.buffer(geom, tolerance)
     if shapely.is_empty(buffer):
@@ -823,70 +868,84 @@ def _intersects(geom, dataframe, sindex, tolerance=1e-9):
 
 
 def _intersects_dataframe(geom, dataframe, sindex):
-    """
-    [summary]
+    """Return elements of a GeoSeries that intersect with a geometry.
 
     Parameters
     ----------
-    geom ([type]): [description]
-    dataframe ([type]): [description]
-    sindex ([type]): [description]
+    geom : shapely.Geometry
+        Geometry to test for intersection.
+    dataframe : gpd.GeoSeries
+        GeoSeries of geometries to search.
+    sindex : shapely.STRtree
+        Spatial index of the dataframe geometries.
 
     Returns
     -------
-    [type]: [description]
+    gpd.GeoSeries
+        Subset of ``dataframe`` that intersects with ``geom``.
     """
     return dataframe[sindex.query(geom, "intersects")]
 
 
 def intersects(geom, dataframe, sindex, tolerance=1e-9):
-    """Find the subset of a GeoDataFrame intersecting with a shapely geometry
+    """Find the subset of a GeoSeries intersecting with a geometry.
 
     Parameters
     ----------
-        geom ([type]): [description]
-        dataframe ([type]): [description]
-        sindex ([type]): [description]
-        tolerance ([type], optional): [description]. Defaults to 1e-9.
+    geom : shapely.Geometry
+        Geometry to test for intersection.
+    dataframe : gpd.GeoSeries
+        GeoSeries of geometries to search.
+    sindex : shapely.STRtree
+        Spatial index of the dataframe geometries.
+    tolerance : float, optional
+        Buffer distance for intersection test. Default: 1e-9.
 
     Returns
     -------
-        [type]: [description]
+    gpd.GeoSeries
+        Subset of ``dataframe`` that intersects with ``geom``.
     """
     return _intersects(geom, dataframe, sindex, tolerance)
 
 
 def nodes_intersecting(line, nodes, sindex, tolerance=1e-9):
-    """
-    Find nodes intersecting line
+    """Find nodes intersecting with a line geometry.
 
     Parameters
     ----------
-    line ([type]): [description]
-    nodes ([type]): [description]
-    sindex ([type]): [description]
-    tolerance ([type], optional): [description]. Defaults to 1e-9.
+    line : shapely.LineString
+        Line geometry to test for intersection.
+    nodes : gpd.GeoSeries
+        GeoSeries of node geometries.
+    sindex : shapely.STRtree
+        Spatial index of the node geometries.
+    tolerance : float, optional
+        Buffer distance for intersection test. Default: 1e-9.
 
     Returns
     -------
-    [type]: [description]
+    gpd.GeoSeries
+        Subset of ``nodes`` that intersects with ``line``.
     """
     return intersects(line, nodes, sindex, tolerance)
 
 
 def add_distances(network):
-    """
-    This method adds a distance column using shapely (converted from shapely)
-    assuming the new crs from the latitude and longitude of the first node
-    distance is in metres
+    """Add a distance column to edges in metres.
+
+    Reprojects edge geometries from EPSG:4326 to an approximate local CRS
+    derived from the first node's coordinates, then calculates edge lengths.
 
     Parameters
     ----------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    network (class): A network composed of nodes (points in space) and edges (lines)
+    Network
+        Network with a 'distance' column (in metres) added to edges.
     """
     # TODO: replace by climada-internal func (already exists)
     edges = network.edges.copy()
@@ -917,11 +976,19 @@ def add_distances(network):
 
 
 def _ecols_to_graphorder(edges):
-    """
-    order columns as igraph expects them for building a graph
+    """Order edge columns as igraph expects them for building a graph.
+
+    Moves 'from_id' and 'to_id' to the front of the DataFrame.
 
     Parameters
     ----------
+    edges : gpd.GeoDataFrame
+        Edge GeoDataFrame to reorder.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Reordered edge GeoDataFrame.
     """
     return edges.reindex(
         ["from_id", "to_id"]
@@ -931,11 +998,19 @@ def _ecols_to_graphorder(edges):
 
 
 def _vcols_to_graphorder(nodes):
-    """
-    order columns as igraph expects them for building a graph
+    """Order node columns as igraph expects them for building a graph.
+
+    Moves 'id' to the front of the DataFrame.
 
     Parameters
     ----------
+    nodes : gpd.GeoDataFrame
+        Node GeoDataFrame to reorder.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Reordered node GeoDataFrame.
     """
     return nodes.reindex(["id"] + [x for x in list(nodes) if x not in ["id"]], axis=1)
 
@@ -946,16 +1021,22 @@ def _vcols_to_graphorder(nodes):
 
 
 def simplified_network(network):
-    """
-    returns a simplified network
+    """Return a simplified network.
+
+    Applies a series of simplification steps: cleaning roundabouts, adding
+    endpoints, adding ids and topology, merging degree-2 edges, removing
+    duplicate geometries, resetting ids, adding distances, and merging
+    MultiLineStrings.
 
     Parameters
-    -----------
-    network ([nw_base.Network]): [description]
+    ----------
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
 
     Returns
     -------
-    network_simp ([nw_base.Network]): simplified network
+    Network
+        Simplified network.
     """
 
     network_simp = Network(network.edges.copy(), network.nodes.copy())
@@ -976,16 +1057,23 @@ def simplified_network(network):
 
 
 def ordered_network(network, attrs={}):
-    """
-    returns an ordered network for igraph graph generation
+    """Return a column-ordered network for igraph graph generation.
+
+    Reorders node and edge columns to the format expected by igraph
+    and optionally adds additional attributes.
 
     Parameters
-    -----------
-    network ([nw_base.Network]): [description]
+    ----------
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
+    attrs : dict, optional
+        Additional attributes to add to both edges and nodes.
+        Default: {}.
 
     Returns
     -------
-    network_ord ([nw_base.Network]): ordered network
+    Network
+        Network with reordered columns ready for igraph graph construction.
     """
 
     network_ord = Network(network.edges.copy(), network.nodes.copy())

@@ -71,6 +71,26 @@ LOGGER = logging.getLogger(__name__)
 # Plots
 # =============================================================================
 def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
+    """Plot population nodes as a scatter plot.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing nodes with ci_type 'people'.
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    **kwargs
+        Additional keyword arguments passed to ``axes.scatter``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the population plot.
+    """
     plot_df = self.nodes[self.nodes.ci_type == "people"]
     if axes is None:
         fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
@@ -99,7 +119,38 @@ def infra_plot(
     ci_kwargs=dict(),
     cbar_kwargs=dict(),
 ):
-    """Infrastructure plots"""
+    """Plot critical infrastructure network elements.
+
+    Plots nodes and edges for each CI type with distinct markers, colors,
+    and line styles. When ``plot_col`` is not 'ci_type', a functional
+    status colorbar (disrupted/functioning) is added.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing nodes and edges.
+    ci_types : list of str, optional
+        CI types to plot. If None, all unique ci_types in nodes are used.
+    plot_col : str, optional
+        Column to use for coloring. Default: 'ci_type'.
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    pop_kwargs : dict, optional
+        Additional keyword arguments for population scatter plot.
+    ci_kwargs : dict, optional
+        Additional keyword arguments for CI element plots.
+    cbar_kwargs : dict, optional
+        Additional keyword arguments for the colorbar.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the infrastructure plot.
+    """
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
     if axes is None:
@@ -188,6 +239,20 @@ def infra_plot(
 
 
 def _get_dependencies(self, ci_types):
+    """Get unique dependency edge types for the given CI types.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing edges.
+    ci_types : list of str
+        CI types to filter dependency edges for.
+
+    Returns
+    -------
+    np.ndarray
+        Array of unique dependency edge type names.
+    """
     dep_list = [
         dep
         for dep in self.edges.ci_type
@@ -198,7 +263,29 @@ def _get_dependencies(self, ci_types):
 
 
 def dep_plot(self, ci_types=None, axes=None, projection=ccrs.PlateCarree(), **kwargs):
-    """dependencies plots"""
+    """Plot dependency edges between CI types.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing edges with dependency types.
+    ci_types : list of str, optional
+        CI types to plot dependencies for. If None, all unique ci_types
+        in nodes are used.
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    **kwargs
+        Additional keyword arguments passed to ``GeoDataFrame.plot``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the dependency plot.
+    """
     if not ci_types:
         ci_types = self.nodes.ci_type.unique()
     if axes is None:
@@ -232,6 +319,34 @@ def access_plot(
     plot_kwargs=dict(),
     cbar_kwargs=dict(),
 ):
+    """Plot population access status for a given CI type.
+
+    Visualises the access state of population clusters to a specific
+    CI service, color-coded by access status and sized by population count.
+
+    Parameters
+    ----------
+    self : Network
+        Network instance containing nodes with ci_type 'people' and
+        access state columns.
+    ci_type : str
+        The CI type to assess access for (e.g. 'healthcare', 'power').
+    axes : cartopy.mpl.geoaxes.GeoAxes, optional
+        Axes to plot on. If None, a new figure and axes are created.
+    projection : cartopy.crs.Projection, optional
+        Map projection. Default: PlateCarree.
+    plot_kwargs : dict, optional
+        Additional keyword arguments for ``axes.scatter``.
+    cbar_kwargs : dict, optional
+        Additional keyword arguments for the colorbar.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : cartopy.mpl.geoaxes.GeoAxes
+        The axes with the access plot.
+    """
     if axes is None:
         fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
@@ -295,9 +410,19 @@ def access_plot(
 
 
 def make_edge_geometries(vs_geoms_from, vs_geoms_to):
-    """
-    create straight shapely LineString geometries between lists of
-    from and to nodes, to be added to newly created edges as attributes
+    """Create straight LineString geometries between pairs of node geometries.
+
+    Parameters
+    ----------
+    vs_geoms_from : list of shapely.Point
+        Origin point geometries.
+    vs_geoms_to : list of shapely.Point
+        Destination point geometries.
+
+    Returns
+    -------
+    list of shapely.LineString
+        Straight-line geometries connecting each from-to pair.
     """
     return [
         shapely.geometry.LineString([geom_from, geom_to])
@@ -306,6 +431,26 @@ def make_edge_geometries(vs_geoms_from, vs_geoms_to):
 
 
 def _preselect_destinations(vs_assign, vs_base, dist_thresh):
+    """Preselect candidate destination indices within a distance threshold.
+
+    Uses a cKDTree to find, for each point in ``vs_assign``, all points
+    in ``vs_base`` within ``dist_thresh``.
+
+    Parameters
+    ----------
+    vs_assign : gpd.GeoDataFrame
+        GeoDataFrame of points to assign.
+    vs_base : gpd.GeoDataFrame
+        GeoDataFrame of candidate destination points.
+    dist_thresh : float
+        Maximum distance threshold for candidate matching.
+
+    Returns
+    -------
+    list of list of int
+        For each point in ``vs_assign``, a list of indices into ``vs_base``
+        within ``dist_thresh``.
+    """
     points_base = np.array([(x.x, x.y) for x in vs_base["geometry"]])
     point_tree = cKDTree(points_base)
 
@@ -317,17 +462,28 @@ def _preselect_destinations(vs_assign, vs_base, dist_thresh):
 
 
 def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
-    """
-    see https://gis.stackexchange.com/a/301935
+    """Find the k nearest neighbours using a cKDTree.
+
+    See https://gis.stackexchange.com/a/301935.
 
     Parameters
     ----------
-    vs_assign : gpd.GeoDataFrame or Point
+    vs_assign : gpd.GeoDataFrame or pandas.Series
+        GeoDataFrame or single row with point geometries to assign.
     gdf_base : gpd.GeoDataFrame
+        GeoDataFrame of candidate destination points.
+    k : int, optional
+        Number of nearest neighbours to find. Default: 1.
+    dist_thresh : float, optional
+        Maximum distance for valid matches. Default: np.inf.
 
     Returns
-    ----------
-
+    -------
+    dist : np.ndarray
+        Distances to the k nearest neighbours.
+    vld_ind_formatted : np.ndarray
+        Indices into ``gdf_base`` of valid nearest neighbours. Invalid
+        matches (beyond ``dist_thresh``) are set to NaN.
     """
     # TODO: this mixed input options (1 vertex vs gdf) is not nicely solved
     if isinstance(vs_assign, (gpd.GeoDataFrame, pd.DataFrame)):
@@ -346,12 +502,57 @@ def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
 
 
 def window_from_extent(xmin, ymin, xmax, ymax, transform):
+    """Create a rasterio Window from geographic extent bounds.
+
+    Parameters
+    ----------
+    xmin : float
+        Minimum x coordinate (left).
+    ymin : float
+        Minimum y coordinate (bottom).
+    xmax : float
+        Maximum x coordinate (right).
+    ymax : float
+        Maximum y coordinate (top).
+    transform : rasterio.Affine
+        Affine transform of the raster.
+
+    Returns
+    -------
+    rasterio.windows.Window
+        Window corresponding to the given extent.
+    """
     col_start, row_start = ~transform * (xmin, ymax)
     col_stop, row_stop = ~transform * (xmax, ymin)
     return Window.from_slices((row_start, row_stop), (col_start, col_stop))
 
 
 def _resample_res(filepath, upscale_factor, nodata, extent=None):
+    """Resample a raster file to a different resolution.
+
+    Reads a raster, optionally crops to an extent, and resamples by the
+    given upscale factor using average resampling.
+
+    Parameters
+    ----------
+    filepath : str or pathlib.Path
+        Path to the raster file.
+    upscale_factor : float
+        Factor by which to upscale the resolution. Values > 1 increase
+        the number of pixels (finer resolution).
+    nodata : float
+        Nodata value to replace with 0.
+    extent : tuple of float, optional
+        Geographic extent as (xmin, ymin, xmax, ymax) to crop the raster.
+        Default: None (use full raster).
+
+    Returns
+    -------
+    arr : np.ndarray
+        Resampled raster array with nodata replaced by 0.
+    transform : rasterio.Affine
+        Affine transform of the resampled raster.
+    """
 
     with rasterio.open(filepath) as dataset:
         # Get the initial transform and metadata
@@ -394,6 +595,29 @@ def _resample_res(filepath, upscale_factor, nodata, extent=None):
 
 
 def load_resampled_raster(filepath, upscale_factor, nodata=-99999.0, extent=None):
+    """Load a raster file, resample it, and return as a GeoDataFrame.
+
+    Resamples the raster by the given factor and converts non-zero cells
+    to point geometries with population counts. Applies a correction factor
+    to account for aggregation over/under-estimation.
+
+    Parameters
+    ----------
+    filepath : str or pathlib.Path
+        Path to the raster file.
+    upscale_factor : float
+        Factor by which to upscale the resolution.
+    nodata : float, optional
+        Nodata value in the raster. Default: -99999.0.
+    extent : tuple of float, optional
+        Geographic extent as (xmin, ymin, xmax, ymax). Default: None.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame with 'counts' and 'geometry' columns for non-zero
+        raster cells.
+    """
 
     arr, transform = _resample_res(filepath, upscale_factor, nodata, extent)
 
@@ -420,6 +644,14 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999.0, extent=None
 
 
 def service_dict():
+    """Return a mapping from service names to graph attribute keys.
+
+    Returns
+    -------
+    dict
+        Dictionary mapping service names (e.g. 'power', 'healthcare') to
+        the corresponding vertex attribute keys in the igraph graph.
+    """
     return {
         "power": "actual_supply_power_line_people",
         "healthcare": "actual_supply_healthcare_people",
@@ -431,6 +663,20 @@ def service_dict():
 
 
 def number_noservice(service, graph):
+    """Calculate the population without access to a given service.
+
+    Parameters
+    ----------
+    service : str
+        Service name (e.g. 'power', 'healthcare').
+    graph : GraphCalcs
+        Graph calculation object with an igraph graph attribute.
+
+    Returns
+    -------
+    float
+        Total population without access to the service.
+    """
 
     no_service = 1 - np.array(
         graph.graph.vs.select(ci_type="people")[service_dict()[service]]
@@ -442,6 +688,22 @@ def number_noservice(service, graph):
 def number_noservices(
     graph, services=["power", "healthcare", "education", "telecom", "mobility", "water"]
 ):
+    """Calculate the population without access for multiple services.
+
+    Parameters
+    ----------
+    graph : GraphCalcs
+        Graph calculation object with an igraph graph attribute.
+    services : list of str, optional
+        Services to evaluate. Default: ['power', 'healthcare', 'education',
+        'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service name to the population count
+        without access.
+    """
 
     servstats_dict = {}
     for service in services:
@@ -450,21 +712,28 @@ def number_noservices(
 
 
 def number_noservice_df(service, df, service_dict=service_dict()):
-    """
-    Number of population having '0' or '-1' in service state for a respective service
+    """Calculate the population without access to a service from a DataFrame.
+
+    Counts population having 0 or negative values in the service state column.
 
     Parameters
-    -----------
+    ----------
     service : str
-        the service to check (in-)availability for
-    df : dataframe
-        a (geo-)dataframe containing information on population clusters
-        and the respective state of certain sevices, e.g. from a df_res extracted
-        for saving from disrupted graph, or from network.nodes instance
+        Service name to check availability for (e.g. 'power', 'healthcare').
+    df : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame containing population clusters with columns 'ci_type',
+        'counts', and the service state columns.
+    service_dict : dict, optional
+        Mapping from service names to column names. Default: ``service_dict()``.
 
-    Note
-    -----
-    same as number_noservice, just that it's performed on a df, not on the graph
+    Returns
+    -------
+    float
+        Total population without access to the service.
+
+    See Also
+    --------
+    number_noservice : Same calculation performed on the igraph graph.
     """
     return df[(df.ci_type == "people") & (df[service_dict[service]] <= 0)].counts.sum()
 
@@ -472,10 +741,25 @@ def number_noservice_df(service, df, service_dict=service_dict()):
 def number_noservices_df(
     df, services=["power", "healthcare", "education", "telecom", "mobility", "water"]
 ):
-    """
-    Note
-    -----
-    same as number_noservices, just that it's performed on a df, not on the graph
+    """Calculate the population without access for multiple services from a DataFrame.
+
+    Parameters
+    ----------
+    df : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame containing population clusters and service state columns.
+    services : list of str, optional
+        Services to evaluate. Default: ['power', 'healthcare', 'education',
+        'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service name to the population count
+        without access.
+
+    See Also
+    --------
+    number_noservices : Same calculation performed on the igraph graph.
     """
     servstats_dict = {}
     for service in services:
@@ -484,6 +768,22 @@ def number_noservices_df(
 
 
 def disaster_impact_service_geoseries(service, pre_graph, post_graph):
+    """Get geometries of population clusters that lost access to a service.
+
+    Parameters
+    ----------
+    service : str
+        Service name (e.g. 'power', 'healthcare').
+    pre_graph : GraphCalcs
+        Graph calculation object representing the pre-disaster state.
+    post_graph : GraphCalcs
+        Graph calculation object representing the post-disaster state.
+
+    Returns
+    -------
+    gpd.GeoSeries
+        Geometries of population clusters that lost service access.
+    """
 
     no_service_post = 1 - np.array(
         post_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
@@ -498,6 +798,22 @@ def disaster_impact_service_geoseries(service, pre_graph, post_graph):
 
 
 def disaster_impact_service(service, pre_graph, post_graph):
+    """Calculate population losing access to a service due to a disaster.
+
+    Parameters
+    ----------
+    service : str
+        Service name (e.g. 'power', 'healthcare').
+    pre_graph : GraphCalcs
+        Graph calculation object representing the pre-disaster state.
+    post_graph : GraphCalcs
+        Graph calculation object representing the post-disaster state.
+
+    Returns
+    -------
+    float
+        Total population that lost access to the service.
+    """
 
     no_service_post = 1 - np.array(
         post_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
@@ -514,6 +830,24 @@ def disaster_impact_allservices(
     post_graph,
     services=["power", "healthcare", "education", "telecom", "mobility", "water"],
 ):
+    """Calculate population losing access across all services due to a disaster.
+
+    Parameters
+    ----------
+    pre_graph : GraphCalcs
+        Graph calculation object representing the pre-disaster state.
+    post_graph : GraphCalcs
+        Graph calculation object representing the post-disaster state.
+    services : list of str, optional
+        Services to evaluate. Default: ['power', 'healthcare', 'education',
+        'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service to the change in population
+        without access (post minus pre).
+    """
 
     dict_pre = number_noservices(pre_graph, services)
     dict_post = number_noservices(post_graph, services)
@@ -528,11 +862,29 @@ def disaster_impact_allservices_df(
     df_post,
     services=["power", "healthcare", "education", "telecom", "mobility", "water"],
 ):
-    """
-    Note
-    -----
-    same as disaster_impact_allservices, just that it's performed on a df,
-    not on the graph
+    """Calculate population losing access across all services from DataFrames.
+
+    Parameters
+    ----------
+    df_pre : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame representing the pre-disaster state.
+    df_post : gpd.GeoDataFrame or pd.DataFrame
+        DataFrame representing the post-disaster state.
+    services : list of str, optional
+        Services to evaluate. If 'people' is included, directly affected
+        population is also computed. Default: ['power', 'healthcare',
+        'education', 'telecom', 'mobility', 'water'].
+
+    Returns
+    -------
+    dict
+        Dictionary mapping each service (with '_access' suffix) to the
+        change in population without access. If 'people' was in services,
+        also includes the directly impacted population count.
+
+    See Also
+    --------
+    disaster_impact_allservices : Same calculation on igraph graphs.
     """
     services = cp.deepcopy(services)
     dict_delta = {}
@@ -548,6 +900,19 @@ def disaster_impact_allservices_df(
 
 
 def get_graphstats(graph):
+    """Get summary statistics of a network graph.
+
+    Parameters
+    ----------
+    graph : GraphCalcs
+        Graph calculation object with an igraph graph attribute.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys 'no_edges', 'no_nodes', 'edge_types',
+        and 'node_types' (Counter objects for type distributions).
+    """
     from collections import Counter
 
     stats_dict = {}
@@ -562,6 +927,20 @@ def get_graphstats(graph):
 # Worldpop Data
 # =============================================================================
 def get_worldpop_data(iso3, save_path, res=100):
+    """Download WorldPop population raster data for a country.
+
+    Downloads UN-adjusted population data for 2020 from WorldPop at the
+    specified resolution. Skips download if the file already exists.
+
+    Parameters
+    ----------
+    iso3 : str
+        ISO 3166-1 alpha-3 country code.
+    save_path : str or pathlib.Path
+        Directory path to save the downloaded file.
+    res : int, optional
+        Resolution in metres: 100 or 1000. Default: 100.
+    """
 
     if res == 1000:
         download_url = (
@@ -585,10 +964,24 @@ def get_worldpop_data(iso3, save_path, res=100):
 
 
 def get_pop_cutoff(gdf_people, cutoff):
-    """
-    find the maximum population value per grid point which accounts cumulatively across
-    the entire gdf for less than a cutoff fraction of the entire population number
-    to decrease the
+    """Find population count cutoff for filtering low-density grid points.
+
+    Determines the maximum population value per grid point that cumulatively
+    accounts for less than a specified fraction of the total population.
+
+    Parameters
+    ----------
+    gdf_people : gpd.GeoDataFrame
+        GeoDataFrame with a 'counts' column representing population per
+        grid point.
+    cutoff : float
+        Cumulative population fraction threshold (0 to 1).
+
+    Returns
+    -------
+    float
+        Left boundary of the bin interval at which the cumulative
+        population fraction first exceeds ``cutoff``.
     """
     # redefine bins as high res data might have less than 100 max count values
     bins = list(np.arange(start=0, stop=gdf_people["counts"].max(), step=10))
@@ -610,13 +1003,31 @@ def get_pop_cutoff(gdf_people, cutoff):
 
 
 def set_travel_distance_threshs(df_dependencies, iso3, hrs_max=1):
-    """
-    set road travel distance threshold according to the average distance
-    covered within a specified amount of hours in the respective country.
+    """Set road travel distance thresholds based on country-specific speeds.
 
-    Data taken from Road Quality and Mean Speed Score
-    Author/Editor:Marian Moszoro ; Mauricio Soto
-    ISBN: 9798400210440/1018-5941
+    Sets the distance threshold (in metres) for health and education
+    dependencies to people, based on the average road speed in the
+    given country and a maximum travel time.
+
+    Data taken from *Road Quality and Mean Speed Score*,
+    Author/Editor: Marian Moszoro; Mauricio Soto,
+    ISBN: 9798400210440/1018-5941.
+
+    Parameters
+    ----------
+    df_dependencies : pd.DataFrame
+        Dependencies DataFrame with 'source', 'target', and 'thresh_dist'
+        columns.
+    iso3 : str
+        ISO 3166-1 alpha-3 country code.
+    hrs_max : float, optional
+        Maximum travel time in hours. Default: 1.
+
+    Returns
+    -------
+    pd.DataFrame
+        Updated dependencies DataFrame with 'thresh_dist' set for
+        health/education-to-people dependencies.
     """
     try:
         thresh_dist = int(DICT_SPEEDS[iso3] * 1000 * hrs_max)
