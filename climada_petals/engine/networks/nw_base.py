@@ -320,7 +320,7 @@ class Network:
         return cls(edges=edges, nodes=nodes)
 
     @classmethod
-    def from_graphs(cls, graphs):
+    def from_graphs(cls, graphs, crs):
         """Create network from an igraph.Graph object
 
         Creates a new Network instance from an igraph.Graph object. This is typically used after graph-based
@@ -332,13 +332,16 @@ class Network:
         graphs : igraph.Graph
             Graph object from which to extract updated edges and vertices.
             Must have 'geometry' attributes for both edges and vertices.
-
+        crs : str or dict or pyproj.CRS
+            Coordinate reference system to assign to the resulting GeoDataFrames.
+            Can be anything accepted by :py:meth:`geopandas.GeoDataFrame.set_crs`,
+            such as an EPSG code (e.g., 'EPSG:4326'), a PROJ string, or a CRS object.
         Notes
         -----
         This method:
         - Renames graph columns 'source'/'target' to 'from_id'/'to_id' for edges
         - Resets node index and renames 'vertex ID' to 'id'
-        - Maintains EPSG:4326 CRS
+        - Maintains specified CRS
         - Creates new Network instance with updated edges and nodes
 
         See Also
@@ -351,7 +354,7 @@ class Network:
                 {"source": "from_id", "target": "to_id"}, axis=1
             ),
             geometry="geometry",
-            crs="EPSG:4326",
+            crs=crs,
         )
         nodes = graphs.get_vertex_dataframe()
         if "id" in nodes.columns:
@@ -359,7 +362,7 @@ class Network:
         nodes = gpd.GeoDataFrame(
             nodes.reset_index().rename({"vertex ID": "id"}, axis=1),
             geometry="geometry",
-            crs="EPSG:4326",
+            crs=crs,
         )
 
         return cls(edges=edges, nodes=nodes)
