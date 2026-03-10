@@ -26,6 +26,7 @@ import pandas as pd
 from zipfile import ZipFile, ZIP_DEFLATED
 import io
 from pathlib import Path
+from climada.util.coordinates import equal_crs
 from climada_petals.engine.networks.nw_utils import (
     infra_plot,
     population_plot,
@@ -92,6 +93,13 @@ class Network:
                 crs="EPSG:4326",
             )
 
+        if not equal_crs(edges.crs, nodes.crs):
+            raise ValueError(
+                "Edges and nodes must have the same CRS %s, %s",
+                edges.crs,
+                nodes.crs,
+            )
+
         if "orig_id" not in edges.columns:
             edges["orig_id"] = range(len(edges))
         if "orig_id" not in nodes.columns:
@@ -104,6 +112,7 @@ class Network:
 
         self.edges = edges
         self.nodes = nodes
+        self.crs = self.nodes.crs
 
     def reproject(self, crs):
         """Reproject the network to a new coordinate reference system
@@ -266,8 +275,8 @@ class Network:
         path_load = Path(path_load)
         zip_path = path_load / f"{savename}.zip"
 
-        nodes = gpd.GeoDataFrame()
-        edges = gpd.GeoDataFrame()
+        nodes = None
+        edges = None
 
         if not zip_path.exists():
             LOGGER.info("Archive %s not found", zip_path)

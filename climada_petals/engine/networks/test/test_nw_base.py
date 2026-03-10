@@ -74,6 +74,14 @@ def test_network_init_adds_missing_columns():
     assert "id" in network.nodes.columns
 
 
+def test_network_init_crs_mismatch(edges_gdf, nodes_gdf):
+    """Test that Network init raises error if edges and nodes have different CRS"""
+    # Create edges with different CRS
+    edges = edges_gdf.to_crs("EPSG:3857")
+    with pytest.raises(ValueError):
+        Network(edges=edges, nodes=nodes_gdf)
+
+
 def test_reproject(edges_gdf, nodes_gdf):
     """Test reprojection of network"""
     network = Network(edges=edges_gdf, nodes=nodes_gdf)
