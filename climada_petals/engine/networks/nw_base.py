@@ -193,7 +193,16 @@ class Network:
         id_counter_nodes = 0
         edges = []
         nodes = []
+        def_crs = networks[
+            0
+        ].crs  # arbitrary pick of the first network's CRS as default
         for net in networks:
+            if not equal_crs(net.crs, def_crs):
+                raise ValueError(
+                    "All networks must have the same CRS. Found %s and %s",
+                    net.crs,
+                    def_crs,
+                )
             edge_gdf = net.edges.reset_index(drop=True)
             node_gdf = net.nodes.reset_index(drop=True)
             edge_gdf["from_id"] = edge_gdf["from_id"] + id_counter_nodes
