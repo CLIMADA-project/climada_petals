@@ -21,6 +21,7 @@ Test network modules
 
 import pytest
 
+import numpy as np
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point, LineString
@@ -192,6 +193,90 @@ def test_select_closest_k_dist():
     np.testing.assert_array_equal(v_ids_source, [2])
 
 
+def test_select_closest_k_projected_crs():
+    """Test _select_closest_k with projected CRS: threshold in metres, no conversion."""
+    gdf_vs_target = gpd.GeoDataFrame(
+        {"id": [0], "geometry": [Point(500000, 5000000)]},
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+    gdf_vs_source = gpd.GeoDataFrame(
+        {"id": [1, 2], "geometry": [Point(500100, 5000000), Point(501000, 5000000)]},
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+    # 500 m threshold — source 1 at 100 m matches, source 2 at 1000 m does not
+    v_ids_source, v_ids_target = GraphCalcs._select_closest_k(
+        gdf_vs_source,
+        gdf_vs_target,
+        dist_thresh=500,
+        crs=gdf_vs_source.crs,
+        bidir=False,
+        k=1,
+    )
+    assert len(v_ids_source) == 1
+    np.testing.assert_array_equal(v_ids_source, [1])
+    np.testing.assert_array_equal(v_ids_target, [0])
+
+
+def test_select_closest_k_projected_crs_below_thresh():
+    """Test _select_closest_k with projected CRS when threshold is too tight."""
+    gdf_vs_target = gpd.GeoDataFrame(
+        {"id": [0], "geometry": [Point(500000, 5000000)]},
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+    gdf_vs_source = gpd.GeoDataFrame(
+        {"id": [1, 2], "geometry": [Point(500100, 5000000), Point(501000, 5000000)]},
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+    # 50 m threshold — closest source is 100 m away → no match
+    v_ids_source, v_ids_target = GraphCalcs._select_closest_k(
+        gdf_vs_source,
+        gdf_vs_target,
+        dist_thresh=50,
+        crs=gdf_vs_source.crs,
+        bidir=False,
+        k=1,
+    )
+    assert len(v_ids_source) == 0
+    assert len(v_ids_target) == 0
+
+
+def test_select_closest_k_geographic_no_auto_convert():
+    """Test _select_closest_k with geographic CRS and dist_auto_convert=False.
+
+    When auto-conversion is disabled, the threshold is treated as degrees
+    (the native unit of the geographic CRS).
+    """
+    gdf_vs_target = gpd.GeoDataFrame(
+        {"id": [0, 1], "geometry": [Point(0, 0), Point(6, 6)]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    gdf_vs_source = gpd.GeoDataFrame(
+        {"id": [2, 3], "geometry": [Point(1, 1), Point(2, 2)]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    # threshold = 2 degrees (no auto-conversion)
+    # Target(0,0) → Source(1,1) at Euclidean ~1.41° < 2° → match
+    # Target(6,6) → Source(2,2) at Euclidean ~5.66° > 2° → no match
+    v_ids_source, v_ids_target = GraphCalcs._select_closest_k(
+        gdf_vs_source,
+        gdf_vs_target,
+        dist_thresh=2,
+        crs=gdf_vs_source.crs,
+        bidir=False,
+        k=1,
+        dist_auto_convert=False,
+    )
+    assert len(v_ids_source) == 1
+    np.testing.assert_array_equal(v_ids_source, [2])
+    np.testing.assert_array_equal(v_ids_target, [0])
+
+
 def test_funcstates_sum(graph_calcs):
     """Test summing functional states"""
     graph_calcs.build_graph()
@@ -355,6 +440,150 @@ def test_link_clusters_with_threshold_high(graph_calcs_with_remote_node_missing_
     assert graph_calcs_with_remote_node_missing_edge.graph.es.select(
         ci_type="cluster_link"
     )["geometry"][0].bounds[2:4] == (4, 50)
+
+
+def test_link_clusters_projected_crs_high_thresh(
+    graph_calcs_projected_disconnected,
+):
+    """Test link_clusters with projected CRS and sufficient threshold.
+
+    Node 3 at (501000, 5000000) is 800 m from node 2 at (500200, 5000000).
+    A 1000 m threshold should link the clusters.
+    """
+    graph_calcs_projected_disconnected.build_graph()
+    initial_edge_count = graph_calcs_projected_disconnected.graph.ecount()
+
+    graph_calcs_projected_disconnected.link_clusters(
+        dist_thresh=1000,
+        link_attrs={"ci_type": "cluster_link"},
+    )
+
+    assert graph_calcs_projected_disconnected.graph.ecount() == initial_edge_count + 1
+    assert "cluster_link" in graph_calcs_projected_disconnected.graph.es["ci_type"]
+    new_edge = graph_calcs_projected_disconnected.graph.es.select(
+        ci_type="cluster_link"
+    )[0]
+    assert new_edge["distance"] == pytest.approx(800, abs=1)
+
+
+def test_link_clusters_projected_crs_low_thresh(
+    graph_calcs_projected_disconnected,
+):
+    """Test link_clusters with projected CRS and insufficient threshold.
+
+    Closest gap is 800 m; a 500 m threshold should not link.
+    """
+    graph_calcs_projected_disconnected.build_graph()
+    initial_edge_count = graph_calcs_projected_disconnected.graph.ecount()
+
+    graph_calcs_projected_disconnected.link_clusters(
+        dist_thresh=500,
+        link_attrs={"ci_type": "cluster_link"},
+    )
+
+    assert graph_calcs_projected_disconnected.graph.ecount() == initial_edge_count
+    assert "cluster_link" not in graph_calcs_projected_disconnected.graph.es["ci_type"]
+
+
+def test_link_clusters_geographic_no_auto_convert(
+    graph_calcs_with_remote_node_missing_edge,
+):
+    """Test link_clusters with geographic CRS and dist_auto_convert=False.
+
+    Remote node at (4, 50) is ~46 degrees from nearest connected node (4, 4).
+    With auto-conversion disabled, threshold is in degrees.
+    """
+    graph_calcs_with_remote_node_missing_edge.build_graph()
+    initial_edge_count = graph_calcs_with_remote_node_missing_edge.graph.ecount()
+
+    # 50 degrees > 46 degrees → should link
+    graph_calcs_with_remote_node_missing_edge.link_clusters(
+        dist_thresh=50,
+        dist_auto_convert=False,
+        link_attrs={"ci_type": "cluster_link"},
+    )
+
+    assert (
+        graph_calcs_with_remote_node_missing_edge.graph.ecount()
+        == initial_edge_count + 1
+    )
+    assert (
+        "cluster_link" in graph_calcs_with_remote_node_missing_edge.graph.es["ci_type"]
+    )
+
+
+def test_link_clusters_geographic_no_auto_convert_low_thresh(
+    graph_calcs_with_remote_node_missing_edge,
+):
+    """Test link_clusters with geographic CRS and dist_auto_convert=False.
+
+    10 degrees < 46 degrees → should not link.
+    """
+    graph_calcs_with_remote_node_missing_edge.build_graph()
+    initial_edge_count = graph_calcs_with_remote_node_missing_edge.graph.ecount()
+
+    graph_calcs_with_remote_node_missing_edge.link_clusters(
+        dist_thresh=10,
+        dist_auto_convert=False,
+        link_attrs={"ci_type": "cluster_link"},
+    )
+
+    assert (
+        graph_calcs_with_remote_node_missing_edge.graph.ecount() == initial_edge_count
+    )
+    assert (
+        "cluster_link"
+        not in graph_calcs_with_remote_node_missing_edge.graph.es["ci_type"]
+    )
+
+
+def test_link_vertices_closest_k_projected_crs(
+    graph_calcs_projected_disconnected,
+):
+    """Test link_vertices_closest_k with projected CRS.
+
+    People node at (500000, 5000000), closest road node at (500100, 5000000)
+    = 100 m.  A 500 m threshold should link them.
+    """
+    graph_calcs_projected_disconnected.build_graph()
+    initial_edge_count = graph_calcs_projected_disconnected.graph.ecount()
+
+    graph_calcs_projected_disconnected.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        link_attrs={"ci_type": "link_road_people"},
+        dist_thresh=500,
+        bidir=False,
+        k=1,
+    )
+
+    assert graph_calcs_projected_disconnected.graph.ecount() == initial_edge_count + 1
+    assert "link_road_people" in graph_calcs_projected_disconnected.graph.es["ci_type"]
+
+
+def test_link_vertices_closest_k_projected_crs_low_thresh(
+    graph_calcs_projected_disconnected,
+):
+    """Test link_vertices_closest_k with projected CRS and tight threshold.
+
+    Closest road node is 100 m away; 50 m threshold should not link.
+    """
+    graph_calcs_projected_disconnected.build_graph()
+    initial_edge_count = graph_calcs_projected_disconnected.graph.ecount()
+
+    graph_calcs_projected_disconnected.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        link_attrs={"ci_type": "link_road_people"},
+        dist_thresh=50,
+        bidir=False,
+        k=1,
+    )
+
+    assert graph_calcs_projected_disconnected.graph.ecount() == initial_edge_count
+    assert (
+        "link_road_people" not in graph_calcs_projected_disconnected.graph.es["ci_type"]
+    )
 
 
 def test_link_vertices_closest_k_low_thresh(graph_calcs):

@@ -273,3 +273,80 @@ def expected_dep_pairs():
             ],
         ),
     }
+
+
+# ========================================================================
+# Fixtures for projected CRS (EPSG:32632 — UTM zone 32N)
+# ========================================================================
+
+
+@pytest.fixture
+def nodes_projected_gdf():
+    """Create test nodes in projected CRS (UTM zone 32N).
+
+    Layout (x-axis, all at y=5 000 000):
+    Node 0 (people)      — 500 000
+    Node 1 (road)        — 500 100   (100 m from node 0)
+    Node 2 (road)        — 500 200   (200 m from node 0)
+    Node 3 (healthcare)  — 501 000   (1 000 m from node 0, 800 m from node 2)
+    """
+    return gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2, 3],
+            "orig_id": [0, 1, 2, 3],
+            "geometry": [
+                Point(500000, 5000000),
+                Point(500100, 5000000),
+                Point(500200, 5000000),
+                Point(501000, 5000000),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+
+
+@pytest.fixture
+def edges_projected_gdf():
+    """Create test edges in projected CRS connecting nodes 0-1 and 1-2."""
+    return gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1],
+            "to_id": [1, 2],
+            "id": [0, 1],
+            "orig_id": [0, 1],
+            "osm_id": [100, 101],
+            "distance": [100, 100],
+            "geometry": [
+                LineString([(500000, 5000000), (500100, 5000000)]),
+                LineString([(500100, 5000000), (500200, 5000000)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+
+
+@pytest.fixture
+def network_projected_disconnected(edges_projected_gdf, nodes_projected_gdf):
+    """Network in projected CRS with a disconnected node.
+
+    Nodes 0-2 form a connected cluster; node 3 is isolated.
+    Closest gap: node 2 → node 3 = 800 m.
+    """
+    nodes = cp.deepcopy(nodes_projected_gdf)
+    nodes["ci_type"] = ["people", "road", "road", "healthcare"]
+    edges = cp.deepcopy(edges_projected_gdf)
+    edges["ci_type"] = "road"
+    nodes["func_tot"] = 1
+    edges["func_tot"] = 1
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def graph_calcs_projected_disconnected(network_projected_disconnected):
+    """GraphCalcs instance for a disconnected projected-CRS network."""
+    nw_calcs_mock = type(
+        "obj", (object,), {"network": network_projected_disconnected}
+    )()
+    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)

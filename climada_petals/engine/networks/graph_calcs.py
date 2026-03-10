@@ -491,12 +491,14 @@ class GraphCalcs:
 
         if "distance" not in link_attrs.keys():
             LOGGER.info("Adding edge distances for new links.")
-            # Vectorized distance calculation using Geod
-            geod = pyproj.Geod(ellps="WGS84")
-            distances = []
-            for edge_geom in link_attrs["geometry"]:
-                dist = geod.geometry_length(edge_geom)
-                distances.append(dist)
+            if self.network.crs is None or self.network.crs.is_geographic:
+                geod = pyproj.Geod(ellps="WGS84")
+                distances = [
+                    geod.geometry_length(edge_geom)
+                    for edge_geom in link_attrs["geometry"]
+                ]
+            else:
+                distances = [edge_geom.length for edge_geom in link_attrs["geometry"]]
             link_attrs["distance"] = distances
 
         self.graph.add_edges(pairs, attributes=link_attrs)
