@@ -76,9 +76,7 @@ class NetworkCalcs:
         """
         iter_count = 0
         n_clusters = len(self.graph.connected_components())
-        LOGGER.info(
-            print("Number of clusters in the network before merging: %i", n_clusters)
-        )
+        LOGGER.info("Number of clusters in the network before merging: %i", n_clusters)
         # dist_thresh = cntry_shape.area / nclusters
         while (n_clusters > 1) and (iter_count < max_iter):
             self._graph_calc.link_clusters(
@@ -91,9 +89,7 @@ class NetworkCalcs:
             self.network = reset_ids(self.network)
             self._graph_calc.full_reset()
         n_clusters = len(self.graph.connected_components())
-        LOGGER.info(
-            print("Number of clusters in the network after merging: %i", n_clusters)
-        )
+        LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
 
     def add_physical_links(self):
         """Add physical links based on dependency table"""
