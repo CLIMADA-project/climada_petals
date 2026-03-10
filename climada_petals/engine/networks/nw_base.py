@@ -23,6 +23,7 @@ import logging
 import geopandas as gpd
 import igraph as ig
 import pandas as pd
+import copy as cp
 from zipfile import ZipFile, ZIP_DEFLATED
 import io
 from pathlib import Path
@@ -114,18 +115,26 @@ class Network:
         self.nodes = nodes
         self.crs = self.nodes.crs
 
-    def reproject(self, crs):
+    @classmethod
+    def reproject(cls, network, crs):
         """Reproject the network to a new coordinate reference system
 
         Transforms both edges and nodes GeoDataFrames to the specified CRS.
-        The operation modifies the network in-place.
+        Returns a new Network instance with reprojected geometries while preserving all attributes.
 
         Parameters
         ----------
+        network : Network
+            Network instance to reproject. Both edges and nodes must have a valid CRS.
         crs : str or dict or pyproj.CRS
             Target coordinate reference system. Can be anything accepted by
             :py:meth:`geopandas.GeoDataFrame.to_crs`, such as an EPSG code
             (e.g., 'EPSG:3857'), a PROJ string, or a CRS object.
+
+        Returns
+        -------
+        Network
+            New Network instance with edges and nodes reprojected to the specified CRS.
 
         Examples
         --------
@@ -136,8 +145,10 @@ class Network:
         --------
         geopandas.GeoDataFrame.to_crs : Underlying reprojection method
         """
-        self.nodes = self.nodes.to_crs(crs)
-        self.edges = self.edges.to_crs(crs)
+
+        nodes = cp.deepcopy(network.nodes)
+        edges = cp.deepcopy(network.edges)
+        return cls(edges=edges.to_crs(crs), nodes=nodes.to_crs(crs))
 
     @classmethod
     def from_networks(cls, networks):
