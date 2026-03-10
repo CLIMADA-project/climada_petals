@@ -24,7 +24,7 @@ import tempfile
 import shutil
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, MultiLineString
 import copy as cp
 import numpy as np
 from climada_petals.engine.networks.nw_base import Network
@@ -81,6 +81,133 @@ def edges_gdf():
         geometry="geometry",
         crs="EPSG:4326",
     )
+
+
+@pytest.fixture
+def simple_network(edges_gdf, nodes_gdf):
+    """A simple chain network with 5 nodes and 4 edges (no CI metadata)."""
+    return Network(edges=edges_gdf.copy(), nodes=nodes_gdf.copy())
+
+
+@pytest.fixture
+def branching_nodes():
+    """6 nodes with a Y-branch: 0-1-2-3 and 2-4 and 2-5."""
+    return gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2, 3, 4, 5],
+            "geometry": [
+                Point(0, 0),
+                Point(1, 0),
+                Point(2, 0),
+                Point(3, 0),
+                Point(2, 1),
+                Point(2, -1),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def branching_edges():
+    """5 edges forming a Y-branch."""
+    return gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1, 2, 2, 2],
+            "to_id": [1, 2, 3, 4, 5],
+            "id": [0, 1, 2, 3, 4],
+            "osm_id": [10, 11, 12, 13, 14],
+            "geometry": [
+                LineString([(0, 0), (1, 0)]),
+                LineString([(1, 0), (2, 0)]),
+                LineString([(2, 0), (3, 0)]),
+                LineString([(2, 0), (2, 1)]),
+                LineString([(2, 0), (2, -1)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def branching_network(branching_edges, branching_nodes):
+    """Network with a Y-branch at node 2."""
+    return Network(edges=branching_edges, nodes=branching_nodes)
+
+
+@pytest.fixture
+def roundabout_network():
+    """A small network with a ring edge (roundabout) and 2 connecting edges."""
+    ring = LineString([(0.5, 1), (1, 1.5), (1.5, 1), (1, 0.5), (0.5, 1)])
+    spoke_left = LineString([(0, 1), (0.5, 1)])
+    spoke_right = LineString([(1.5, 1), (2, 1)])
+
+    edges = gpd.GeoDataFrame(
+        {
+            "osm_id": [1, 2, 3],
+            "id": [0, 1, 2],
+            "geometry": [ring, spoke_left, spoke_right],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2],
+            "geometry": [Point(0, 1), Point(1, 1), Point(2, 1)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def multilinestring_network():
+    """Network with a MultiLineString edge."""
+    mls = MultiLineString([[(0, 0), (1, 0)], [(1, 0), (2, 0)]])
+    edges = gpd.GeoDataFrame(
+        {
+            "from_id": [0],
+            "to_id": [1],
+            "id": [0],
+            "osm_id": [50],
+            "geometry": [mls],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1],
+            "geometry": [Point(0, 0), Point(2, 0)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def empty_network():
+    """A network with no edges and no nodes."""
+    return Network()
+
+
+@pytest.fixture
+def nodes_only_network():
+    """Network with only nodes, no edges."""
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2],
+            "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(nodes=nodes)
 
 
 @pytest.fixture
