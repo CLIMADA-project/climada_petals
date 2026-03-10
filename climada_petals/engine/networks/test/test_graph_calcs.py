@@ -58,12 +58,12 @@ def test_graph_calcs_graph_property_lazy_load(graph_calcs):
     assert isinstance(graph, ig.Graph)
 
 
-def test_graph_calcs_invalidate(graph_calcs):
+def test_graph_calcs_full_reset(graph_calcs):
     """Test invalidating cached graph"""
     _ = graph_calcs.graph  # Load graph
     assert graph_calcs._graph is not None
 
-    graph_calcs.reset_graph_edges()
+    graph_calcs.full_reset()
 
     assert graph_calcs._graph is None
 
