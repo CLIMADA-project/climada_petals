@@ -370,28 +370,28 @@ class GraphCalcs:
 
     def link_vertices_friction_surf(
         self,
-        source_ci,
-        target_ci,
+        source_attrs,
+        target_attrs,
+        link_attrs,
         dur_thresh,
-        dist_thresh,
         k,
-        link_name=None,
+        dist_thresh=np.inf,
         bidir=False,
     ):
         """Link vertices using a friction surface duration constraint
 
         Parameters
         ----------
-        source_ci : str
-            Source infrastructure type.
-        target_ci : str
-            Target infrastructure type.
+        source_attrs : dict
+            Source vertex attributes for filtering.
+        target_attrs : dict
+            Target vertex attributes for filtering.
         dur_thresh : float
             Maximum travel duration to allow a link.
-        dist_thresh : float
-            Maximum geographic distance (meters) for candidate links.
         k : int
             Number of nearest sources per target to consider.
+        dist_thresh : float, optional
+            Maximum geographic distance (meters) for candidate links. Default is np.inf.
         link_name : str, optional
             Edge type name to assign. Default creates ``dependency_{source}_{target}``.
         bidir : bool, optional
@@ -400,10 +400,8 @@ class GraphCalcs:
         if not self.friction_surf:
             LOGGER.error("No friction surface provided!")
 
-        gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type == target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type == source_ci) & (gdf_vs.func_tot == 1)]
-        del gdf_vs
+        gdf_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
+        gdf_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
 
         if not (gdf_vs_source.empty or gdf_vs_target.empty):
             v_ids_source, v_ids_target = self._select_closest_k(
@@ -419,17 +417,14 @@ class GraphCalcs:
             v_ids_source = np.array(v_ids_source)[friction < dur_thresh]
             v_ids_target = np.array(v_ids_target)[friction < dur_thresh]
 
-            if not link_name:
-                link_name = f"dependency_{source_ci}_{target_ci}"
-
             self._edges_from_vlists(
-                list(v_ids_source), list(v_ids_target), {"ci_type": link_name}
+                v_ids_source.tolist(), v_ids_target.tolist(), link_attrs
             )
         else:
             LOGGER.info(
                 "No vertices found matching source %s or target %s; no links created.",
-                source_ci,
-                target_ci,
+                source_attrs["ci_type"],
+                target_attrs["ci_type"],
             )
 
     # =============================================================================
@@ -827,6 +822,14 @@ class GraphCalcs:
         bidir_link : bool
             Whether to add reverse links.
         """
+        if "ci_type" not in link_attrs:
+            link_attrs["ci_type"] = (
+                f"dependency_{source_attrs['ci_type']}_{target_attrs['ci_type']}"
+            )
+            LOGGER.info(
+                "No ci_type specified for links; defaulting to %s",
+                link_attrs["ci_type"],
+            )
         if "distance" in link_condition:
             self.link_vertices_shortest_paths(
                 source_attrs=source_attrs,
@@ -839,9 +842,9 @@ class GraphCalcs:
             )
         elif "duration" in link_condition:
             self.link_vertices_friction_surf(
-                source_ci=source_attrs,
-                target_ci=target_attrs,
-                link_name=link_attrs,
+                source_attrs=source_attrs,
+                target_attrs=target_attrs,
+                link_attrs=link_attrs,
                 dist_thresh=dist_thresh,
                 dur_thresh=dur_thresh,
                 k=k,
