@@ -752,6 +752,107 @@ def test_link_vertices_shortest_paths_multiple(graph_calcs):
     assert graph_calcs.graph.ecount() > initial_edge_count
 
 
+def test_link_vertices_shortest_paths_k1_selects_closest(graph_calcs_with_remote_node):
+    """k=1 selects only the single closest source per target."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=1,
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 1
+    # closest healthcare (node 4, path ~628800 m) must be chosen
+    # over the remote one (node 5, path ~7314400 m)
+    assert new_edges[0]["distance"] < 7e6
+
+
+def test_link_vertices_shortest_paths_k2_selects_two(graph_calcs_with_remote_node):
+    """k=2 selects up to 2 closest sources per target."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=2,
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 2
+    assert all(e["distance"] < 7e6 for e in new_edges)
+
+
+def test_link_vertices_shortest_paths_k_respects_dist_thresh(
+    graph_calcs_with_remote_node,
+):
+    """k=2 but dist_thresh excludes the farther source."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=1e6,  # excludes remote healthcare (~7.3 M m away)
+        criterion="distance",
+        k=2,
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 1
+    assert new_edges[0]["distance"] < 1e6
+
+
+def test_link_vertices_shortest_paths_k_exceeds_sources(
+    graph_calcs_with_remote_node,
+):
+    """k larger than available sources links all sources within threshold."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=10,  # much larger than the 2 available sources
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 2  # capped at the 2 available healthcare nodes
+
+
 def test_link_vertices_shortest_paths_empty_source(graph_calcs):
     """No edges created when source filter matches no vertices."""
     graph_calcs.build_graph()

@@ -296,7 +296,7 @@ class GraphCalcs:
         dist_thresh : float
             Maximum path length to allow links.
         k : int
-            Number of links per target. If ``1``, only shortest link is used.
+            Number of links per target.
         criterion : str, optional
             Edge weight attribute used for shortest paths. Default is ``"distance"``.
         bidir : bool, optional
@@ -336,22 +336,16 @@ class GraphCalcs:
         path_dists = np.array(path_dists)  # dim: (#sources, #targets)
 
         if len(path_dists) > 0:
-            if k == 1:  # single_shortest
-                ix_source, ix_target = np.where(
-                    (
-                        (path_dists == path_dists.min(axis=0))
-                        & (path_dists <= dist_thresh)
-                    )
-                )  # min dist. per target
-            else:
-                ix_source, ix_target = np.where(path_dists < dist_thresh)
-            # Get the indices of the k shortest distances per target
-            # sorted_indices = np.argsort(path_dists, axis=0)[:k, :]  # Indices of k smallest distances
-            # valid_mask = path_dists[sorted_indices, np.arange(path_dists.shape[1])] <= dist_thresh  # Apply threshold
-            #
-            ## Extract source and target indices
-            # ix_source, ix_target = np.where(valid_mask)
-            # ix_source = sorted_indices[ix_source, ix_target]  # Map to original indices
+            # Select up to k closest sources per target within dist_thresh
+            sorted_indices = np.argsort(path_dists, axis=0)[:k, :]
+            k_shortest_dists = path_dists[
+                sorted_indices, np.arange(path_dists.shape[1])
+            ]
+            valid_mask = k_shortest_dists <= dist_thresh
+
+            ix_k, ix_target = np.where(valid_mask)
+            ix_source = sorted_indices[ix_k, ix_target]
+
             # Vectorized re-mapping using numpy arrays instead of list comprehension
             source_subgraph_ids = df_vs_source.index.values[ix_source]
             target_subgraph_ids = df_vs_target.index.values[ix_target]
