@@ -194,11 +194,18 @@ class GraphCalcs:
         # select only those for which specified attrs apply
         df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
 
-        v_ids_source, v_ids_target = self._select_closest_k(
-            df_vs_source, df_vs_target, dist_thresh, k, self.network.crs, bidir
-        )
+        if not (df_vs_source.empty or df_vs_target.empty):
+            v_ids_source, v_ids_target = self._select_closest_k(
+                df_vs_source, df_vs_target, dist_thresh, k, self.network.crs, bidir
+            )
 
-        self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
+            self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
+        else:
+            LOGGER.info(
+                "No vertices found matching source %s or target %s; no links created.",
+                source_attrs,
+                target_attrs,
+            )
 
     def link_vertices_edgecond(self, target_attrs, edge_attrs, link_attrs, bidir=False):
         """Link vertices based on existing edge conditions
@@ -218,6 +225,12 @@ class GraphCalcs:
             If ``True``, add reverse links as well. Default is ``False``.
         """
         df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
+
+        if df_vs_target.empty:
+            LOGGER.info(
+                "No vertices found matching target %s; no links created.", target_attrs
+            )
+            return
 
         vs_target = self.graph.vs[df_vs_target.index.values]
 
@@ -292,6 +305,15 @@ class GraphCalcs:
 
         # subgraph containing only "allowed" elements
         subgraph = self._create_subgraph(source_attrs, target_attrs, via_attrs)
+
+        if len(subgraph.vs) == 0 or len(subgraph.es) == 0:
+            LOGGER.info(
+                "No vertices or edges found matching source %s, target %s, or via %s attributes; no links created.",
+                source_attrs,
+                target_attrs,
+                via_attrs,
+            )
+            return
 
         # mapping from subgraph to graph indices (create lookup array instead of dict for speed)
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
@@ -408,6 +430,12 @@ class GraphCalcs:
 
             self._edges_from_vlists(
                 list(v_ids_source), list(v_ids_target), {"ci_type": link_name}
+            )
+        else:
+            LOGGER.info(
+                "No vertices found matching source %s or target %s; no links created.",
+                source_ci,
+                target_ci,
             )
 
     # =============================================================================
