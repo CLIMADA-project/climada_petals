@@ -1315,20 +1315,20 @@ class GraphCalcs:
         ppl_access_all_via,
         ppl_new_access,
     ):
-        """Mark access states and supply for people nodes
+        """Mark access states and supply for enduser nodes
 
         Parameters
         ----------
         row : pd.Series
             Dependency configuration row.
         ppl_former_access : list
-            People who had former access.
+            Enduser who had former access.
         ppl_former_access_source_failed : list
-            People whose former source failed.
+            Enduser whose former source failed.
         ppl_access_all_via : list
-            People who could have access if via links were functional.
+            Enduser who could have access if via links were functional.
         ppl_new_access : list
-            People who have current access.
+            Enduser who have current access.
         """
         # Convert to sets for O(1) membership checking
         ppl_former_access_source_failed_set = set(ppl_former_access_source_failed)
@@ -1342,7 +1342,7 @@ class GraphCalcs:
         ]
         if ppl_access_new_source:
             self.graph.vs[ppl_access_new_source][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access new source"
 
         # If people have access only when no functional via is required, then access is disrupted via
@@ -1353,10 +1353,10 @@ class GraphCalcs:
         ]
         if ppl_access_broken_via:
             self.graph.vs[ppl_access_broken_via][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access disrupted via"
 
-        # If people do not have access due to via constraints, then the access is disrupted at source
+        # If endusers do not have access due to via constraints, then the access is disrupted at source
         ppl_access_broken_via_set = set(ppl_access_broken_via)
         ppl_no_reaccess = [
             ppl_node
@@ -1368,7 +1368,7 @@ class GraphCalcs:
         ]
         if ppl_no_reaccess:
             self.graph.vs[ppl_no_reaccess][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access disrupted source"
 
         # Remaining accesses are undisrupted
@@ -1379,11 +1379,11 @@ class GraphCalcs:
         ]
         if ppl_access_undisrupted:
             self.graph.vs[ppl_access_undisrupted][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access undisrupted"
 
         # Add boolean array of actual supply
-        # People with access get supply=1 (includes undisrupted, all_via, and new_source)
+        # Endusers with access get supply=1 (includes undisrupted, all_via, and new_source)
         # Use set to avoid duplicates
         ppl_with_supply = list(
             set(ppl_access_undisrupted + ppl_access_all_via + ppl_access_new_source)
