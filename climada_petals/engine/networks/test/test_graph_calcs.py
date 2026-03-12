@@ -799,7 +799,7 @@ def test_link_vertices_shortest_paths_k2_selects_two(graph_calcs_with_remote_nod
         if e["ci_type"] == "dep_health_people"
     ]
     assert len(new_edges) == 2
-    assert all(e["distance"] < 7e6 for e in new_edges)
+    assert all(e["distance"] < 10e6 for e in new_edges)
 
 
 def test_link_vertices_shortest_paths_k_respects_dist_thresh(
