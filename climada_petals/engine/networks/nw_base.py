@@ -30,7 +30,7 @@ from pathlib import Path
 from climada.util.coordinates import equal_crs
 from climada_petals.engine.networks.nw_utils import (
     infra_plot,
-    population_plot,
+    enduser_plot,
     dep_plot,
     access_plot,
 )
@@ -42,7 +42,7 @@ class Network:
 
     # map methods
     plot_infra = infra_plot
-    plot_pop = population_plot
+    plot_enduser = enduser_plot
     plot_dep = dep_plot
     plot_access = access_plot
 
