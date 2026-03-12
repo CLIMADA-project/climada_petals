@@ -390,6 +390,21 @@ def test_link_vertices_edgecond(graph_calcs):
     )
 
 
+def test_link_vertices_edgecond_empty_target(graph_calcs):
+    """No edges created when target filter matches no vertices."""
+    graph_calcs.build_graph()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    graph_calcs.link_vertices_edgecond(
+        target_attrs={"ci_type": "nonexistent_type"},
+        edge_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_road_none"},
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "dep_road_none" not in graph_calcs.graph.es["ci_type"]
+
+
 def test_link_clusters_no_clusters(graph_calcs):
     """Test link_clusters when network is already connected"""
     graph_calcs.build_graph()
@@ -605,6 +620,60 @@ def test_link_vertices_closest_k_low_thresh(graph_calcs):
     assert "link_road_people" not in graph_calcs.graph.es["ci_type"]
 
 
+def test_link_vertices_closest_k_empty_source(graph_calcs):
+    """No edges created when source filter matches no vertices."""
+    graph_calcs.build_graph()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    graph_calcs.link_vertices_closest_k(
+        source_attrs={"ci_type": "nonexistent_type"},
+        target_attrs={"ci_type": "people"},
+        link_attrs={"ci_type": "link_none_people"},
+        dist_thresh=np.inf,
+        bidir=False,
+        k=1,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "link_none_people" not in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_closest_k_empty_target(graph_calcs):
+    """No edges created when target filter matches no vertices."""
+    graph_calcs.build_graph()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    graph_calcs.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "nonexistent_type"},
+        link_attrs={"ci_type": "link_road_none"},
+        dist_thresh=np.inf,
+        bidir=False,
+        k=1,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "link_road_none" not in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_closest_k_empty_both(graph_calcs):
+    """No edges created when both source and target filters match nothing."""
+    graph_calcs.build_graph()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    graph_calcs.link_vertices_closest_k(
+        source_attrs={"ci_type": "fake_source"},
+        target_attrs={"ci_type": "fake_target"},
+        link_attrs={"ci_type": "link_fake"},
+        dist_thresh=np.inf,
+        bidir=False,
+        k=1,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "link_fake" not in graph_calcs.graph.es["ci_type"]
+
+
 def test_link_vertices_closest_k_high_thresh(graph_calcs):
     """Test linking vertices by k-nearest neighbors"""
     graph_calcs.build_graph()
@@ -681,6 +750,167 @@ def test_link_vertices_shortest_paths_multiple(graph_calcs):
     )
 
     assert graph_calcs.graph.ecount() > initial_edge_count
+
+
+def test_link_vertices_shortest_paths_k1_selects_closest(graph_calcs_with_remote_node):
+    """k=1 selects only the single closest source per target."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=1,
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 1
+    # closest healthcare (node 4, path ~628800 m) must be chosen
+    # over the remote one (node 5, path ~7314400 m)
+    assert new_edges[0]["distance"] < 7e6
+
+
+def test_link_vertices_shortest_paths_k2_selects_two(graph_calcs_with_remote_node):
+    """k=2 selects up to 2 closest sources per target."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=2,
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 2
+    assert all(e["distance"] < 7e6 for e in new_edges)
+
+
+def test_link_vertices_shortest_paths_k_respects_dist_thresh(
+    graph_calcs_with_remote_node,
+):
+    """k=2 but dist_thresh excludes the farther source."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=1e6,  # excludes remote healthcare (~7.3 M m away)
+        criterion="distance",
+        k=2,
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 1
+    assert new_edges[0]["distance"] < 1e6
+
+
+def test_link_vertices_shortest_paths_k_exceeds_sources(
+    graph_calcs_with_remote_node,
+):
+    """k larger than available sources links all sources within threshold."""
+    graph_calcs_with_remote_node.build_graph()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_health_people"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=10,  # much larger than the 2 available sources
+        bidir=False,
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "dep_health_people"
+    ]
+    assert len(new_edges) == 2  # capped at the 2 available healthcare nodes
+
+
+def test_link_vertices_shortest_paths_empty_source(graph_calcs):
+    """No edges created when source filter matches no vertices."""
+    graph_calcs.build_graph()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    graph_calcs.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "nonexistent_type"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "sp_none_people"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=1,
+        bidir=False,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "sp_none_people" not in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_shortest_paths_empty_target(graph_calcs):
+    """No edges created when target filter matches no vertices."""
+    graph_calcs.build_graph()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    graph_calcs.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "nonexistent_type"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "sp_road_none"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=1,
+        bidir=False,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "sp_road_none" not in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_shortest_paths_empty_via(graph_calcs):
+    """No edges created when via filter yields an empty subgraph."""
+    graph_calcs.build_graph()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    graph_calcs.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "nonexistent_type"},
+        link_attrs={"ci_type": "sp_no_via"},
+        dist_thresh=10e6,
+        criterion="distance",
+        k=1,
+        bidir=False,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "sp_no_via" not in graph_calcs.graph.es["ci_type"]
 
 
 def test_edges_from_vlists(graph_calcs_with_remote_node):

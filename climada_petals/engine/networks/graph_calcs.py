@@ -194,11 +194,18 @@ class GraphCalcs:
         # select only those for which specified attrs apply
         df_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
 
-        v_ids_source, v_ids_target = self._select_closest_k(
-            df_vs_source, df_vs_target, dist_thresh, k, self.network.crs, bidir
-        )
+        if not (df_vs_source.empty or df_vs_target.empty):
+            v_ids_source, v_ids_target = self._select_closest_k(
+                df_vs_source, df_vs_target, dist_thresh, k, self.network.crs, bidir
+            )
 
-        self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
+            self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
+        else:
+            LOGGER.info(
+                "No vertices found matching source %s or target %s; no links created.",
+                source_attrs,
+                target_attrs,
+            )
 
     def link_vertices_edgecond(self, target_attrs, edge_attrs, link_attrs, bidir=False):
         """Link vertices based on existing edge conditions
@@ -218,6 +225,12 @@ class GraphCalcs:
             If ``True``, add reverse links as well. Default is ``False``.
         """
         df_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
+
+        if df_vs_target.empty:
+            LOGGER.info(
+                "No vertices found matching target %s; no links created.", target_attrs
+            )
+            return
 
         vs_target = self.graph.vs[df_vs_target.index.values]
 
@@ -283,7 +296,7 @@ class GraphCalcs:
         dist_thresh : float
             Maximum path length to allow links.
         k : int
-            Number of links per target. If ``1``, only shortest link is used.
+            Number of links per target.
         criterion : str, optional
             Edge weight attribute used for shortest paths. Default is ``"distance"``.
         bidir : bool, optional
@@ -292,6 +305,15 @@ class GraphCalcs:
 
         # subgraph containing only "allowed" elements
         subgraph = self._create_subgraph(source_attrs, target_attrs, via_attrs)
+
+        if len(subgraph.vs) == 0 or len(subgraph.es) == 0:
+            LOGGER.info(
+                "No vertices or edges found matching source %s, target %s, or via %s attributes; no links created.",
+                source_attrs,
+                target_attrs,
+                via_attrs,
+            )
+            return
 
         # mapping from subgraph to graph indices (create lookup array instead of dict for speed)
         subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(self.graph, subgraph)
@@ -314,22 +336,16 @@ class GraphCalcs:
         path_dists = np.array(path_dists)  # dim: (#sources, #targets)
 
         if len(path_dists) > 0:
-            if k == 1:  # single_shortest
-                ix_source, ix_target = np.where(
-                    (
-                        (path_dists == path_dists.min(axis=0))
-                        & (path_dists <= dist_thresh)
-                    )
-                )  # min dist. per target
-            else:
-                ix_source, ix_target = np.where(path_dists < dist_thresh)
-            # Get the indices of the k shortest distances per target
-            # sorted_indices = np.argsort(path_dists, axis=0)[:k, :]  # Indices of k smallest distances
-            # valid_mask = path_dists[sorted_indices, np.arange(path_dists.shape[1])] <= dist_thresh  # Apply threshold
-            #
-            ## Extract source and target indices
-            # ix_source, ix_target = np.where(valid_mask)
-            # ix_source = sorted_indices[ix_source, ix_target]  # Map to original indices
+            # Select up to k closest sources per target within dist_thresh
+            sorted_indices = np.argsort(path_dists, axis=0)[:k, :]
+            k_shortest_dists = path_dists[
+                sorted_indices, np.arange(path_dists.shape[1])
+            ]
+            valid_mask = k_shortest_dists <= dist_thresh
+
+            ix_k, ix_target = np.where(valid_mask)
+            ix_source = sorted_indices[ix_k, ix_target]
+
             # Vectorized re-mapping using numpy arrays instead of list comprehension
             source_subgraph_ids = df_vs_source.index.values[ix_source]
             target_subgraph_ids = df_vs_target.index.values[ix_target]
@@ -408,6 +424,12 @@ class GraphCalcs:
 
             self._edges_from_vlists(
                 list(v_ids_source), list(v_ids_target), {"ci_type": link_name}
+            )
+        else:
+            LOGGER.info(
+                "No vertices found matching source %s or target %s; no links created.",
+                source_ci,
+                target_ci,
             )
 
     # =============================================================================
@@ -1287,20 +1309,20 @@ class GraphCalcs:
         ppl_access_all_via,
         ppl_new_access,
     ):
-        """Mark access states and supply for people nodes
+        """Mark access states and supply for enduser nodes
 
         Parameters
         ----------
         row : pd.Series
             Dependency configuration row.
         ppl_former_access : list
-            People who had former access.
+            Enduser who had former access.
         ppl_former_access_source_failed : list
-            People whose former source failed.
+            Enduser whose former source failed.
         ppl_access_all_via : list
-            People who could have access if via links were functional.
+            Enduser who could have access if via links were functional.
         ppl_new_access : list
-            People who have current access.
+            Enduser who have current access.
         """
         # Convert to sets for O(1) membership checking
         ppl_former_access_source_failed_set = set(ppl_former_access_source_failed)
@@ -1314,7 +1336,7 @@ class GraphCalcs:
         ]
         if ppl_access_new_source:
             self.graph.vs[ppl_access_new_source][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access new source"
 
         # If people have access only when no functional via is required, then access is disrupted via
@@ -1325,10 +1347,10 @@ class GraphCalcs:
         ]
         if ppl_access_broken_via:
             self.graph.vs[ppl_access_broken_via][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access disrupted via"
 
-        # If people do not have access due to via constraints, then the access is disrupted at source
+        # If endusers do not have access due to via constraints, then the access is disrupted at source
         ppl_access_broken_via_set = set(ppl_access_broken_via)
         ppl_no_reaccess = [
             ppl_node
@@ -1340,7 +1362,7 @@ class GraphCalcs:
         ]
         if ppl_no_reaccess:
             self.graph.vs[ppl_no_reaccess][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access disrupted source"
 
         # Remaining accesses are undisrupted
@@ -1351,11 +1373,11 @@ class GraphCalcs:
         ]
         if ppl_access_undisrupted:
             self.graph.vs[ppl_access_undisrupted][
-                f"access_state_{row.source}_people"
+                f"access_state_{row.source}_{row.target}"
             ] = "access undisrupted"
 
         # Add boolean array of actual supply
-        # People with access get supply=1 (includes undisrupted, all_via, and new_source)
+        # Endusers with access get supply=1 (includes undisrupted, all_via, and new_source)
         # Use set to avoid duplicates
         ppl_with_supply = list(
             set(ppl_access_undisrupted + ppl_access_all_via + ppl_access_new_source)
