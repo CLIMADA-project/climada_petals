@@ -70,13 +70,17 @@ LOGGER = logging.getLogger(__name__)
 # =============================================================================
 # Plots
 # =============================================================================
-def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
+def enduser_plot(
+    self, enduser="people", axes=None, projection=ccrs.PlateCarree(), **kwargs
+):
     """Plot population nodes as a scatter plot.
 
     Parameters
     ----------
     self : Network
-        Network instance containing nodes with ci_type 'people'.
+        Network instance containing nodes with ci_type enduser.
+    enduser : str, optional
+        The enduser type to plot. Default: 'people'.
     axes : cartopy.mpl.geoaxes.GeoAxes, optional
         Axes to plot on. If None, a new figure and axes are created.
     projection : cartopy.crs.Projection, optional
@@ -91,7 +95,7 @@ def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
     axes : cartopy.mpl.geoaxes.GeoAxes
         The axes with the population plot.
     """
-    plot_df = self.nodes[self.nodes.ci_type == "people"]
+    plot_df = self.nodes[self.nodes.ci_type == enduser]
     if axes is None:
         fig, axes = plt.subplots(1, 1, subplot_kw=dict(projection=projection))
     else:
@@ -100,7 +104,7 @@ def population_plot(self, axes=None, projection=ccrs.PlateCarree(), **kwargs):
         plot_df.geometry.x,
         plot_df.geometry.y,
         s=plot_df["value"],
-        label="population",
+        label=enduser,
         transform=projection,
         alpha=0.5,
         color="grey",
@@ -113,6 +117,7 @@ def infra_plot(
     self,
     ci_types=None,
     plot_col="ci_type",
+    enduser="people",
     axes=None,
     projection=ccrs.PlateCarree(),
     pop_kwargs=dict(),
@@ -135,6 +140,8 @@ def infra_plot(
         CI types to plot. If None, all unique ci_types in nodes are used.
     plot_col : str, optional
         Column to use for coloring. Default: 'ci_type'.
+    enduser : str, optional
+        Enduser type to plot as background. Default: 'people'.
     axes : cartopy.mpl.geoaxes.GeoAxes, optional
         Axes to plot on. If None, a new figure and axes are created.
     projection : cartopy.crs.Projection, optional
@@ -183,9 +190,14 @@ def infra_plot(
         else:
             cmap = status_cmap
 
-        if ci_type == "people":
-            fig, axes = population_plot(
-                self, axes=axes, projection=projection, zorder=0, **pop_kwargs
+        if ci_type == enduser:
+            fig, axes = enduser_plot(
+                self,
+                enduser=enduser,
+                axes=axes,
+                projection=projection,
+                zorder=0,
+                **pop_kwargs,
             )
         elif ci_type in LINE_EXPOSURES:
             plot_df = self.edges[self.edges.ci_type == ci_type]
@@ -337,6 +349,7 @@ def dep_plot(self, ci_types=None, axes=None, projection=ccrs.PlateCarree(), **kw
 def access_plot(
     self,
     ci_type,
+    enduser="people",
     axes=None,
     projection=ccrs.PlateCarree(),
     plot_kwargs=dict(),
@@ -354,6 +367,8 @@ def access_plot(
         access state columns.
     ci_type : str
         The CI type to assess access for (e.g. 'healthcare', 'power').
+    enduser : str, optional
+        The type of end user to plot access for. Default is 'people'.
     axes : cartopy.mpl.geoaxes.GeoAxes, optional
         Axes to plot on. If None, a new figure and axes are created.
     projection : cartopy.crs.Projection, optional
@@ -378,33 +393,33 @@ def access_plot(
     cmap = plot_kwargs.pop(
         "cmap", ListedColormap(["#046582", "#158204", "grey", "#CF8018", "#BB8082"])
     )
-    gdf_ppl = self.nodes[self.nodes.ci_type == "people"]
+    gdf_enduser = self.nodes[self.nodes.ci_type == enduser]
 
-    service = f"access_state_{ci_type}_people"
+    service = f"access_state_{ci_type}_{enduser}"
 
     # lowercase for safety
-    cvals = gdf_ppl[service].str.lower().map(STATUS_MAP).fillna(0)
+    cvals = gdf_enduser[service].str.lower().map(STATUS_MAP).fillna(0)
     scatter = axes.scatter(
-        gdf_ppl.geometry.x,
-        gdf_ppl.geometry.y,
+        gdf_enduser.geometry.x,
+        gdf_enduser.geometry.y,
         c=cvals,
-        s=gdf_ppl["counts"] / max(gdf_ppl["counts"]) * 100,
+        s=gdf_enduser["counts"] / max(gdf_enduser["counts"]) * 100,
         transform=projection,
         cmap=cmap,
         vmin=-2,
         vmax=2,
         **plot_kwargs,
     )
-    n_ppl_access_loss = gdf_ppl[
-        gdf_ppl[service].isin(["access disrupted via", "access disrupted source"])
+    n_ppl_access_loss = gdf_enduser[
+        gdf_enduser[service].isin(["access disrupted via", "access disrupted source"])
     ].counts.sum()
-    n_ppl_no_base_access = gdf_ppl[
-        gdf_ppl[service].isin(["no base access"])
+    n_ppl_no_base_access = gdf_enduser[
+        gdf_enduser[service].isin(["no base access"])
     ].counts.sum()
 
     text = (
-        f"{n_ppl_no_base_access:.2f} people without base access to {ci_type}"
-        + f"\n{n_ppl_access_loss:.2f} people loosing access to {ci_type}"
+        f"{n_ppl_no_base_access:.2f} {enduser} without base access to {ci_type}"
+        + f"\n{n_ppl_access_loss:.2f} {enduser} loosing access to {ci_type}"
     )
     axes.text(
         0.015,
@@ -666,26 +681,7 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999.0, extent=None
 # =============================================================================
 
 
-def service_dict():
-    """Return a mapping from service names to graph attribute keys.
-
-    Returns
-    -------
-    dict
-        Dictionary mapping service names (e.g. 'power', 'healthcare') to
-        the corresponding vertex attribute keys in the igraph graph.
-    """
-    return {
-        "power": "actual_supply_power_line_people",
-        "healthcare": "actual_supply_healthcare_people",
-        "education": "actual_supply_education_people",
-        "telecom": "actual_supply_celltower_people",
-        "road": "actual_supply_road_people",
-        "water": "actual_supply_wastewater_people",
-    }
-
-
-def number_noservice(service, graph):
+def number_noservice(service, graph, enduser="people"):
     """Calculate the population without access to a given service.
 
     Parameters
@@ -694,6 +690,8 @@ def number_noservice(service, graph):
         Service name (e.g. 'power', 'healthcare').
     graph : GraphCalcs
         Graph calculation object with an igraph graph attribute.
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -702,24 +700,23 @@ def number_noservice(service, graph):
     """
 
     no_service = 1 - np.array(
-        graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+        graph.graph.vs.select(ci_type=enduser)[f"actual_supply_{service}_{enduser}"]
     )
-    pop = np.array(graph.graph.vs.select(ci_type="people")["counts"])
+    pop = np.array(graph.graph.vs.select(ci_type=enduser)["counts"])
     return (no_service * pop).sum()
 
 
-def number_noservices(
-    graph, services=["power", "healthcare", "education", "telecom", "mobility", "water"]
-):
+def number_noservices(graph, services, enduser="people"):
     """Calculate the population without access for multiple services.
 
     Parameters
     ----------
     graph : GraphCalcs
-        Graph calculation object with an igraph graph attribute.
-    services : list of str, optional
-        Services to evaluate. Default: ['power', 'healthcare', 'education',
-        'telecom', 'mobility', 'water'].
+            Graph calculation object with an igraph graph attribute.
+    services : list of str
+        Services to evaluate.
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -730,11 +727,11 @@ def number_noservices(
 
     servstats_dict = {}
     for service in services:
-        servstats_dict[service] = number_noservice(service, graph)
+        servstats_dict[service] = number_noservice(service, graph, enduser)
     return servstats_dict
 
 
-def number_noservice_df(service, df, service_dict=service_dict()):
+def number_noservice_df(service, df, enduser="people"):
     """Calculate the population without access to a service from a DataFrame.
 
     Counts population having 0 or negative values in the service state column.
@@ -746,8 +743,8 @@ def number_noservice_df(service, df, service_dict=service_dict()):
     df : gpd.GeoDataFrame or pd.DataFrame
         DataFrame containing population clusters with columns 'ci_type',
         'counts', and the service state columns.
-    service_dict : dict, optional
-        Mapping from service names to column names. Default: ``service_dict()``.
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -758,11 +755,15 @@ def number_noservice_df(service, df, service_dict=service_dict()):
     --------
     number_noservice : Same calculation performed on the igraph graph.
     """
-    return df[(df.ci_type == "people") & (df[service_dict[service]] <= 0)].counts.sum()
+    return df[
+        (df.ci_type == enduser) & (df[f"actual_supply_{service}_{enduser}"] <= 0)
+    ].counts.sum()
 
 
 def number_noservices_df(
-    df, services=["power", "healthcare", "education", "telecom", "mobility", "water"]
+    df,
+    services,
+    enduser="people",
 ):
     """Calculate the population without access for multiple services from a DataFrame.
 
@@ -770,9 +771,10 @@ def number_noservices_df(
     ----------
     df : gpd.GeoDataFrame or pd.DataFrame
         DataFrame containing population clusters and service state columns.
-    services : list of str, optional
-        Services to evaluate. Default: ['power', 'healthcare', 'education',
-        'telecom', 'mobility', 'water'].
+    services : list of str
+        Services to evaluate.
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -786,11 +788,11 @@ def number_noservices_df(
     """
     servstats_dict = {}
     for service in services:
-        servstats_dict[service] = number_noservice_df(service, df)
+        servstats_dict[service] = number_noservice_df(service, df, enduser)
     return servstats_dict
 
 
-def disaster_impact_service_geoseries(service, pre_graph, post_graph):
+def disaster_impact_service_geoseries(service, pre_graph, post_graph, enduser="people"):
     """Get geometries of population clusters that lost access to a service.
 
     Parameters
@@ -801,6 +803,8 @@ def disaster_impact_service_geoseries(service, pre_graph, post_graph):
         Graph calculation object representing the pre-disaster state.
     post_graph : GraphCalcs
         Graph calculation object representing the post-disaster state.
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -809,18 +813,20 @@ def disaster_impact_service_geoseries(service, pre_graph, post_graph):
     """
 
     no_service_post = 1 - np.array(
-        post_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+        post_graph.graph.vs.select(ci_type=enduser)[
+            f"actual_supply_{service}_{enduser}"
+        ]
     )
     no_service_pre = 1 - np.array(
-        pre_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+        pre_graph.graph.vs.select(ci_type=enduser)[f"actual_supply_{service}_{enduser}"]
     )
-    geom = np.array(post_graph.graph.vs.select(ci_type="people")["geom_wkt"])
+    geom = np.array(post_graph.graph.vs.select(ci_type=enduser)["geom_wkt"])
     return gpd.GeoSeries.from_wkt(
         geom[np.where((no_service_post - no_service_pre) > 0)]
     )
 
 
-def disaster_impact_service(service, pre_graph, post_graph):
+def disaster_impact_service(service, pre_graph, post_graph, enduser="people"):
     """Calculate population losing access to a service due to a disaster.
 
     Parameters
@@ -831,6 +837,8 @@ def disaster_impact_service(service, pre_graph, post_graph):
         Graph calculation object representing the pre-disaster state.
     post_graph : GraphCalcs
         Graph calculation object representing the post-disaster state.
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -839,19 +847,22 @@ def disaster_impact_service(service, pre_graph, post_graph):
     """
 
     no_service_post = 1 - np.array(
-        post_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+        post_graph.graph.vs.select(ci_type=enduser)[
+            f"actual_supply_{service}_{enduser}"
+        ]
     )
     no_service_pre = 1 - np.array(
-        pre_graph.graph.vs.select(ci_type="people")[service_dict()[service]]
+        pre_graph.graph.vs.select(ci_type=enduser)[f"actual_supply_{service}_{enduser}"]
     )
-    pop = np.array(pre_graph.graph.vs.select(ci_type="people")["counts"])
+    pop = np.array(pre_graph.graph.vs.select(ci_type=enduser)["counts"])
     return ((no_service_post - no_service_pre) * pop).sum()
 
 
 def disaster_impact_allservices(
     pre_graph,
     post_graph,
-    services=["power", "healthcare", "education", "telecom", "mobility", "water"],
+    services,
+    enduser="people",
 ):
     """Calculate population losing access across all services due to a disaster.
 
@@ -861,9 +872,10 @@ def disaster_impact_allservices(
         Graph calculation object representing the pre-disaster state.
     post_graph : GraphCalcs
         Graph calculation object representing the post-disaster state.
-    services : list of str, optional
-        Services to evaluate. Default: ['power', 'healthcare', 'education',
-        'telecom', 'mobility', 'water'].
+    services : list of str
+        Services to evaluate
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -872,8 +884,8 @@ def disaster_impact_allservices(
         without access (post minus pre).
     """
 
-    dict_pre = number_noservices(pre_graph, services)
-    dict_post = number_noservices(post_graph, services)
+    dict_pre = number_noservices(pre_graph, services, enduser=enduser)
+    dict_post = number_noservices(post_graph, services, enduser=enduser)
     dict_delta = {}
     for key, value in dict_post.items():
         dict_delta[key] = value - dict_pre[key]
@@ -883,7 +895,8 @@ def disaster_impact_allservices(
 def disaster_impact_allservices_df(
     df_pre,
     df_post,
-    services=["power", "healthcare", "education", "telecom", "mobility", "water"],
+    services,
+    enduser="people",
 ):
     """Calculate population losing access across all services from DataFrames.
 
@@ -893,10 +906,10 @@ def disaster_impact_allservices_df(
         DataFrame representing the pre-disaster state.
     df_post : gpd.GeoDataFrame or pd.DataFrame
         DataFrame representing the post-disaster state.
-    services : list of str, optional
-        Services to evaluate. If 'people' is included, directly affected
-        population is also computed. Default: ['power', 'healthcare',
-        'education', 'telecom', 'mobility', 'water'].
+    services : list of str
+        Services to evaluate.
+    enduser : str, optional
+        The type of end user to calculate access for. Default is 'people'.
 
     Returns
     -------
@@ -911,12 +924,12 @@ def disaster_impact_allservices_df(
     """
     services = cp.deepcopy(services)
     dict_delta = {}
-    if "people" in services:
-        services.remove("people")
+    if enduser in services:
+        services.remove(enduser)
         # directly affected people
-        dict_delta["people"] = sum(df_post[df_post.ci_type == "people"].imp_dir)
-    dict_pre = number_noservices_df(df_pre, services)
-    dict_post = number_noservices_df(df_post, services)
+        dict_delta[enduser] = sum(df_post[df_post.ci_type == enduser].imp_dir)
+    dict_pre = number_noservices_df(df_pre, services, enduser=enduser)
+    dict_post = number_noservices_df(df_post, services, enduser=enduser)
     for key, value in dict_post.items():
         dict_delta[key + "_access"] = value - dict_pre[key]
     return dict_delta
