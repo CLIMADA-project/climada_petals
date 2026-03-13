@@ -39,9 +39,6 @@ from climada.util.constants import ONE_LAT_KM
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel("INFO")
 
-# constants
-PHYSICAL_SOURCES = ["road", "rail"]
-
 
 class NetworkCalcs:
     """Wrapper for network preparation and cascade execution"""
@@ -91,19 +88,17 @@ class NetworkCalcs:
         n_clusters = len(self.graph.connected_components())
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
 
-    def add_physical_links(self):
+    def add_physical_links(self, physical_dependencies):
         """Add physical links based on dependency table"""
 
         # create "missing physical structures" - needed for real world flows
         # syntax: each target is connected to max k sources given constraints
-        physical_dependencies = self.dep_table.loc[
-            (self.dep_table["source"].isin(PHYSICAL_SOURCES))
-        ]
+
         for i, row in physical_dependencies.iterrows():
             self._graph_calc.link_vertices_closest_k(
                 source_attrs={"ci_type": row["source"]},
                 target_attrs={"ci_type": row["target"]},
-                link_attrs={"ci_type": row["source"]},
+                link_attrs={"ci_type": row["link"]},
                 dist_thresh=row["thresh_dist"],
                 bidir=True,
                 k=row["n_links"],

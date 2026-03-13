@@ -65,16 +65,36 @@ def test_merge_clusters(network_calcs):
     assert len(network_calcs._graph_calc.graph.connected_components(mode="weak")) == 1
 
 
-def test_add_physical_links(network_calcs):
-    """Test adding physical links to network"""
+def test_add_physical_links(
+    network_calcs, physical_dependencies, expected_physical_links
+):
+    """Physical links are added with expected count, type and node pairs."""
     initial_edge_count = len(network_calcs.network.edges)
 
-    network_calcs.add_physical_links()
+    network_calcs.add_physical_links(physical_dependencies)
 
-    # check that one edge between people and road has been added
-    assert len(network_calcs.network.edges) >= initial_edge_count + 1
-    assert len(network_calcs.network.nodes) == len(network_calcs.network.nodes)
-    assert network_calcs.network.edges.iloc[initial_edge_count]["ci_type"] == "road"
+    added_edges = network_calcs.network.edges.iloc[initial_edge_count:]
+
+    # correct number of newly created physical links
+    assert len(added_edges) == expected_physical_links["added_edge_count"]
+
+    # correct link types and per-type counts
+    assert set(added_edges["ci_type"]) == {"road", "healthcare"}
+    assert (added_edges["ci_type"] == "road").sum() == 2
+    assert (added_edges["ci_type"] == "healthcare").sum() == 2
+
+    # correct source-target node pairs
+    road_pairs = {
+        (int(row.from_id), int(row.to_id))
+        for row in added_edges[added_edges["ci_type"] == "road"].itertuples()
+    }
+    healthcare_pairs = {
+        (int(row.from_id), int(row.to_id))
+        for row in added_edges[added_edges["ci_type"] == "healthcare"].itertuples()
+    }
+
+    assert road_pairs == expected_physical_links["road_pairs"]
+    assert healthcare_pairs == expected_physical_links["healthcare_pairs"]
 
 
 def test_setup_dependencies(network_calcs, expected_dep_pairs):
@@ -356,7 +376,19 @@ def test_initial_cascade_with_setup_dependencies(network_with_ci_types):
     nw_calc = NetworkCalcs(network_with_ci_types, dep_table=dep_table)
 
     # Add physical links
-    nw_calc.add_physical_links()
+    physical_dependencies = pd.DataFrame(
+        [
+            {
+                "source": "healthcare",
+                "target": "people",
+                "link": "healthcare",
+                "thresh_dist": 50000,
+                "bidir_link": True,
+                "n_links": 1,
+            }
+        ]
+    )
+    nw_calc.add_physical_links(physical_dependencies)
 
     # Initialize base state
     nw_calc.initialize_base_state()

@@ -227,6 +227,37 @@ def dependency_table():
 
 
 @pytest.fixture
+def physical_dependencies():
+    """Create a simple dependency table with only physical dependencies"""
+    return pd.DataFrame(
+        {
+            "source": ["road", "healthcare"],
+            "target": ["people", "people"],
+            "link": ["road", "healthcare"],
+            "thresh_dist": [5e6, 10e6],
+            "bidir_link": [False, False],
+            "n_links": [1, 1],
+        }
+    )
+
+
+@pytest.fixture
+def expected_physical_links():
+    """Expected physical links added by ``add_physical_links``.
+
+    For the default toy network and ``n_links=1``:
+    - road -> people links connect road node 1 to people node 0
+    - healthcare -> people links connect healthcare node 4 to people node 0
+    ``add_physical_links`` adds links bidirectionally.
+    """
+    return {
+        "added_edge_count": 4,
+        "road_pairs": {(1, 0), (0, 1)},
+        "healthcare_pairs": {(4, 0), (0, 4)},
+    }
+
+
+@pytest.fixture
 def network_calcs(network_with_ci_types, dependency_table):
     """Create NetworkCalcs instance"""
     return NetworkCalcs(network=network_with_ci_types, dep_table=dependency_table)
