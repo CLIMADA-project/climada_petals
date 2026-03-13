@@ -1043,6 +1043,23 @@ def test_link_vertices_friction_surf_empty_target(graph_calcs, monkeypatch):
     assert "friction_road_none" not in graph_calcs.graph.es["ci_type"]
 
 
+def test_link_vertices_friction_surf_no_friction_surf_raises(graph_calcs):
+    """AttributeError is raised when friction_surf is None."""
+    graph_calcs.build_graph()
+    assert graph_calcs.friction_surf is None
+
+    with pytest.raises(AttributeError):
+        graph_calcs.link_vertices_friction_surf(
+            source_attrs={"ci_type": "road"},
+            target_attrs={"ci_type": "people"},
+            link_attrs={"ci_type": "friction_link"},
+            dur_thresh=10,
+            dist_thresh=np.inf,
+            k=1,
+            bidir=False,
+        )
+
+
 def test_edges_from_vlists(graph_calcs_with_remote_node):
     """Test adding edges from vertex lists"""
     graph_calcs_with_remote_node.build_graph()

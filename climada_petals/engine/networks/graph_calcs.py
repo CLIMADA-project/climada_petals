@@ -397,8 +397,11 @@ class GraphCalcs:
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
         """
-        if not self.friction_surf:
-            LOGGER.error("No friction surface provided!")
+        if self.friction_surf is None:
+            raise AttributeError(
+                "Friction surface is required for this linking method."
+                " Please provide a friction surface when initializing GraphCalcs or NetworkCalcs."
+            )
 
         gdf_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
         gdf_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
