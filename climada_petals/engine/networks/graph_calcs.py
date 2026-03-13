@@ -578,8 +578,10 @@ class GraphCalcs:
         v_ids_source = np.array(gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].id)
 
         if bidir:
-            v_ids_target = np.append(v_ids_target, v_ids_source)
-            v_ids_source = np.append(v_ids_source, v_ids_target)
+            v_ids_source_orig = v_ids_source.copy()
+            v_ids_target_orig = v_ids_target.copy()
+            v_ids_source = np.append(v_ids_source_orig, v_ids_target_orig)
+            v_ids_target = np.append(v_ids_target_orig, v_ids_source_orig)
 
         return list(v_ids_source), list(v_ids_target)
 

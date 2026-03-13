@@ -913,6 +913,136 @@ def test_link_vertices_shortest_paths_empty_via(graph_calcs):
     assert "sp_no_via" not in graph_calcs.graph.es["ci_type"]
 
 
+def test_link_vertices_friction_surf_basic(graph_calcs, monkeypatch):
+    """Test friction-surface linking creates edges when duration is below threshold."""
+    graph_calcs.build_graph()
+    graph_calcs.friction_surf = object()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    monkeypatch.setattr(
+        GraphCalcs,
+        "_calc_friction",
+        staticmethod(lambda edge_geoms, friction_surf: np.zeros(len(edge_geoms))),
+    )
+
+    graph_calcs.link_vertices_friction_surf(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        link_attrs={"ci_type": "friction_link"},
+        dur_thresh=10,
+        dist_thresh=np.inf,
+        k=1,
+        bidir=False,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count + 1
+    assert "friction_link" in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_friction_surf_bidir(graph_calcs, monkeypatch):
+    """Test friction-surface linking with bidir=True adds reverse links."""
+    graph_calcs.build_graph()
+    graph_calcs.friction_surf = object()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    monkeypatch.setattr(
+        GraphCalcs,
+        "_calc_friction",
+        staticmethod(lambda edge_geoms, friction_surf: np.zeros(len(edge_geoms))),
+    )
+
+    graph_calcs.link_vertices_friction_surf(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        link_attrs={"ci_type": "friction_link"},
+        dur_thresh=10,
+        dist_thresh=np.inf,
+        k=1,
+        bidir=True,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count + 2
+    assert "friction_link" in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_friction_surf_duration_threshold(graph_calcs, monkeypatch):
+    """No links are created when all friction values exceed duration threshold."""
+    graph_calcs.build_graph()
+    graph_calcs.friction_surf = object()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    monkeypatch.setattr(
+        GraphCalcs,
+        "_calc_friction",
+        staticmethod(lambda edge_geoms, friction_surf: np.full(len(edge_geoms), 1e9)),
+    )
+
+    graph_calcs.link_vertices_friction_surf(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        link_attrs={"ci_type": "friction_link"},
+        dur_thresh=10,
+        dist_thresh=np.inf,
+        k=1,
+        bidir=False,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "friction_link" not in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_friction_surf_empty_source(graph_calcs, monkeypatch):
+    """No edges created when source filter matches no vertices."""
+    graph_calcs.build_graph()
+    graph_calcs.friction_surf = object()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    monkeypatch.setattr(
+        GraphCalcs,
+        "_calc_friction",
+        staticmethod(lambda edge_geoms, friction_surf: np.zeros(len(edge_geoms))),
+    )
+
+    graph_calcs.link_vertices_friction_surf(
+        source_attrs={"ci_type": "nonexistent_type"},
+        target_attrs={"ci_type": "people"},
+        link_attrs={"ci_type": "friction_none_people"},
+        dur_thresh=10,
+        dist_thresh=np.inf,
+        k=1,
+        bidir=False,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "friction_none_people" not in graph_calcs.graph.es["ci_type"]
+
+
+def test_link_vertices_friction_surf_empty_target(graph_calcs, monkeypatch):
+    """No edges created when target filter matches no vertices."""
+    graph_calcs.build_graph()
+    graph_calcs.friction_surf = object()
+    initial_edge_count = graph_calcs.graph.ecount()
+
+    monkeypatch.setattr(
+        GraphCalcs,
+        "_calc_friction",
+        staticmethod(lambda edge_geoms, friction_surf: np.zeros(len(edge_geoms))),
+    )
+
+    graph_calcs.link_vertices_friction_surf(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "nonexistent_type"},
+        link_attrs={"ci_type": "friction_road_none"},
+        dur_thresh=10,
+        dist_thresh=np.inf,
+        k=1,
+        bidir=False,
+    )
+
+    assert graph_calcs.graph.ecount() == initial_edge_count
+    assert "friction_road_none" not in graph_calcs.graph.es["ci_type"]
+
+
 def test_edges_from_vlists(graph_calcs_with_remote_node):
     """Test adding edges from vertex lists"""
     graph_calcs_with_remote_node.build_graph()
