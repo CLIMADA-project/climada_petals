@@ -168,40 +168,40 @@ class NetworkCalcs:
     ):
         """
         Perform cascade failure analysis on the network.
-                This method iteratively updates the functional states of network components
-                until convergence, then updates end-user dependencies. The cascade process
-                models how failures propagate through the network based on internal and
-                functional dependencies.
-                Parameters
-                ----------
-                p_source : str, optional
-                    Type of source nodes (default is 'power_plant').
-                p_sink : str, optional
-                    Type of sink nodes (default is 'power_line').
-                source_var : str, optional
-                    Variable name for source generation (default is 'el_generation').
-                demand_var : str, optional
-                    Variable name for demand consumption (default is 'el_consumption').
-                initial : bool, optional
-                    If True, forces end-user dependency update even if convergence occurs
-                    in first cycle (default is False).
-                friction_surf : optional
-                    Friction surface data for routing calculations (default is None).
-                rerouting : bool, optional
-                    If True, enables rerouting for end-user dependencies (default is True).
-                access_check_method : str, optional
-                    Method to use for checking access (default is "routing").
-                Returns
-                -------
-                None
-                    Updates the network in place.
-                Notes
-                -----
-                - The method iterates until functional states converge (delta = 0)
-                - Updates both internal and functional dependencies during iteration
-                - After convergence, updates end-user dependencies
-                - Resets network IDs to account for newly created edges
-                - Invalidates cached graph data after completion
+        This method iteratively updates the functional states of network components
+        until convergence, then updates end-user dependencies. The cascade process
+        models how failures propagate through the network based on internal and
+        functional dependencies.
+        Parameters
+        ----------
+        p_source : str, optional
+            Type of source nodes (default is 'power_plant').
+        p_sink : str, optional
+            Type of sink nodes (default is 'power_line').
+        source_var : str, optional
+            Variable name for source generation (default is 'el_generation').
+        demand_var : str, optional
+            Variable name for demand consumption (default is 'el_consumption').
+        initial : bool, optional
+            If True, forces end-user dependency update even if convergence occurs
+            in first cycle (default is False).
+        friction_surf : optional
+            Friction surface data for routing calculations (default is None).
+        rerouting : bool, optional
+            If True, enables rerouting for end-user dependencies (default is True).
+        access_check_method : str, optional
+            Method to use for checking access (default is "routing").
+        Returns
+        -------
+        None
+            Updates the network in place.
+        Notes
+        -----
+        - The method iterates until functional states converge (delta = 0)
+        - Updates both internal and functional dependencies during iteration
+        - After convergence, updates end-user dependencies
+        - Resets network IDs to account for newly created edges
+        - Invalidates cached graph data after completion
         """
         delta = -1
         cycles = 0
