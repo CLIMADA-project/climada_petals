@@ -2423,8 +2423,7 @@ def test_auto_sync_link_clusters(graph_calcs_with_remote_node_missing_edge):
 def test_auto_sync_link_vertices_closest_k(graph_calcs):
     """Test auto_sync with link_vertices_closest_k"""
     gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
-    gc_auto.build_graph()
-    initial_graph_edges = gc_auto.graph.ecount()
+    initial_graph_edges = gc_auto.graph.ecount()  # Lazy loads graph automatically
 
     # Link vertices
     gc_auto.link_vertices_closest_k(
@@ -2455,7 +2454,7 @@ def test_auto_sync_link_vertices_closest_k(graph_calcs):
 def test_auto_sync_link_vertices_edgecond(graph_calcs):
     """Test auto_sync with link_vertices_edgecond"""
     gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
-    gc_auto.build_graph()
+    # Graph is lazily loaded when accessed
 
     # Link vertices by edge condition
     gc_auto.link_vertices_edgecond(
@@ -2516,8 +2515,7 @@ def test_auto_sync_calc_dependencies(graph_calcs):
     """Test auto_sync with calc_dependencies"""
     gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
     gc_auto.network.initialize_funcstates()
-    gc_auto.build_graph()
-    initial_graph_edges = gc_auto.graph.ecount()
+    initial_graph_edges = gc_auto.graph.ecount()  # Lazy loads graph automatically
 
     # Create dependencies between road and people via road
     gc_auto.calc_dependencies(
@@ -2552,7 +2550,7 @@ def test_auto_sync_update_functional_dependencies(graph_calcs, dependency_table)
     """Test auto_sync with update_functional_dependencies"""
     gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
     gc_auto.network.initialize_funcstates()
-    gc_auto.build_graph()
+    # Graph is lazily loaded when accessed
 
     # Set up initial state with capacity attributes
     for v in gc_auto.graph.vs:
@@ -2592,7 +2590,7 @@ def test_auto_sync_update_enduser_dependencies_routing(
     """Test auto_sync with update_enduser_dependencies using routing"""
     gc_auto = GraphCalcs(network=graph_calcs_with_source_fail.network, auto_sync=True)
     gc_auto.network.initialize_funcstates()
-    gc_auto.build_graph()
+    # Graph is lazily loaded when accessed
 
     # Create initial dependencies
     gc_auto.calc_dependencies(
@@ -2637,7 +2635,7 @@ def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types
     # Manual sync version
     network_manual = deepcopy(network_with_ci_types)
     gc_manual = GraphCalcs(network=network_manual, auto_sync=False)
-    gc_manual.build_graph()
+    # Graph is lazily loaded when first accessed
     gc_manual.link_vertices_closest_k(
         source_attrs={"ci_type": "road"},
         target_attrs={"ci_type": "healthcare"},
@@ -2650,7 +2648,7 @@ def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types
     # Auto sync version
     network_auto = deepcopy(network_with_ci_types)
     gc_auto = GraphCalcs(network=network_auto, auto_sync=True)
-    gc_auto.build_graph()
+    # Graph is lazily loaded when first accessed
     gc_auto.link_vertices_closest_k(
         source_attrs={"ci_type": "road"},
         target_attrs={"ci_type": "healthcare"},
@@ -2701,9 +2699,8 @@ def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types
 def test_no_auto_sync_without_explicit_call(graph_calcs):
     """Test that without auto_sync, manual sync is required"""
     gc_manual = GraphCalcs(network=graph_calcs.network, auto_sync=False)
-    gc_manual.build_graph()
     initial_edges = len(gc_manual.network.edges)
-    initial_graph_edges = gc_manual.graph.ecount()
+    initial_graph_edges = gc_manual.graph.ecount()  # Lazy loads graph automatically
 
     # Add edges to graph
     gc_manual.link_vertices_closest_k(
