@@ -154,18 +154,7 @@ class NetworkCalcs:
                 k=row["n_links"],
                 bidir_link=row["bidir_link"],
             )
-        # initialize base access and supply for enduser dependencies
-        enduser_rows = self.dep_table[self.dep_table["type_I"] == "enduser"]
-        for __, row in enduser_rows.iterrows():
-            dependency_name = f'dependency_{row["source"]}_{row["target"]}'
-            dep_edges = self.graph.es.select(ci_type=dependency_name)
-            if len(dep_edges) == 0:
-                continue
-            targets = [edge.target for edge in dep_edges]
-            self.graph.vs[targets][
-                f"access_state_{row.source}_{row.target}"
-            ] = "access undisrupted"
-            self.graph.vs[targets][f"actual_supply_{row.source}_{row.target}"] = 1
+
         # reset ids as new edges have been created
         self.network = reset_ids(self.network)
         # update network

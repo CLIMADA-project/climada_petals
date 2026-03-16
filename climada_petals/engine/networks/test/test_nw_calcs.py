@@ -152,20 +152,16 @@ def test_cascade_initial(network_calcs):
     )
 
 
-def test_cascade_simple(network_calcs_source_fail):
+def test_cascade_simple(network_calcs):
     """Test simple cascade without friction surface"""
-    network_calcs_source_fail.network.initialize_capacity(
-        network_calcs_source_fail.dep_table
-    )
-    network_calcs_source_fail.network.initialize_supply(
-        network_calcs_source_fail.dep_table
-    )
-    network_calcs_source_fail.setup_dependencies()
+    network_calcs.initialize_base_state()
+    network_calcs.setup_dependencies()
+    network_calcs.cascade(initial=True, friction_surf=None, rerouting=False)
 
     assert (
         np.all(
-            network_calcs_source_fail.network.nodes.loc[
-                network_calcs_source_fail.network.nodes["ci_type"] == "people",
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
                 "actual_supply_road_people",
             ]
         )
@@ -173,23 +169,27 @@ def test_cascade_simple(network_calcs_source_fail):
     )
     assert (
         np.all(
-            network_calcs_source_fail.network.nodes.loc[
-                network_calcs_source_fail.network.nodes["ci_type"] == "people",
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
                 "actual_supply_healthcare_people",
             ]
         )
         == 1
     )
 
-    network_calcs_source_fail.cascade(
-        initial=False, friction_surf=None, rerouting=False
-    )
+    # fail hospital node
+    network_calcs.network.nodes.loc[
+        (network_calcs.network.nodes["ci_type"] == "healthcare"),
+        "func_tot",
+    ] = 0
+
+    network_calcs.cascade(initial=False, friction_surf=None, rerouting=False)
 
     # Verify cascade completed
     assert (
         np.all(
-            network_calcs_source_fail.network.nodes.loc[
-                network_calcs_source_fail.network.nodes["ci_type"] == "people",
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
                 "actual_supply_road_people",
             ]
         )
@@ -197,8 +197,8 @@ def test_cascade_simple(network_calcs_source_fail):
     )
     assert (
         np.all(
-            network_calcs_source_fail.network.nodes.loc[
-                network_calcs_source_fail.network.nodes["ci_type"] == "people",
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
                 "actual_supply_healthcare_people",
             ]
         )
