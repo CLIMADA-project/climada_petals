@@ -40,30 +40,106 @@ LOGGER.setLevel("INFO")
 
 
 class GraphCalcs:
-    def __init__(self, network_calc, directed=True, friction_surf=None):
+    """Complete graph-based CI network analysis toolkit
+
+    Provides all graph operations for critical infrastructure (CI) networks,
+    including:
+    - Network construction (linking, clustering)
+    - Dependency setup (shortest paths, friction surface, edge conditions)
+    - Cascade analysis (failure propagation, access checking, supply updates)
+
+    Users can call methods in any order for maximum flexibility. For common
+    workflows, see NetworkCalcs as a convenience wrapper.
+
+    Auto-Sync Feature
+    -----------------
+    By default (auto_sync=False), the underlying Network object is not automatically
+    updated when the graph is modified. Call sync() manually after batch operations:
+
+        gc = GraphCalcs(network=network)
+        gc.link_vertices_closest_k(...)
+        gc.link_vertices_edgecond(...)
+        gc.sync()  # Manual sync after multiple operations
+
+    For standalone usage with frequent manual calls, enable auto_sync=True for
+    automatic synchronization after each graph-modifying operation:
+
+        gc = GraphCalcs(network=network, auto_sync=True)
+        gc.link_vertices_closest_k(...)  # Auto-syncs internally
+        gc.calc_dependencies(...)         # Auto-syncs internally
+        # Network always in sync with graph
+
+    Auto-sync adds minimal overhead but improves usability for interactive workflows.
+
+    Examples
+    --------
+    Direct instantiation for custom workflows:
+
+        from climada_petals.engine.networks.nw_base import Network
+        from climada_petals.engine.networks.graph_calcs import GraphCalcs
+
+        network = Network(edges=edges_gdf, nodes=nodes_gdf)
+        gc = GraphCalcs(network=network, directed=True)
+
+        # Build graph
+        gc.build_graph()
+
+        # Link vertices
+        gc.link_vertices_closest_k(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            dist_thresh=5000,
+            k=1,
+            link_attrs={'ci_type': 'road_people'}
+        )
+
+        # Setup dependencies
+        gc.calc_dependencies(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_road_people'},
+            link_condition='distance',
+            dist_thresh=10000,
+            dur_thresh=np.inf,
+            k=1,
+            bidir_link=False
+        )
+
+        # Check access and cascade
+        gc._check_access(row, friction_surf=None, rerouting=True)
+    """
+
+    def __init__(self, network, directed=True, friction_surf=None, auto_sync=False):
         """Create graph-calculation helper for a network
 
         Parameters
         ----------
-        network_calc : NetworkCalcs
-            Parent wrapper holding the :class:`~climada_petals.engine.networks.nw_base.Network`.
+        network : Network
+            Network to perform graph calculations on.
         directed : bool, optional
             Whether to build a directed igraph representation. Default is ``True``.
         friction_surf : object, optional
             Friction surface used for duration-based linking. Default is ``None``.
+        auto_sync : bool, optional
+            If ``True``, automatically synchronize the network after each graph-modifying
+            operation (linking, dependency creation, cascade updates). Useful for standalone
+            usage where the network is always kept in sync with graph changes. If ``False``,
+            manual sync() calls are required to update the network. Default is ``False``.
 
         Notes
         -----
         The graph is lazily built and cached on first access via `graph`.
+
+        When ``auto_sync=True``, each graph-modifying method will call ``sync()``
+        automatically, ensuring the network GeoDataFrames are always up-to-date with
+        graph modifications. This adds minor overhead but improves usability.
         """
-        self.network_calc = network_calc  # parent nw calc object
+        self.network = network
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
-
-    @property
-    def network(self):
-        return self.network_calc.network
+        self.auto_sync = auto_sync
 
     def build_graph(self):
         """Build and cache an igraph representation of the network
@@ -91,6 +167,18 @@ class GraphCalcs:
         Use when vertices are added/removed or the graph must be rebuilt.
         """
         self._graph = None
+
+    def sync(self):
+        """Synchronize network object with current graph state
+
+        Updates the network's edges and nodes GeoDataFrames to reflect any
+        changes made to the graph. Called automatically after each graph-modifying
+        operation if ``auto_sync=True``.
+
+        Useful for standalone usage or after batch operations to ensure the
+        network reflects all graph modifications.
+        """
+        self.network = Network.from_graphs(self.graph, crs=self.network.crs)
 
     # =============================================================================
     # Making links
@@ -167,6 +255,9 @@ class GraphCalcs:
         if len(v_ids_source) > 0:
             self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
 
+        if self.auto_sync:
+            self.sync()
+
     def link_vertices_closest_k(
         self, source_attrs, target_attrs, dist_thresh, k, link_attrs=None, bidir=False
     ):
@@ -206,6 +297,9 @@ class GraphCalcs:
                 source_attrs,
                 target_attrs,
             )
+
+        if self.auto_sync:
+            self.sync()
 
     def link_vertices_edgecond(self, target_attrs, edge_attrs, link_attrs, bidir=False):
         """Link vertices based on existing edge conditions
@@ -266,6 +360,9 @@ class GraphCalcs:
         self._edges_from_vlists(sources, targets, link_attrs)
         if bidir:
             self._edges_from_vlists(targets, sources, link_attrs)
+
+        if self.auto_sync:
+            self.sync()
 
     def link_vertices_shortest_paths(
         self,
@@ -368,42 +465,46 @@ class GraphCalcs:
                     v_ids_target.tolist(), v_ids_source.tolist(), link_attrs
                 )
 
+        if self.auto_sync:
+            self.sync()
+
     def link_vertices_friction_surf(
         self,
-        source_ci,
-        target_ci,
+        source_attrs,
+        target_attrs,
+        link_attrs,
         dur_thresh,
-        dist_thresh,
         k,
-        link_name=None,
+        dist_thresh=np.inf,
         bidir=False,
     ):
         """Link vertices using a friction surface duration constraint
 
         Parameters
         ----------
-        source_ci : str
-            Source infrastructure type.
-        target_ci : str
-            Target infrastructure type.
+        source_attrs : dict
+            Source vertex attributes for filtering.
+        target_attrs : dict
+            Target vertex attributes for filtering.
         dur_thresh : float
             Maximum travel duration to allow a link.
-        dist_thresh : float
-            Maximum geographic distance (meters) for candidate links.
         k : int
             Number of nearest sources per target to consider.
+        dist_thresh : float, optional
+            Maximum geographic distance (meters) for candidate links. Default is np.inf.
         link_name : str, optional
             Edge type name to assign. Default creates ``dependency_{source}_{target}``.
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
         """
-        if not self.friction_surf:
-            LOGGER.error("No friction surface provided!")
+        if self.friction_surf is None:
+            raise AttributeError(
+                "Friction surface is required for this linking method."
+                " Please provide a friction surface when initializing GraphCalcs or NetworkCalcs."
+            )
 
-        gdf_vs = self.graph.get_vertex_dataframe()
-        gdf_vs_target = gdf_vs[gdf_vs.ci_type == target_ci]
-        gdf_vs_source = gdf_vs[(gdf_vs.ci_type == source_ci) & (gdf_vs.func_tot == 1)]
-        del gdf_vs
+        gdf_vs_target = GraphCalcs._filter_vertices(self.graph, target_attrs)
+        gdf_vs_source = GraphCalcs._filter_vertices(self.graph, source_attrs)
 
         if not (gdf_vs_source.empty or gdf_vs_target.empty):
             v_ids_source, v_ids_target = self._select_closest_k(
@@ -419,18 +520,18 @@ class GraphCalcs:
             v_ids_source = np.array(v_ids_source)[friction < dur_thresh]
             v_ids_target = np.array(v_ids_target)[friction < dur_thresh]
 
-            if not link_name:
-                link_name = f"dependency_{source_ci}_{target_ci}"
-
             self._edges_from_vlists(
-                list(v_ids_source), list(v_ids_target), {"ci_type": link_name}
+                v_ids_source.tolist(), v_ids_target.tolist(), link_attrs
             )
         else:
             LOGGER.info(
                 "No vertices found matching source %s or target %s; no links created.",
-                source_ci,
-                target_ci,
+                source_attrs["ci_type"],
+                target_attrs["ci_type"],
             )
+
+        if self.auto_sync:
+            self.sync()
 
     # =============================================================================
     # Helper funcs for making links
@@ -583,8 +684,10 @@ class GraphCalcs:
         v_ids_source = np.array(gdf_vs_source.loc[ix_matches[~np.isnan(ix_matches)]].id)
 
         if bidir:
-            v_ids_target = np.append(v_ids_target, v_ids_source)
-            v_ids_source = np.append(v_ids_source, v_ids_target)
+            v_ids_source_orig = v_ids_source.copy()
+            v_ids_target_orig = v_ids_target.copy()
+            v_ids_source = np.append(v_ids_source_orig, v_ids_target_orig)
+            v_ids_target = np.append(v_ids_target_orig, v_ids_source_orig)
 
         return list(v_ids_source), list(v_ids_target)
 
@@ -827,6 +930,14 @@ class GraphCalcs:
         bidir_link : bool
             Whether to add reverse links.
         """
+        if "ci_type" not in link_attrs:
+            link_attrs["ci_type"] = (
+                f"dependency_{source_attrs['ci_type']}_{target_attrs['ci_type']}"
+            )
+            LOGGER.info(
+                "No ci_type specified for links; defaulting to %s",
+                link_attrs["ci_type"],
+            )
         if "distance" in link_condition:
             self.link_vertices_shortest_paths(
                 source_attrs=source_attrs,
@@ -839,9 +950,9 @@ class GraphCalcs:
             )
         elif "duration" in link_condition:
             self.link_vertices_friction_surf(
-                source_ci=source_attrs,
-                target_ci=target_attrs,
-                link_name=link_attrs,
+                source_attrs=source_attrs,
+                target_attrs=target_attrs,
+                link_attrs=link_attrs,
                 dist_thresh=dist_thresh,
                 dur_thresh=dur_thresh,
                 k=k,
@@ -1014,6 +1125,9 @@ class GraphCalcs:
                 demand_var=demand_var,
             )
 
+        if self.auto_sync:
+            self.sync()
+
     def update_functional_dependencies(self, df_dependencies):
         """Update functional CI-to-CI dependencies
 
@@ -1036,6 +1150,9 @@ class GraphCalcs:
             self._propagate_check_fail(
                 row.source, row.target, row.type_I, row.thresh_func
             )
+
+        if self.auto_sync:
+            self.sync()
 
     def update_enduser_dependencies(
         self,
@@ -1080,6 +1197,9 @@ class GraphCalcs:
                 )
             else:
                 raise ValueError("Invalid access check method specified!")
+
+        if self.auto_sync:
+            self.sync()
 
     def _get_former_access_info(self, dependency_name):
         """Retrieve former access status for a dependency
@@ -1393,6 +1513,9 @@ class GraphCalcs:
                 f"actual_supply_{row.source}_{row.target}"
             ] = 0
 
+        if self.auto_sync:
+            self.sync()
+
     def _check_access(self, row, friction_surf, rerouting=True, initial=False):
         """Check and update access states for end-user dependencies
 
@@ -1434,6 +1557,9 @@ class GraphCalcs:
             ppl_access_all_via,
             ppl_new_access,
         )
+
+        if self.auto_sync:
+            self.sync()
 
     @DeprecationWarning
     def _recheck_access(

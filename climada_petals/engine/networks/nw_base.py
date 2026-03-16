@@ -529,10 +529,10 @@ class Network:
         >>> network.nodes['func_tot']  # All values are 1
         >>> network.edges['imp_dir']   # All values are 0
         """
-        self.edges[["func_internal", "func_tot"]] = 1
-        self.nodes[["func_internal", "func_tot"]] = 1
-        self.edges["imp_dir"] = 0
-        self.nodes["imp_dir"] = 0
+        self.edges[["func_internal", "func_tot"]] = 1.0
+        self.nodes[["func_internal", "func_tot"]] = 1.0
+        self.edges["imp_dir"] = 0.0
+        self.nodes["imp_dir"] = 0.0
 
     def initialize_capacity(self, dep_table):
         """Initialize capacity attributes for dependency relationships
@@ -616,7 +616,7 @@ class Network:
         """
         for __, row in dep_table.loc[dep_table["type_I"] == "enduser"].iterrows():
             self.nodes[f'access_state_{row["source"]}_{row["target"]}'] = "undefined"
-            self.nodes[f'actual_supply_{row["source"]}_{row["target"]}'] = 0
+            self.nodes[f'actual_supply_{row["source"]}_{row["target"]}'] = 0.0
             # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row["source"]}_people'] = 1
             self.nodes.loc[
                 self.nodes["ci_type"] == row["target"],
