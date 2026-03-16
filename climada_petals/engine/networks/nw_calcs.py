@@ -40,30 +40,9 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel("INFO")
 
 
-# ============================================================================
-# ARCHITECTURE GUIDE
-# ============================================================================
-# 
-# GraphCalcs:
-#   - Complete, flexible toolkit for CI network analysis
-#   - Handles: linking, dependencies, cascade analysis, access checking
-#   - Direct user instantiation: gc = GraphCalcs(network=network)
-#   - Users compose workflows by calling methods in custom sequences
-#
-# NetworkCalcs:
-#   - High-level convenience wrapper for common workflows
-#   - Uses GraphCalcs internally (self._graph_calc)
-#   - Orchestrates typical sequences: merge clusters → add physical links
-#     → initialize state → setup dependencies → cascade
-#   - Recommended for standard workflows; use GraphCalcs directly for
-#     advanced custom analysis
-#
-# ============================================================================
-
-
 class NetworkCalcs:
     """Wrapper for network preparation and cascade execution
-    
+
     High-level convenience wrapper for common CI network workflows.
     Uses GraphCalcs internally for all graph operations. For advanced users
     seeking flexibility, GraphCalcs can be used directly to compose custom
@@ -71,11 +50,22 @@ class NetworkCalcs:
     """
 
     def __init__(self, network, dep_table, friction_surf=None, directed=True):
-        self.network = network
+        self._network = network
         self.dep_table = dep_table
         self._graph_calc = GraphCalcs(
             network=network, directed=directed, friction_surf=friction_surf
         )
+
+    @property
+    def network(self):
+        """Access the current network"""
+        return self._network
+
+    @network.setter
+    def network(self, new_network):
+        """Keep graph_calc in sync whenever network is updated"""
+        self._network = new_network
+        self._graph_calc.network = new_network
 
     @property
     def graph(self):
