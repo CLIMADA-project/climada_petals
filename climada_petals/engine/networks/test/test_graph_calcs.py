@@ -33,9 +33,9 @@ from climada.util.constants import ONE_LAT_KM
 def test_graph_calcs_init(network_with_ci_types):
     """Test GraphCalcs initialization"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_ci_types})()
-    gc = GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    gc = GraphCalcs(network=network_with_ci_types, directed=True)
 
-    assert gc.network_calc == nw_calcs_mock
+    assert gc.network == network_with_ci_types
     assert gc.directed is True
     assert gc._graph is None
 
@@ -1177,9 +1177,9 @@ def test_calc_dependencies_distance_via_fail(graph_calcs_with_edge_ci_fail):
 
 def test_check_access_basic_undisrupted(graph_calcs, dependency_table):
     """Test _check_access basic functionality"""
-    graph_calcs.network_calc.network.initialize_funcstates()
-    graph_calcs.network_calc.network.initialize_capacity(dependency_table)
-    graph_calcs.network_calc.network.initialize_supply(dependency_table)
+    graph_calcs.network.initialize_funcstates()
+    graph_calcs.network.initialize_capacity(dependency_table)
+    graph_calcs.network.initialize_supply(dependency_table)
     graph_calcs.build_graph()
 
     # Get first dependency row (road -> people)
@@ -1213,9 +1213,9 @@ def test_check_access_basic_undisrupted(graph_calcs, dependency_table):
 
 def test_check_access_with_rerouting_undisrupted(graph_calcs, dependency_table):
     """Test _check_access with rerouting enabled"""
-    graph_calcs.network_calc.network.initialize_funcstates()
-    graph_calcs.network_calc.network.initialize_capacity(dependency_table)
-    graph_calcs.network_calc.network.initialize_supply(dependency_table)
+    graph_calcs.network.initialize_funcstates()
+    graph_calcs.network.initialize_capacity(dependency_table)
+    graph_calcs.network.initialize_supply(dependency_table)
     graph_calcs.build_graph()
 
     for _, row in dependency_table.loc[
@@ -1250,13 +1250,9 @@ def test_check_access_with_rerouting_failed_source(
     graph_calcs_with_remote_node, dependency_table
 ):
     """Test _check_access with rerouting enabled"""
-    graph_calcs_with_remote_node.network_calc.network.initialize_funcstates()
-    graph_calcs_with_remote_node.network_calc.network.initialize_capacity(
-        dependency_table
-    )
-    graph_calcs_with_remote_node.network_calc.network.initialize_supply(
-        dependency_table
-    )
+    graph_calcs_with_remote_node.network.initialize_funcstates()
+    graph_calcs_with_remote_node.network.initialize_capacity(dependency_table)
+    graph_calcs_with_remote_node.network.initialize_supply(dependency_table)
     graph_calcs_with_remote_node.build_graph()
 
     row = dependency_table.iloc[1]
@@ -1292,13 +1288,9 @@ def test_check_access_with_rerouting_via_disrupted(
     graph_calcs_with_remote_node, dependency_table
 ):
     """Test _check_access with rerouting when via is failing"""
-    graph_calcs_with_remote_node.network_calc.network.initialize_funcstates()
-    graph_calcs_with_remote_node.network_calc.network.initialize_capacity(
-        dependency_table
-    )
-    graph_calcs_with_remote_node.network_calc.network.initialize_supply(
-        dependency_table
-    )
+    graph_calcs_with_remote_node.network.initialize_funcstates()
+    graph_calcs_with_remote_node.network.initialize_capacity(dependency_table)
+    graph_calcs_with_remote_node.network.initialize_supply(dependency_table)
     graph_calcs_with_remote_node.build_graph()
 
     row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
@@ -1334,13 +1326,9 @@ def test_check_access_with_rerouting_new_source(
     graph_calcs_with_remote_node, dependency_table
 ):
     """Test _check_access with rerouting when via is failing"""
-    graph_calcs_with_remote_node.network_calc.network.initialize_funcstates()
-    graph_calcs_with_remote_node.network_calc.network.initialize_capacity(
-        dependency_table
-    )
-    graph_calcs_with_remote_node.network_calc.network.initialize_supply(
-        dependency_table
-    )
+    graph_calcs_with_remote_node.network.initialize_funcstates()
+    graph_calcs_with_remote_node.network.initialize_capacity(dependency_table)
+    graph_calcs_with_remote_node.network.initialize_supply(dependency_table)
     graph_calcs_with_remote_node.build_graph()
 
     row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
@@ -1376,13 +1364,9 @@ def test_check_access_without_rerouting_via_disrupted(
     graph_calcs_with_remote_node, dependency_table
 ):
     """Test _check_access with rerouting when via is failing"""
-    graph_calcs_with_remote_node.network_calc.network.initialize_funcstates()
-    graph_calcs_with_remote_node.network_calc.network.initialize_capacity(
-        dependency_table
-    )
-    graph_calcs_with_remote_node.network_calc.network.initialize_supply(
-        dependency_table
-    )
+    graph_calcs_with_remote_node.network.initialize_funcstates()
+    graph_calcs_with_remote_node.network.initialize_capacity(dependency_table)
+    graph_calcs_with_remote_node.network.initialize_supply(dependency_table)
     graph_calcs_with_remote_node.build_graph()
 
     row = dependency_table.iloc[1]  # Use row 1 (healthcare->people enduser)
@@ -1418,13 +1402,9 @@ def test_check_access_without_rerouting_failed_source(
     graph_calcs_with_remote_node, dependency_table
 ):
     """Test _check_access with rerouting enabled"""
-    graph_calcs_with_remote_node.network_calc.network.initialize_funcstates()
-    graph_calcs_with_remote_node.network_calc.network.initialize_capacity(
-        dependency_table
-    )
-    graph_calcs_with_remote_node.network_calc.network.initialize_supply(
-        dependency_table
-    )
+    graph_calcs_with_remote_node.network.initialize_funcstates()
+    graph_calcs_with_remote_node.network.initialize_capacity(dependency_table)
+    graph_calcs_with_remote_node.network.initialize_supply(dependency_table)
     graph_calcs_with_remote_node.build_graph()
 
     row = dependency_table.iloc[1]
@@ -1460,13 +1440,9 @@ def test_check_access_without_rerouting_failed_source(
 
 def test_check_access_no_constraint(graph_calcs_with_remote_node, dependency_table):
     """Test _check_access with access constraints disabled"""
-    graph_calcs_with_remote_node.network_calc.network.initialize_funcstates()
-    graph_calcs_with_remote_node.network_calc.network.initialize_capacity(
-        dependency_table
-    )
-    graph_calcs_with_remote_node.network_calc.network.initialize_supply(
-        dependency_table
-    )
+    graph_calcs_with_remote_node.network.initialize_funcstates()
+    graph_calcs_with_remote_node.network.initialize_capacity(dependency_table)
+    graph_calcs_with_remote_node.network.initialize_supply(dependency_table)
     graph_calcs_with_remote_node.build_graph()
 
     for _, row in dependency_table.loc[
@@ -1507,7 +1483,7 @@ def test_check_access_no_constraint(graph_calcs_with_remote_node, dependency_tab
 
 def test_check_access_no_rerouting_constraint_all_functional(graph_calcs):
     """Test _check_access with no rerouting, access constraints, all edges functional"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create initial dependencies
@@ -1554,7 +1530,7 @@ def test_check_access_no_rerouting_constraint_all_functional(graph_calcs):
 
 def test_check_access_no_rerouting_constraint_via_failed(graph_calcs):
     """Test _check_access with no rerouting, access constraints, failed via edge"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create initial dependencies
@@ -1604,7 +1580,7 @@ def test_check_access_no_rerouting_constraint_via_failed(graph_calcs):
 
 def test_check_access_no_rerouting_no_constraint_via_failed(graph_calcs):
     """Test _check_access with no rerouting, no access constraints, failed via edge"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create initial dependencies
@@ -1928,11 +1904,9 @@ def test_update_enduser_dependencies_propagation(graph_calcs_with_source_fail):
             "n_links": [1, 1],
         }
     )
-    graph_calcs_with_source_fail.network_calc.network.initialize_funcstates()
-    graph_calcs_with_source_fail.network_calc.network.initialize_capacity(
-        df_dependencies
-    )
-    graph_calcs_with_source_fail.network_calc.network.initialize_supply(df_dependencies)
+    graph_calcs_with_source_fail.network.initialize_funcstates()
+    graph_calcs_with_source_fail.network.initialize_capacity(df_dependencies)
+    graph_calcs_with_source_fail.network.initialize_supply(df_dependencies)
     graph_calcs_with_source_fail.build_graph()
 
     graph_calcs_with_source_fail.update_enduser_dependencies(
@@ -1977,7 +1951,7 @@ def test_update_enduser_dependencies_unknown(graph_calcs_with_source_fail):
 
 def test_get_former_access_info(graph_calcs):
     """Test _get_former_access_info helper function"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create dependencies
@@ -2016,7 +1990,7 @@ def test_get_former_access_info(graph_calcs):
 
 def test_recompute_dependencies_with_rerouting(graph_calcs):
     """Test _recompute_dependencies_with_rerouting helper function"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create initial dependencies
@@ -2059,7 +2033,7 @@ def test_recompute_dependencies_with_rerouting(graph_calcs):
 
 def test_recompute_dependencies_with_rerouting_fail_source(graph_calcs):
     """Test _recompute_dependencies_with_rerouting helper function with failed source"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create initial dependencies
@@ -2106,7 +2080,7 @@ def test_recompute_dependencies_with_rerouting_fail_source(graph_calcs):
 
 def test_recompute_dependencies_with_rerouting_fail_via(graph_calcs):
     """Test _recompute_dependencies_with_rerouting helper function with failed via link"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create initial dependencies
@@ -2154,7 +2128,7 @@ def test_recompute_dependencies_with_rerouting_fail_via(graph_calcs):
 
 def test_validate_dependency_paths(graph_calcs):
     """Test _validate_dependency_paths helper function"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     row = pd.Series(
@@ -2205,7 +2179,7 @@ def test_validate_dependency_paths(graph_calcs):
 
 def test_validate_dependency_paths_edgefail(graph_calcs):
     """Test _validate_dependency_paths helper function"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     row = pd.Series(
@@ -2259,7 +2233,7 @@ def test_validate_dependency_paths_edgefail(graph_calcs):
 
 def test_validate_dependencies_without_rerouting_with_constraint(graph_calcs):
     """Test _validate_dependencies_without_rerouting with access constraints"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     row = pd.Series(
@@ -2309,7 +2283,7 @@ def test_validate_dependencies_without_rerouting_with_constraint(graph_calcs):
 
 def test_mark_access_states_and_supply(graph_calcs):
     """Test _mark_access_states_and_supply helper function"""
-    graph_calcs.network_calc.network.initialize_funcstates()
+    graph_calcs.network.initialize_funcstates()
     graph_calcs.build_graph()
 
     # Create dependencies

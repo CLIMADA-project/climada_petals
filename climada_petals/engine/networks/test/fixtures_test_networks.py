@@ -167,21 +167,21 @@ def network_with_source_fail(network_with_remote_node):
 def graph_calcs(network_with_ci_types):
     """Create GraphCalcs instance with test network"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_ci_types})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_ci_types, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_source_fail(network_with_source_fail):
     """Create GraphCalcs instance with test network containing CI failures"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_source_fail})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_source_fail, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_edge_ci_fail(network_with_edge_fail):
     """Create GraphCalcs instance with test network containing edge CI failures"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_edge_fail})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_edge_fail, directed=True)
 
 
 @pytest.fixture
@@ -190,14 +190,14 @@ def graph_calcs_with_remote_node_missing_edge(network_with_remote_node_missing_e
     nw_calcs_mock = type(
         "obj", (object,), {"network": network_with_remote_node_missing_edge}
     )()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_remote_node_missing_edge, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_remote_node(network_with_remote_node):
     """Create GraphCalcs instance with test network containing remote node"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_remote_node})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_remote_node, directed=True)
 
 
 # ========================================================================
@@ -380,4 +380,4 @@ def graph_calcs_projected_disconnected(network_projected_disconnected):
     nw_calcs_mock = type(
         "obj", (object,), {"network": network_projected_disconnected}
     )()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_projected_disconnected, directed=True)

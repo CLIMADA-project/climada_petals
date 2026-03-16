@@ -40,13 +40,63 @@ LOGGER.setLevel("INFO")
 
 
 class GraphCalcs:
-    def __init__(self, network_calc, directed=True, friction_surf=None):
+    """Complete graph-based CI network analysis toolkit
+
+    Provides all graph operations for critical infrastructure (CI) networks,
+    including:
+    - Network construction (linking, clustering)
+    - Dependency setup (shortest paths, friction surface, edge conditions)
+    - Cascade analysis (failure propagation, access checking, supply updates)
+
+    Users can call methods in any order for maximum flexibility. For common
+    workflows, see NetworkCalcs as a convenience wrapper.
+
+    Examples
+    --------
+    Direct instantiation for custom workflows:
+
+        from climada_petals.engine.networks.nw_base import Network
+        from climada_petals.engine.networks.graph_calcs import GraphCalcs
+
+        network = Network(edges=edges_gdf, nodes=nodes_gdf)
+        gc = GraphCalcs(network=network, directed=True)
+
+        # Build graph
+        gc.build_graph()
+
+        # Link vertices
+        gc.link_vertices_closest_k(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            dist_thresh=5000,
+            k=1,
+            link_attrs={'ci_type': 'road_people'}
+        )
+
+        # Setup dependencies
+        gc.calc_dependencies(
+            source_attrs={'ci_type': 'road'},
+            target_attrs={'ci_type': 'people'},
+            via_attrs={'ci_type': 'road'},
+            link_attrs={'ci_type': 'dependency_road_people'},
+            link_condition='distance',
+            dist_thresh=10000,
+            dur_thresh=np.inf,
+            k=1,
+            bidir_link=False
+        )
+
+        # Check access and cascade
+        gc._check_access(row, friction_surf=None, rerouting=True)
+    """
+
+    def __init__(self, network, directed=True, friction_surf=None):
         """Create graph-calculation helper for a network
 
         Parameters
         ----------
-        network_calc : NetworkCalcs
-            Parent wrapper holding the :class:`~climada_petals.engine.networks.nw_base.Network`.
+        network : Network
+            Network to perform graph calculations on.
         directed : bool, optional
             Whether to build a directed igraph representation. Default is ``True``.
         friction_surf : object, optional
@@ -56,14 +106,10 @@ class GraphCalcs:
         -----
         The graph is lazily built and cached on first access via `graph`.
         """
-        self.network_calc = network_calc  # parent nw calc object
+        self.network = network
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
-
-    @property
-    def network(self):
-        return self.network_calc.network
 
     def build_graph(self):
         """Build and cache an igraph representation of the network
