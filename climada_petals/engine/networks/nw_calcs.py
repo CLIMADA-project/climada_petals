@@ -28,7 +28,6 @@ import scipy
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.graph_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
-from climada_petals.engine.networks.nw_preps import reset_ids
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -100,7 +99,6 @@ class NetworkCalcs:
             )
             iter_count += 1
             self.network = Network.from_graphs(self.graph, crs=self.network.crs)
-            self.network = reset_ids(self.network)
             self._graph_calc.full_reset()
         n_clusters = len(self.graph.connected_components())
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
@@ -123,9 +121,6 @@ class NetworkCalcs:
 
         ##update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
-
-        ##need to have all ids reset after new road edges have been added
-        self.network = reset_ids(self.network)
 
         # Invalidate cached graph
         self._graph_calc.full_reset()
@@ -155,8 +150,6 @@ class NetworkCalcs:
                 bidir_link=row["bidir_link"],
             )
 
-        # reset ids as new edges have been created
-        self.network = reset_ids(self.network)
         # update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
         # Invalidate cached graph
@@ -240,8 +233,6 @@ class NetworkCalcs:
             access_check_method=access_check_method,
         )
 
-        # reset ids as new edges may have been created
-        self.network = reset_ids(self.network)
         # update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
         # Invalidate cached graph
