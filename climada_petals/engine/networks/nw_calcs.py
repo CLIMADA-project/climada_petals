@@ -28,7 +28,6 @@ import scipy
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.graph_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
-from climada_petals.engine.networks.nw_preps import reset_ids
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -100,7 +99,6 @@ class NetworkCalcs:
             )
             iter_count += 1
             self.network = Network.from_graphs(self.graph, crs=self.network.crs)
-            self.network = reset_ids(self.network)
             self._graph_calc.full_reset()
         n_clusters = len(self.graph.connected_components())
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
@@ -123,9 +121,6 @@ class NetworkCalcs:
 
         ##update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
-
-        ##need to have all ids reset after new road edges have been added
-        self.network = reset_ids(self.network)
 
         # Invalidate cached graph
         self._graph_calc.full_reset()
@@ -155,8 +150,6 @@ class NetworkCalcs:
                 bidir_link=row["bidir_link"],
             )
 
-        # reset ids as new edges have been created
-        self.network = reset_ids(self.network)
         # update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
         # Invalidate cached graph
@@ -175,40 +168,40 @@ class NetworkCalcs:
     ):
         """
         Perform cascade failure analysis on the network.
-                This method iteratively updates the functional states of network components
-                until convergence, then updates end-user dependencies. The cascade process
-                models how failures propagate through the network based on internal and
-                functional dependencies.
-                Parameters
-                ----------
-                p_source : str, optional
-                    Type of source nodes (default is 'power_plant').
-                p_sink : str, optional
-                    Type of sink nodes (default is 'power_line').
-                source_var : str, optional
-                    Variable name for source generation (default is 'el_generation').
-                demand_var : str, optional
-                    Variable name for demand consumption (default is 'el_consumption').
-                initial : bool, optional
-                    If True, forces end-user dependency update even if convergence occurs
-                    in first cycle (default is False).
-                friction_surf : optional
-                    Friction surface data for routing calculations (default is None).
-                rerouting : bool, optional
-                    If True, enables rerouting for end-user dependencies (default is True).
-                access_check_method : str, optional
-                    Method to use for checking access (default is "routing").
-                Returns
-                -------
-                None
-                    Updates the network in place.
-                Notes
-                -----
-                - The method iterates until functional states converge (delta = 0)
-                - Updates both internal and functional dependencies during iteration
-                - After convergence, updates end-user dependencies
-                - Resets network IDs to account for newly created edges
-                - Invalidates cached graph data after completion
+        This method iteratively updates the functional states of network components
+        until convergence, then updates end-user dependencies. The cascade process
+        models how failures propagate through the network based on internal and
+        functional dependencies.
+        Parameters
+        ----------
+        p_source : str, optional
+            Type of source nodes (default is 'power_plant').
+        p_sink : str, optional
+            Type of sink nodes (default is 'power_line').
+        source_var : str, optional
+            Variable name for source generation (default is 'el_generation').
+        demand_var : str, optional
+            Variable name for demand consumption (default is 'el_consumption').
+        initial : bool, optional
+            If True, forces end-user dependency update even if convergence occurs
+            in first cycle (default is False).
+        friction_surf : optional
+            Friction surface data for routing calculations (default is None).
+        rerouting : bool, optional
+            If True, enables rerouting for end-user dependencies (default is True).
+        access_check_method : str, optional
+            Method to use for checking access (default is "routing").
+        Returns
+        -------
+        None
+            Updates the network in place.
+        Notes
+        -----
+        - The method iterates until functional states converge (delta = 0)
+        - Updates both internal and functional dependencies during iteration
+        - After convergence, updates end-user dependencies
+        - Resets network IDs to account for newly created edges
+        - Invalidates cached graph data after completion
         """
         delta = -1
         cycles = 0
@@ -240,8 +233,6 @@ class NetworkCalcs:
             access_check_method=access_check_method,
         )
 
-        # reset ids as new edges may have been created
-        self.network = reset_ids(self.network)
         # update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
         # Invalidate cached graph
