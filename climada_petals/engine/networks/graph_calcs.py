@@ -51,6 +51,26 @@ class GraphCalcs:
     Users can call methods in any order for maximum flexibility. For common
     workflows, see NetworkCalcs as a convenience wrapper.
 
+    Auto-Sync Feature
+    -----------------
+    By default (auto_sync=False), the underlying Network object is not automatically
+    updated when the graph is modified. Call sync() manually after batch operations:
+
+        gc = GraphCalcs(network=network)
+        gc.link_vertices_closest_k(...)
+        gc.link_vertices_edgecond(...)
+        gc.sync()  # Manual sync after multiple operations
+
+    For standalone usage with frequent manual calls, enable auto_sync=True for
+    automatic synchronization after each graph-modifying operation:
+
+        gc = GraphCalcs(network=network, auto_sync=True)
+        gc.link_vertices_closest_k(...)  # Auto-syncs internally
+        gc.calc_dependencies(...)         # Auto-syncs internally
+        # Network always in sync with graph
+
+    Auto-sync adds minimal overhead but improves usability for interactive workflows.
+
     Examples
     --------
     Direct instantiation for custom workflows:
@@ -90,7 +110,7 @@ class GraphCalcs:
         gc._check_access(row, friction_surf=None, rerouting=True)
     """
 
-    def __init__(self, network, directed=True, friction_surf=None):
+    def __init__(self, network, directed=True, friction_surf=None, auto_sync=False):
         """Create graph-calculation helper for a network
 
         Parameters
@@ -101,15 +121,25 @@ class GraphCalcs:
             Whether to build a directed igraph representation. Default is ``True``.
         friction_surf : object, optional
             Friction surface used for duration-based linking. Default is ``None``.
+        auto_sync : bool, optional
+            If ``True``, automatically synchronize the network after each graph-modifying
+            operation (linking, dependency creation, cascade updates). Useful for standalone
+            usage where the network is always kept in sync with graph changes. If ``False``,
+            manual sync() calls are required to update the network. Default is ``False``.
 
         Notes
         -----
         The graph is lazily built and cached on first access via `graph`.
+
+        When ``auto_sync=True``, each graph-modifying method will call ``sync()``
+        automatically, ensuring the network GeoDataFrames are always up-to-date with
+        graph modifications. This adds minor overhead but improves usability.
         """
         self.network = network
         self._graph = None
         self.directed = directed
         self.friction_surf = friction_surf
+        self.auto_sync = auto_sync
 
     def build_graph(self):
         """Build and cache an igraph representation of the network
@@ -137,6 +167,18 @@ class GraphCalcs:
         Use when vertices are added/removed or the graph must be rebuilt.
         """
         self._graph = None
+
+    def sync(self):
+        """Synchronize network object with current graph state
+
+        Updates the network's edges and nodes GeoDataFrames to reflect any
+        changes made to the graph. Called automatically after each graph-modifying
+        operation if ``auto_sync=True``.
+
+        Useful for standalone usage or after batch operations to ensure the
+        network reflects all graph modifications.
+        """
+        self.network = Network.from_graphs(self.graph, crs=self.network.crs)
 
     # =============================================================================
     # Making links
@@ -213,6 +255,9 @@ class GraphCalcs:
         if len(v_ids_source) > 0:
             self._edges_from_vlists(v_ids_source, v_ids_target, link_attrs)
 
+        if self.auto_sync:
+            self.sync()
+
     def link_vertices_closest_k(
         self, source_attrs, target_attrs, dist_thresh, k, link_attrs=None, bidir=False
     ):
@@ -252,6 +297,9 @@ class GraphCalcs:
                 source_attrs,
                 target_attrs,
             )
+
+        if self.auto_sync:
+            self.sync()
 
     def link_vertices_edgecond(self, target_attrs, edge_attrs, link_attrs, bidir=False):
         """Link vertices based on existing edge conditions
@@ -312,6 +360,9 @@ class GraphCalcs:
         self._edges_from_vlists(sources, targets, link_attrs)
         if bidir:
             self._edges_from_vlists(targets, sources, link_attrs)
+
+        if self.auto_sync:
+            self.sync()
 
     def link_vertices_shortest_paths(
         self,
@@ -414,6 +465,9 @@ class GraphCalcs:
                     v_ids_target.tolist(), v_ids_source.tolist(), link_attrs
                 )
 
+        if self.auto_sync:
+            self.sync()
+
     def link_vertices_friction_surf(
         self,
         source_attrs,
@@ -475,6 +529,9 @@ class GraphCalcs:
                 source_attrs["ci_type"],
                 target_attrs["ci_type"],
             )
+
+        if self.auto_sync:
+            self.sync()
 
     # =============================================================================
     # Helper funcs for making links
@@ -1068,6 +1125,9 @@ class GraphCalcs:
                 demand_var=demand_var,
             )
 
+        if self.auto_sync:
+            self.sync()
+
     def update_functional_dependencies(self, df_dependencies):
         """Update functional CI-to-CI dependencies
 
@@ -1090,6 +1150,9 @@ class GraphCalcs:
             self._propagate_check_fail(
                 row.source, row.target, row.type_I, row.thresh_func
             )
+
+        if self.auto_sync:
+            self.sync()
 
     def update_enduser_dependencies(
         self,
@@ -1134,6 +1197,9 @@ class GraphCalcs:
                 )
             else:
                 raise ValueError("Invalid access check method specified!")
+
+        if self.auto_sync:
+            self.sync()
 
     def _get_former_access_info(self, dependency_name):
         """Retrieve former access status for a dependency
@@ -1447,6 +1513,9 @@ class GraphCalcs:
                 f"actual_supply_{row.source}_{row.target}"
             ] = 0
 
+        if self.auto_sync:
+            self.sync()
+
     def _check_access(self, row, friction_surf, rerouting=True, initial=False):
         """Check and update access states for end-user dependencies
 
@@ -1488,6 +1557,9 @@ class GraphCalcs:
             ppl_access_all_via,
             ppl_new_access,
         )
+
+        if self.auto_sync:
+            self.sync()
 
     @DeprecationWarning
     def _recheck_access(

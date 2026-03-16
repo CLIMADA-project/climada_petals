@@ -2330,3 +2330,416 @@ def test_mark_access_states_and_supply(graph_calcs):
         assert "actual_supply_healthcare_people" in node.attributes()
         assert node["access_state_healthcare_people"] == "access undisrupted"
         assert node["actual_supply_healthcare_people"] == 1
+
+
+# ========================================================================
+# Auto-Sync Feature Tests
+# ========================================================================
+
+
+def test_auto_sync_disabled_by_default(graph_calcs):
+    """Test that auto_sync is disabled by default"""
+    assert graph_calcs.auto_sync is False
+
+
+def test_auto_sync_parameter_initialization(network_with_ci_types):
+    """Test that auto_sync parameter can be set during initialization"""
+    gc_manual = GraphCalcs(network=network_with_ci_types, auto_sync=False)
+    gc_auto = GraphCalcs(network=network_with_ci_types, auto_sync=True)
+
+    assert gc_manual.auto_sync is False
+    assert gc_auto.auto_sync is True
+
+
+def test_sync_method_updates_network(graph_calcs):
+    """Test that sync() method updates the network with graph changes"""
+    graph_calcs.build_graph()
+    initial_network_edges = len(graph_calcs.network.edges)
+    initial_graph_edges = graph_calcs.graph.ecount()
+
+    # Add edges to graph
+    graph_calcs.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        k=1,
+        dist_thresh=np.inf,
+        link_attrs={"ci_type": "test_link"},
+    )
+
+    # Graph should have new edges, but network not updated yet
+    graph_edges_before_sync = graph_calcs.graph.ecount()
+    network_edges_before_sync = len(graph_calcs.network.edges)
+
+    assert graph_edges_before_sync > initial_graph_edges
+    assert network_edges_before_sync == initial_network_edges  # Not synced yet
+    assert graph_edges_before_sync != network_edges_before_sync  # Different!
+
+    # Manual sync
+    graph_calcs.sync()
+
+    # Network should now be updated
+    network_edges_after_sync = len(graph_calcs.network.edges)
+    graph_edges_after_sync = graph_calcs.graph.ecount()
+
+    assert network_edges_after_sync > initial_network_edges
+    assert network_edges_after_sync == graph_edges_after_sync  # Now synced!
+
+    # Verify test_link is present in network
+    test_links = graph_calcs.network.edges[
+        graph_calcs.network.edges["ci_type"] == "test_link"
+    ]
+    assert len(test_links) > 0
+
+    # Verify counts match
+    graph_test_link_count = len(graph_calcs.graph.es.select(ci_type="test_link"))
+    assert len(test_links) == graph_test_link_count
+
+
+def test_auto_sync_link_clusters(graph_calcs_with_remote_node_missing_edge):
+    """Test auto_sync with link_clusters"""
+    graph_calcs_with_remote_node_missing_edge.build_graph()
+    initial_graph_edges = graph_calcs_with_remote_node_missing_edge.graph.ecount()
+
+    # Create instance with auto_sync=True
+    gc_auto = GraphCalcs(
+        network=graph_calcs_with_remote_node_missing_edge.network, auto_sync=True
+    )
+    gc_auto.build_graph()
+
+    # Link clusters
+    gc_auto.link_clusters(dist_thresh=np.inf, link_attrs={"ci_type": "cluster_link"})
+
+    # Verify graph and network are synchronized
+    graph_edges = gc_auto.graph.ecount()
+    network_edges = len(gc_auto.network.edges)
+
+    # Network should reflect graph state
+    assert network_edges == graph_edges
+    # Both should have no cluster links added (already connected)
+    cluster_edges = gc_auto.graph.es.select(ci_type="cluster_link")
+    assert len(cluster_edges) == network_edges - initial_graph_edges
+
+
+def test_auto_sync_link_vertices_closest_k(graph_calcs):
+    """Test auto_sync with link_vertices_closest_k"""
+    gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
+    gc_auto.build_graph()
+    initial_graph_edges = gc_auto.graph.ecount()
+
+    # Link vertices
+    gc_auto.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        k=1,
+        dist_thresh=np.inf,
+        link_attrs={"ci_type": "test_link"},
+    )
+
+    # Network should be automatically synchronized
+    # Count edges in both graph and network
+    graph_edges = gc_auto.graph.ecount()
+    network_edges = len(gc_auto.network.edges)
+
+    # Verify sync: network should match graph
+    assert network_edges == graph_edges
+    # Verify new edges were added
+    assert graph_edges > initial_graph_edges
+    # Verify link is in network
+    test_links = gc_auto.network.edges[gc_auto.network.edges["ci_type"] == "test_link"]
+    assert len(test_links) > 0
+    # Verify all test_link edges are present in both
+    test_link_count = len(gc_auto.graph.es.select(ci_type="test_link"))
+    assert len(test_links) == test_link_count
+
+
+def test_auto_sync_link_vertices_edgecond(graph_calcs):
+    """Test auto_sync with link_vertices_edgecond"""
+    gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
+    gc_auto.build_graph()
+
+    # Link vertices by edge condition
+    gc_auto.link_vertices_edgecond(
+        target_attrs={"ci_type": "healthcare"},
+        edge_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "test_edgecond_link"},
+    )
+
+    # Verify graph and network are synchronized
+    graph_edges = gc_auto.graph.ecount()
+    network_edges = len(gc_auto.network.edges)
+    assert network_edges == graph_edges
+
+    # Verify new edges were actually added
+    edgecond_links = gc_auto.network.edges[
+        gc_auto.network.edges["ci_type"] == "test_edgecond_link"
+    ]
+    assert len(edgecond_links) > 0
+
+    # Verify all edgecond links in graph are in network
+    graph_edgecond_count = len(gc_auto.graph.es.select(ci_type="test_edgecond_link"))
+    assert len(edgecond_links) == graph_edgecond_count
+
+
+def test_auto_sync_link_vertices_shortest_paths(graph_calcs):
+    """Test auto_sync with link_vertices_shortest_paths"""
+    gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
+    gc_auto.build_graph()
+
+    # Link vertices via shortest paths
+    gc_auto.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "test_shortest_path"},
+        dist_thresh=np.inf,
+        k=1,
+        bidir=False,
+    )
+
+    # Verify graph and network are synchronized
+    graph_edges = gc_auto.graph.ecount()
+    network_edges = len(gc_auto.network.edges)
+    assert network_edges == graph_edges
+
+    # Verify new edges were added
+    shortest_path_edges = gc_auto.network.edges[
+        gc_auto.network.edges["ci_type"] == "test_shortest_path"
+    ]
+    assert len(shortest_path_edges) > 0
+
+    # Verify count matches between graph and network
+    graph_sp_count = len(gc_auto.graph.es.select(ci_type="test_shortest_path"))
+    assert len(shortest_path_edges) == graph_sp_count
+
+
+def test_auto_sync_calc_dependencies(graph_calcs):
+    """Test auto_sync with calc_dependencies"""
+    gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
+    gc_auto.network.initialize_funcstates()
+    gc_auto.build_graph()
+    initial_graph_edges = gc_auto.graph.ecount()
+
+    # Create dependencies between road and people via road
+    gc_auto.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dependency_road_people"},
+        link_condition="distance",
+        dist_thresh=np.inf,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+
+    # Verify graph and network are synchronized
+    graph_edges = gc_auto.graph.ecount()
+    network_edges = len(gc_auto.network.edges)
+    assert network_edges == graph_edges
+
+    # Check that graph has dependency edges
+    dep_edges = gc_auto.graph.es.select(ci_type="dependency_road_people")
+    assert len(dep_edges) > 0
+
+    # Verify network has same dependency edges
+    network_dep_edges = gc_auto.network.edges[
+        gc_auto.network.edges["ci_type"] == "dependency_road_people"
+    ]
+    assert len(network_dep_edges) == len(dep_edges)
+
+
+def test_auto_sync_update_functional_dependencies(graph_calcs, dependency_table):
+    """Test auto_sync with update_functional_dependencies"""
+    gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
+    gc_auto.network.initialize_funcstates()
+    gc_auto.build_graph()
+
+    # Set up initial state with capacity attributes
+    for v in gc_auto.graph.vs:
+        for target_type in gc_auto.graph.vs["ci_type"]:
+            v[f"capacity_{v['ci_type']}_{target_type}"] = 1.0
+
+    # Set up initial state
+    dep_df = dependency_table[dependency_table["type_I"] == "functional"]
+
+    # Get initial functional state
+    initial_graph_edges = gc_auto.graph.ecount()
+    initial_network_edges = len(gc_auto.network.edges)
+
+    # Update functional dependencies
+    gc_auto.update_functional_dependencies(dep_df)
+
+    # Verify graph and network are synchronized
+    final_graph_edges = gc_auto.graph.ecount()
+    final_network_edges = len(gc_auto.network.edges)
+    assert final_network_edges == final_graph_edges
+
+    # Verify both graph and network have same edges after sync
+    assert (
+        initial_graph_edges == final_graph_edges
+    )  # No new edges added by functional update
+    assert initial_network_edges == final_network_edges
+
+    # Check that network was synced (funcstates should be valid)
+    final_func_sum = gc_auto.funcstates_sum()[0]
+    assert isinstance(final_func_sum, (int, float))
+    assert final_func_sum >= 0  # Functional state should be non-negative
+
+
+def test_auto_sync_update_enduser_dependencies_routing(
+    graph_calcs_with_source_fail, dependency_table
+):
+    """Test auto_sync with update_enduser_dependencies using routing"""
+    gc_auto = GraphCalcs(network=graph_calcs_with_source_fail.network, auto_sync=True)
+    gc_auto.network.initialize_funcstates()
+    gc_auto.build_graph()
+
+    # Create initial dependencies
+    gc_auto.calc_dependencies(
+        source_attrs={"ci_type": "healthcare", "func_tot": 1},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dependency_healthcare_people"},
+        link_condition="edgecond",
+        dist_thresh=np.inf,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+
+    # Get enduser dependencies
+    dep_df = dependency_table[dependency_table["type_I"] == "enduser"]
+
+    # Update with routing
+    gc_auto.update_enduser_dependencies(
+        dep_df, friction_surf=None, access_check_method="routing", rerouting=True
+    )
+
+    # Verify graph and network are synchronized
+    graph_edges = gc_auto.graph.ecount()
+    network_edges = len(gc_auto.network.edges)
+    assert network_edges == graph_edges
+    assert network_edges > 0
+
+    # Verify people nodes have access state attributes
+    people_nodes = gc_auto.graph.vs.select(ci_type="people")
+    assert len(people_nodes) > 0
+    for node in people_nodes:
+        # Should have access state attributes for dependencies
+        assert "func_tot" in node.attributes()
+        assert node["func_tot"] >= 0
+
+
+def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types):
+    """Test that auto_sync and manual sync produce the same results"""
+    from copy import deepcopy
+
+    # Manual sync version
+    network_manual = deepcopy(network_with_ci_types)
+    gc_manual = GraphCalcs(network=network_manual, auto_sync=False)
+    gc_manual.build_graph()
+    gc_manual.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        k=1,
+        dist_thresh=np.inf,
+        link_attrs={"ci_type": "test_link"},
+    )
+    gc_manual.sync()
+
+    # Auto sync version
+    network_auto = deepcopy(network_with_ci_types)
+    gc_auto = GraphCalcs(network=network_auto, auto_sync=True)
+    gc_auto.build_graph()
+    gc_auto.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        k=1,
+        dist_thresh=np.inf,
+        link_attrs={"ci_type": "test_link"},
+    )
+
+    # Both should have same number of edges
+    assert len(gc_manual.network.edges) == len(gc_auto.network.edges)
+    assert gc_manual.graph.ecount() == gc_auto.graph.ecount()
+
+    # Both should have the same edge types
+    manual_types = set(gc_manual.network.edges["ci_type"].values)
+    auto_types = set(gc_auto.network.edges["ci_type"].values)
+    assert manual_types == auto_types
+
+    # Both should have same test_link count
+    manual_test_links = len(
+        gc_manual.network.edges[gc_manual.network.edges["ci_type"] == "test_link"]
+    )
+    auto_test_links = len(
+        gc_auto.network.edges[gc_auto.network.edges["ci_type"] == "test_link"]
+    )
+    assert manual_test_links == auto_test_links
+    assert manual_test_links > 0
+
+    # Verify connectivity is identical
+    for test_link in gc_manual.graph.es.select(ci_type="test_link"):
+        source_idx = test_link.source
+        target_idx = test_link.target
+        source_id = gc_manual.graph.vs[source_idx]["orig_id"]
+        target_id = gc_manual.graph.vs[target_idx]["orig_id"]
+
+        # Find same link in auto version
+        auto_source = gc_auto.graph.vs.select(orig_id=source_id)[0].index
+        auto_target = gc_auto.graph.vs.select(orig_id=target_id)[0].index
+
+        # Should have equivalent edge
+        edge_exists = False
+        for edge in gc_auto.graph.es.select(ci_type="test_link"):
+            if edge.source == auto_source and edge.target == auto_target:
+                edge_exists = True
+                break
+        assert edge_exists
+
+
+def test_no_auto_sync_without_explicit_call(graph_calcs):
+    """Test that without auto_sync, manual sync is required"""
+    gc_manual = GraphCalcs(network=graph_calcs.network, auto_sync=False)
+    gc_manual.build_graph()
+    initial_edges = len(gc_manual.network.edges)
+    initial_graph_edges = gc_manual.graph.ecount()
+
+    # Add edges to graph
+    gc_manual.link_vertices_closest_k(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        k=1,
+        dist_thresh=np.inf,
+        link_attrs={"ci_type": "test_link"},
+    )
+
+    # Graph has new edges, but network hasn't been updated yet
+    graph_edges_after = gc_manual.graph.ecount()
+    network_edges_after = len(gc_manual.network.edges)
+
+    assert graph_edges_after > initial_graph_edges
+    assert network_edges_after == initial_edges  # Network still unchanged
+
+    # Verify test_link exists in graph but not in network
+    graph_test_links = gc_manual.graph.es.select(ci_type="test_link")
+    assert len(graph_test_links) > 0
+    network_test_links = gc_manual.network.edges[
+        gc_manual.network.edges["ci_type"] == "test_link"
+    ]
+    assert len(network_test_links) == 0  # Not synced yet
+
+    # Now manually sync
+    gc_manual.sync()
+
+    # Network should now be updated
+    final_network_edges = len(gc_manual.network.edges)
+    final_graph_edges = gc_manual.graph.ecount()
+    assert final_network_edges > initial_edges
+    assert final_network_edges == final_graph_edges  # Now synced
+
+    # Verify test_link is now in network
+    network_test_links_after = gc_manual.network.edges[
+        gc_manual.network.edges["ci_type"] == "test_link"
+    ]
+    assert len(network_test_links_after) == len(graph_test_links)
