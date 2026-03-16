@@ -294,21 +294,21 @@ def network_with_source_fail(network_with_remote_node):
 def graph_calcs(network_with_ci_types):
     """Create GraphCalcs instance with test network"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_ci_types})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_ci_types, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_source_fail(network_with_source_fail):
     """Create GraphCalcs instance with test network containing CI failures"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_source_fail})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_source_fail, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_edge_ci_fail(network_with_edge_fail):
     """Create GraphCalcs instance with test network containing edge CI failures"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_edge_fail})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_edge_fail, directed=True)
 
 
 @pytest.fixture
@@ -317,14 +317,14 @@ def graph_calcs_with_remote_node_missing_edge(network_with_remote_node_missing_e
     nw_calcs_mock = type(
         "obj", (object,), {"network": network_with_remote_node_missing_edge}
     )()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_remote_node_missing_edge, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_remote_node(network_with_remote_node):
     """Create GraphCalcs instance with test network containing remote node"""
     nw_calcs_mock = type("obj", (object,), {"network": network_with_remote_node})()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_with_remote_node, directed=True)
 
 
 # ========================================================================
@@ -351,6 +351,37 @@ def dependency_table():
             "n_links": [1, 1, 1],
         }
     )
+
+
+@pytest.fixture
+def physical_dependencies():
+    """Create a simple dependency table with only physical dependencies"""
+    return pd.DataFrame(
+        {
+            "source": ["road", "healthcare"],
+            "target": ["people", "people"],
+            "link": ["road", "healthcare"],
+            "thresh_dist": [5e6, 10e6],
+            "bidir_link": [False, False],
+            "n_links": [1, 1],
+        }
+    )
+
+
+@pytest.fixture
+def expected_physical_links():
+    """Expected physical links added by ``add_physical_links``.
+
+    For the default toy network and ``n_links=1``:
+    - road -> people links connect road node 1 to people node 0
+    - healthcare -> people links connect healthcare node 4 to people node 0
+    ``add_physical_links`` adds links bidirectionally.
+    """
+    return {
+        "added_edge_count": 4,
+        "road_pairs": {(1, 0), (0, 1)},
+        "healthcare_pairs": {(4, 0), (0, 4)},
+    }
 
 
 @pytest.fixture
@@ -476,4 +507,4 @@ def graph_calcs_projected_disconnected(network_projected_disconnected):
     nw_calcs_mock = type(
         "obj", (object,), {"network": network_projected_disconnected}
     )()
-    return GraphCalcs(network_calc=nw_calcs_mock, directed=True)
+    return GraphCalcs(network=network_projected_disconnected, directed=True)

@@ -39,19 +39,33 @@ from climada.util.constants import ONE_LAT_KM
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel("INFO")
 
-# constants
-PHYSICAL_SOURCES = ["road", "rail"]
-
 
 class NetworkCalcs:
-    """Wrapper for network preparation and cascade execution"""
+    """Wrapper for network preparation and cascade execution
+
+    High-level convenience wrapper for common CI network workflows.
+    Uses GraphCalcs internally for all graph operations. For advanced users
+    seeking flexibility, GraphCalcs can be used directly to compose custom
+    cascades and dependency setups.
+    """
 
     def __init__(self, network, dep_table, friction_surf=None, directed=True):
-        self.network = network
+        self._network = network
         self.dep_table = dep_table
         self._graph_calc = GraphCalcs(
-            network_calc=self, directed=directed, friction_surf=friction_surf
+            network=network, directed=directed, friction_surf=friction_surf
         )
+
+    @property
+    def network(self):
+        """Access the current network"""
+        return self._network
+
+    @network.setter
+    def network(self, new_network):
+        """Keep graph_calc in sync whenever network is updated"""
+        self._network = new_network
+        self._graph_calc.network = new_network
 
     @property
     def graph(self):
@@ -91,19 +105,17 @@ class NetworkCalcs:
         n_clusters = len(self.graph.connected_components())
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
 
-    def add_physical_links(self):
+    def add_physical_links(self, physical_dependencies):
         """Add physical links based on dependency table"""
 
         # create "missing physical structures" - needed for real world flows
         # syntax: each target is connected to max k sources given constraints
-        physical_dependencies = self.dep_table.loc[
-            (self.dep_table["source"].isin(PHYSICAL_SOURCES))
-        ]
+
         for i, row in physical_dependencies.iterrows():
             self._graph_calc.link_vertices_closest_k(
                 source_attrs={"ci_type": row["source"]},
                 target_attrs={"ci_type": row["target"]},
-                link_attrs={"ci_type": row["source"]},
+                link_attrs={"ci_type": row["link"]},
                 dist_thresh=row["thresh_dist"],
                 bidir=True,
                 k=row["n_links"],
@@ -142,18 +154,7 @@ class NetworkCalcs:
                 k=row["n_links"],
                 bidir_link=row["bidir_link"],
             )
-        # initialize base access and supply for enduser dependencies
-        enduser_rows = self.dep_table[self.dep_table["type_I"] == "enduser"]
-        for __, row in enduser_rows.iterrows():
-            dependency_name = f'dependency_{row["source"]}_{row["target"]}'
-            dep_edges = self.graph.es.select(ci_type=dependency_name)
-            if len(dep_edges) == 0:
-                continue
-            targets = [edge.target for edge in dep_edges]
-            self.graph.vs[targets][
-                f"access_state_{row.source}_{row.target}"
-            ] = "access undisrupted"
-            self.graph.vs[targets][f"actual_supply_{row.source}_{row.target}"] = 1
+
         # reset ids as new edges have been created
         self.network = reset_ids(self.network)
         # update network
