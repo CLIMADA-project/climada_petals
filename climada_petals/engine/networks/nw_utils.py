@@ -959,6 +959,127 @@ def get_graphstats(graph):
     return stats_dict
 
 
+def get_tot_pop(network):
+    """Get total population in network"""
+    pop_nodes = network.nodes[network.nodes["ci_type"] == "people"]
+    tot_pop = pop_nodes["value"].sum()
+    return tot_pop
+
+
+def _get_access_loss_mask(network, ci_type):
+    """Return boolean mask of people who lost access to a CI type"""
+    access_col = f"access_state_{ci_type}_people"
+    # Return boolean mask, NOT a count
+    access_loss = network.nodes[access_col].isin(
+        ["access disrupted", "access disrupted source", "access disrupted via"]
+    )
+    return access_loss
+
+
+def _get_no_base_access_mask(network, ci_type):
+    """Return boolean mask of people with no base access to a CI type"""
+    access_col = f"access_state_{ci_type}_people"
+    no_base_access = network.nodes[access_col] == "no base access"
+    return no_base_access
+
+
+def _get_access_undisrupted_mask(network, ci_type):
+    """Return boolean mask of people with undisrupted access to a CI type"""
+    access_col = f"access_state_{ci_type}_people"
+    access_undisrupted = network.nodes[access_col] == "access undisrupted"
+    return access_undisrupted
+
+
+def _get_dir_affected_mask(network):
+    """Return boolean mask of people directly affected by direct impacts"""
+    dir_affected_mask = (network.nodes["ci_type"] == "people") & (
+        network.nodes["imp_dir"] > 0
+    )
+    return dir_affected_mask
+
+
+def make_network_stat(network, ci_types=None):
+    """
+    Compute network impact statistics.
+
+    Parameters
+    ----------
+    network : Network
+        Network object with nodes and edges
+    ci_types : list, optional
+        List of CI types to analyze (excludes 'people'). If None, auto-detected.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+            - 'total_population': total pop in network
+            - 'directly_affected': population directly impacted (imp_dir > 0)
+            - 'indirectly_affected': population losing access to any CI
+            - 'total_affected': directly + indirectly affected
+            - For each ci_type:
+                - f'{ci_type}_access_loss': pop losing access
+                - f'{ci_type}_no_base_access': pop with no base access initially
+                - f'{ci_type}_access_undisrupted': pop maintaining access
+    """
+    if ci_types is None:
+        ci_types = [ct for ct in network.nodes["ci_type"].unique() if ct != "people"]
+
+    pop_mask = network.nodes["ci_type"] == "people"
+    tot_pop = get_tot_pop(network)
+
+    # Directly affected: people with direct impacts
+    dir_affected_mask = _get_dir_affected_mask(network)
+    directly_affected_pop = network.nodes.loc[dir_affected_mask, "value"].sum()
+
+    # Build stats for each CI type
+    stats = {
+        "total_population": tot_pop,
+        "directly_affected": directly_affected_pop,
+    }
+
+    # Combine all access loss masks to identify indirectly affected
+    # Indirectly affected = people losing access to ANY ci_type
+    all_access_loss_masks = []
+
+    for ci_type in ci_types:
+        # Get boolean masks
+        access_loss_mask = _get_access_loss_mask(network, ci_type)
+        no_base_access_mask = _get_no_base_access_mask(network, ci_type)
+        access_undisrupted_mask = _get_access_undisrupted_mask(network, ci_type)
+
+        # Compute populations for this CI type
+        stats[f"{ci_type}_access_loss"] = network.nodes.loc[
+            pop_mask & access_loss_mask, "value"
+        ].sum()
+        stats[f"{ci_type}_no_base_access"] = network.nodes.loc[
+            pop_mask & no_base_access_mask, "value"
+        ].sum()
+        stats[f"{ci_type}_access_undisrupted"] = network.nodes.loc[
+            pop_mask & access_undisrupted_mask, "value"
+        ].sum()
+
+        # Accumulate masks for indirect impact calculation
+        all_access_loss_masks.append(access_loss_mask)
+
+    # Indirectly affected: people losing access to ANY CI type
+    # Combine all access loss masks with OR logic
+    if all_access_loss_masks:
+        indir_affected_mask = all_access_loss_masks[0].copy()
+        for mask in all_access_loss_masks[1:]:
+            indir_affected_mask = indir_affected_mask | mask
+        indirectly_affected_pop = network.nodes.loc[
+            pop_mask & indir_affected_mask, "value"
+        ].sum()
+    else:
+        indirectly_affected_pop = 0
+
+    stats["indirectly_affected"] = indirectly_affected_pop
+    stats["total_affected"] = directly_affected_pop + indirectly_affected_pop
+
+    return stats
+
+
 # =============================================================================
 # Worldpop Data
 # =============================================================================
