@@ -28,7 +28,6 @@ import scipy
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.graph_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
-from climada_petals.engine.networks.nw_preps import reset_ids
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -39,19 +38,33 @@ from climada.util.constants import ONE_LAT_KM
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel("INFO")
 
-# constants
-PHYSICAL_SOURCES = ["road", "rail"]
-
 
 class NetworkCalcs:
-    """Wrapper for network preparation and cascade execution"""
+    """Wrapper for network preparation and cascade execution
+
+    High-level convenience wrapper for common CI network workflows.
+    Uses GraphCalcs internally for all graph operations. For advanced users
+    seeking flexibility, GraphCalcs can be used directly to compose custom
+    cascades and dependency setups.
+    """
 
     def __init__(self, network, dep_table, friction_surf=None, directed=True):
-        self.network = network
+        self._network = network
         self.dep_table = dep_table
         self._graph_calc = GraphCalcs(
-            network_calc=self, directed=directed, friction_surf=friction_surf
+            network=network, directed=directed, friction_surf=friction_surf
         )
+
+    @property
+    def network(self):
+        """Access the current network"""
+        return self._network
+
+    @network.setter
+    def network(self, new_network):
+        """Keep graph_calc in sync whenever network is updated"""
+        self._network = new_network
+        self._graph_calc.network = new_network
 
     @property
     def graph(self):
@@ -86,24 +99,21 @@ class NetworkCalcs:
             )
             iter_count += 1
             self.network = Network.from_graphs(self.graph, crs=self.network.crs)
-            self.network = reset_ids(self.network)
             self._graph_calc.full_reset()
         n_clusters = len(self.graph.connected_components())
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
 
-    def add_physical_links(self):
+    def add_physical_links(self, physical_dependencies):
         """Add physical links based on dependency table"""
 
         # create "missing physical structures" - needed for real world flows
         # syntax: each target is connected to max k sources given constraints
-        physical_dependencies = self.dep_table.loc[
-            (self.dep_table["source"].isin(PHYSICAL_SOURCES))
-        ]
+
         for i, row in physical_dependencies.iterrows():
             self._graph_calc.link_vertices_closest_k(
                 source_attrs={"ci_type": row["source"]},
                 target_attrs={"ci_type": row["target"]},
-                link_attrs={"ci_type": row["source"]},
+                link_attrs={"ci_type": row["link"]},
                 dist_thresh=row["thresh_dist"],
                 bidir=True,
                 k=row["n_links"],
@@ -111,9 +121,6 @@ class NetworkCalcs:
 
         ##update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
-
-        ##need to have all ids reset after new road edges have been added
-        self.network = reset_ids(self.network)
 
         # Invalidate cached graph
         self._graph_calc.full_reset()
@@ -142,20 +149,7 @@ class NetworkCalcs:
                 k=row["n_links"],
                 bidir_link=row["bidir_link"],
             )
-        # initialize base access and supply for enduser dependencies
-        enduser_rows = self.dep_table[self.dep_table["type_I"] == "enduser"]
-        for __, row in enduser_rows.iterrows():
-            dependency_name = f'dependency_{row["source"]}_{row["target"]}'
-            dep_edges = self.graph.es.select(ci_type=dependency_name)
-            if len(dep_edges) == 0:
-                continue
-            targets = [edge.target for edge in dep_edges]
-            self.graph.vs[targets][
-                f"access_state_{row.source}_{row.target}"
-            ] = "access undisrupted"
-            self.graph.vs[targets][f"actual_supply_{row.source}_{row.target}"] = 1
-        # reset ids as new edges have been created
-        self.network = reset_ids(self.network)
+
         # update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
         # Invalidate cached graph
@@ -174,40 +168,40 @@ class NetworkCalcs:
     ):
         """
         Perform cascade failure analysis on the network.
-                This method iteratively updates the functional states of network components
-                until convergence, then updates end-user dependencies. The cascade process
-                models how failures propagate through the network based on internal and
-                functional dependencies.
-                Parameters
-                ----------
-                p_source : str, optional
-                    Type of source nodes (default is 'power_plant').
-                p_sink : str, optional
-                    Type of sink nodes (default is 'power_line').
-                source_var : str, optional
-                    Variable name for source generation (default is 'el_generation').
-                demand_var : str, optional
-                    Variable name for demand consumption (default is 'el_consumption').
-                initial : bool, optional
-                    If True, forces end-user dependency update even if convergence occurs
-                    in first cycle (default is False).
-                friction_surf : optional
-                    Friction surface data for routing calculations (default is None).
-                rerouting : bool, optional
-                    If True, enables rerouting for end-user dependencies (default is True).
-                access_check_method : str, optional
-                    Method to use for checking access (default is "routing").
-                Returns
-                -------
-                None
-                    Updates the network in place.
-                Notes
-                -----
-                - The method iterates until functional states converge (delta = 0)
-                - Updates both internal and functional dependencies during iteration
-                - After convergence, updates end-user dependencies
-                - Resets network IDs to account for newly created edges
-                - Invalidates cached graph data after completion
+        This method iteratively updates the functional states of network components
+        until convergence, then updates end-user dependencies. The cascade process
+        models how failures propagate through the network based on internal and
+        functional dependencies.
+        Parameters
+        ----------
+        p_source : str, optional
+            Type of source nodes (default is 'power_plant').
+        p_sink : str, optional
+            Type of sink nodes (default is 'power_line').
+        source_var : str, optional
+            Variable name for source generation (default is 'el_generation').
+        demand_var : str, optional
+            Variable name for demand consumption (default is 'el_consumption').
+        initial : bool, optional
+            If True, forces end-user dependency update even if convergence occurs
+            in first cycle (default is False).
+        friction_surf : optional
+            Friction surface data for routing calculations (default is None).
+        rerouting : bool, optional
+            If True, enables rerouting for end-user dependencies (default is True).
+        access_check_method : str, optional
+            Method to use for checking access (default is "routing").
+        Returns
+        -------
+        None
+            Updates the network in place.
+        Notes
+        -----
+        - The method iterates until functional states converge (delta = 0)
+        - Updates both internal and functional dependencies during iteration
+        - After convergence, updates end-user dependencies
+        - Resets network IDs to account for newly created edges
+        - Invalidates cached graph data after completion
         """
         delta = -1
         cycles = 0
@@ -239,8 +233,6 @@ class NetworkCalcs:
             access_check_method=access_check_method,
         )
 
-        # reset ids as new edges may have been created
-        self.network = reset_ids(self.network)
         # update network
         self.network = Network.from_graphs(self.graph, crs=self.network.crs)
         # Invalidate cached graph
