@@ -853,6 +853,68 @@ def test_link_vertices_shortest_paths_k_exceeds_sources(
     assert len(new_edges) == 2  # capped at the 2 available healthcare nodes
 
 
+def test_prefilter_geo_filters_far_targets(graph_calcs_with_remote_node):
+    """Prefilter keeps only targets within geographic threshold of any source."""
+    graph_calcs_with_remote_node.build_graph()
+
+    df_vs = graph_calcs_with_remote_node.graph.get_vertex_dataframe()
+    df_vs_source = GraphCalcs._filter_vertices(df_vs, {"ci_type": "road"})
+    df_vs_target = GraphCalcs._filter_vertices(df_vs, {"ci_type": "healthcare"})
+
+    # 1e6 m ~= 9 degrees. Near healthcare node (id=4) should be kept,
+    # remote healthcare node (id=5) should be filtered out.
+    source_indices, target_indices, geo_dists_filtered = (
+        graph_calcs_with_remote_node._prefilter_geo(
+            df_vs_source, df_vs_target, dist_thresh=1e6
+        )
+    )
+
+    np.testing.assert_array_equal(np.sort(source_indices), np.array([1, 2, 3]))
+    np.testing.assert_array_equal(target_indices, np.array([4]))
+    assert 5 not in target_indices
+    assert geo_dists_filtered.shape == (len(df_vs_source), 1)
+
+
+def test_link_vertices_shortest_paths_with_prefilter_geo_enabled(
+    graph_calcs_with_remote_node,
+):
+    """Test link_vertices_shortest_paths with geographic prefiltering enabled.
+
+    With prefilter_geo=True and dist_thresh=1e6, the remote healthcare node
+    (id=5) should be filtered out before computing shortest paths, resulting
+    in links only to the near healthcare node (id=4).
+    """
+    graph_calcs_with_remote_node.build_graph()
+    initial_edge_count = graph_calcs_with_remote_node.graph.ecount()
+
+    graph_calcs_with_remote_node.link_vertices_shortest_paths(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "sp_health_people_filter"},
+        dist_thresh=1e6,  # excludes remote healthcare (~7.3M m away)
+        criterion="distance",
+        k=1,
+        bidir=False,
+        prefilter_geo=True,  # explicitly enable prefiltering
+    )
+
+    new_edges = [
+        e
+        for e in graph_calcs_with_remote_node.graph.es
+        if e["ci_type"] == "sp_health_people_filter"
+    ]
+    # Should link only to the near healthcare node (id=4)
+    assert len(new_edges) == 1
+    assert new_edges[0]["distance"] < 1e6
+    # Verify the target is people (0) and source is near healthcare (4)
+    source_id = new_edges[0].source
+    target_id = new_edges[0].target
+    assert graph_calcs_with_remote_node.graph.vs[target_id]["ci_type"] == "people"
+    assert graph_calcs_with_remote_node.graph.vs[source_id]["ci_type"] == "healthcare"
+    assert source_id == 4  # near healthcare, not 5 (remote)
+
+
 def test_link_vertices_shortest_paths_empty_source(graph_calcs):
     """No edges created when source filter matches no vertices."""
     graph_calcs.build_graph()
