@@ -22,9 +22,8 @@ import pandas as pd
 import geopandas as gpd
 import pyproj
 
-
 import scipy
-
+from scipy.spatial.distance import cdist
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
 from climada_petals.engine.networks.nw_preps import reset_ids
@@ -364,6 +363,61 @@ class GraphCalcs:
         if self.auto_sync:
             self.sync()
 
+    def _prefilter_geo(self, df_vs_source, df_vs_target, dist_thresh):
+        """Prefilter target vertices by geographic distance to sources
+
+        Returns tuple of (source_indices, target_indices, geo_dists) where targets are
+        filtered to only those within geographic distance threshold of at least
+        one source. Sources are returned unfiltered. geo_dists is the full pairwise
+        geographic distance matrix (sources x targets) for later filtering.
+        """
+        # Extract coordinates (in degrees for geographic CRS)
+        source_geoms = df_vs_source.geometry.values
+        target_geoms = df_vs_target.geometry.values
+        source_coords = np.array([[g.x, g.y] for g in source_geoms])
+        target_coords = np.array([[g.x, g.y] for g in target_geoms])
+
+        # Convert distance threshold from meters to degrees (~111km per degree)
+        dist_thresh_deg = dist_thresh / 111000
+
+        # Compute pairwise geographic distances (fast, no network computation)
+        # Shape: (# sources, # targets)
+        geo_dists = cdist(source_coords, target_coords, metric="euclidean")
+
+        # Keep only targets that are within threshold of at least one source
+        # axis=0 means "for each target (column), check if ANY source (row) is close"
+        target_valid_mask = np.any(geo_dists <= dist_thresh_deg, axis=0)
+        valid_target_indices = np.where(target_valid_mask)[0]
+
+        if len(valid_target_indices) > 0:
+            # Reduce target set based on geographic filter
+            # Important: target_indices must be in the same order as the filtered targets
+            target_indices = df_vs_target.index.values[valid_target_indices]
+            source_indices = df_vs_source.index.values
+
+            # Return filtered geo_dists: only columns for valid targets
+            geo_dists_filtered = geo_dists[:, valid_target_indices]
+
+            LOGGER.info(
+                "Geographic pre-filter: %d/%d targets within %.0fm threshold of sources",
+                len(valid_target_indices),
+                len(df_vs_target),
+                dist_thresh,
+            )
+        else:
+            # No targets within threshold, skip this dependency
+            source_indices = np.array([], dtype=int)
+            target_indices = np.array([], dtype=int)
+            geo_dists_filtered = np.array([])
+
+            LOGGER.info(
+                "Geographic pre-filter: 0/%d targets within %.0fm threshold of sources",
+                len(df_vs_target),
+                dist_thresh,
+            )
+
+        return source_indices, target_indices, geo_dists_filtered
+
     def link_vertices_shortest_paths(
         self,
         source_attrs,
@@ -374,6 +428,7 @@ class GraphCalcs:
         k,
         criterion="distance",
         bidir=False,
+        prefilter_geo=True,
     ):
         """Link targets to sources via shortest paths
 
@@ -398,6 +453,8 @@ class GraphCalcs:
             Edge weight attribute used for shortest paths. Default is ``"distance"``.
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
+        prefilter_geo : bool, optional
+            If ``True``, apply geographic pre-filtering to reduce computation time. Default is ``True``.
         """
 
         # subgraph containing only "allowed" elements
@@ -424,28 +481,56 @@ class GraphCalcs:
         df_vs_target = GraphCalcs._filter_vertices(df_vs, target_attrs)
         df_vs_source = GraphCalcs._filter_vertices(df_vs, source_attrs)
 
+        # Geographic pre-filtering: if geometries exist, filter sources by bounding box
+        # to reduce distance matrix size before expensive igraph computation
+        if (
+            "geometry" in df_vs.columns
+            and not df_vs_target.empty
+            and not df_vs_source.empty
+            and dist_thresh < np.inf
+            and prefilter_geo
+        ):
+
+            source_indices, target_indices, geo_dists_filtered = self._prefilter_geo(
+                df_vs_source, df_vs_target, dist_thresh
+            )
+        else:
+            source_indices = df_vs_source.index.values
+            target_indices = df_vs_target.index.values
+
+        if len(source_indices) == 0 or len(target_indices) == 0:
+            LOGGER.info("No source-target pairs after filtering; no links created.")
+            return
+
         path_dists = subgraph.distances(
-            source=df_vs_source.index.values,
-            target=df_vs_target.index.values,
+            source=source_indices,
+            target=target_indices,
             weights=criterion,
             mode="all",
         )
-        path_dists = np.array(path_dists)  # dim: (#sources, #targets)
+        path_dists = np.array(path_dists)  # dim: (#filtered_sources, #targets)
 
         if len(path_dists) > 0:
-            # Select up to k closest sources per target within dist_thresh
-            sorted_indices = np.argsort(path_dists, axis=0)[:k, :]
+            # Use argpartition for O(n) partial sort instead of O(n log n) full sort
+            # Only partition to find top-k, don't sort the full array
+            k_actual = min(k, path_dists.shape[0])
+            partition_indices = np.argpartition(path_dists, k_actual - 1, axis=0)[
+                :k_actual, :
+            ]
+
+            # Get the actual distances for the k closest sources per target
             k_shortest_dists = path_dists[
-                sorted_indices, np.arange(path_dists.shape[1])
+                partition_indices, np.arange(path_dists.shape[1])
             ]
             valid_mask = k_shortest_dists <= dist_thresh
 
             ix_k, ix_target = np.where(valid_mask)
-            ix_source = sorted_indices[ix_k, ix_target]
+            ix_source = partition_indices[ix_k, ix_target]
 
-            # Vectorized re-mapping using numpy arrays instead of list comprehension
-            source_subgraph_ids = df_vs_source.index.values[ix_source]
-            target_subgraph_ids = df_vs_target.index.values[ix_target]
+            # Map filtered source indices back to subgraph indices
+            # ix_source indexes into source_indices array
+            source_subgraph_ids = source_indices[ix_source]
+            target_subgraph_ids = target_indices[ix_target]
 
             v_ids_source = np.array(
                 [subgraph_graph_vsdict[int(sid)] for sid in source_subgraph_ids]
