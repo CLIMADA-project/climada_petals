@@ -377,16 +377,13 @@ class GraphCalcs:
         source_coords = np.array([[g.x, g.y] for g in source_geoms])
         target_coords = np.array([[g.x, g.y] for g in target_geoms])
 
-        # Convert distance threshold from meters to degrees (~111km per degree)
-        dist_thresh_deg = dist_thresh / 111000
-
         # Compute pairwise geographic distances (fast, no network computation)
         # Shape: (# sources, # targets)
         geo_dists = cdist(source_coords, target_coords, metric="euclidean")
 
         # Keep only targets that are within threshold of at least one source
         # axis=0 means "for each target (column), check if ANY source (row) is close"
-        target_valid_mask = np.any(geo_dists <= dist_thresh_deg, axis=0)
+        target_valid_mask = np.any(geo_dists <= dist_thresh, axis=0)
         valid_target_indices = np.where(target_valid_mask)[0]
 
         if len(valid_target_indices) > 0:
@@ -481,6 +478,15 @@ class GraphCalcs:
         df_vs_target = GraphCalcs._filter_vertices(df_vs, target_attrs)
         df_vs_source = GraphCalcs._filter_vertices(df_vs, source_attrs)
 
+        if self.network.crs.is_geographic:
+            dist_thresh_geo = dist_thresh / (ONE_LAT_KM * 1000)
+            LOGGER.info(
+                "Network is in geographic CRS; automatically converting distance threshold to degrees: %f",
+                dist_thresh_geo,
+            )
+        else:
+            dist_thresh_geo = dist_thresh
+
         # Geographic pre-filtering: if geometries exist, filter sources by bounding box
         # to reduce distance matrix size before expensive igraph computation
         if (
@@ -492,7 +498,7 @@ class GraphCalcs:
         ):
 
             source_indices, target_indices, geo_dists_filtered = self._prefilter_geo(
-                df_vs_source, df_vs_target, dist_thresh
+                df_vs_source, df_vs_target, dist_thresh_geo
             )
         else:
             source_indices = df_vs_source.index.values
