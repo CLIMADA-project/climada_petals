@@ -865,7 +865,7 @@ def test_prefilter_geo_filters_far_targets(graph_calcs_with_remote_node):
     # remote healthcare node (id=5) should be filtered out.
     source_indices, target_indices, geo_dists_filtered = (
         graph_calcs_with_remote_node._prefilter_geo(
-            df_vs_source, df_vs_target, dist_thresh=1e6
+            df_vs_source, df_vs_target, dist_thresh=9
         )
     )
 
