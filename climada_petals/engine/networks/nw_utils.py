@@ -118,6 +118,7 @@ def infra_plot(
     ci_types=None,
     plot_col="ci_type",
     enduser="people",
+    mask_func_ci=True,
     axes=None,
     projection=ccrs.PlateCarree(),
     pop_kwargs=dict(),
@@ -201,6 +202,8 @@ def infra_plot(
             )
         elif ci_type in LINE_EXPOSURES:
             plot_df = self.edges[self.edges.ci_type == ci_type]
+            if mask_func_ci:
+                plot_df = plot_df[plot_df["func_tot"] < 1]
             plot_df.plot(
                 plot_col,
                 ax=axes,
@@ -215,6 +218,8 @@ def infra_plot(
             )
         else:
             plot_df = self.nodes[self.nodes.ci_type == ci_type]
+            if mask_func_ci:
+                plot_df = plot_df[plot_df["func_tot"] < 1]
             marker_letter = f"${ci_type[0].upper()}$"
 
             # Background coloured disc for visibility
@@ -256,7 +261,7 @@ def infra_plot(
     axes.legend()
 
     # Add a single status colorbar if plotting functional status
-    if use_status_colorbar:
+    if use_status_colorbar and not mask_func_ci:
         orientation = cbar_kwargs.pop("orientation", "horizontal")
         shrink = cbar_kwargs.pop("shrink", 0.55)
         sm = mpl.cm.ScalarMappable(
@@ -580,9 +585,9 @@ def _resample_res(filepath, upscale_factor, nodata, extent=None):
         the number of pixels (finer resolution).
     nodata : float
         Nodata value to replace with 0.
-    extent : tuple of float, optional
-        Geographic extent as (xmin, ymin, xmax, ymax) to crop the raster.
-        Default: None (use full raster).
+    extent : polygon or multipolygon, optional
+        Geographic extent to crop to before resampling. If None, the full
+        raster is used. Default: None.
 
     Returns
     -------
@@ -599,7 +604,8 @@ def _resample_res(filepath, upscale_factor, nodata, extent=None):
 
         if extent:
             # Create a rasterio window from the extent
-            window = from_bounds(*extent, transform=transform)
+            bounds = extent.bounds
+            window = from_bounds(*bounds, transform=transform)
         else:
             # If no extent is provided, use the full dataset
             window = rasterio.windows.Window(0, 0, dataset.width, dataset.height)
@@ -1083,7 +1089,7 @@ def make_network_stat(network, ci_types=None):
 # =============================================================================
 # Worldpop Data
 # =============================================================================
-def get_worldpop_data(iso3, save_path, res=100):
+def get_worldpop_data(save_path, iso3=None, year=2024, res=1000):
     """Download WorldPop population raster data for a country.
 
     Downloads UN-adjusted population data for 2020 from WorldPop at the
@@ -1098,18 +1104,36 @@ def get_worldpop_data(iso3, save_path, res=100):
     res : int, optional
         Resolution in metres: 100 or 1000. Default: 100.
     """
-
-    if res == 1000:
+    if iso3 is None:
+        if res == 100:
+            raise ValueError("ISO3 code must be provided for 100m resolution data.")
         download_url = (
             "https://data.worldpop.org/GIS/Population/"
-            + f"Global_2000_2020_1km_UNadj/2020/{iso3}/"
-            + f"{iso3.lower()}_ppp_2020_1km_Aggregated_UNadj.tif"
+            + f"Global_2015_2030/R2025A/{year}/0_Mosaicked/"
+            + f"v1/1km_ua/constrained/global_pop_{year}_CN_1km_R2025A_UA_v1.tif"
         )
-    elif res == 100:
-        download_url = (
-            "https://data.worldpop.org/GIS/Population/"
-            + f"Global_2000_2020/2020/{iso3}/{iso3.lower()}_ppp_2020_UNadj.tif"
-        )
+    else:
+        if res == 1000:
+            download_url = (
+                "https://data.worldpop.org/GIS/Population/"
+                + f"Global_2015_2030/R2025A/{year}/{iso3}/v1/"
+                + f"1km/constrained/{iso3.lower()}_pop_{year}_CN_1km_R2025A_v1.tif"
+            )
+            # download_url = (
+            #    "https://data.worldpop.org/GIS/Population/"
+            #    + f"Global_2000_2020_1km_UNadj/2020/{iso3}/"
+            #    + f"{iso3.lower()}_ppp_2020_1km_Aggregated_UNadj.tif"
+            # )
+        elif res == 100:
+            download_url = (
+                "https://data.worldpop.org/GIS/Population/"
+                + f"Global_2015_2030/R2025A/{year}/{iso3}/v1/"
+                + f"100m/constrained/{iso3.lower()}_pop_{year}_CN_100m_R2025A_v1.tif"
+            )
+            # download_url = (
+            #    "https://data.worldpop.org/GIS/Population/"
+            #    + f"Global_2000_2020/2020/{iso3}/{iso3.lower()}_ppp_2020_UNadj.tif"
+            # )
 
     local_filepath = Path(save_path, download_url.split("/")[-1])
 
