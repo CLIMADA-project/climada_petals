@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from datetime import date as _date
 from scipy.optimize import minimize
 
 # import climada modules
@@ -176,9 +177,9 @@ class SubareaCalculations:
 
         # Iterate over each event
         for i in range(len(self.subareas.hazard.event_id)):
-            date = pd.to_datetime(self.subareas.hazard.get_event_date()[i])
-            int_sub["year"][i] = date.year
-            int_sub["month"][i] = date.month
+            _d = _date.fromordinal(self.subareas.hazard.date[i])
+            int_sub["year"][i] = _d.year
+            int_sub["month"][i] = _d.month
             # For each subarea, calculate the desired statistic
             for letter, line_numbers in agg_exp.items():
                 selected_values = self.subareas.hazard.intensity[i, line_numbers]
