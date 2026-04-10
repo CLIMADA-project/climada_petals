@@ -13,7 +13,7 @@ class SingleCountryBondSimulation:
     based on per-event payouts and damages.
     """
 
-    def __init__(self, subarea_calc, term: int, number_of_terms: int):
+    def __init__(self, subarea_calc, term: int, start_year: int, number_of_terms: int):
         """
         Initialize with subarea data and simulation horizon.
 
@@ -23,10 +23,13 @@ class SingleCountryBondSimulation:
             Subarea calculation instance.
         term : int
             Bond term in years for each simulated period.
+        start_year : int
+            The starting year of the simulation.
         number_of_terms : int
             Number of consecutive terms to simulate.
         """
         self.term = term
+        self.start_year = start_year
         self.number_of_terms = number_of_terms
         self.subarea_calc = subarea_calc
 
@@ -131,17 +134,16 @@ class SingleCountryBondSimulation:
         """
 
         pay_vs_dam = self.subarea_calc.pay_vs_dam
-        min_year = pay_vs_dam['year'].min()
 
         annual_losses = []
         list_loss_month = []
         total_payouts = 0
         total_damages = 0
-        # Iterate directly over year-starts
-        for start_year in range(min_year, min_year + self.number_of_terms):
+        # Iterate over non-overlapping term blocks
+        for bond_date in range(self.start_year, self.start_year + self.number_of_terms * self.term, self.term):
             # Collect events for the full term (vectorized selection)
             events_per_year = [
-                pay_vs_dam[pay_vs_dam['year'] == (start_year + offset)].groupby(['month', 'year']).sum().reset_index().sort_values(by=['year','month'])
+                pay_vs_dam[pay_vs_dam['year'] == (bond_date + offset)].groupby(['month', 'year']).sum().reset_index().sort_values(by=['year','month'])
                 for offset in range(self.term)
             ]
 

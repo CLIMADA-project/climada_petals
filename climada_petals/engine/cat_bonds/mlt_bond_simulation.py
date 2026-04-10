@@ -33,14 +33,15 @@ class MultiCountryBond:
         Mapping of country code to pay-vs-damage DataFrames.
     principal_dic_cty : dict
         Mapping of country code to allocated principal.
-    min_year : int
-        Minimum year across all country event tables.
+    start_year : int
+        Start year where the simulation begins.
     """
 
-    def __init__(self, country_dictionary: dict, term: int, number_of_terms: int):
+    def __init__(self, country_dictionary: dict, term: int, start_year: int, number_of_terms: int):
         self.country_dictionary = country_dictionary
         self.term = term
         self.number_of_terms = number_of_terms
+        self.start_year = start_year
         self._prepare_data()
 
 
@@ -49,20 +50,13 @@ class MultiCountryBond:
         self.pay_vs_dam_dic = {}
         self.principal_dic_cty = {}
         self.countries = list(self.country_dictionary.keys())
-        min_year_list = []
         for cty, bond_sim_class in self.country_dictionary.items():
             self.pay_vs_dam_dic[cty] = bond_sim_class.subarea_calc.pay_vs_dam
             self.principal_dic_cty[cty] = bond_sim_class.subarea_calc.principal
-            min_year_list.append(bond_sim_class.subarea_calc.pay_vs_dam['year'].min())
-
-        min_year = min(min_year_list)
-
-        self.min_year = min_year
-        
 
 
     @classmethod
-    def simulate_bond_pool_n(cls, country_dictionary: dict, term: int, number_of_terms: int, number_pools: int, n_opt_rep: int = 100):
+    def simulate_bond_pool_n(cls, country_dictionary: dict, term: int, start_year: int, number_of_terms: int, number_pools: int, n_opt_rep: int = 100):
         """
         Class method to optimize pool allocation using a fixed number of pools, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
@@ -72,6 +66,8 @@ class MultiCountryBond:
             Dictionary mapping country codes to their bond simulation instances.
         term : int
             Term of the bond in years.
+        start_year : int
+            Start year where the simulation begins.
         number_of_terms : int
             Number of terms to simulate.
         number_pools : int
@@ -106,7 +102,7 @@ class MultiCountryBond:
             print(key, countries)
             LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
             pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
-            mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
+            mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, start_year, number_of_terms)
             mlt_bond_simulation_dic[key].init_required_principal()
             mlt_bond_simulation_dic[key].init_loss_simulation(mlt_bond_simulation_dic[key].requ_principal)
             LOGGER.info(f"Completed loss simulation for pool {key}.")
@@ -114,7 +110,7 @@ class MultiCountryBond:
         return mlt_bond_simulation_dic, pool_allocation, algorithm_result
 
     @classmethod
-    def simulate_bond_max_principal_pool(cls, country_dictionary: dict, term: int, number_of_terms: int, maximum_principal: float, n_opt_rep: int = 100):
+    def simulate_bond_max_principal_pool(cls, country_dictionary: dict, term: int, start_year: int, number_of_terms: int, maximum_principal: float, n_opt_rep: int = 100):
         """
         Class method to optimize pool allocation using a maximum principal, create instances of MultiCountryBondSimulation per pool, and run the loss simulation.
 
@@ -124,6 +120,8 @@ class MultiCountryBond:
             Dictionary mapping country codes to their bond simulation instances.
         term : int
             Term of the bond in years.
+        start_year : int
+            Start year where the simulation begins.
         number_of_terms : int
             Number of terms to simulate.
         maximum_principal : float
@@ -156,7 +154,7 @@ class MultiCountryBond:
         for key, countries in pool_dict.items():
             LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
             pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
-            mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, number_of_terms)
+            mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, start_year, number_of_terms)
             mlt_bond_simulation_dic[key].init_required_principal()
             mlt_bond_simulation_dic[key].init_loss_simulation(mlt_bond_simulation_dic[key].requ_principal)
             LOGGER.info(f"Completed loss simulation for pool {key}.")
@@ -303,12 +301,12 @@ class MultiCountryBond:
         for cty in self.countries:
             self.tot_coverage_cty[cty] = {'Total_payout': 0.0, 'Total_damages': 0.0, 'coverage': 0.0, 'Expected_annual_loss': 0, 'share_expected_annual_loss': 0}
 
-        for start_year in range(self.min_year, self.min_year + self.number_of_terms):
+        for bond_date in range(self.start_year, self.start_year + self.number_of_terms * self.term, self.term):
             events_per_year = []
             for j in range(self.term):
                 events_per_cty = []  
                 for cty in self.countries:
-                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == start_year+j].copy()
+                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == bond_date+j].copy()
                     events['country_code'] = cty
                     events_per_cty.append(events)  
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
@@ -542,10 +540,10 @@ class MultiCountryBond:
 
         total_losses = []
 
-        for start_year in range(self.min_year, self.min_year + self.number_of_terms):
+        for bond_date in range(self.start_year, self.start_year + self.number_of_terms * self.term, self.term):
             events_per_year = []
             for j in range(self.term):
-                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == start_year + j].assign(country_code=cty) for cty in self.countries]
+                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == bond_date + j].assign(country_code=cty) for cty in self.countries]
 
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
                 events_per_year.append(year_events_df)
