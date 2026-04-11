@@ -61,9 +61,7 @@ class TestMultiCountryBond(unittest.TestCase):
 
     def test_prepare_data(self):
         """Check data preparation populates required fields."""
-        bond = MultiCountryBond(self.country_dict, term=1, number_of_terms=2)
-        # check min_year is correctly detected
-        self.assertEqual(bond.min_year, 2000)
+        bond = MultiCountryBond(self.country_dict, term=1, start_year=2000, number_of_terms=2)
         # check pay_vs_dam_dic populated
         self.assertIn(0, bond.pay_vs_dam_dic)
         self.assertIn(1, bond.pay_vs_dam_dic)
@@ -72,7 +70,7 @@ class TestMultiCountryBond(unittest.TestCase):
 
     def test_init_bond_loss(self):
         """Validate per-term loss computation for a single event."""
-        bond = MultiCountryBond(self.country_dict, term=1, number_of_terms=2)
+        bond = MultiCountryBond(self.country_dict, term=1, start_year=2000, number_of_terms=2)
         events_per_year = [
             pd.DataFrame({
                 "month": [6],
@@ -103,6 +101,7 @@ class TestMultiCountryBond(unittest.TestCase):
         bond = MultiCountryBond(
             country_dictionary=self.country_dict,
             term=1,
+            start_year=2000,
             number_of_terms=2
         )
 
@@ -133,7 +132,7 @@ class TestMultiCountryBond(unittest.TestCase):
 
     def test_init_return_simulation(self):
         """Validate return and premium allocation with a single loss."""
-        bond = MultiCountryBond(self.country_dict, term=1, number_of_terms=2)
+        bond = MultiCountryBond(self.country_dict, term=1, start_year=2000, number_of_terms=2)
         # One year, one loss in June
         bond.df_loss_month = pd.DataFrame({
             "losses": [[0.2]],   # 20% principal loss
@@ -208,7 +207,7 @@ class TestMultiCountryBond(unittest.TestCase):
 
     def test_init_required_principal(self):
         """Validate required principal from simulated losses."""
-        bond = MultiCountryBond(self.country_dict, term=3, number_of_terms=2)
+        bond = MultiCountryBond(self.country_dict, term=3, start_year=2000, number_of_terms=2)
         # Two countries
         bond.countries = [0, 1]
 
@@ -230,7 +229,7 @@ class TestMultiCountryBond(unittest.TestCase):
         
     def test__init_equ_nom_sim(self):
         """Validate nominal-based loss aggregation."""
-        bond = MultiCountryBond(self.country_dict, term=1, number_of_terms=2)
+        bond = MultiCountryBond(self.country_dict, term=1, start_year=2000, number_of_terms=2)
         events_per_year = [
             pd.DataFrame({
                 "pay": [0.1, 0.2, 0.4, 0.9],
@@ -289,6 +288,7 @@ class TestMultiCountryBond(unittest.TestCase):
         mlt_bond_simulation_dic, pool_alloc, algo_res = MultiCountryBond.simulate_bond_pool_n(
             country_dictionary=self.country_dict,
             term=1,
+            start_year=2000,
             number_of_terms=2,
             number_pools=1,
             n_opt_rep=1
