@@ -43,6 +43,13 @@ def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100
         principal_sng.append(cls_bond_simulations[idx].subarea_calc.principal)
     df_losses = pd.DataFrame(annual_losses_dic_cty)
 
+    # Short-circuit: with only 1 pool every country is assigned to it,
+    # so the GA optimisation (which would have xl == xu == 0) is skipped.
+    if number_pools == 1:
+        country_allocation = pd.DataFrame([[1] * len(countries)], columns=countries)
+        country_allocation['min_conc'] = np.nan
+        return country_allocation, None
+
     opt_rep = range(0,n_opt_rep,1)
 
     ### CALCULATE ALPHA FOR RISK CONCENTRATION OPTIMIZATION ###
