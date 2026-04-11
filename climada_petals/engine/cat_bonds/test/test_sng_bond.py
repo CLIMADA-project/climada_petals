@@ -14,7 +14,7 @@ class TestSingleCountryBond(unittest.TestCase):
 
     def test_init_bond_loss(self):
         """Validate per-term loss calculation and principal exhaustion."""
-        sim = SingleCountryBondSimulation(subarea_calc=self, term=1, number_of_terms=1)
+        sim = SingleCountryBondSimulation(subarea_calc=self, term=1, start_year=2000, number_of_terms=1)
 
         # Year 0 events:
         df = pd.DataFrame({
@@ -44,14 +44,13 @@ class TestSingleCountryBond(unittest.TestCase):
             "damage":[0,     20,   60,  0, 120,   0,    0,   0],
         })
 
-        sim = SingleCountryBondSimulation(subarea_calc=self, term=3, number_of_terms=2)
+        sim = SingleCountryBondSimulation(subarea_calc=self, term=3, start_year=2000, number_of_terms=2)
         sim.init_loss_simulation(confidence_levels=[0.95])
 
-        # Expected annual losses for each year
-        # 2000 → 10
-        # 2001 → 50
-        # 2002 → 40
-        expected = np.array([10/100, 50/100, 40/100, 50/100, 50/100, 0/100])
+        # Expected annual losses for non-overlapping 3-year terms:
+        # 2000-2002 -> 10, 50, 40
+        # 2003-2005 -> 0, 0, 0
+        expected = np.array([10/100, 50/100, 40/100, 0/100, 0/100, 0/100])
         actual = sim.df_loss_month["losses"].apply(sum).to_numpy()
 
         assert np.allclose(actual, expected)
@@ -59,8 +58,8 @@ class TestSingleCountryBond(unittest.TestCase):
         metrics = sim.loss_metrics
         assert np.isclose(metrics["Expected_annual_loss"], expected.mean())
         assert np.isclose(metrics["Annual_attachment_probability"], (expected > 0).mean())
-        assert metrics["Total_payout"] == 10 + 50 + 40 + 50 + 50 + 0
-        assert metrics["Total_damages"] == 20 + 60 + 120 + 60 + 120 + 0
+        assert metrics["Total_payout"] == 10 + 50 + 40
+        assert metrics["Total_damages"] == 20 + 60 + 120
 
         # VaR and ES present
         assert "Annual_Value_at_risk_95" in metrics
@@ -68,11 +67,9 @@ class TestSingleCountryBond(unittest.TestCase):
 
     def test_init_return_simulation(self):
         """Validate annual premium and return calculations over terms."""
-        sim = SingleCountryBondSimulation(subarea_calc=self, term=3, number_of_terms=2)
+        sim = SingleCountryBondSimulation(subarea_calc=self, term=3, start_year=2000, number_of_terms=2)
 
         # Create simple df_loss_month:
-        # Year 0: no losses → full premium
-        # Year 1: one loss at month 3 of size 0.20
         sim.df_loss_month = pd.DataFrame({
             "losses": [[0.0], [0.25, 0.25], [0.5], [0.25, 0.25], [0.5], [0.2]],
             "months": [[1], [3, 12], [1], [3, 12], [1], [1]]
@@ -117,7 +114,7 @@ class TestSingleCountryBond(unittest.TestCase):
 
     def test_init_bond_loss_same_month_events(self):
         """Validate handling of multiple events in the same month."""
-        sim = SingleCountryBondSimulation(subarea_calc=self, term=1, number_of_terms=1)
+        sim = SingleCountryBondSimulation(subarea_calc=self, term=1, start_year=2000, number_of_terms=1)
 
         df = pd.DataFrame({
             "month": [6, 6, 6],
