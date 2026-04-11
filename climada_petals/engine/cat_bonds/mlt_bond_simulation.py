@@ -429,9 +429,7 @@ class MultiCountryBond:
         
         self.net_cash_flow = pd.DataFrame(ncf_tot, columns=['Total_net_cash_flow'])
         self.premiums = pd.DataFrame(prem_cty_dic)
-        self.sharpe_ratio = (np.mean(self.net_cash_flow['Total_net_cash_flow']) - rf) / np.std(self.net_cash_flow['Total_net_cash_flow'])
-
-
+        self.sharpe_ratio = (np.mean(self.net_cash_flow['Total_net_cash_flow']) - rf) / np.std(self.net_cash_flow['Total_net_cash_flow']) if np.std(self.net_cash_flow['Total_net_cash_flow']) != 0 else np.nan
   
     '''reduced function to derive returns of the bond -> was used to save time during calculation'''
     def init_return_simulation_tranches(self, premiums: list[float], tranches: list[float], rf: float = 0.0):
@@ -521,7 +519,7 @@ class MultiCountryBond:
         self.net_cash_flow_tranches = pd.DataFrame(ncf)
         self.net_cash_flow_tranches['Total_net_cash_flow'] = self.net_cash_flow_tranches.sum(axis=1)
         self.premiums_tranches = pd.DataFrame(prem_cty_dic)
-        self.sharpe_ratio_tranches = [(np.mean(self.net_cash_flow_tranches[str(tranche)]) - rf) / np.std(self.net_cash_flow_tranches[str(tranche)]) for tranche in tranches]
+        self.sharpe_ratio_tranches = [(np.mean(self.net_cash_flow_tranches[str(tranche)]) - rf) / np.std(self.net_cash_flow_tranches[str(tranche)]) if np.std(self.net_cash_flow_tranches[str(tranche)]) != 0 else np.nan for tranche in tranches]
 
 
     '''Calculates required nominal for multi-country bonds -> derives maximal loss over simulation period'''
