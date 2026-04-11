@@ -129,7 +129,7 @@ class PremiumCalculations:
         ibrd_prem_rate : float
             The estimated premium rate based on the fitted curve and the bond's expected annual loss.
         """
-        ibrd_bonds = pd.read_excel(DATA_DIR.joinpath('IBRD_bonds.xlsx'))
+        ibrd_bonds = pd.read_csv(DATA_DIR.joinpath('IBRD_bonds.csv'), sep=';')
         if peril is not None: 
             flt_ibrd_bonds = ibrd_bonds[ibrd_bonds['Peril'] == peril]
             flt_ibrd_bonds = flt_ibrd_bonds.reset_index(drop=True)
