@@ -160,22 +160,41 @@ class TestSubareaCalculations(unittest.TestCase):
         """
         Test that the optimization converges and reports a thresholds for all subareas.
         """
-        subareas_calc_dummy = subarea_calculations.SubareaCalculations(
-            subareas=self.mock_subarea_calc_test, index_stat=50, initial_guess=(2, 4)
+        principal = 100
+        true_min = np.array([2.0, 3.0])
+        true_max = np.array([8.0, 9.0])
+
+        haz_int = {
+            "TC": pd.DataFrame(
+                {
+                    "A": [0, 1, 2, 3, 4, 5, 6, 8, 9, 10],
+                    "B": [1, 2, 3, 4, 5, 6, 7, 9, 10, 11],
+                    "year": [2000] * 10,
+                    "month": list(range(1, 11)),
+                }
+            )
+        }
+        imp_subarea_evt = pd.DataFrame(
+            {
+                "A": [0.0, 0.0, 0.0, 13.0, 27.0, 40.0, 53.0, 80.0, 80.0, 80.0],
+                "B": [0.0, 0.0, 0.0, 15.0, 30.0, 45.0, 60.0, 90.0, 90.0, 90.0],
+            }
         )
 
-        attachment = 0 
+        subareas_calc_dummy = subarea_calculations.SubareaCalculations(
+            subareas=self.mock_subarea_calc_test, index_stat=50, initial_guess=(4, 7)
+        )
 
         results, opt_min, opt_max = subareas_calc_dummy._calibrate_payout_fcts(
-            haz_int=self.mock_subarea_calc_test.haz_int_dict,
-            principal=self.mock_subarea_calc_test.principal,
-            attachment=attachment,
-            imp_subarea_evt=self.mock_subarea_calc_test.imp_subarea
+            haz_int=haz_int,
+            principal=principal,
+            attachment=0,
+            imp_subarea_evt=imp_subarea_evt,
         )
 
-        # optimizer should converge near
-        assert np.allclose(opt_min, [1, 2], atol=1)
-        assert np.allclose(opt_max, [3, 4], atol=1)
+        # optimizer should recover the synthetic thresholds closely
+        assert np.allclose(opt_min, true_min, atol=1)
+        assert np.allclose(opt_max, true_max, atol=1)
 
         # ensure both subareas were optimized
         assert len(results) == 2
