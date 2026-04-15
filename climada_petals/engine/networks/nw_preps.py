@@ -306,6 +306,26 @@ def find_roundabouts(network):
     return roundabouts
 
 
+def _get_edge_id_column(edges):
+    """Return the preferred edge identifier column if present."""
+    for col in ["osm_id", "osmid", "edge_id", "id"]:
+        if col in edges.columns:
+            return col
+    return None
+
+
+def _ensure_edge_id_column(edges):
+    """Ensure edges have an identifier column, creating a temporary one if needed."""
+    edges = edges.copy()
+    edge_id_col = _get_edge_id_column(edges)
+    if edge_id_col is None:
+        edge_id_col = "__edge_uid"
+        edges[edge_id_col] = edges.index.to_numpy()
+    elif edges[edge_id_col].isna().any():
+        edges[edge_id_col] = edges[edge_id_col].fillna(pd.Series(edges.index, index=edges.index))
+    return edges, edge_id_col
+
+
 def clean_roundabouts(network):
     """Clean roundabouts and junctions in the network.
 
@@ -325,12 +345,13 @@ def clean_roundabouts(network):
 
     edges = network.edges.copy()
     nodes = network.nodes.copy()
+    edges, edge_id_col = _ensure_edge_id_column(edges)
 
     sindex = shapely.STRtree(edges["geometry"])
     new_edge = []
     remove_edge = []
     new_edge_id = []
-    attributes = [x for x in edges.columns if x not in ["geometry", "osm_id"]]
+    attributes = [x for x in edges.columns if x not in ["geometry", edge_id_col]]
 
     roundabouts = find_roundabouts(network)
     for roundabout in roundabouts:
@@ -341,6 +362,7 @@ def clean_roundabouts(network):
         # index at e[0] geometry at e[1] of edges that intersect with
         for edg in edges_intersect.items():
             edge = edges.iloc[edg[0]]
+            edge_id_value = edge[edge_id_col]
             start = shapely.get_point(edg[1], 0)
             end = shapely.get_point(edg[1], -1)
             first_co_is_closer = shapely.measurement.distance(
@@ -357,11 +379,11 @@ def clean_roundabouts(network):
             snap_line = shapely.linestrings(new_co)
 
             # an edge should never connect to>  2 roundabouts, if it does this will break
-            if edge.osm_id in new_edge_id:
+            if edge_id_value in new_edge_id:
                 a = []
                 counter = 0
                 for x in new_edge:
-                    if x[0] == edge.osm_id:
+                    if x[0] == edge_id_value:
                         a = counter
                         break
                     counter += 1
@@ -378,21 +400,25 @@ def clean_roundabouts(network):
                     new_co = np.concatenate((co_ords, centroid_co))
                 snap_line = shapely.linestrings(new_co)
                 new_edge.append(
-                    [edge.osm_id] + list(edge[list(attributes)]) + [snap_line]
+                    [edge_id_value] + list(edge[list(attributes)]) + [snap_line]
                 )
 
             else:
                 new_edge.append(
-                    [edge.osm_id] + list(edge[list(attributes)]) + [snap_line]
+                    [edge_id_value] + list(edge[list(attributes)]) + [snap_line]
                 )
-                new_edge_id.append(edge.osm_id)
+                new_edge_id.append(edge_id_value)
             remove_edge.append(edg[0])
 
     new = gpd.GeoDataFrame(
-        new_edge, columns=["osm_id"] + attributes + ["geometry"], crs=edges.crs
+        new_edge, columns=[edge_id_col] + attributes + ["geometry"], crs=edges.crs
     )
     edges = edges.loc[~edges.index.isin(remove_edge)]
     edges = pd.concat([edges, new]).reset_index(drop=True)
+
+    # Drop temporary id column introduced only for preprocessing internals.
+    if edge_id_col == "__edge_uid":
+        edges = edges.drop(columns=[edge_id_col], errors="ignore")
 
     return Network(edges, nodes)
 
@@ -526,9 +552,11 @@ def merge_edges(network, print_err=False):
     nodes = network.nodes.copy()
     edges = network.edges.copy()
 
-    optional_cols = edges.columns.difference(
-        ["osm_id", "geometry", "from_id", "to_id", "id"]
-    )
+    edge_id_col = _get_edge_id_column(edges)
+    drop_cols = ["geometry", "from_id", "to_id", "id"]
+    if edge_id_col is not None:
+        drop_cols.append(edge_id_col)
+    optional_cols = edges.columns.difference(drop_cols)
     edg_sindex = shapely.STRtree(edges.geometry)
 
     if "degree" not in nodes.columns:
@@ -758,24 +786,21 @@ def split_edges_at_nodes(network):
     Network
         Network with edges split at node intersection points.
     """
+    edges_src, edge_id_col = _ensure_edge_id_column(network.edges)
     sindex_nodes = shapely.STRtree(network.nodes["geometry"])
-    sindex_edges = shapely.STRtree(network.edges["geometry"])
+    sindex_edges = shapely.STRtree(edges_src["geometry"])
     attributes = [
-        x for x in network.edges.columns if x not in ["index", "geometry", "osm_id"]
+        x for x in edges_src.columns if x not in ["index", "geometry", edge_id_col]
     ]
     grab_all_edges = []
 
     # TODO: this takes really long. Rewrite?
-    for edge in tqdm(
-        network.edges.itertuples(index=False),
-        desc="splitting",
-        total=len(network.edges),
-    ):
+    for _, edge in tqdm(edges_src.iterrows(), desc="splitting", total=len(edges_src)):
         hits_nodes = nodes_intersecting(
             edge.geometry, network.nodes["geometry"], sindex_nodes, tolerance=1e-9
         )
         hits_edges = nodes_intersecting(
-            edge.geometry, network.edges["geometry"], sindex_edges, tolerance=1e-9
+            edge.geometry, edges_src["geometry"], sindex_edges, tolerance=1e-9
         )
         hits_edges = shapely.set_operations.intersection(edge.geometry, hits_edges)
         try:
@@ -812,11 +837,12 @@ def split_edges_at_nodes(network):
         new_edges = [
             coor_geom[split_loc[0] : split_loc[1] + 1] for split_loc in split_locs
         ]
+        attr_values = [edge[attr] for attr in attributes]
         grab_all_edges.append(
             [
-                [edge.osm_id] * len(new_edges),
-                [shapely.linestrings(edge) for edge in new_edges],
-                [edge[1:-1]] * len(new_edges),
+                [edge[edge_id_col]] * len(new_edges),
+                [shapely.linestrings(coords) for coords in new_edges],
+                [attr_values] * len(new_edges),
             ]
         )
 
@@ -829,10 +855,12 @@ def split_edges_at_nodes(network):
             for sublist in big_list
             for item in sublist
         ],
-        columns=["osm_id", "geometry"] + attributes,
+        columns=[edge_id_col, "geometry"] + attributes,
         geometry="geometry",
         crs=network.edges.crs,
     )
+    if edge_id_col == "__edge_uid":
+        edges = edges.drop(columns=[edge_id_col], errors="ignore")
     nodes = network.nodes.copy()
 
     return Network(edges, nodes)
