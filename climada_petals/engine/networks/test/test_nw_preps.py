@@ -152,6 +152,314 @@ class TestAddIds:
 
 
 # ========================================================================
+# Tests: _get_edge_id_column / _ensure_edge_id_column
+# ========================================================================
+
+
+class TestGetEdgeIdColumn:
+    def test_prefers_osm_id(self, simple_network):
+        """osm_id is preferred over other id columns."""
+        edges = simple_network.edges.copy()
+        edges["edge_id"] = range(len(edges))
+        edges["id"] = range(100, 100 + len(edges))
+
+        col = nw_preps._get_edge_id_column(edges)
+
+        assert col == "osm_id"
+
+    def test_falls_back_to_osmid(self):
+        """Falls back to osmid when osm_id is missing."""
+        edges = gpd.GeoDataFrame(
+            {
+                "osmid": [101, 102, 103],
+                "edge_id": [0, 1, 2],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                    LineString([(2, 2), (3, 3)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        col = nw_preps._get_edge_id_column(edges)
+
+        assert col == "osmid"
+
+    def test_falls_back_to_edge_id(self):
+        """Falls back to edge_id when osm_id and osmid are missing."""
+        edges = gpd.GeoDataFrame(
+            {
+                "edge_id": [0, 1, 2],
+                "id": [100, 101, 102],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                    LineString([(2, 2), (3, 3)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        col = nw_preps._get_edge_id_column(edges)
+
+        assert col == "edge_id"
+
+    def test_falls_back_to_id(self):
+        """Falls back to id when only id column exists."""
+        edges = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                    LineString([(2, 2), (3, 3)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        col = nw_preps._get_edge_id_column(edges)
+
+        assert col == "id"
+
+    def test_returns_none_when_no_id_column(self):
+        """Returns None when no id column exists."""
+        edges = gpd.GeoDataFrame(
+            {
+                "name": ["edge1", "edge2"],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        col = nw_preps._get_edge_id_column(edges)
+
+        assert col is None
+
+
+class TestEnsureEdgeIdColumn:
+    def test_preserves_osm_id(self):
+        """osm_id is preserved when present."""
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [10001, 10002, 10003],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                    LineString([(2, 2), (3, 3)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
+
+        assert id_col == "osm_id"
+        np.testing.assert_array_equal(result_edges["osm_id"].values, [10001, 10002, 10003])
+
+    def test_creates_temporary_column_when_missing(self):
+        """Creates __edge_uid temporary column when no id column exists."""
+        edges = gpd.GeoDataFrame(
+            {
+                "name": ["edge1", "edge2"],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
+
+        assert id_col == "__edge_uid"
+        assert "__edge_uid" in result_edges.columns
+        np.testing.assert_array_equal(result_edges["__edge_uid"].values, [0, 1])
+
+    def test_fills_nan_values_with_index(self):
+        """NaN values in id column are filled with index."""
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [10001.0, np.nan, 10003.0],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                    LineString([(2, 2), (3, 3)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
+
+        assert id_col == "osm_id"
+        # NaN values should be filled with corresponding index values
+        assert not result_edges["osm_id"].isna().any()
+        # Value at index 1 should be filled with index value 1
+        assert result_edges["osm_id"].iloc[1] == 1.0
+
+    def test_preserves_columns(self):
+        """All original columns are preserved."""
+        edges = gpd.GeoDataFrame(
+            {
+                "name": ["edge1", "edge2"],
+                "length": [100, 200],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result_edges, _ = nw_preps._ensure_edge_id_column(edges)
+
+        assert "name" in result_edges.columns
+        assert "length" in result_edges.columns
+        assert "geometry" in result_edges.columns
+
+    def test_original_dataframe_not_modified(self):
+        """Original dataframe is not modified."""
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [10001, 10002],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        original_columns = set(edges.columns)
+
+        result_edges, _ = nw_preps._ensure_edge_id_column(edges)
+
+        assert set(edges.columns) == original_columns
+
+
+class TestEdgeIdColumnIntegration:
+    def test_clean_roundabouts_with_osm_id(self, roundabout_network):
+        """clean_roundabouts preserves osm_id column."""
+        result = nw_preps.clean_roundabouts(roundabout_network)
+
+        assert "osm_id" in result.edges.columns
+        # osm_id values should still be present in some form
+        assert len(result.edges) > 0
+
+    def test_clean_roundabouts_without_edge_id_creates_temporary(self):
+        """clean_roundabouts handles edges without id columns by creating temporary one."""
+        # Create a roundabout network and remove osm_id
+        ring = LineString([(0, 0), (1, 0), (1, 1), (0, 1), (0, 0)])
+        line = LineString([(0, 0), (2, 2)])
+
+        edges = gpd.GeoDataFrame(
+            {
+                "name": ["roundabout", "through"],
+                "geometry": [ring, line],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {"geometry": [Point(0, 0), Point(1, 1), Point(2, 2)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        # Should not raise error even without edge id columns
+        result = nw_preps.clean_roundabouts(network)
+
+        assert result is not None
+        # Temporary __edge_uid column should not be in final output
+        assert "__edge_uid" not in result.edges.columns
+
+    def test_split_edges_at_nodes_preserves_osm_id(self):
+        """split_edges_at_nodes preserves osm_id column through processing."""
+        # Create a simple crossing network
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [100, 101],
+                "from_id": [0, 2],
+                "to_id": [1, 3],
+                "geometry": [
+                    LineString([(0, 1), (2, 1)]),  # horizontal
+                    LineString([(1, 0), (1, 2)]),  # vertical, crosses horizontal
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2, 3],
+                "geometry": [
+                    Point(0, 1),
+                    Point(2, 1),
+                    Point(1, 0),
+                    Point(1, 2),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert "osm_id" in result.edges.columns
+        # osm_id values should be preserved/duplicated for split edges
+        assert result.edges["osm_id"].notna().all()
+
+    def test_reset_ids_after_edge_id_operations(self):
+        """reset_ids works correctly after using ensure_edge_id_column."""
+        # Network with osm_id but non-sequential node ids
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [10, 20, 30],
+                "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [10, 20],
+                "to_id": [20, 30],
+                "osm_id": [100, 101],
+                "id": [0, 1],
+                "geometry": [
+                    LineString([(0, 0), (1, 1)]),
+                    LineString([(1, 1), (2, 2)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        # Ensure edge id column doesn't break reset_ids
+        result = nw_preps.reset_ids(network)
+
+        np.testing.assert_array_equal(result.nodes["id"].values, [0, 1, 2])
+        np.testing.assert_array_equal(result.edges["from_id"].values, [0, 1])
+        np.testing.assert_array_equal(result.edges["to_id"].values, [1, 2])
+
+
+# ========================================================================
 # Tests: add_topology
 # ========================================================================
 
