@@ -251,6 +251,57 @@ class TestSubareaCalculations(unittest.TestCase):
 
         assert all(m.called for m in (m_impact, m_idx, m_attach, m_cal, m_pay))
 
+    def test_fallback_thresholds_basic(self):
+        """Fallback returns median-of-nonzero and max of parametric index."""
+        pi_df = pd.DataFrame({
+            "A": [0, 2, 6],
+            "B": [4, 0, 8],
+            "year": [2000, 2001, 2002],
+            "month": [1, 2, 3],
+        })
+        min_t, max_t = subarea_calculations.SubareaCalculations._fallback_thresholds(pi_df)
+        # non-zero index values are [2, 6, 4, 8] → median = 5.0, max = 8
+        assert max_t == 8.0
+        assert min_t == 5.0
+
+    def test_fallback_thresholds_degenerate(self):
+        """When all non-zero values equal the max, min_trig = 0.5 * max_trig."""
+        pi_df = pd.DataFrame({
+            "A": [0, 10],
+            "B": [10, 10],
+            "year": [2000, 2001],
+            "month": [1, 2],
+        })
+        min_t, max_t = subarea_calculations.SubareaCalculations._fallback_thresholds(pi_df)
+        assert max_t == 10.0
+        assert min_t == 5.0  # 0.5 * 10
+
+    def test_calibration_uses_fallback_on_failure(self):
+        """When optimization fails, fallback thresholds are used and arrays match subarea count."""
+        mock_sub = MagicMock()
+
+        calc = subarea_calculations.SubareaCalculations(
+            subareas=mock_sub, index_stat="mean", initial_guess=(1.0, 2.0)
+        )
+
+        haz_int = {"TC": pd.DataFrame({"A": [1, 2], "B": [3, 4], "year": [2000, 2000], "month": [1, 2]})}
+        imp_subarea_evt = pd.DataFrame({"A": [0, 60], "B": [5, 80]})
+
+        # Force minimize to always fail
+        failed_result = OptimizeResult(x=np.array([0.0, 0.0]), success=False, message="forced failure")
+
+        with patch("climada_petals.engine.cat_bonds.subarea_calculations.minimize", return_value=failed_result):
+            results, opt_min, opt_max = calc._calibrate_payout_fcts(
+                haz_int=haz_int, principal=100, attachment=0, imp_subarea_evt=imp_subarea_evt
+            )
+
+        # Both subareas must be present even though optimization failed
+        assert len(opt_min) == 2
+        assert len(opt_max) == 2
+        # Fallback from parametric index: non-zero values [1,2,3,4] → median=2.5, max=4
+        np.testing.assert_allclose(opt_min, [2.5, 2.5])
+        np.testing.assert_allclose(opt_max, [4.0, 4.0])
+
     
 
 if __name__ == "__main__":

@@ -200,6 +200,40 @@ class SubareaCalculations:
 
         return int_sub_dict
 
+    @staticmethod
+    def _fallback_thresholds(parametric_index_df):
+        """Compute fallback trigger thresholds from the parametric index.
+
+        Used when payout function optimization fails for a subarea. Derives
+        thresholds from all subarea columns of the parametric index DataFrame
+        (excluding the ``year`` and ``month`` columns) so the fallback works
+        even when a single subarea has no local damage data.
+
+        Parameters
+        ----------
+        parametric_index_df : pandas.DataFrame
+            Parametric index values per event.  Subarea columns followed by
+            ``year`` and ``month`` columns (last two).
+
+        Returns
+        -------
+        min_trig : float
+            Median of non-zero parametric index values across all subareas
+            (payout onset).
+        max_trig : float
+            Maximum parametric index value across all subareas (full payout).
+        """
+        index_values = parametric_index_df.iloc[:, :-2].values.ravel()
+        max_trig = float(np.nanmax(index_values))
+        nonzero_vals = index_values[index_values > 0]
+        if len(nonzero_vals) > 0:
+            min_trig = float(np.median(nonzero_vals))
+        else:
+            min_trig = 0.0
+        if min_trig >= max_trig:
+            min_trig = 0.5 * max_trig
+        return min_trig, max_trig
+
     def _objective_fct(self, params: tuple[float, float], haz_int: pd.DataFrame, damages: pd.Series, principal: float):
         """
         Defines the objective function used to minimize basis risk by adjusting minimum and maximum trigger thresholds in the payout function.
@@ -292,7 +326,13 @@ class SubareaCalculations:
                 opt_min, opt_max = result.x
                 subarea_specific_results[subarea] = (opt_min, opt_max)
             else:
-                print(f"Optimization failed for subarea {subarea}: {result.message}")
+                LOGGER.warning(
+                    "Optimization failed for subarea %s: %s. Using fallback thresholds. Basis risk may be higher for this subarea.",
+                    subarea, result.message,
+                )
+                subarea_specific_results[subarea] = self._fallback_thresholds(
+                    haz_int[hazard_type]
+                )
 
         opt_min_thresh = np.array(
             [values[0] for values in subarea_specific_results.values()]
