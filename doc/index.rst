@@ -62,7 +62,7 @@ Jump right in:
    :maxdepth: 1
 
    glofas_rf
-   
+
 
 .. toctree::
    :caption: API Reference
@@ -78,6 +78,7 @@ Jump right in:
 
    Hazard <tutorial/hazard>
    tutorial/climada_engine_SupplyChain
+   tutorial/climada_engine_CATBonds
    tutorial/climada_entity_BlackMarble
    tutorial/climada_exposures_openstreetmap
    tutorial/climada_hazard_drought
