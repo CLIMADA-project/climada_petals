@@ -113,14 +113,14 @@ class TestSubareaCalculations(unittest.TestCase):
 
         df_2 = out_2["TC"]
 
-        # For mean, event 0: mean(10,20)=15; event1: mean(30,40)=35
+        # For median, event 0: median(10,20)=15; event1: median(30,40)=35
         assert df_2["A"].tolist() == [15, 35]
         assert df_2["B"].tolist() == [30, 20]
 
     def test_calc_pay_vs_dam_expected(self):
 
         class DummyImpact:
-            at_event = np.array([5, 130])  # event damages
+            at_event = np.array([5, 140])  # event damages
 
         imp = DummyImpact()
 
@@ -137,10 +137,10 @@ class TestSubareaCalculations(unittest.TestCase):
 
         # event 0: Payout for Subarea B -> 60
         assert df.loc[0,"pay"] == 60
-        # event 1: A pays 30 + B pays 60 → capped at principal = 40
+        # event 1: A pays 30 + B pays 60 → capped at principal = 100
         assert df.loc[1,"pay"] == 100
         # damage 
-        assert df['damage'].to_list() == [5, 130]
+        assert df['damage'].to_list() == [5, 140]
         # year/month copied
         assert df["year"].tolist() == [2000, 2000]
         assert df["month"].tolist() == [1, 2]
