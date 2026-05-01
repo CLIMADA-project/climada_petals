@@ -8,7 +8,6 @@ from pymoo.operators.crossover.hux import HalfUniformCrossover
 from pymoo.algorithms.soo.nonconvex.ga import GA
 from pymoo.optimize import minimize
 from pymoo.operators.repair.rounding import RoundingRepair
-from climada_petals.util.config import LOGGER
 
 
 def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100):
