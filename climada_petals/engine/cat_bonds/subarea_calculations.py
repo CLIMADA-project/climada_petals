@@ -327,7 +327,7 @@ class SubareaCalculations:
                 subarea_specific_results[subarea] = (opt_min, opt_max)
             else:
                 LOGGER.warning(
-                    "Optimization failed for subarea %s: %s. Using fallback thresholds. Basis risk may be higher for this subarea.",
+                    "Optimization failed for subarea %s: %s. Using fallback thresholds which sets the minimum and maximum parametric index thresholds to the median and maximum parametric index values using all available hazard data. Basis risk may be higher for this subarea. The available hazard data may be insufficient or inadequate to optimize the payout function. Consider adjusting the initial guess or reviewing the hazard intensity data for this subarea.",
                     subarea, result.message,
                 )
                 subarea_specific_results[subarea] = self._fallback_thresholds(
