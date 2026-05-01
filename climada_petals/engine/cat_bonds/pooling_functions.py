@@ -77,9 +77,7 @@ def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100
         # Process results (same code as inside the loop)
         x = res_reg.X
         risk_concentration_new = res_reg.F
-        LOGGER.info(res_reg.F)
         if risk_concentration_new is not None and risk_concentration is not None and risk_concentration_new <= risk_concentration:
-            LOGGER.info("True")
             algorithm_result = res_reg
             risk_concentration = risk_concentration_new
             sorted_unique = sorted(set(x))
