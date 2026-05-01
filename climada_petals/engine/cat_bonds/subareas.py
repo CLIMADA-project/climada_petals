@@ -127,9 +127,7 @@ class Subareas:
         if 'subarea_letter' not in gdf.columns:
             gdf = gdf.copy()
             gdf["subarea_letter"] = [chr(65 + i) for i in range(len(gdf))]
-            LOGGER.info("Added 'subarea_letter' column to GeoDataFrame.")
         subareas_gdf = gdf.to_crs(exposure.gdf.crs)
-        LOGGER.info("Converted GeoDataFrame to match exposure CRS.")
         return cls(hazard, vulnerability, exposure, subareas_gdf)
 
     # --- Properties ---
@@ -177,7 +175,7 @@ class Subareas:
             ymin = min(ymin1, ymin2)
             ymax = max(ymax1, ymax2)
 
-            # 4️⃣ Add padding (e.g. 5% wider and taller)
+            # Add padding (e.g. 5% wider and taller)
             pad_x = (xmax - xmin) * 0.05   # 10% horizontal padding
             pad_y = (ymax - ymin) * 0.05  # 5% vertical padding
 
@@ -254,9 +252,7 @@ def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, ex
     subareas : geopandas.GeoDataFrame
         GeoDataFrame of merged grid cells (subareas) covering exposure points.
     """
-    LOGGER.info("Creating subareas from exposure perimeter polygon.")
     cropped_cells = []
-    LOGGER.info(f"Number of polygons to process: {len(exp_gdf)}")
     # Loop through each polygon in the GeoDataFrame
     for idx, polygon in exp_gdf.iterrows():
         
@@ -268,9 +264,6 @@ def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, ex
         maxx += pad_x
         miny -= pad_y
         maxy += pad_y
-        LOGGER.info(
-            f"Processing polygon with bounds: {minx}, {miny}, {maxx}, {maxy}"
-        )
         if maxx - minx < resolution or maxy - miny < resolution:
             LOGGER.info(
                 "Polygon smaller than resolution; adding polygon bounding box."
@@ -282,13 +275,8 @@ def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, ex
             )
             continue
         
-        num_cells_x = int((maxx - minx) / resolution) + 1
-        num_cells_y = int((maxy - miny) / resolution) + 1
         n_cols = int(np.ceil((maxx - minx) / resolution))
         n_rows = int(np.ceil((maxy - miny) / resolution))
-        LOGGER.info(
-            f"Number of cells in x direction: {num_cells_x}, y direction: {num_cells_y}"
-        )   
 
         grid_cells = []
         for x in range(n_cols):
@@ -343,18 +331,15 @@ def _create_exp_gdf(exposure) -> gpd.GeoDataFrame:
         in the exposure CRS.
     """
 
-    LOGGER.info("Creating exposure perimeter polygon from exposure data.")
     exp_gdf = exposure.gdf
     minx, miny, maxx, maxy = exp_gdf.total_bounds
-    LOGGER.info(f"Exposure total bounds: {minx}, {miny}, {maxx}, {maxy}")
     coords = np.vstack((exp_gdf.geometry.x, exp_gdf.geometry.y)).T
     nbrs = NearestNeighbors(n_neighbors=2).fit(coords)
     distances, _ = nbrs.kneighbors(coords)
     res = distances[:, 1].mean() * 1.2  
-    LOGGER.info(f"Approximate resolution: {res} CRS units")
     width = max(int((maxx - minx) / res), 1)
     height = max(int((maxy - miny) / res),1)
-    LOGGER.info(f"Rasterizing exposure with width: {width}, height: {height}")
+    LOGGER.info(f"Rasterizing exposure with width: {width}, height: {height}, resolution: {res:.2f}")
     
     transform = from_bounds(minx, miny, maxx, maxy, width, height)
     shapes_gen = (
@@ -419,5 +404,4 @@ def _merge_overlapping_grids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         for comp in nx.connected_components(G)
     ]
     merged_gdf = gpd.GeoDataFrame(geometry=merged_polys, crs=gdf.crs)
-    LOGGER.info("Merging completed.")
     return merged_gdf
