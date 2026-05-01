@@ -162,41 +162,48 @@ class SubareaCalculations:
             Dictionary mapping hazard type to a DataFrame with per-subarea
             statistics and event year/month columns.
         """
-
         hazard = self.subareas.hazard.centroids.gdf
         hazard = hazard.to_crs(self.subareas.subareas_gdf.crs)
         centrs_to_sub = hazard.sjoin(self.subareas.subareas_gdf, how="left", predicate="intersects")
         agg_exp = centrs_to_sub.groupby("subarea_letter").apply(lambda x: x.index.tolist())
         
-        int_sub = {
-            letter: [np.nan] * len(self.subareas.hazard.event_id) for letter in agg_exp.keys()
-        }
-
-        int_sub["year"] = [0 for _ in range(len(self.subareas.hazard.event_id))]
-        int_sub["month"] = [0 for _ in range(len(self.subareas.hazard.event_id))]
-
-        # Iterate over each event
-        for i in range(len(self.subareas.hazard.event_id)):
-            _d = _date.fromordinal(self.subareas.hazard.date[i])
-            int_sub["year"][i] = _d.year
-            int_sub["month"][i] = _d.month
-            # For each subarea, calculate the desired statistic
-            for letter, line_numbers in agg_exp.items():
-                selected_values = self.subareas.hazard.intensity[i, line_numbers]
-                if self.index_stat == "mean":
-                    int_sub[letter][i] = selected_values.mean()
-                elif isinstance(self.index_stat, (int, float)):
-                    dense_array = selected_values.toarray()
-                    flattened_array = dense_array.flatten()
-                    int_sub[letter][i] = np.percentile(flattened_array, self.index_stat)
-                else:
-                    raise ValueError(
-                        "Invalid statistic choice. Choose number for percentile or 'mean'"
-                    )
-        int_sub = pd.DataFrame.from_dict(int_sub)
+        num_events = len(self.subareas.hazard.event_id)
+        
+        # Validate index_stat choice early
+        if not (self.index_stat == "mean" or isinstance(self.index_stat, (int, float))):
+            raise ValueError(
+                "Invalid statistic choice. Choose number for percentile or 'mean'"
+            )
+        
+        # Extract all dates once using vectorized conversion
+        dates = [_date.fromordinal(d) for d in self.subareas.hazard.date]
+        years = np.fromiter((d.year for d in dates), dtype=int)
+        months = np.fromiter((d.month for d in dates), dtype=int)
+        
+        # Pre-allocate result dictionary with NumPy arrays
+        int_sub = {letter: np.full(num_events, np.nan, dtype=float) for letter in agg_exp.keys()}
+        
+        # Iterate over subareas, fully vectorized per subarea
+        for letter, line_numbers in agg_exp.items():
+            line_numbers = np.array(line_numbers)
+            
+            if self.index_stat == "mean":
+                # True vectorized mean: extract full subarea block and compute mean across centroids
+                sub_matrix = self.subareas.hazard.intensity[:, line_numbers]
+                int_sub[letter] = np.asarray(sub_matrix.mean(axis=1)).ravel()
+            else:
+                # True batch percentile: extract and densify full subarea block, then compute percentile across centroids
+                sub_matrix = self.subareas.hazard.intensity[:, line_numbers].toarray()
+                int_sub[letter] = np.percentile(sub_matrix, self.index_stat, axis=1)
+        
+        # Build result - convert arrays directly to lists for DataFrame construction
+        int_sub_dict_result = {letter: int_sub[letter].tolist() for letter in agg_exp.keys()}
+        int_sub_dict_result["year"] = years.tolist()
+        int_sub_dict_result["month"] = months.tolist()
+        int_sub_df = pd.DataFrame.from_dict(int_sub_dict_result)
 
         int_sub_dict = {}
-        int_sub_dict[self.subareas.hazard.haz_type] = int_sub
+        int_sub_dict[self.subareas.hazard.haz_type] = int_sub_df
 
         return int_sub_dict
 
@@ -341,6 +348,7 @@ class SubareaCalculations:
             [values[1] for values in subarea_specific_results.values()]
         )
 
+
         return results, opt_min_thresh, opt_max_thresh
 
     def _calc_pay_vs_dam(
@@ -387,50 +395,59 @@ class SubareaCalculations:
         """
 
         imp_per_event = impact.at_event
-        imp_per_event_df = pd.DataFrame({"Damage": imp_per_event})
-        imp_per_event_arr = np.array(imp_per_event_df)
+        imp_per_event_arr = np.array(imp_per_event).flatten()
         imp_per_event_arr[imp_per_event_arr < attachment] = 0
 
         hazard_type = list(haz_int.keys())[0]
+        haz_int_data = haz_int[hazard_type]
+        num_events = len(imp_per_event_arr)
+        num_subareas = len(haz_int_data.columns) - 2
 
-        b = len(imp_per_event_arr)
+        # Extract year and month once
+        years = haz_int_data["year"].values.astype(int)
+        months = haz_int_data["month"].values.astype(int)
+
+        # Calculate minimum payout threshold
         max_damage = imp_per_event_arr.max()
         if max_damage < 1:
             minimum_payout = 0
         else:
             minimum_payout = imp_per_event_arr[imp_per_event_arr > 0].min()
 
-        payout_evt_grd = pd.DataFrame(
-            {letter: [None] * b for letter in haz_int[hazard_type].columns[:-2]}
-        )
-        pay_dam_df = pd.DataFrame(
-            {"pay": [0.0] * b, "damage": [0.0] * b, "year": [0] * b, "month": [0] * b}
-        )
+        # Pre-compute max_pay per subarea 
+        max_pay_per_subarea = np.zeros(num_subareas)
+        for j in range(num_subareas):
+            max_dam_subarea = np.max(imp_subareas_evt.iloc[:, j])
+            max_pay_per_subarea[j] = min(max_dam_subarea, principal)
 
-        for i in range(len(imp_per_event_arr)):
-            tot_dam = imp_per_event_arr[i]
-            pay_dam_df.loc[i, "damage"] = tot_dam
-            pay_dam_df.loc[i, "year"] = int(haz_int[hazard_type]["year"][i])
-            pay_dam_df.loc[i, "month"] = int(haz_int[hazard_type]["month"][i])
-            for j in range(len(haz_int[hazard_type].columns) - 2):
-                sub_hazint = haz_int[hazard_type].iloc[:, [j, -1]]
-                max_dam = np.max(imp_subareas_evt.iloc[:, j])
-                if max_dam < principal:
-                    max_pay = max_dam
-                else:
-                    max_pay = principal
-                payouts = calc_payout(
-                    opt_min_thresh[j], opt_max_thresh[j], sub_hazint, max_pay
-                )
-                payout_evt_grd.iloc[:, j] = payouts
-            tot_pay = np.sum(payout_evt_grd.iloc[i, :])
-            if tot_pay > principal:
-                tot_pay = principal
-            elif tot_pay < minimum_payout:
-                tot_pay = 0
-            else:
-                pass
-            pay_dam_df.loc[i, "pay"] = tot_pay
+        # Iterate over subareas
+        payouts_grid = np.zeros((num_events, num_subareas))
+        for j in range(num_subareas):
+            intensities = haz_int_data.iloc[:, j].values
+            min_trig = opt_min_thresh[j]
+            max_trig = opt_max_thresh[j]
+            max_pay = max_pay_per_subarea[j]
+
+            # Vectorized payout calculation for all events at once
+            payouts = np.zeros_like(intensities, dtype=float)
+            payouts[intensities >= max_trig] = max_pay
+            mask = (intensities >= min_trig) & (intensities < max_trig)
+            payouts[mask] = (intensities[mask] - min_trig) / (max_trig - min_trig) * max_pay
+
+            payouts_grid[:, j] = payouts
+
+        # Sum payouts across subareas and apply caps
+        tot_pays = payouts_grid.sum(axis=1)
+        tot_pays = np.minimum(tot_pays, principal)
+        tot_pays[tot_pays < minimum_payout] = 0
+
+        # Build result DataFrame
+        pay_dam_df = pd.DataFrame({
+            "pay": tot_pays,
+            "damage": imp_per_event_arr,
+            "year": years,
+            "month": months
+        })
 
         return pay_dam_df
 
@@ -458,14 +475,17 @@ class SubareaCalculations:
             Sets `principal`, `attachment`, `results`, `opt_min_thresh`,
             `opt_max_thresh`, and `pay_vs_dam` on the instance.
         """
-
+        LOGGER.info("Calculating impact and subarea-level impacts per event.")
         imp, imp_subareas_evt = self._calc_impact() 
+        LOGGER.info("Calculating parametric index per subarea.")
         parametric_index = self._calc_parametric_index()
         if methods_attachment_point is not None and methods_exhaustion_point is not None:
             self.principal, self.attachment = self._calc_attachment_principal(imp, attachment_point, exhaustion_point, methods_attachment_point, methods_exhaustion_point)
         else:
             self.principal, self.attachment = exhaustion_point, attachment_point
+        LOGGER.info("Calibrating payout functions by optimizing trigger thresholds to minimize basis risk.")
         self.results, self.opt_min_thresh, self.opt_max_thresh = self._calibrate_payout_fcts(parametric_index, self.principal, self.attachment, imp_subareas_evt)
+        LOGGER.info("Calculating pay-versus-damage table for all events using optimized payout functions.")
         self.pay_vs_dam = self._calc_pay_vs_dam(impact=imp, imp_subareas_evt=imp_subareas_evt, attachment=self.attachment, principal=self.principal, opt_min_thresh=self.opt_min_thresh, opt_max_thresh=self.opt_max_thresh, haz_int=parametric_index)
 
     
