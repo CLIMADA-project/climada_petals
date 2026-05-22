@@ -113,7 +113,7 @@ class PremiumCalculations:
     def calc_ibrd_premium(self, peril=None, year=None):
         """
         Fits a monotonic exponential curve to catastrophe bond data for bonds issued by the World Bank to estimate premium parameters.
-        This function loads IBRD bond data from an Excel file, optionally filters the data by peril type or issuing year,
+        This function loads IBRD bond data from a csv file, optionally filters the data by peril type or issuing year,
         and fits a monotonic exponential function to the relationship between expected loss and risk multiple.
         The fitted parameters are returned. 
 
@@ -135,6 +135,8 @@ class PremiumCalculations:
             flt_ibrd_bonds = flt_ibrd_bonds.reset_index(drop=True)
 
         elif year is not None:
+            if isinstance(year, int):
+                year = [year]
             flt_ibrd_bonds = ibrd_bonds[ibrd_bonds['Issuing date'].isin(year)]
             flt_ibrd_bonds = flt_ibrd_bonds.reset_index(drop=True)
 
