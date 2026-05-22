@@ -95,12 +95,11 @@ class MultiCountryBond:
                 pool_dict[pool_allocation[cty][0]] = []
             pool_dict[pool_allocation[cty][0]].append(cty)
         LOGGER.info("Completed pooling optimization.")
-        print(pool_dict)
+        LOGGER.info("Pool allocation dictionary: %s", pool_dict)
 
         mlt_bond_simulation_dic = {}
         for key, countries in pool_dict.items():
-            print(key, countries)
-            LOGGER.info(f"Pool {key}: Countries {pool_dict[key]}")
+            LOGGER.info(f"Pool {key}: Countries {countries}")
             pool_country_dictionary = {cty: country_dictionary[cty] for cty in countries}
             mlt_bond_simulation_dic[key] = cls(pool_country_dictionary, term, start_year, number_of_terms)
             mlt_bond_simulation_dic[key].init_required_principal()
@@ -225,14 +224,14 @@ class MultiCountryBond:
                 sum_payouts = np.zeros(len(events))  
                 for payout, country, damage, idx in zip(pay, countries, damages, range(len(events))):
 
-                    if payout == 0 or cur_nominal == 0 or cur_nom_cty[int(country)] == 0:
+                    if payout == 0 or cur_nominal == 0 or cur_nom_cty[country] == 0:
                         event_payout = 0
                     else:
                         event_payout = payout
-                        cur_nom_cty[int(country)] -= event_payout
-                        if cur_nom_cty[int(country)] < 0:
-                            event_payout += cur_nom_cty[int(country)]
-                            cur_nom_cty[int(country)] = 0
+                        cur_nom_cty[country] -= event_payout
+                        if cur_nom_cty[country] < 0:
+                            event_payout += cur_nom_cty[country]
+                            cur_nom_cty[country] = 0
                         cur_nominal -= event_payout
                         if cur_nominal < 0:
                             event_payout += cur_nominal
@@ -306,7 +305,7 @@ class MultiCountryBond:
             for j in range(self.term):
                 events_per_cty = []  
                 for cty in self.countries:
-                    events = self.pay_vs_dam_dic[int(cty)][self.pay_vs_dam_dic[int(cty)]['year'] == bond_date+j].copy()
+                    events = self.pay_vs_dam_dic[cty][self.pay_vs_dam_dic[cty]['year'] == bond_date+j].copy()
                     events['country_code'] = cty
                     events_per_cty.append(events)  
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
@@ -337,9 +336,11 @@ class MultiCountryBond:
         var_list, es_list = multi_level_es(annual_losses, confidence_levels)
 
         for key in self.tot_coverage_cty.keys():
-            self.tot_coverage_cty[key]['coverage'] = self.tot_coverage_cty[key]['Total_payout'] / self.tot_coverage_cty[key]['Total_damages']
+            self.tot_coverage_cty[key]['coverage'] = (self.tot_coverage_cty[key]['Total_payout'] / self.tot_coverage_cty[key]['Total_damages']
+                                                      if self.tot_coverage_cty[key]['Total_damages'] != 0 else 0)
             self.tot_coverage_cty[key]['Expected_annual_loss'] = np.mean(ann_cty_losses[key])
-            self.tot_coverage_cty[key]['share_expected_annual_loss'] = self.tot_coverage_cty[key]['Expected_annual_loss'] / exp_loss_ann
+            self.tot_coverage_cty[key]['share_expected_annual_loss'] = (self.tot_coverage_cty[key]['Expected_annual_loss'] / exp_loss_ann
+                                                                        if exp_loss_ann != 0 else 0)
         
 
 
@@ -464,7 +465,7 @@ class MultiCountryBond:
         - Loss allocation across tranches is handled by `allocate_single_payout`.
         """
 
-        if not np.sum(tranches) == 1:
+        if not np.isclose(np.sum(tranches), 1.0, atol=1e-8):
             raise ValueError("Tranches should sum to 1.")
         ncf = {str(tranche): [] for tranche in tranches}
         premiums_tot = []
@@ -541,7 +542,7 @@ class MultiCountryBond:
         for bond_date in range(self.start_year, self.start_year + self.number_of_terms * self.term, self.term):
             events_per_year = []
             for j in range(self.term):
-                events_per_cty = [self.pay_vs_dam_dic[int(cty)].loc[self.pay_vs_dam_dic[int(cty)]['year'] == bond_date + j].assign(country_code=cty) for cty in self.countries]
+                events_per_cty = [self.pay_vs_dam_dic[cty].loc[self.pay_vs_dam_dic[cty]['year'] == bond_date + j].assign(country_code=cty) for cty in self.countries]
 
                 year_events_df = pd.concat(events_per_cty, ignore_index=True) if events_per_cty else pd.DataFrame()
                 events_per_year.append(year_events_df)
