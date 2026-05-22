@@ -24,11 +24,11 @@ def multi_level_es(losses: pd.Series, confidence_levels: list[float]):
     # Compute VaR and ES
     var_list = [losses.quantile(confidence_level) for confidence_level in confidence_levels]
 
-    # Avoid empty slices by using conditional logic
-    es_list = [
-        1 if var == 1 else losses[losses > var].mean()
-        for var in var_list
-    ]
+    # Compute the tail explicitly and handle empty tails deterministically
+    es_list = []
+    for var in var_list:
+        tail = losses[losses > var]
+        es_list.append(var if tail.empty else tail.mean())
 
     return var_list, es_list
 
