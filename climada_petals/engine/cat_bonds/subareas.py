@@ -289,7 +289,7 @@ def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, ex
                 y2 = y1 + resolution
                 grid_cell = box(x1, y1, x2, y2)
 
-                if len(spatial_index.query(grid_cell, predicate='within')) > 0:
+                if len(spatial_index.query(grid_cell, predicate='intersects')) > 0:
                     grid_cells.append(grid_cell)
         grid_gdf = gpd.GeoDataFrame(
             grid_cells, columns=["geometry"], crs=exp_gdf.crs

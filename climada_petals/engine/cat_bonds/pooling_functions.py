@@ -267,7 +267,7 @@ class PoolOptimizationFixedNumber():
             n_var=n_countries,
             n_obj=1,
             n_constr=1,
-            vars=[Integer((0, n_pools - 1)) for _ in range(n_countries)],
+            vars={f"x{i}": Integer(lb=0, ub=n_pools - 1) for i in range(n_countries)},
             **kwargs
         )
 
@@ -354,7 +354,7 @@ class PoolOptimizationMaximumPrincipal():
             n_var=n_countries,
             n_obj=1,
             n_constr=1,
-            vars=[Integer((0, n_countries - 1)) for _ in range(n_countries)],
+            vars={f"x{i}": Integer(lb=0, ub=n_countries - 1) for i in range(n_countries)},
             **kwargs
         )
 
