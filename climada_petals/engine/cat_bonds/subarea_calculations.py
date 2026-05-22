@@ -112,10 +112,10 @@ class SubareaCalculations:
 
         Returns
         ----------
-        attachment : float
-            Calculated attachment point value for the CAT bond.
         principal : float
             Calculated principal value for the CAT bond.
+        attachment : float
+            Calculated attachment point value for the CAT bond.
         """
 
         tot_exp = self.subareas.exposure.gdf["value"].sum()
