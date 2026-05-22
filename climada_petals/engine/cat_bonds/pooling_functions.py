@@ -1,6 +1,5 @@
 import numpy as np
 from pymoo.core.problem import ElementwiseProblem
-from pymoo.core.variable import Integer
 import pandas as pd
 from pymoo.operators.sampling.rnd import IntegerRandomSampling
 from pymoo.operators.mutation.pm import PolynomialMutation
@@ -267,7 +266,8 @@ class PoolOptimizationFixedNumber():
             n_var=n_countries,
             n_obj=1,
             n_constr=1,
-            vars={f"x{i}": Integer(lb=0, ub=n_pools - 1) for i in range(n_countries)},
+            xl=np.zeros(n_countries, dtype=int),
+            xu=np.full(n_countries, n_pools - 1, dtype=int),
             **kwargs
         )
 
@@ -354,7 +354,8 @@ class PoolOptimizationMaximumPrincipal():
             n_var=n_countries,
             n_obj=1,
             n_constr=1,
-            vars={f"x{i}": Integer(lb=0, ub=n_countries - 1) for i in range(n_countries)},
+            xl=np.zeros(n_countries, dtype=int),
+            xu=np.full(n_countries, n_countries - 1, dtype=int),
             **kwargs
         )
 
