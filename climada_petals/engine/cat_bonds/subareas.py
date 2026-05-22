@@ -21,7 +21,8 @@ class Subareas:
     Parameters
     ----------
     hazard : climada.Hazard
-        Hazard object containing event data.
+        Hazard object containing event data. Attention: The date attribute is used
+        in the CAT bond simulation. Date must include a year and month.
     vulnerability : climada.Vulnerability
         Vulnerability object containing vulnerability functions.
     exposure : climada.Exposure
@@ -33,7 +34,8 @@ class Subareas:
     Attributes
     ----------
     hazard : climada.Hazard
-        Hazard object containing event data.
+        Hazard object containing event data. Attention: The date attribute is used
+        in the CAT bond simulation. Date must include a year and month.
     vulnerability : climada.Vulnerability
         Vulnerability object containing vulnerability functions.
     exposure : climada.Exposure
@@ -56,7 +58,8 @@ class Subareas:
         Parameters
         ----------
         hazard : climada.Hazard
-            Hazard object containing event data.
+            Hazard object containing event data. Attention: The date attribute is used
+        in the CAT bond simulation. Date must include a year and month.
         vulnerability : climada.Vulnerability
             Vulnerability object containing vulnerability functions.
         exposure : climada.Exposure
@@ -78,7 +81,8 @@ class Subareas:
         Parameters
         ----------
         hazard : climada.Hazard
-            Hazard object containing event data.
+            Hazard object containing event data. Attention: The date attribute is used
+        in the CAT bond simulation. Date must include a year and month.
         vulnerability : climada.Vulnerability
             Vulnerability object containing vulnerability functions.
         exposure : climada.Exposure
@@ -105,7 +109,8 @@ class Subareas:
         Parameters
         ----------
         hazard : climada.Hazard
-            Hazard object containing event data.
+            Hazard object containing event data. Attention: The date attribute is used
+        in the CAT bond simulation. Date must include a year and month.
         vulnerability : climada.Vulnerability
             Vulnerability object containing vulnerability functions.
         exposure : climada.Exposure
