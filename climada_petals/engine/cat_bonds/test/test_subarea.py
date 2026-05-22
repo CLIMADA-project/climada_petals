@@ -31,10 +31,10 @@ class TestSubarea(unittest.TestCase):
         result = subareas._create_exp_gdf(self.exposure)
         self.exposure.result = result
 
-    def test_create_exp_gdf_returns_single_polygon(self):
+    def test_create_exp_gdf_returns_polygons(self):
         """Validate exposure perimeter polygon creation."""
         # --- Assert --------------------------------------------------------------------
-        # 1. Should contain exactly one merged polygon
+        # 1. Should contain two polygons
         assert len(self.exposure.result.geometry) == 2
 
         # 2. All geometries should be of type Polygon and not empty
@@ -42,14 +42,15 @@ class TestSubarea(unittest.TestCase):
             assert isinstance(geom, Polygon) or isinstance(geom, MultiPolygon)
             assert not geom.is_empty
 
-        # 3. Check it is within the bounding box of the points
+        # 3. Check if polygons are within the bounding box of the points
         minx, miny, maxx, maxy = self.exposure.gdf.total_bounds
-        res_minx, res_miny, res_maxx, res_maxy = geom.bounds
+        for geom in self.exposure.result.geometry:
+            res_minx, res_miny, res_maxx, res_maxy = geom.bounds
 
-        assert res_minx >= minx - 1e-6
-        assert res_miny >= miny - 1e-6
-        assert res_maxx <= maxx + 1e-6
-        assert res_maxy <= maxy + 1e-6
+            assert res_minx >= minx - 1e-6
+            assert res_miny >= miny - 1e-6
+            assert res_maxx <= maxx + 1e-6
+            assert res_maxy <= maxy + 1e-6
 
 
     def test_crop_grid_cells_to_polygon(self):
@@ -58,7 +59,6 @@ class TestSubarea(unittest.TestCase):
         subareas_gdf = subareas._crop_grid_cells_to_polygon(resolution, self.exposure.result, self.exposure)
 
         assert not subareas_gdf.empty, "Subareas GeoDataFrame should not be empty."
-        subareas_gdf.plot()
         assert len(subareas_gdf) == 16, "There should be 16 subareas created."
         subareas_union = subareas_gdf.unary_union
         assert all(
