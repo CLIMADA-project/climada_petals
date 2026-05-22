@@ -253,6 +253,8 @@ def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, ex
         GeoDataFrame of merged grid cells (subareas) covering exposure points.
     """
     cropped_cells = []
+    exp_points = exposure.gdf.geometry
+    spatial_index = exp_points.sindex
     # Loop through each polygon in the GeoDataFrame
     for idx, polygon in exp_gdf.iterrows():
         
@@ -281,16 +283,13 @@ def _crop_grid_cells_to_polygon(resolution: float, exp_gdf: gpd.GeoDataFrame, ex
         grid_cells = []
         for x in range(n_cols):
             for y in range(n_rows):
-            
                 x1 = minx + x * resolution
                 y1 = miny + y * resolution
                 x2 = x1 + resolution
                 y2 = y1 + resolution
-                grid_cell = box(
-                    x1, y1, x2, y2
-                )
-                # Only keep grid cell if at least one exposure point is inside
-                if any(p.within(grid_cell) for p in exposure.gdf.geometry):
+                grid_cell = box(x1, y1, x2, y2)
+
+                if len(spatial_index.query(grid_cell, predicate='within')) > 0:
                     grid_cells.append(grid_cell)
         grid_gdf = gpd.GeoDataFrame(
             grid_cells, columns=["geometry"], crs=exp_gdf.crs
