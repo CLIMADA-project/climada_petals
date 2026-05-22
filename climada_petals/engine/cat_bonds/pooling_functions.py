@@ -57,7 +57,9 @@ def process_n_pools(number_pools, countries, cls_bond_simulations, n_opt_rep=100
     
     bools = df_losses >= np.quantile(df_losses, alpha, axis=0)
 
-    risk_concentration = 1.0
+    risk_concentration = np.inf # ensures first valid result always wins
+    algorithm_result = None
+    country_allocation = None
     # Loop through repetitions for seed analysis
     for index in opt_rep:
         # Define Problem and Algorithm (same as inside the loop)
@@ -131,7 +133,9 @@ def process_maximum_principal_pools(maximum_principal, countries, cls_bond_simul
     
     bools = df_losses >= np.quantile(df_losses, alpha, axis=0)
 
-    risk_concentration = 1.0
+    risk_concentration = np.inf # ensures first valid result always wins
+    algorithm_result = None
+    country_allocation = None
     # Loop through repetitions for seed analysis
     for index in opt_rep:
         # Define Problem and Algorithm (same as inside the loop)
@@ -212,6 +216,27 @@ def calc_pool_conc(x, data_arr, bools, alpha):
 
 
 class PoolOptimizationFixedNumber():
+    """Genetic algorithm optimization problem for assigning countries to a fixed number of pools.
+
+    Minimizes average risk concentration across all pools subject to the constraint that
+    exactly N pools are formed.
+
+    Parameters
+    ----------
+    nominals : list of float
+        Principal amounts for each country.
+    data : pandas.DataFrame
+        Annual losses per country (rows = simulations, columns = countries).
+    bools : pandas.DataFrame
+        Boolean mask of the same shape as data; True where losses exceed the country VaR.
+    alpha : float
+        Quantile level used to compute VaR and ES.
+    N : int
+        Exact number of pools to form.
+    fun : callable
+        Risk concentration function with signature fun(indices, data, bools, alpha) -> float.
+    """
+
     def __init__(self, nominals, data, bools, alpha, N, fun, **kwargs):
         self.data_arr = data
         self.bools = bools
@@ -225,18 +250,39 @@ class PoolOptimizationFixedNumber():
 
     @classmethod
     def _init_optimisation_problem(cls, n_countries, n_pools, **kwargs):
-         return ElementwiseProblem(
+        """Build the pymoo ElementwiseProblem with integer variables bounded to valid pool IDs.
+
+        Parameters
+        ----------
+        n_countries : int
+            Number of decision variables (one pool ID per country).
+        n_pools : int
+            Number of pools; pool IDs range from 0 to n_pools - 1.
+
+        Returns
+        -------
+        ElementwiseProblem
+        """
+        return ElementwiseProblem(
             n_var=n_countries,
             n_obj=1,
             n_constr=1,
-            xl=0,
-            xu=n_pools - 1,
-            type_var=int,
-            vars=[Integer((0, n_countries - 1)) for _ in range(n_countries)],
+            vars=[Integer((0, n_pools - 1)) for _ in range(n_countries)],
             **kwargs
         )
 
     def _evaluate(self, x, out, *args, **kwargs):
+        """Evaluate objective and constraint for a candidate solution.
+
+        Parameters
+        ----------
+        x : np.ndarray of int
+            Pool ID assignment for each country; shape (n_countries,).
+        out : dict
+            pymoo output dict; sets out["F"] (objective) and out["G"] (constraint).
+            F is the mean risk concentration across pools.
+            G is 1 if the number of distinct pools != N, else 0.
+        """
         pool_ids = np.unique(x)
         pools = {pid: np.where(x == pid)[0] for pid in pool_ids}
 
@@ -256,6 +302,28 @@ class PoolOptimizationFixedNumber():
 
 
 class PoolOptimizationMaximumPrincipal():
+    """Genetic algorithm optimization problem for assigning countries to pools under a principal cap.
+
+    Minimizes the principal-weighted average risk concentration across all pools subject to the
+    constraint that no pool's total principal exceeds max_nominal. The number of pools is not
+    fixed in advance; the GA discovers it subject to the principal constraint.
+
+    Parameters
+    ----------
+    nominals : list of float
+        Principal amounts for each country.
+    max_nominal : float
+        Maximum total principal allowed in any single pool.
+    data : pandas.DataFrame
+        Annual losses per country (rows = simulations, columns = countries).
+    bools : pandas.DataFrame
+        Boolean mask of the same shape as data; True where losses exceed the country VaR.
+    alpha : float
+        Quantile level used to compute VaR and ES.
+    fun : callable
+        Risk concentration function with signature fun(indices, data, bools, alpha) -> float.
+    """
+
     def __init__(self, nominals, max_nominal, data, bools, alpha, fun, **kwargs):
         self.data_arr = data
         self.bools = bools
@@ -268,22 +336,44 @@ class PoolOptimizationMaximumPrincipal():
         self.max_principal_problem._evaluate = self._evaluate
 
     @classmethod
-    def _init_optimisation_problem(cls, n_countries, **kwargs): 
-         return ElementwiseProblem(
+    def _init_optimisation_problem(cls, n_countries, **kwargs):
+        """Build the pymoo ElementwiseProblem with integer variables bounded to valid pool IDs.
+
+        Parameters
+        ----------
+        n_countries : int
+            Number of decision variables (one pool ID per country).
+            Pool IDs range from 0 to n_countries - 1 since in the worst case every country
+            gets its own pool.
+
+        Returns
+        -------
+        ElementwiseProblem
+        """
+        return ElementwiseProblem(
             n_var=n_countries,
             n_obj=1,
             n_constr=1,
-            xl=0,
-            xu=n_countries - 1,
-            type_var=int,
             vars=[Integer((0, n_countries - 1)) for _ in range(n_countries)],
             **kwargs
         )
 
     def _evaluate(self, x, out, *args, **kwargs):
+        """Evaluate objective and constraint for a candidate solution.
+
+        Parameters
+        ----------
+        x : np.ndarray of int
+            Pool ID assignment for each country; shape (n_countries,).
+        out : dict
+            pymoo output dict; sets out["F"] (objective) and out["G"] (constraint).
+            F is the principal-weighted mean risk concentration, normalised by total principal.
+            G is the total excess principal summed over all pools that breach max_nominal
+            (0 means fully feasible).
+        """
         pool_ids = np.unique(x)
         pools = {pid: np.where(x == pid)[0] for pid in pool_ids}
-        
+
         total_concentration = 0
         for pool_key, pool_countries in pools.items():
             pool1_col = self.data_arr.columns[pool_countries]
