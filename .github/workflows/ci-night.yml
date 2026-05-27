@@ -1,0 +1,26 @@
+name: CI Night - Daily Quality Gate
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to run on (manual runs only)
+        required: false
+        default: develop
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  noop:
+    name: Dummy CI Night Job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dummy step
+        run: |
+          echo "CI Night placeholder workflow."
+          echo "Selected branch input: ${{ inputs.target_branch || 'develop' }}"
