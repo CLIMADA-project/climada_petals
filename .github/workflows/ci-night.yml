@@ -8,7 +8,7 @@ on:
       target_branch:
         description: Branch to run on (manual runs only)
         required: false
-        default: develop
+          echo "No-op run completed."
         type: string
 
 permissions:
