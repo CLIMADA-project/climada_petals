@@ -4,12 +4,6 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
-    inputs:
-      target_branch:
-        description: Branch to run on (manual runs only)
-        required: false
-        default: develop
-        type: string
 
 # Use bash explicitly so micromamba environment is active for all run steps.
 defaults:
@@ -24,14 +18,14 @@ permissions:
 jobs:
   quality:
     name: Daily Test, Coverage and Lint
-    runs-on: [self-hosted, linux]
-    timeout-minutes: 45
+    runs-on: self-hosted
+    timeout-minutes: 20
 
     steps:
       - name: Checkout develop branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_branch || 'develop' }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'develop' }}
 
       - name: Get current date
         id: date
@@ -150,7 +144,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           WORKFLOW_FILE: daily-quality.yml
           CURRENT_RUN_ID: ${{ github.run_id }}
-          TARGET_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.target_branch || 'develop' }}
+          TARGET_BRANCH: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'develop' }}
         run: |
           python - <<'PY'
           import io
