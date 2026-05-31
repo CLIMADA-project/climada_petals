@@ -9,8 +9,6 @@ from rasterio.features import shapes, rasterize
 from rasterio.transform import from_bounds
 from sklearn.neighbors import NearestNeighbors
 import cartopy.crs as ccrs
-import networkx as nx
-
 from climada_petals.util.config import LOGGER
 
 
@@ -394,18 +392,28 @@ def _merge_overlapping_grids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             elif candidate.within(geom):
                 to_remove.add(j)
     geoms_filtered = [geom for i, geom in enumerate(geoms) if i not in to_remove]
-    # Step 2: Merge polygons that overlap with positive area
-    G = nx.Graph()
-    G.add_nodes_from(range(len(geoms_filtered)))
+    # Step 2: Merge polygons that overlap with positive area using union-find
+    parent = list(range(len(geoms_filtered)))
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
     for i, geom in enumerate(geoms_filtered):
-        for j, candidate in enumerate(geoms_filtered):
-            if i >= j:
-                continue
-            if geom.intersection(candidate).area > 1e-9:
-                G.add_edge(i, j)
+        for j in range(i + 1, len(geoms_filtered)):
+            if geom.intersection(geoms_filtered[j]).area > 1e-9:
+                parent[_find(i)] = _find(j)
+
+    groups: dict = {}
+    for i in range(len(geoms_filtered)):
+        root = _find(i)
+        groups.setdefault(root, []).append(i)
+
     merged_polys = [
-        gpd.GeoSeries([geoms_filtered[idx] for idx in comp]).unary_union
-        for comp in nx.connected_components(G)
+        gpd.GeoSeries([geoms_filtered[idx] for idx in indices]).unary_union
+        for indices in groups.values()
     ]
     merged_gdf = gpd.GeoDataFrame(geometry=merged_polys, crs=gdf.crs)
     return merged_gdf
