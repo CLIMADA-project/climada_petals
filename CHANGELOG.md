@@ -12,6 +12,8 @@ Code freeze date: YYYY-MM-DD
 
 ### Added
 
+- Module to compute multi-country optimised CATBonds.
+
 ### Changed
 
 ### Fixed
