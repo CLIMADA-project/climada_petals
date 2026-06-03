@@ -88,7 +88,7 @@ class TestMaybeOpenDataArray(unittest.TestCase):
 
 @patch.multiple(
     "climada_petals.hazard.rf_glofas.river_flood_computation",
-    download_glofas_discharge=DEFAULT,
+    get_glofas_discharge=DEFAULT,
     return_period=DEFAULT,
     return_period_resample=DEFAULT,
     regrid=DEFAULT,
@@ -192,9 +192,9 @@ class TestRiverFloodInundation(unittest.TestCase):
         with xr.open_dataarray(filename) as arr:
             xrt.assert_identical(arr, arr_compare)
 
-    def test_download_forecast(self, download_glofas_discharge: MagicMock, **_):
+    def test_download_forecast(self, get_glofas_discharge: MagicMock, **_):
         """Check if download_forecast passes parameters correctly"""
-        download_glofas_discharge.return_value = self.flood_maps
+        get_glofas_discharge.return_value = self.flood_maps
 
         preprocess = lambda x: x
         self._assert_store_intermediates(
@@ -208,7 +208,7 @@ class TestRiverFloodInundation(unittest.TestCase):
             preprocess=preprocess,
             foo="bar",
         )
-        download_glofas_discharge.assert_called_with(
+        get_glofas_discharge.assert_called_with(
             product="forecast",
             dates=pd.DatetimeIndex(["2000-01-01"]),
             countries="ABC",
@@ -218,9 +218,9 @@ class TestRiverFloodInundation(unittest.TestCase):
             foo="bar",
         )
 
-    def test_download_reanalysis(self, download_glofas_discharge: MagicMock, **_):
+    def test_download_reanalysis(self, get_glofas_discharge: MagicMock, **_):
         """Check if download_reanalysis passes parameters correctly"""
-        download_glofas_discharge.return_value = self.flood_maps
+        get_glofas_discharge.return_value = self.flood_maps
         preprocess = lambda x: x
         self._assert_store_intermediates(
             self.rf,
@@ -240,11 +240,11 @@ class TestRiverFloodInundation(unittest.TestCase):
             foo="bar",
         )
         self.assertDictEqual(
-            download_glofas_discharge.call_args.kwargs,
-            download_glofas_discharge.call_args.kwargs | call_subset,
+            get_glofas_discharge.call_args.kwargs,
+            get_glofas_discharge.call_args.kwargs | call_subset,
         )
         pdt.assert_index_equal(
-            download_glofas_discharge.call_args.kwargs["dates"],
+            get_glofas_discharge.call_args.kwargs["dates"],
             pd.date_range("2000-01-01", "2000-12-31"),
         )
 

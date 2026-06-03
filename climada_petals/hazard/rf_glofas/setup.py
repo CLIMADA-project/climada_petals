@@ -32,7 +32,7 @@ import pandas as pd
 
 from .flood_maps import open_flood_maps_extents
 from .transform_ops import (
-    download_glofas_discharge,
+    get_glofas_discharge,
     fit_gumbel_r,
     save_file,
 )
@@ -79,7 +79,7 @@ def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):
             )
 
 
-def setup_gumbel_fit(
+def compute_gumbel_fit(
     output_dir: Union[Path, str] = DEFAULT_DATA_DIR,
     num_downloads: int = 1,
     parallel: bool = False,
@@ -140,7 +140,7 @@ def setup_gumbel_fit(
             continue
 
         if not discharge_path.is_file():
-            discharge = download_glofas_discharge(
+            discharge = get_glofas_discharge(
                 "historical",
                 pd.date_range("1979", "2023", freq="D"),
                 split_request=True,
@@ -196,11 +196,8 @@ def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
     response = requests.get(GUMBEL_FIT_DATA, stream=True)
     if response.status_code != 200:
         raise RuntimeError(
-            f"Failed to download Gumbel fit parameters from {GUMBEL_FIT_DATA}. Status code: {response.status_code}"
-        )
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Failed to download Gumbel fit parameters from {GUMBEL_FIT_DATA}. Status code: {response.status_code}"
+            f"Failed to download Gumbel fit parameters from {GUMBEL_FIT_DATA}. "
+            f"Status code: {response.status_code}"
         )
     with open(output_dir / "gumbel-fit.nc", "wb") as file:
         for chunk in response.iter_content(chunk_size=10 * 1024):
@@ -209,8 +206,8 @@ def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
 
 def setup_all(
     output_dir: Union[str, Path] = DEFAULT_DATA_DIR,
-    compute_gumbel_fit: bool = False,
-    **setup_gumbel_fit_kwargs,
+    recompute_gumbel_fit: bool = False,
+    **compute_gumbel_fit_kwargs,
 ):
     """Set up the data for river flood computations.
 
@@ -224,9 +221,12 @@ def setup_all(
     ----------
     output_dir : Path or str, optional
         The directory to store the datasets into.
-    compute_gumbel_fit : bool
+    recompute_gumbel_fit : bool
         If ``True``, recompute the Gumbel fits instead of downloading the data stored in
-        the ETH research collection. See :py:func:`setup_gumbel_fit`.
+        the ETH research collection. Default: ``False``.
+        See :py:func:`compute_gumbel_fit`.
+    compute_gumbel_fit_kwargs
+        Additional keyword arguments to :py:func:`compute_gumbel_fit`.
     """
     # Make sure the path exists
     output_dir = Path(output_dir)
@@ -234,7 +234,7 @@ def setup_all(
 
     download_flopros_database(output_dir)
 
-    if compute_gumbel_fit:
-        setup_gumbel_fit(output_dir, **setup_gumbel_fit_kwargs)
+    if recompute_gumbel_fit:
+        compute_gumbel_fit(output_dir, **compute_gumbel_fit_kwargs)
     else:
         download_gumbel_fit(output_dir)

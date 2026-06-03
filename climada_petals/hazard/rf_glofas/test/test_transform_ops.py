@@ -36,6 +36,8 @@ import pandas as pd
 
 from climada_petals.hazard.rf_glofas.transform_ops import (
     download_glofas_discharge,
+    get_glofas_discharge,
+    open_glofas_discharge,
     return_period,
     return_period_resample,
     interpolate_space,
@@ -72,19 +74,21 @@ def create_data_array(x, y, values, name):
 
 
 class TestGlofasDownloadOps(unittest.TestCase):
-    """Test case for 'download_glofas_discharge' operation"""
+    """Test case for 'get_glofas_discharge' operation"""
 
     def setUp(self):
         """Create temporary directory in case we download data"""
         self.tempdir = tempfile.TemporaryDirectory()
 
         # Store some dummy data
-        xr.DataArray(
+        self.arr1 = xr.DataArray(
             data=[0, 1, 2], dims=["x"], coords=dict(x=[0, 1, 2], time=0)
-        ).rename("dis24").to_netcdf(self.tempdir.name + "/file-1.nc", engine="netcdf4")
-        xr.DataArray(
+        ).rename("dis24")
+        self.arr1.to_netcdf(self.tempdir.name + "/file-1.nc", engine="netcdf4")
+        self.arr2 = xr.DataArray(
             data=[10, 11, 12], dims=["x"], coords=dict(x=[0, 1, 2], time=1)
-        ).rename("dis24").to_netcdf(self.tempdir.name + "/file-2.nc", engine="netcdf4")
+        ).rename("dis24")
+        self.arr2.to_netcdf(self.tempdir.name + "/file-2.nc", engine="netcdf4")
 
         # Mock the 'glofas_request' function
         # NOTE: Need to patch the object where it is imported and used
@@ -102,19 +106,43 @@ class TestGlofasDownloadOps(unittest.TestCase):
 
     def tearDown(self):
         """Clean up the temporary directory"""
+        self.arr1.close()
+        self.arr2.close()
         self.tempdir.cleanup()
         self.patch_glofas_request.stop()
 
-    def test_basic(self):
+    def test_download_and_open(self):
         """Basic case for 'download_glofas_discharge' operation"""
+        # Download files
         out_dir = Path(self.tempdir.name, "bla")
-        ds = download_glofas_discharge(
+        files = download_glofas_discharge(
             "forecast",
             self.dates,
             42,
             out_dir,
             some_kwarg="foo",
-            open_mfdataset_kw={"engine": "netcdf4"},  # To read the test files
+        )
+        self.assertTrue(out_dir.exists())
+        self.assertListEqual(
+            files, [Path(self.tempdir.name, f"file-{num}.nc") for num in range(1, 3)]
+        )
+
+        # Open files
+        ds = open_glofas_discharge(files, engine="netcdf4")
+        npt.assert_array_equal(ds["time"].data, [0, 1])
+        npt.assert_array_equal(ds["x"].data, [0, 1, 2])
+        npt.assert_array_equal(ds.data, [[0, 1, 2], [10, 11, 12]])
+
+    def test_get(self):
+        """Basic case for 'get_glofas_discharge' operation"""
+        out_dir = Path(self.tempdir.name, "bla")
+        ds = get_glofas_discharge(
+            "forecast",
+            self.dates,
+            42,
+            out_dir,
+            some_kwarg="foo",
+            open_mfdataset_kws={"engine": "netcdf4"},  # To read the test files
         )
 
         # Check directory
@@ -140,18 +168,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
         npt.assert_array_equal(ds["x"].data, [0, 1, 2])
         npt.assert_array_equal(ds.data, [[0, 1, 2], [10, 11, 12]])
 
-        # Check return only the file paths
-        files = download_glofas_discharge(
-            "forecast",
-            self.dates,
-            42,
-            out_dir,
-            open_mfdataset_kw=False,
-        )
-        self.assertListEqual(
-            files, [Path(self.tempdir.name, f"file-{num}.nc") for num in range(1, 3)]
-        )
-
     @patch(
         "climada_petals.hazard.rf_glofas.transform_ops.get_country_geometries",
         autospec=True,
@@ -168,7 +184,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
             self.dates,
             42,
             self.tempdir.name,
-            open_mfdataset_kw=False,
         )
         get_country_geometries_mock.assert_not_called()
 
@@ -184,7 +199,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
             42,
             self.tempdir.name,
             "Switzerland",
-            open_mfdataset_kw=False,
         )
         get_country_geometries_mock.assert_called_once_with("CHE", extent=None)
         npt.assert_array_equal(
@@ -200,7 +214,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
             self.tempdir.name,
             countries=["Switzerland", "DEU"],
             area=[0, 1, 2, 3],
-            open_mfdataset_kw=False,
         )
 
         # Check country code translation and area order
@@ -216,24 +229,24 @@ class TestGlofasDownloadOps(unittest.TestCase):
     def test_preprocess(self):
         """Test the capabilities of the preprocessing"""
         # Simple addition
-        ds = download_glofas_discharge(
+        ds = get_glofas_discharge(
             "forecast",
             self.dates,
             1,
             preprocess=lambda x: x + 1,
-            open_mfdataset_kw={"engine": "netcdf4"},  # To read the test files
+            open_mfdataset_kws={"engine": "netcdf4"},  # To read the test files
         )
         npt.assert_array_equal(ds["time"].data, [0, 1])
         npt.assert_array_equal(ds["x"].data, [0, 1, 2])
         npt.assert_array_equal(ds.data, [[1, 2, 3], [11, 12, 13]])
 
         # Maximum new concat dim
-        ds = download_glofas_discharge(
+        ds = get_glofas_discharge(
             "forecast",
             self.dates,
             1,
             preprocess=lambda x: x.max(dim="x").rename(time="year"),
-            open_mfdataset_kw=dict(concat_dim="year", engine="netcdf4"),
+            open_mfdataset_kws={"concat_dim": "year", "engine": "netcdf4"},
         )
         self.assertIn("year", ds.dims)
         self.assertNotIn("time", ds.dims)
@@ -263,7 +276,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
             42,
             self.tempdir.name,
             split_request=False,  # request_single should be called
-            open_mfdataset_kw=False,
         )
         glofas_request_multiple.assert_not_called()
         self.assertDictEqual(
@@ -279,7 +291,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
             42,
             self.tempdir.name,
             split_request=True,  # request_multiple should be called
-            open_mfdataset_kw=False,
         )
         glofas_request_single.assert_not_called()
         self.assertIs(len(glofas_request_multiple.call_args.args[1]), 2)  # Two requests
@@ -301,7 +312,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
             42,
             self.tempdir.name,
             split_request=True,
-            open_mfdataset_kw=False,
         )
         glofas_request_single.assert_not_called()
         self.assertEqual(
@@ -330,7 +340,6 @@ class TestGlofasDownloadOps(unittest.TestCase):
             42,
             self.tempdir.name,
             split_request="2MS",
-            open_mfdataset_kw=False,
         )
         glofas_request_single.assert_not_called()
         self.assertDictEqual(

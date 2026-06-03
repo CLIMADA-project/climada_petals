@@ -36,7 +36,7 @@ import shapely
 
 from .rf_glofas import DEFAULT_DATA_DIR, dask_client
 from .transform_ops import (
-    download_glofas_discharge,
+    get_glofas_discharge,
     return_period,
     return_period_resample,
     regrid,
@@ -416,7 +416,7 @@ class RiverFloodInundation:
         forecast_date: Union[str, np.datetime64, datetime, pd.Timestamp],
         lead_time_days: int = 10,
         preprocess: Optional[Callable] = None,
-        **download_glofas_discharge_kwargs,
+        **get_glofas_discharge_kwargs,
     ) -> xr.DataArray:
         """Download GloFAS discharge ensemble forecasts
 
@@ -439,9 +439,9 @@ class RiverFloodInundation:
         preprocess
             Callable for preprocessing data while loading it. See
             https://docs.xarray.dev/en/stable/generated/xarray.open_mfdataset.html
-        download_glofas_discharge_kwargs
+        get_glofas_discharge_kwargs
             Additional arguments to
-            :py:func:`climada_petals.hazard.rf_glofas.transform_ops.download_glofas_discharge`
+            :py:func:`climada_petals.hazard.rf_glofas.transform_ops.get_glofas_discharge`
 
         Returns
         -------
@@ -450,19 +450,19 @@ class RiverFloodInundation:
 
         See Also
         --------
-        :py:func:`climada_petals.hazard.rf_glofas.transform_ops.download_glofas_discharge`
+        :py:func:`climada_petals.hazard.rf_glofas.transform_ops.get_glofas_discharge`
         """
         leadtime_hour = list(
             map(str, (np.arange(1, lead_time_days + 1, dtype=np.int_) * 24).flat)
         )
-        forecast = download_glofas_discharge(
+        forecast = get_glofas_discharge(
             product="forecast",
             dates=pd.DatetimeIndex([forecast_date]),
             countries=countries,
             preprocess=preprocess,
             leadtime_hour=leadtime_hour,
             split_request=False,
-            **download_glofas_discharge_kwargs,
+            **get_glofas_discharge_kwargs,
         )
         if self.store_intermediates:
             save_file(forecast, self.cache_paths.discharge, zlib=False)
@@ -473,7 +473,7 @@ class RiverFloodInundation:
         countries: Union[str, List[str]],
         year: int,
         preprocess: Optional[Callable] = None,
-        **download_glofas_discharge_kwargs,
+        **get_glofas_discharge_kwargs,
     ):
         """Download GloFAS discharge historical data
 
@@ -490,9 +490,9 @@ class RiverFloodInundation:
         preprocess
             Callable for preprocessing data while loading it. See
             https://docs.xarray.dev/en/stable/generated/xarray.open_mfdataset.html
-        download_glofas_discharge_kwargs
+        get_glofas_discharge_kwargs
             Additional arguments to
-            :py:func:`climada_petals.hazard.rf_glofas.transform_ops.download_glofas_discharge`
+            :py:func:`climada_petals.hazard.rf_glofas.transform_ops.get_glofas_discharge`
 
         Returns
         -------
@@ -501,15 +501,15 @@ class RiverFloodInundation:
 
         See Also
         --------
-        :py:func:`climada_petals.hazard.rf_glofas.transform_ops.download_glofas_discharge`
+        :py:func:`climada_petals.hazard.rf_glofas.transform_ops.get_glofas_discharge`
         """
-        reanalysis = download_glofas_discharge(
+        reanalysis = get_glofas_discharge(
             product="historical",
             dates=pd.date_range(f"{year}-01-01", f"{year}-12-31"),
             countries=countries,
             preprocess=preprocess,
             split_request=False,
-            **download_glofas_discharge_kwargs,
+            **get_glofas_discharge_kwargs,
         )
         if self.store_intermediates:
             save_file(reanalysis, self.cache_paths.discharge, zlib=False)

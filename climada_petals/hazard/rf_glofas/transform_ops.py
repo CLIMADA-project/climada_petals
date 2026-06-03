@@ -22,10 +22,21 @@ Transformations for dantro data pipeline
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Union, List, Mapping, Any, Iterable, Tuple, Callable
+from typing import (
+    Optional,
+    Union,
+    List,
+    Mapping,
+    Any,
+    Iterable,
+    Tuple,
+    Callable,
+    Sequence,
+)
 from collections import deque
 from copy import deepcopy
 
+from imagecodecs import NoneError
 import xarray as xr
 import numpy as np
 import pandas as pd
@@ -219,14 +230,12 @@ def download_glofas_discharge(
     product: str,
     dates: pd.DatetimeIndex,
     num_proc: int = 1,
-    download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
-    countries: Optional[Union[List[str], str]] = None,
-    preprocess: Optional[Callable] = None,
-    open_mfdataset_kw: Optional[Mapping[str, Any] | bool] = None,
+    download_path: str | Path = CDS_DOWNLOAD_DIR,
+    countries: list[str] | str | None = None,
     split_request: bool | str = True,
     **request_kwargs,
-) -> xr.DataArray:
-    """Download the GloFAS data and return the resulting dataset
+) -> list[Path]:
+    """Download the GloFAS data and return the file paths of the stored data.
 
     Parameters
     ----------
@@ -245,14 +254,7 @@ def download_glofas_discharge(
     countries : str or list of str, optional
         Countries to download data for. Uses the maximum extension of all countries for
         selecting the latitude/longitude range of data to download.
-    preprocess : str, optional
-        String expression for preprocessing the data before merging it into one dataset.
-        Must be valid Python code. The downloaded data is passed as variable ``x``.
-    open_mfdataset_kw : dict or bool, optional
-        Optional keyword arguments for the ``xarray.open_mfdataset`` function.
-        If ``False``, this function will return the file paths of the downloaded data
-        instead of the opened data. ``True`` has the same effect as ``None``.
-    split_request : bool or str
+    split_request : str or bool
         How to split requests according to groupings of the ``dates``. This is either a
         frequency string that will be inserted into a
         `pandas.Grouper <https://pandas.pydata.org/docs/reference/api/pandas.Grouper.html#pandas.Grouper>`_
@@ -265,14 +267,8 @@ def download_glofas_discharge(
 
     Returns
     -------
-    xarray.DataArray
-        The downloaded discharge data opened as (squeezed) data array.
-
-    Note
-    ----
-    If ``open_mfdataset_kw=False``, this function will **not** open the
-    downloaded data but return the file paths (as returned by
-    :py:func:`~climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`).
+    list[Path]
+        The list of file paths to the downloaded files.
     """
     # Create the download path if it does not yet exist
     LOGGER.debug("Preparing download directory: %s", download_path)
@@ -323,7 +319,7 @@ def download_glofas_discharge(
         request_kwargs["area"] = list(bounds)
 
     # Request the data
-    files = glofas_request(
+    return glofas_request(
         product=product,
         num_proc=num_proc,
         output_dir=download_path,
@@ -331,24 +327,108 @@ def download_glofas_discharge(
         requests=requests,
     )
 
-    if open_mfdataset_kw is False:
-        return files
 
+def open_glofas_discharge(
+    files: Sequence[Path | str],
+    preprocess: Callable[[xr.DataArray], xr.DataArray] | None = None,
+    **open_mfdataset_kwargs,
+) -> xr.DataArray:
+    """Conveniently open GloFAS discharge data into a single xarray DataArray.
+
+    Parameters
+    ----------
+    files : Sequence of Path or str
+        The files to open.
+    preprocess : Callable, optional
+        A function taking the DataArray as argument and returning a transformed
+        DataArray.
+    open_mfdataset_kwargs
+        Optional keyword arguments for the ``xarray.open_mfdataset`` function.
+
+    Returns
+    -------
+    xr.DataArray
+        The discharge data opened as single data array.
+    """
     # Set arguments for 'open_mfdataset'
-    open_kwargs = dict(
-        chunks="auto",
-        combine="nested",
-        concat_dim="time",
-        preprocess=preprocess,
-        engine="cfgrib",
-    )
-    if open_mfdataset_kw is not None and open_mfdataset_kw is not True:
-        open_kwargs.update(open_mfdataset_kw)
+    open_kwargs = {
+        "chunks": "auto",
+        "combine": "nested",
+        "concat_dim": "time",
+        "preprocess": preprocess,
+        "engine": "cfgrib",
+    } | open_mfdataset_kwargs
 
     # Squeeze all dimensions except time
     arr = xr.open_mfdataset(files, **open_kwargs)["dis24"]
     dims = {dim for dim, size in arr.sizes.items() if size == 1} - {"time"}
     return arr.squeeze(dim=dims)
+
+
+def get_glofas_discharge(
+    product: str,
+    dates: pd.DatetimeIndex,
+    num_proc: int = 1,
+    download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
+    countries: Optional[Union[List[str], str]] = None,
+    split_request: bool | str = True,
+    preprocess: Callable[[xr.DataArray], xr.DataArray] | None = None,
+    open_mfdataset_kws: Mapping[str, Any] | None = None,
+    **request_kwargs,
+) -> xr.DataArray:
+    """Download the GloFAS data and return the data as xarray DataArray.
+
+    Parameters
+    ----------
+    product : str
+        The string identifier of the product to download. See
+        :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`
+        for supported products.
+    dates : pd.DatetimeIndex
+        Dates to download data for.
+    num_proc : int
+        Number of parallel processes to use for downloading. Defaults to 1.
+    download_path : str or pathlib.Path
+        Directory to store the downloaded data. The directory (and all required parent
+        directories!) will be created if it does not yet exist. Defaults to
+        ``~/climada/data/glofas-discharge/``.
+    countries : str or list of str, optional
+        Countries to download data for. Uses the maximum extension of all countries for
+        selecting the latitude/longitude range of data to download.
+    split_request : str or bool
+        How to split requests according to groupings of the ``dates``. This is either a
+        frequency string that will be inserted into a
+        `pandas.Grouper <https://pandas.pydata.org/docs/reference/api/pandas.Grouper.html#pandas.Grouper>`_
+        as ``freq`` parameter, or a boolean, in which case a split frequency of 1 day
+        (``freq="1D"``) is chosen for ``forecast`` products and 1 year (``freq="1YS"``)
+        is chosen for ``historical`` (or other) products.
+    preprocess : Callable
+        A function taking the DataArray as argument and returning a transformed
+        DataArray.
+    open_mfdataset_kws
+        Additional keyword arguments to ``xarray.open_mfdataset``.
+    request_kwargs
+        Keyword arguments for the Copernicus data store request. See
+        :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`.
+
+    Returns
+    -------
+    xr.DataArray
+        The downloaded discharge data opened as (squeezed) data array.
+    """
+    files = download_glofas_discharge(
+        product=product,
+        dates=dates,
+        num_proc=num_proc,
+        download_path=download_path,
+        countries=countries,
+        split_request=split_request,
+        **request_kwargs,
+    )
+    open_mfdataset_kws = open_mfdataset_kws or {}
+    return open_glofas_discharge(
+        files=files, preprocess=preprocess, **open_mfdataset_kws
+    )
 
 
 def max_from_isel(
