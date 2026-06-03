@@ -3,8 +3,8 @@ River Flood Hazards from GloFAS Discharge Data
 ==============================================
 
 This tutorial will guide you through the GloFAS River Flood module of CLIMADA Petals.
-It's purpose is to download river discharge data from the Global Flood Awareness System (GloFAS) and compute flood depths from it.
-The data is stored by the `Copernicus Data Store (CDS) <https://cds.climate.copernicus.eu/#!/home>`_ and will be automatically downloaded in the process.
+Its purpose is to download river discharge data from the Global Flood Awareness System (GloFAS) and compute flood depths from it.
+The data is stored by the `CEMS Early Warning Data Store <https://ewds.climate.copernicus.eu/>`_ and will be automatically downloaded in the process.
 
 --------
 Overview
@@ -27,10 +27,11 @@ Preparations
 We need to prepare three things: The flood hazard maps, the extreme value distributions, and access to the CDS API.
 
 Copernicus Data Store API Access
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1. Register at the `Copernicus Data Store (CDS) <https://cds.climate.copernicus.eu/#!/home>`_ and log in.
-2. Check out the `CDS API HowTo <https://cds.climate.copernicus.eu/api-how-to>`_.
-   In the section "Install the CDS API key", copy the content of the black box on the right.
+1. Register at the `CEMS Early Warning Data Store <https://ewds.climate.copernicus.eu/>`_ and log in.
+2. Check out the `CDS API HowTo <https://cds.climate.copernicus.eu/how-to-api>`_.
+   Copy the content of the black box at the end of the section "Setup the CDS Api key".
 3. Create a file called ``.cdsapirc`` in your home directory and paste the contents of the black box into it.
 
    If you are unsure where to put the file and you are working on a Linux or macOS system, open a terminal and execute
