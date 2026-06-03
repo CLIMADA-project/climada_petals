@@ -198,6 +198,10 @@ def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
         raise RuntimeError(
             f"Failed to download Gumbel fit parameters from {GUMBEL_FIT_DATA}. Status code: {response.status_code}"
         )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to download Gumbel fit parameters from {GUMBEL_FIT_DATA}. Status code: {response.status_code}"
+        )
     with open(output_dir / "gumbel-fit.nc", "wb") as file:
         for chunk in response.iter_content(chunk_size=10 * 1024):
             file.write(chunk)
