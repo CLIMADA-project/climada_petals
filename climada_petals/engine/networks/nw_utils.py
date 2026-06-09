@@ -119,7 +119,10 @@ def infra_plot(
     plot_col="ci_type",
     enduser="people",
     mask_func_ci=True,
+    road_mask=True,
     axes=None,
+    legend=True,
+    legend_loc="upper right",
     projection=ccrs.PlateCarree(),
     pop_kwargs=dict(),
     ci_kwargs=dict(),
@@ -204,6 +207,9 @@ def infra_plot(
             plot_df = self.edges[self.edges.ci_type == ci_type]
             if mask_func_ci:
                 plot_df = plot_df[plot_df["func_tot"] < 1]
+            if road_mask & (ci_type == "road"):
+                plot_df = plot_df[~pd.isna(plot_df["id"])]
+
             plot_df.plot(
                 plot_col,
                 ax=axes,
@@ -258,7 +264,8 @@ def infra_plot(
                 zorder=i + 2,
             )
 
-    axes.legend()
+    if legend:
+        axes.legend(loc=legend_loc)
 
     # Add a single status colorbar if plotting functional status
     if use_status_colorbar and not mask_func_ci:
@@ -355,6 +362,7 @@ def access_plot(
     self,
     ci_type,
     enduser="people",
+    access_states=None,
     axes=None,
     projection=ccrs.PlateCarree(),
     plot_kwargs=dict(),
@@ -374,6 +382,11 @@ def access_plot(
         The CI type to assess access for (e.g. 'healthcare', 'power').
     enduser : str, optional
         The type of end user to plot access for. Default is 'people'.
+    access_states : list of str, optional
+        Subset of access states to plot. If None, all states are plotted.
+         Possible values:
+         'access undisrupted', 'access disrupted via', 'access disrupted source',
+         and 'no base access'.
     axes : cartopy.mpl.geoaxes.GeoAxes, optional
         Axes to plot on. If None, a new figure and axes are created.
     projection : cartopy.crs.Projection, optional
@@ -401,6 +414,10 @@ def access_plot(
     gdf_enduser = self.nodes[self.nodes.ci_type == enduser]
 
     service = f"access_state_{ci_type}_{enduser}"
+
+    # get access states
+    if access_states is not None:
+        gdf_enduser = gdf_enduser[gdf_enduser[service].isin(access_states)]
 
     # lowercase for safety
     cvals = gdf_enduser[service].str.lower().map(STATUS_MAP).fillna(0)
@@ -1004,7 +1021,29 @@ def _get_dir_affected_mask(network):
     return dir_affected_mask
 
 
-def make_network_stat(network, ci_types=None):
+def _get_imp_infra(network, ci_type, threshold=1, edge_col="distance", node_col=None):
+    """Return boolean mask of infrastructure nodes with direct impacts"""
+    if ci_type in network.edges["ci_type"].unique():
+        infra_mask = (network.edges["ci_type"] == ci_type) & (
+            network.edges["func_tot"] < threshold
+        )
+        imp_infra = network.edges.loc[infra_mask, edge_col].sum()
+    elif ci_type in network.nodes["ci_type"].unique():
+        infra_mask = (network.nodes["ci_type"] == ci_type) & (
+            network.nodes["func_tot"] < threshold
+        )
+        if not node_col:
+            imp_infra = len(network.nodes.loc[infra_mask])
+        else:
+            imp_infra = network.nodes.loc[infra_mask, node_col].sum()
+    else:
+        raise ValueError(f"CI type '{ci_type}' not found in network nodes or edges.")
+    return imp_infra
+
+
+def make_network_stat(
+    network, ci_types=None, threshold_func=1, edge_col="distance", node_col=None
+):
     """
     Compute network impact statistics.
 
@@ -1014,6 +1053,13 @@ def make_network_stat(network, ci_types=None):
         Network object with nodes and edges
     ci_types : list, optional
         List of CI types to analyze (excludes 'people'). If None, auto-detected.
+    threshold_func : float, optional
+        Threshold for functional status to consider infrastructure as impacted.
+        Default is 1 (fully functional).
+    edge_col : str, optional
+        Column name in edges to sum for impacted infrastructure. Default is 'length'.
+    node_col : str, optional
+        Column name in nodes to sum for impacted infrastructure. If None, counts number of nodes.
 
     Returns
     -------
@@ -1068,6 +1114,24 @@ def make_network_stat(network, ci_types=None):
         # Accumulate masks for indirect impact calculation
         all_access_loss_masks.append(access_loss_mask)
 
+        # get infrastructure impact for this CI type
+        stats[f"{ci_type}_infra_impact"] = _get_imp_infra(
+            network,
+            ci_type,
+            threshold=threshold_func,
+            edge_col=edge_col,
+            node_col=node_col,
+        )
+
+        # get total infrastructure for this CI type (for context)
+        stats[f"{ci_type}_infra_total"] = _get_imp_infra(
+            network,
+            ci_type,
+            threshold=2,  # 2 gives all infrastructure regardless of functional status
+            edge_col=edge_col,
+            node_col=node_col,
+        )
+
     # Indirectly affected: people losing access to ANY CI type
     # Combine all access loss masks with OR logic
     if all_access_loss_masks:
@@ -1080,8 +1144,13 @@ def make_network_stat(network, ci_types=None):
     else:
         indirectly_affected_pop = 0
 
+    # Get total affected people combining direct and indirect impacts without double counting
+    tot_affected_pop = network.nodes.loc[
+        pop_mask & (indir_affected_mask | dir_affected_mask), "value"
+    ].sum()
+
     stats["indirectly_affected"] = indirectly_affected_pop
-    stats["total_affected"] = directly_affected_pop + indirectly_affected_pop
+    stats["total_affected"] = tot_affected_pop
 
     return stats
 
@@ -1117,7 +1186,7 @@ def get_worldpop_data(save_path, iso3=None, year=2024, res=1000):
             download_url = (
                 "https://data.worldpop.org/GIS/Population/"
                 + f"Global_2015_2030/R2025A/{year}/{iso3}/v1/"
-                + f"1km/constrained/{iso3.lower()}_pop_{year}_CN_1km_R2025A_v1.tif"
+                + f"1km_ua/constrained/{iso3.lower()}_pop_{year}_CN_1km_R2025A_UA_v1.tif"
             )
             # download_url = (
             #    "https://data.worldpop.org/GIS/Population/"
