@@ -1,12 +1,8 @@
 # Changelog
 
-## Unreleased
+## 6.2.0
 
-Release date: YYYY-MM-DD
-
-Code freeze date: YYYY-MM-DD
-
-### Description
+Release date: 2026-06-15
 
 ### Dependency Changes
 
@@ -17,14 +13,6 @@ Added:
 ### Added
 
 - Module to compute multi-country optimised CATBonds. [#186](https://github.com/CLIMADA-project/climada_petals/pull/186)
-
-### Changed
-
-### Fixed
-
-### Deprecated
-
-### Removed
 
 ## 6.1.0
 
