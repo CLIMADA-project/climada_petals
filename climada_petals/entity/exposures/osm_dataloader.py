@@ -102,13 +102,16 @@ class OSMApiQuery:
                 return api.query(query_clause)
             except overpy.exception.OverpassTooManyRequests:
                 if waiting_period < end_of_patience:
-                    LOGGER.warning("""Too many Overpass API requests -
+                    LOGGER.warning(f"""Too many Overpass API requests -
                                    trying again in {waiting_period} seconds """)
                 else:
                     raise Exception("Overpass API is consistently unavailable")
+            except overpy.exception.OverpassUnknownHTTPStatusCode as exc:
+                LOGGER.error(f"overpy.Overpass query failed: {exc.__class__.__name__} - {exc}")
+                raise exc
             except Exception as exc:
                 if waiting_period < end_of_patience:
-                    LOGGER.warning(f"""{exc}
+                    LOGGER.warning(f"""{exc.__class__.__name__} - {exc}
                                    Trying again in {waiting_period} seconds""")
                 else:
                     raise Exception(

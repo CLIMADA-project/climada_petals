@@ -10,9 +10,13 @@ Code freeze date: YYYY-MM-DD
 
 ### Dependency Changes
 
+Added:
+
+- `pymoo`
+
 ### Added
 
-- Module to compute multi-country optimised CATBonds.
+- Module to compute multi-country optimised CATBonds. [#186](https://github.com/CLIMADA-project/climada_petals/pull/186)
 
 ### Changed
 
