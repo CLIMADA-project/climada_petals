@@ -188,10 +188,17 @@ class TCForecast(TCTracks):
         -------
         [filelike]
         """
-        con = ftplib.FTP(host=ECMWF_FTP.host.str(),
+        def connect_to_ecmwf(remote_dir) -> ftplib.FTP:
+            con = ftplib.FTP(host=ECMWF_FTP.host.str(),
                          user=ECMWF_FTP.user.str(),
-                         passwd=ECMWF_FTP.passwd.str())
+                         passwd=ECMWF_FTP.passwd.str(),
+                         timeout=10)
+            if remote_dir is not None:
+                con.cwd(remote_dir)
+            return con
+
         try:
+            con= connect_to_ecmwf(remote_dir=remote_dir)
             if remote_dir is None:
                 # Read list of directories on the FTP server
                 remote = pd.Series(con.nlst())
@@ -200,9 +207,7 @@ class TCForecast(TCTracks):
                 # Select the most recent directory (names are formatted yyyymmddhhmmss)
                 remote = remote.sort_values(ascending=False)
                 remote_dir = remote.iloc[0]
-
-            # Connect to the directory
-            con.cwd(remote_dir)
+                con.cwd(remote_dir)
 
             # Filter to files with 'tropical_cyclone' in the name: each file is a forecast
             # ensemble for one event
@@ -224,16 +229,24 @@ class TCForecast(TCTracks):
                     lfile = Path(target_dir, rfile).open('w+b')
                 else:
                     lfile = tempfile.TemporaryFile(mode='w+b')
-
-                con.retrbinary('RETR ' + rfile, lfile.write)
-                lfile.seek(0)
-                localfiles.append(lfile)
+                for attempt in range(3,0,-1):
+                    try:
+                        con.retrbinary('RETR ' + rfile, lfile.write)
+                        lfile.seek(0)
+                        localfiles.append(lfile)
+                        break
+                    except TimeoutError as toe:
+                        if attempt == 1:
+                            raise toe
+                        LOGGER.info("got timeout from ftp connection, trying again")
+                        con.quit()
+                        con = connect_to_ecmwf(remote_dir=remote_dir)
 
         except ftplib.all_errors as err:
-            con.quit()
             raise type(err)('Error while downloading BUFR TC tracks: ' + str(err)) from err
 
-        _ = con.quit()
+        finally:
+            con.quit()
 
         return localfiles
 

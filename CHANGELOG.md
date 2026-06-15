@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+Release date: YYYY-MM-DD
+
+Code freeze date: YYYY-MM-DD
+
+### Description
+
+### Dependency Changes
+
+Added:
+
+- `pymoo`
+
+### Added
+
+- Module to compute multi-country optimised CATBonds. [#186](https://github.com/CLIMADA-project/climada_petals/pull/186)
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
 ## 6.1.0
 
 Release date: 2025-09-30
