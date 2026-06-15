@@ -1,13 +1,9 @@
 climada\_petals\.engine package
 ===============================
 
-climada\_petals\.engine\.cat_bonds module
--------------------------------------------
+.. toctree::
 
-.. automodule:: climada_petals.engine.cat_bonds
-    :members:
-    :undoc-members:
-    :show-inheritance:
+    climada_petals.engine.cat_bonds
 
 climada\_petals\.engine\.supplychain module
 -------------------------------------------
@@ -24,3 +20,4 @@ climada\_petals\.engine\.warn module
     :members:
     :undoc-members:
     :show-inheritance:
+
