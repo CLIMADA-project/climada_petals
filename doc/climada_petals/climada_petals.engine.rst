@@ -1,6 +1,14 @@
 climada\_petals\.engine package
 ===============================
 
+climada\_petals\.engine\.cat_bonds module
+-------------------------------------------
+
+.. automodule:: climada_petals.engine.cat_bonds
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 climada\_petals\.engine\.supplychain module
 -------------------------------------------
 
@@ -16,4 +24,3 @@ climada\_petals\.engine\.warn module
     :members:
     :undoc-members:
     :show-inheritance:
-
