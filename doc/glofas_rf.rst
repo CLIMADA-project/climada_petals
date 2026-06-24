@@ -29,10 +29,10 @@ We need to prepare three things: The flood hazard maps, the extreme value distri
 Copernicus Data Store API Access
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1. Register at the `CEMS Early Warning Data Store <https://ewds.climate.copernicus.eu/>`_ and log in.
-2. Check out the `CDS API HowTo <https://cds.climate.copernicus.eu/how-to-api>`_.
-   Copy the content of the black box at the end of the section "Setup the CDS Api key".
-3. Create a file called ``.cdsapirc`` in your home directory and paste the contents of the black box into it.
+#. Register at the `CEMS Early Warning Data Store <https://ewds.climate.copernicus.eu/>`_ and log in.
+#. Go to your `CEMS profile <https://ewds.climate.copernicus.eu/profile>`_.
+#. Scroll down to the "API Key" section and click on the second "Copy" symbol to the right, below the instructions "To easily use your API key, you can configure it inside your ``.cdsapirc`` file:"
+#. Create a file called ``.cdsapirc`` in your home directory and paste the copied contents into it.
 
    If you are unsure where to put the file and you are working on a Linux or macOS system, open a terminal and execute
 
