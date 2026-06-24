@@ -21,14 +21,14 @@ Module preparing data for the river flood inundation model
 
 from typing import Union
 from pathlib import Path
-from tempfile import TemporaryFile, TemporaryDirectory
+from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 import logging
 import shutil
 
 import xarray as xr
-import requests
 import pandas as pd
+import pooch
 
 from .flood_maps import open_flood_maps_extents
 from .transform_ops import (
@@ -62,21 +62,21 @@ def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):
     LOGGER.debug("Downloading FLOPROS database")
 
     # Download the file
-    response = requests.get(FLOPROS_DATA, stream=True)
-    with TemporaryFile(suffix=".zip") as file:
-        for chunk in response.iter_content(chunk_size=10 * 1024):
-            file.write(chunk)
+    file = pooch.retrieve(
+        FLOPROS_DATA,
+        known_hash="fca4f62efefef7452d22c29869fc388ee1a5053d07fd7e44e63da2f489fb8d72",
+    )
 
-        # Unzip the folder
-        with TemporaryDirectory() as tmpdir:
-            with ZipFile(file) as zipfile:
-                zipfile.extractall(tmpdir)
+    # Unzip the folder
+    with TemporaryDirectory() as tmpdir:
+        with ZipFile(file) as zipfile:
+            zipfile.extractall(tmpdir)
 
-            shutil.copytree(
-                Path(tmpdir) / "Scussolini_etal_Suppl_info/FLOPROS_shp_V1",
-                Path(output_dir) / "FLOPROS_shp_V1",
-                dirs_exist_ok=True,
-            )
+        shutil.copytree(
+            Path(tmpdir) / "Scussolini_etal_Suppl_info/FLOPROS_shp_V1",
+            Path(output_dir) / "FLOPROS_shp_V1",
+            dirs_exist_ok=True,
+        )
 
 
 def compute_gumbel_fit(
@@ -193,15 +193,12 @@ def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
     Download dataset of https://doi.org/10.3929/ethz-b-000726304
     """
     LOGGER.debug("Downloading Gumbel fit parameters")
-    response = requests.get(GUMBEL_FIT_DATA, stream=True)
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Failed to download Gumbel fit parameters from {GUMBEL_FIT_DATA}. "
-            f"Status code: {response.status_code}"
-        )
-    with open(output_dir / "gumbel-fit.nc", "wb") as file:
-        for chunk in response.iter_content(chunk_size=10 * 1024):
-            file.write(chunk)
+    pooch.retrieve(
+        GUMBEL_FIT_DATA,
+        known_hash="e83262022cb8d41ef2d2ab54aaecfa3e3aa62eaf8b452fef3dce39217ee1eec3",
+        path=output_dir,
+        fname="gumbel-fit.nc",
+    )
 
 
 def setup_all(
