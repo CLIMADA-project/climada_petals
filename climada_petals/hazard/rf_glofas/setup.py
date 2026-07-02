@@ -48,7 +48,7 @@ JRC_FLOOD_HAZARD_MAP_RPS = [10, 20, 50, 75, 100, 200, 500]
 
 FLOPROS_DATA = "https://nhess.copernicus.org/articles/16/1049/2016/nhess-16-1049-2016-supplement.zip"
 
-GUMBEL_FIT_DATA = "https://www.research-collection.ethz.ch/bitstreams/ee5a1594-fd1c-490b-9e78-710c4bdd8709/download"
+GUMBEL_FIT_DATA = "https://zenodo.org/records/21130237/files/gumbel-fit.nc?download=1"
 
 
 def download_flopros_database(output_dir: Union[str, Path] = DEFAULT_DATA_DIR):
@@ -191,6 +191,11 @@ def download_gumbel_fit(output_dir=DEFAULT_DATA_DIR):
     """Download the pre-computed Gumbel parameters from the ETH research collection.
 
     Download dataset of https://doi.org/10.3929/ethz-b-000726304
+
+    Note
+    ----
+    Currently, we use Zenodo for a stable download link, see
+    https://doi.org/10.5281/zenodo.21130237
     """
     LOGGER.debug("Downloading Gumbel fit parameters")
     pooch.retrieve(
