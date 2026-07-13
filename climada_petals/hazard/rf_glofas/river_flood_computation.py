@@ -713,8 +713,8 @@ class RiverFloodInundation:
             # Perform regridding
             if how != "xarray" and regrid is not None:
                 return_period_regrid, self.regridder = regrid(
-                    return_period_data,
-                    flood_maps,
+                    return_period=return_period_data,
+                    flood_maps=flood_maps,
                     method=method,
                     regridder=self.regridder,
                     return_regridder=True,
@@ -722,7 +722,9 @@ class RiverFloodInundation:
             else:
                 method = "linear" if method == "bilinear" else method
                 return_period_regrid = interpolate_space(
-                    return_period_data, flood_maps, method=method
+                    return_period=return_period_data,
+                    flood_maps=flood_maps,
+                    method=method,
                 )
 
             if self.store_intermediates:
