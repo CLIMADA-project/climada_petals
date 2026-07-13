@@ -22,7 +22,7 @@ Top-level computation class for river flood inundation
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import logging
-from typing import Union, Optional, Mapping, Any, Callable, List
+from typing import Literal, Union, Optional, Mapping, Any, Callable, List
 from contextlib import contextmanager
 from datetime import datetime
 from collections import namedtuple
@@ -39,7 +39,7 @@ from .transform_ops import (
     get_glofas_discharge,
     return_period,
     return_period_resample,
-    regrid,
+    interpolate_space,
     apply_flopros,
     flood_depth,
     save_file,
@@ -628,10 +628,15 @@ class RiverFloodInundation:
         self,
         r_period: Optional[xr.DataArray] = None,
         flood_maps: Optional[xr.DataArray] = None,
+        how: Literal["xesmf"] | Literal["xarray"] | None = None,
         method: str = "bilinear",
         reuse_regridder: bool = False,
     ):
         """Regrid the return period data onto the flood hazard map grid.
+
+        By default, this function prefers using xesmf for regridding, but falls back to
+        xarray interpolation if xesmf is not installed. This behavior can be controlled
+        via the ``how`` parameter.
 
         This computes the regridding matrix for the given coordinates and then performs
         the actual regridding. The matrix is stored in :py:attr:`regridder`. If
@@ -650,13 +655,21 @@ class RiverFloodInundation:
         flood_maps : xr.DataArray, optional
             The flood maps to use for regridding. Defaults to ``None``, which means that
             flood maps compatible to ``r_period`` will be downloaded and opened.
+        how : "xesmf", "xarray", or None
+            Which tool to use for regridding. ``"xesmf"`` uses the xesmf regridder.
+            ``"xarray"`` uses
+            `DataArray.interp <https://docs.xarray.dev/en/stable/generated/xarray.DataArray.interp.html>`_.
+            ``None`` (default) prefers xesmf but silently falls back to xarray if xesmf
+            is not installed.
         method : str, optional
             Interpolation method of the return period data. Defaults to ``"bilinear"``.
             See https://xesmf.readthedocs.io/en/stable/notebooks/Compare_algorithms.html
+            and https://docs.xarray.dev/en/stable/generated/xarray.DataArray.interp.html.
         reuse_regridder : bool, optional
             Reuse the regridder stored if one is stored. Defaults to ``False``, which
             means that a new regridder is always built when calling this function.
             If ``True``, and no regridder is stored, it will be built nonetheless.
+            This parameter has no effect if xarray regridding is used.
 
         Returns
         -------
@@ -665,7 +678,10 @@ class RiverFloodInundation:
 
         See Also
         --------
-        :py:func:`climada_petals.hazard.rf_glofas.transform_ops.regrid`
+        :py:func:`climada_petals.hazard.rf_glofas.regrid.regrid`
+            Function for xesmf regridding
+        :py:func:`climada_petals.hazard.rf_glofas.transform_ops.interpolate_space`
+            Function for xarray regridding
         """
         # NOTE: Chunks must be small because resulting array is huge!
         with _maybe_open_dataarray(
@@ -685,13 +701,29 @@ class RiverFloodInundation:
             if not reuse_regridder:
                 self.regridder = None
 
-            return_period_regrid, self.regridder = regrid(
-                return_period_data,
-                flood_maps,
-                method=method,
-                regridder=self.regridder,
-                return_regridder=True,
-            )
+            # Decide on regridder
+            try:
+                from .regrid import regrid
+            except ImportError as err:
+                if how == "xesmf":
+                    raise RuntimeError("xesmf must be installed") from err
+                regrid = None
+                how = "xarray"
+
+            # Perform regridding
+            if how != "xarray" and regrid is not None:
+                return_period_regrid, self.regridder = regrid(
+                    return_period_data,
+                    flood_maps,
+                    method=method,
+                    regridder=self.regridder,
+                    return_regridder=True,
+                )
+            else:
+                method = "linear" if method == "bilinear" else method
+                return_period_regrid = interpolate_space(
+                    return_period_data, flood_maps, method=method
+                )
 
             if self.store_intermediates:
                 save_file(

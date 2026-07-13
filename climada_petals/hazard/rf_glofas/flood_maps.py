@@ -208,9 +208,7 @@ def open_flood_map_tiles(
             combine="by_coords",
             engine="rasterio",
         ) as dset:
-            return dset.drop_vars("spatial_ref", errors="ignore").squeeze(
-                "band", drop=True
-            )["band_data"]
+            return dset.squeeze("band", drop=True)["band_data"]
 
     darrs = [open_rp(rp) for rp in JRC_FLOOD_HAZARD_MAP_RPS]
     da_null = xr.full_like(darrs[0], np.nan)

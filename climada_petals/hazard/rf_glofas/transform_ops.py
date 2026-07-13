@@ -20,7 +20,6 @@ Transformations for dantro data pipeline
 """
 
 import logging
-import re
 from pathlib import Path
 from typing import (
     Optional,
@@ -29,21 +28,19 @@ from typing import (
     Mapping,
     Any,
     Iterable,
-    Tuple,
     Callable,
     Sequence,
 )
 from collections import deque
 from copy import deepcopy
 
-from imagecodecs import NoneError
 import xarray as xr
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 from scipy.stats import gumbel_r
-import xesmf as xe
 from numba import guvectorize
+import rioxarray
 
 from climada.util.coordinates import get_country_geometries, country_to_iso
 from .cds_glofas_downloader import (
@@ -645,66 +642,27 @@ def interpolate_space(
     return_period: xr.DataArray,
     flood_maps: xr.DataArray,
     method: str = "linear",
+    mask_values: bool = True,
 ) -> xr.DataArray:
     """Interpolate the return period in space onto the flood maps grid"""
     # Select lon/lat for flood maps
     flood_maps = sel_lon_lat_slice(flood_maps, return_period)
 
     # Interpolate the return period
-    return return_period.interp(
+    return_period_regridded = return_period.interp(
         coords=dict(longitude=flood_maps["longitude"], latitude=flood_maps["latitude"]),
         method=method,
         kwargs=dict(fill_value=None),  # Extrapolate
     )
+    return_period_regridded.rio.write_crs(flood_maps.rio.crs, inplace=True)
+    return_period_regridded.rio.write_nodata(np.nan, inplace=True)
+    return_period_regridded = return_period_regridded.rio.interpolate_na()
 
-
-def regrid(
-    return_period: xr.DataArray,
-    flood_maps: xr.DataArray,
-    method: str = "bilinear",
-    regridder: Optional[xe.Regridder] = None,
-    return_regridder: bool = False,
-) -> Union[xr.DataArray, Tuple[xr.DataArray, xe.Regridder]]:
-    """Regrid the return period onto the flood maps grid"""
-    # Select lon/lat for flood maps
-    flood_maps = sel_lon_lat_slice(flood_maps, return_period)
-
-    # Mask return period so NaNs are not propagated
-    rp = return_period.to_dataset(name="data")
-    dims_to_remove = set(rp.sizes.keys()) - {"longitude", "latitude"}
-    dims_to_remove = {dim: 0 for dim in dims_to_remove}
-    rp["mask"] = xr.where(~np.isnan(rp["data"].isel(dims_to_remove)), 1, 0).astype(
-        np.int8
-    )
-
-    # NOTE: Masking here would omit all return periods outside flood plains
-    #       (This might be desirable at some point?)
-    flood = flood_maps.isel(return_period=-1).to_dataset(name="data")
-    flood["mask"] = xr.where(~np.isnan(flood["data"]), 1, 0).astype(np.int8)
-
-    # Build regridder
-    if regridder is None:
-        regridder = xe.Regridder(
-            rp,
-            flood,
-            method=method,
-            extrap_method="nearest_s2d",
-            # filename="/Users/ldr.riedel/Desktop/regridder/regridder.nc",
-            # parallel=True,
-            # unmapped_to_nan=False,
+    # Set values that do not exist in the flood hazard maps to NaN
+    if mask_values:
+        return_period_regridded = return_period_regridded.where(
+            ~np.isnan(flood_maps.isel(return_period=-1, drop=True))
         )
-
-    # Set chunksizes
-    return_period = return_period.unify_chunks()
-    chunksizes = {dim: np.max(sizes) for dim, sizes in return_period.chunksizes.items()}
-
-    return_period_regridded = (
-        regridder(return_period, output_chunks=chunksizes)
-        .rename(return_period.name)
-        .drop_vars("return_period", errors="ignore")
-    )
-    if return_regridder:
-        return return_period_regridded, regridder
 
     return return_period_regridded
 

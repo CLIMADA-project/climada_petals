@@ -26,6 +26,11 @@ You can call them directly for advanced applications.
     :undoc-members:
     :show-inheritance:
 
+.. automodule:: climada_petals.hazard.rf_glofas.regrid
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 ----------------
 Helper Functions
 ----------------

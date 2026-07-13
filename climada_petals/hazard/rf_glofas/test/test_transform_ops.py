@@ -33,6 +33,7 @@ import xarray.testing as xrt
 import geopandas as gpd
 from shapely.geometry import Polygon
 import pandas as pd
+import rioxarray
 
 from climada_petals.hazard.rf_glofas.transform_ops import (
     download_glofas_discharge,
@@ -41,7 +42,6 @@ from climada_petals.hazard.rf_glofas.transform_ops import (
     return_period,
     return_period_resample,
     interpolate_space,
-    regrid,
     flood_depth,
     reindex,
     sel_lon_lat_slice,
@@ -50,6 +50,11 @@ from climada_petals.hazard.rf_glofas.transform_ops import (
     fit_gumbel_r,
     save_file,
 )
+
+try:
+    from climada_petals.hazard.rf_glofas.regrid import regrid
+except ImportError:
+    regrid = None
 
 
 def cdf_mock(dis, loc, scale):
@@ -353,6 +358,84 @@ class TestGlofasDownloadOps(unittest.TestCase):
             | {"year": ["2000"], "month": ["03"], "day": ["11"]},
         )
 
+class TestRegrid(unittest.TestCase):
+
+    def setUp(self) -> None:
+        """Initialize test values"""
+        x = np.arange(4.0)
+        y = np.flip(x)
+        x_diff = x * 0.9
+        y_diff = y * 0.8
+        xx, yy = np.meshgrid(x, y, indexing="xy")
+        values = xx + yy
+
+        self.da_values = xr.DataArray(
+            data=values,
+            dims=["latitude", "longitude"],
+            coords=dict(longitude=x, latitude=y),
+        )
+        self.da_coords = xr.DataArray(
+            data=[values] * 3,
+            dims=["return_period", "latitude", "longitude"],
+            coords=dict(longitude=x_diff, latitude=y_diff, return_period=[1, 10, 100]),
+        )
+        self.da_coords.rio.write_crs("epsg:4326", inplace=True)
+
+        xx_diff, yy_diff = np.meshgrid(x_diff, y_diff, indexing="xy")
+        expected_values = xx_diff + yy_diff
+        self.da_expected = xr.DataArray(
+            data=expected_values,
+            dims=["latitude", "longitude"],
+            coords=dict(longitude=x_diff, latitude=y_diff),
+        )
+        self.da_expected.rio.write_crs("epsg:4326", inplace=True)
+
+    def assert_result(self, da_result, da_expected_values, **kwargs):
+            """Check if result is as expected"""
+            npt.assert_array_equal(
+                da_result["longitude"], da_expected_values["longitude"]
+            )
+            npt.assert_array_equal(
+                da_result["latitude"], da_expected_values["latitude"]
+            )
+            # Interpolation causes some noise, so "allclose" is enough here
+            xrt.assert_allclose(da_result, da_expected_values, **kwargs)
+
+    def test_interpolate_space(self):
+        """Test 'interpolate_space' and 'regrid' operations"""
+        # 'interpolate_space'
+        da_result = interpolate_space(self.da_values, self.da_coords)
+        # print(da_result, self.da_expected)
+        self.assert_result(da_result, self.da_expected)
+
+        # Nearest neighbor extrapolation (from resulting grid)
+        self.da_values[2:, 2:] = np.nan
+        self.da_expected[1:, 2:] = [[4.2, 5.1], [1.7, 5.1], [0.9, 0.9]]
+
+        da_result = interpolate_space(self.da_values, self.da_coords)
+        self.assert_result(da_result, self.da_expected)
+
+    @unittest.skipIf(regrid is None, "xesmf is not installed")
+    def test_regrid(self):
+        # 'regrid'
+        da_result = regrid(self.da_values, self.da_coords)
+        self.assert_result(
+            da_result,
+            self.da_expected,
+            rtol=1e-3,  # Regridding has lower accuracy
+        )
+
+        # Nearest neighbor extrapolation (from source grid)
+        self.da_values[2:, 2:] = np.nan
+        self.da_expected[1:, 2:] = [[4, 5], [2, 5], [1, 1]]
+
+        # 'regrid'
+        da_result = regrid(self.da_values, self.da_coords)
+        self.assert_result(
+            da_result,
+            self.da_expected,
+            rtol=1e-3,  # Regridding has lower accuracy
+        )
 
 class TestTransformOps(unittest.TestCase):
     """Test case for other dantro operations"""
@@ -542,62 +625,6 @@ class TestTransformOps(unittest.TestCase):
             loc, scale, size = np.vsplit(kwargs.T, 3)
             npt.assert_array_equal(loc, size)
             npt.assert_array_equal(scale, size)
-
-    def test_interpolate_space(self):
-        """Test 'interpolate_space' and 'regrid' operations"""
-
-        def _assert_result(da_result, da_expected_values, **kwargs):
-            """Check if result is as expected"""
-            npt.assert_array_equal(
-                da_result["longitude"], da_expected_values["longitude"]
-            )
-            npt.assert_array_equal(
-                da_result["latitude"], da_expected_values["latitude"]
-            )
-            # Interpolation causes some noise, so "allclose" is enough here
-            xrt.assert_allclose(da_result, da_expected_values, **kwargs)
-
-        x = np.arange(4.0)
-        y = np.flip(x)
-        x_diff = x * 0.9
-        y_diff = y * 0.8
-        xx, yy = np.meshgrid(x, y, indexing="xy")
-        values = xx + yy
-
-        da_values = xr.DataArray(
-            data=values,
-            dims=["latitude", "longitude"],
-            coords=dict(longitude=x, latitude=y),
-        )
-        da_coords = xr.DataArray(
-            data=[values] * 3,
-            dims=["return_period", "latitude", "longitude"],
-            coords=dict(longitude=x_diff, latitude=y_diff, return_period=[1, 10, 100]),
-        )
-
-        xx_diff, yy_diff = np.meshgrid(x_diff, y_diff, indexing="xy")
-        expected_values = xx_diff + yy_diff
-        da_expected = xr.DataArray(
-            data=expected_values,
-            dims=["latitude", "longitude"],
-            coords=dict(longitude=x_diff, latitude=y_diff),
-        )
-
-        # 'interpolate_space'
-        da_result = interpolate_space(da_values, da_coords)
-        _assert_result(da_result, da_expected)
-
-        # Nearest neighbor extrapolation
-        da_values[2:, 2:] = np.nan
-        da_expected[1:, 2:] = [[4, 5], [2, 5], [1, 1]]
-
-        # 'regrid'
-        da_result = regrid(da_values, da_coords)
-        _assert_result(
-            da_result,
-            da_expected,
-            rtol=1e-3,  # Regridding has lower accuracy
-        )
 
     def test_apply_flopros(self):
         """Test 'apply_flopros' operation"""
