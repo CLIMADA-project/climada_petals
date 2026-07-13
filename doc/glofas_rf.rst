@@ -64,6 +64,27 @@ After this step, you should have the following files in your ``<climada-dir>/dat
 * ``gumbel-fit.nc``: A NetCDF file containing ``loc``, ``scale`` and ``samples`` variables with dimensions ``latitude`` and ``longitude`` on a grid matching the input discharge data (here: GloFAS).
 * ``FLOPROS_shp_V1/FLOPROS_shp_V1.shp``: A shapefile containing flood protection standards for the entire world, encoded as return period against which the local measures are protecting against. 
 
+Optional Dependency: ``xesmf``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you followed the CLIMADA installation instructions, you are ready to use the module, as explained below.
+However, you may want to benefit from the advanced regrid features of the `xesmf <https://xesmf.readthedocs.io/en/stable/>`_ package.
+
+.. warning::
+
+    The package is considered an optional dependency because Conda Forge does not provide its latest version for Windows.
+    You hence might run into some trouble trying to install it on this operating system.
+
+You can install ``xesmf`` with Conda as follows:
+
+.. code-block:: shell
+
+   mamba install -n climada_env -c conda-forge xesmf
+
+This should work without issues on Linux and macOS.
+
+After installation, :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.regrid` will utilize ``xesmf`` for regridding by default.
+
 .. _compute:
 
 ---------------------------
