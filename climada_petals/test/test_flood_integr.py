@@ -21,7 +21,11 @@ Test flood module.
 
 import unittest
 from climada_petals.hazard.river_flood import RiverFlood
-from climada_petals.util.constants import DEMO_GDP2ASSET, HAZ_DEMO_FLDDPH, HAZ_DEMO_FLDFRC
+from climada_petals.util.constants import (
+    DEMO_GDP2ASSET,
+    HAZ_DEMO_FLDDPH,
+    HAZ_DEMO_FLDFRC,
+)
 from climada_petals.entity.exposures.gdp_asset import GDP2Asset
 from climada_petals.entity.impact_funcs.river_flood import flood_imp_func_set
 from climada.engine import Impact
@@ -31,7 +35,7 @@ class TestRiverFlood(unittest.TestCase):
     """Test for reading flood event from file"""
 
     def test_exact_area_selection(self):
-        testCentroids, iso, natID = RiverFlood._select_exact_area(['LIE'])
+        testCentroids, iso, natID = RiverFlood._select_exact_area(["LIE"])
 
         self.assertEqual(testCentroids.lon.shape[0], 13)
         self.assertAlmostEqual(testCentroids.lon[0], 9.5206968)
@@ -61,23 +65,24 @@ class TestRiverFlood(unittest.TestCase):
         self.assertAlmostEqual(testCentroids.lat[10], 47.1872472)
         self.assertAlmostEqual(testCentroids.lat[11], 47.2289138)
         self.assertAlmostEqual(testCentroids.lat[12], 47.2289138)
-        self.assertEqual(iso[0], 'LIE')
+        self.assertEqual(iso[0], "LIE")
 
     def test_full_impact(self):
         """test full flood impact"""
-        testRF = RiverFlood()
-        testRF.set_from_nc(dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC,
-                           countries=['CHE'])
+        testRF = RiverFlood.from_isimip_nc(
+            dph_path=HAZ_DEMO_FLDDPH, frc_path=HAZ_DEMO_FLDFRC, countries=["CHE"]
+        )
 
         gdpa = GDP2Asset()
-        gdpa.set_countries(countries=['CHE'], ref_year=2000, path=DEMO_GDP2ASSET)
+        gdpa.set_countries(countries=["CHE"], ref_year=2000, path=DEMO_GDP2ASSET)
+        gdpa.gdf["impf_RF"] = 31
 
         impf_set = flood_imp_func_set()
         imp = Impact()
         imp.calc(gdpa, impf_set, testRF)
 
-        self.assertAlmostEqual(imp.at_event[0], 226839.72426476143)
-        self.assertAlmostEqual(gdpa.gdf['impf_RF'].iloc[0], 3.0)
+        self.assertAlmostEqual(imp.at_event[0], 188191.9029567669)
+        self.assertAlmostEqual(gdpa.gdf["impf_RF"].iloc[0], 31)
 
 
 # Execute Tests

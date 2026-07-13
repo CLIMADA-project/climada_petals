@@ -30,6 +30,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
+import warnings
 
 # additional libraries
 import eccodes as ec
@@ -187,10 +188,17 @@ class TCForecast(TCTracks):
         -------
         [filelike]
         """
-        con = ftplib.FTP(host=ECMWF_FTP.host.str(),
+        def connect_to_ecmwf(remote_dir) -> ftplib.FTP:
+            con = ftplib.FTP(host=ECMWF_FTP.host.str(),
                          user=ECMWF_FTP.user.str(),
-                         passwd=ECMWF_FTP.passwd.str())
+                         passwd=ECMWF_FTP.passwd.str(),
+                         timeout=10)
+            if remote_dir is not None:
+                con.cwd(remote_dir)
+            return con
+
         try:
+            con= connect_to_ecmwf(remote_dir=remote_dir)
             if remote_dir is None:
                 # Read list of directories on the FTP server
                 remote = pd.Series(con.nlst())
@@ -199,9 +207,7 @@ class TCForecast(TCTracks):
                 # Select the most recent directory (names are formatted yyyymmddhhmmss)
                 remote = remote.sort_values(ascending=False)
                 remote_dir = remote.iloc[0]
-
-            # Connect to the directory
-            con.cwd(remote_dir)
+                con.cwd(remote_dir)
 
             # Filter to files with 'tropical_cyclone' in the name: each file is a forecast
             # ensemble for one event
@@ -210,9 +216,9 @@ class TCForecast(TCTracks):
             remotefiles = fnmatch.filter(remotefiles_temp, '*ECEP*')
 
             if len(remotefiles) == 0:
-                msg = 'No tracks found at ftp://{}/{}'
-                msg.format(ECMWF_FTP.host.dir(), remote_dir)
-                raise FileNotFoundError(msg)
+                raise FileNotFoundError(
+                    f'No tracks found at ftp://{ECMWF_FTP.host.str()}/{remote_dir}'
+                )
 
             localfiles = []
 
@@ -223,16 +229,24 @@ class TCForecast(TCTracks):
                     lfile = Path(target_dir, rfile).open('w+b')
                 else:
                     lfile = tempfile.TemporaryFile(mode='w+b')
-
-                con.retrbinary('RETR ' + rfile, lfile.write)
-                lfile.seek(0)
-                localfiles.append(lfile)
+                for attempt in range(3,0,-1):
+                    try:
+                        con.retrbinary('RETR ' + rfile, lfile.write)
+                        lfile.seek(0)
+                        localfiles.append(lfile)
+                        break
+                    except TimeoutError as toe:
+                        if attempt == 1:
+                            raise toe
+                        LOGGER.info("got timeout from ftp connection, trying again")
+                        con.quit()
+                        con = connect_to_ecmwf(remote_dir=remote_dir)
 
         except ftplib.all_errors as err:
-            con.quit()
             raise type(err)('Error while downloading BUFR TC tracks: ' + str(err)) from err
 
-        _ = con.quit()
+        finally:
+            con.quit()
 
         return localfiles
 
@@ -277,7 +291,7 @@ class TCForecast(TCTracks):
                 n_timestep = ec.codes_get_size(bufr, 'timePeriod') + 1
             except ec.CodesInternalError:
                 LOGGER.warning("Track %s has no defined timePeriod. Track is discarded.", sid)
-                return None
+                continue
 
             # get number of ensemble members
             ens_no = ec.codes_get_array(bufr, "ensembleMemberNumber")
@@ -418,6 +432,8 @@ class TCForecast(TCTracks):
                     self.append(track)
                 else:
                     LOGGER.debug('Dropping empty track %s, subset %d', name, i)
+            # release the BUFR message
+            ec.codes_release(bufr)
 
     def write_hdf5(self, file_name, complevel=5):
         """Write TC tracks in NetCDF4-compliant HDF5 format. This method
@@ -504,33 +520,38 @@ class TCForecast(TCTracks):
         # 0 means the deterministic analysis, which we want to flag.
         # See documentation for link to ensemble types.
         ens_bool = msg['ens_type'][index] != 0
-
         try:
-            track = xr.Dataset(
-                data_vars={
-                    'max_sustained_wind': ('time', np.squeeze(wnd)),
-                    'central_pressure': ('time', np.squeeze(pre)/100),
-                    'radius_max_wind': ('time', np.squeeze(rad)),
-                    'ts_int': ('time', timestep_int),
-                },
-                coords={
-                    'time': timestamp,
-                    'lat': ('time', lat),
-                    'lon': ('time', lon),
-                },
-                attrs={
-                    'max_sustained_wind_unit': 'm/s',
-                    'central_pressure_unit': 'mb',
-                    'name': name,
-                    'sid': sid,
-                    'orig_event_flag': False,
-                    'data_provider': provider,
-                    'id_no': (int(id_no) + index / 100),
-                    'ensemble_number': msg['ens_number'][index],
-                    'is_ensemble': ens_bool,
-                    'run_datetime': timestamp_origin,
-                }
-            )
+            with warnings.catch_warnings():
+                # prevent issueing a million warnings about conversion of non-nanosecond precision
+                # datetime to nanosecond precision, e.g. in fetch_ecmwf
+                # TODO: fix it through converting those _before_ creating the xr.Dataset
+                warnings.simplefilter(action='ignore', category=UserWarning)
+
+                track = xr.Dataset(
+                    data_vars={
+                        'max_sustained_wind': ('time', np.squeeze(wnd)),
+                        'central_pressure': ('time', np.squeeze(pre)/100),
+                        'radius_max_wind': ('time', np.squeeze(rad)),
+                        'ts_int': ('time', timestep_int),
+                    },
+                    coords={
+                        'time': timestamp,
+                        'lat': ('time', lat),
+                        'lon': ('time', lon),
+                    },
+                    attrs={
+                        'max_sustained_wind_unit': 'm/s',
+                        'central_pressure_unit': 'mb',
+                        'name': name,
+                        'sid': sid,
+                        'orig_event_flag': False,
+                        'data_provider': provider,
+                        'id_no': (int(id_no) + index / 100),
+                        'ensemble_number': msg['ens_number'][index],
+                        'is_ensemble': ens_bool,
+                        'run_datetime': timestamp_origin,
+                    }
+                )
         except ValueError as err:
             LOGGER.warning(
                 'Could not process track %s subset %d, error: %s',
@@ -623,10 +644,9 @@ class TCForecast(TCTracks):
         if xsl_path is None:
             xsl_path = CXML2CSV_XSL
 
-        # coerce Path objects to str; coercion superfluous for lxml >= 4.8.0
         # pylint: disable= c-extension-no-member
-        xsl = et.parse(str(xsl_path))
-        xml = et.parse(str(cxml_path))
+        xsl = et.parse(xsl_path)
+        xml = et.parse(cxml_path)
         transformer = et.XSLT(xsl)
         csv_string = str(transformer(xml))
 

@@ -27,10 +27,12 @@ import copy
 import datetime as dt
 from pathlib import Path
 import cftime
-import xarray as xr
 import geopandas as gpd
 import numpy as np
 import numba
+import pandas as pd
+import xarray as xr
+
 
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import BallTree
@@ -40,7 +42,6 @@ from scipy import sparse
 from climada.hazard.base import Hazard
 from climada.hazard.centroids import Centroids
 import climada.util.coordinates as u_coord
-from climada.util.tag import Tag
 
 LOGGER = logging.getLogger(__name__)
 
@@ -272,15 +273,11 @@ class LowFlow(Hazard):
             centroids = centroids_import
         haz.identify_clusters()
         haz.set_intensity_from_clusters(centroids, min_intensity, min_number_cells,
-                                        yearrange, yearrange_ref, gh_model, cl_model,
-                                        scenario, scenario_ref, soc, soc_ref, fn_str_var, keep_dis_data)
+                                        yearrange, keep_dis_data)
         return haz
 
     def set_intensity_from_clusters(self, centroids=None, min_intensity=1, min_number_cells=1,
-                                    yearrange=TARGET_YEARRANGE, yearrange_ref=REFERENCE_YEARRANGE,
-                                    gh_model=None, cl_model=None,
-                                    scenario='historical', scenario_ref='historical', soc='histsoc',
-                                    soc_ref='histsoc', fn_str_var=FN_STR_VAR, keep_dis_data=False):
+                                    yearrange=TARGET_YEARRANGE, keep_dis_data=False):
         """ Build low flow hazards with events from clustering and centroids and
         (re)set attributes.
         """
@@ -305,11 +302,6 @@ class LowFlow(Hazard):
         if not keep_dis_data:
             self.lowflow_df = None
         self.set_frequency(yearrange=yearrange)
-        self.tag = Tag(file_name=f'{gh_model}_{cl_model}_*_{scenario}_{soc}_{fn_str_var}_*.nc',
-                       description=f'yearrange: {yearrange[0]}-{yearrange[0]} '
-                                   f'({scenario}, {soc}), '
-                                   f'reference: {yearrange_ref[0]}-{yearrange_ref[0]} '
-                                   f'({scenario_ref}, {soc_ref})')
 
     def _intensity_loop(self, uniq_ev, coord, res_centr, num_centr):
         """Compute intensity and populate intensity matrix.
@@ -402,12 +394,11 @@ class LowFlow(Hazard):
         self.orig = np.ones(uniq_ev.size)
         self.set_frequency()
 
-        self.intensity = self._intensity_loop(uniq_ev, centroids.coord, res_centr, num_centr)
+        intensity = self._intensity_loop(uniq_ev, centroids.coord, res_centr, num_centr)
 
         # Following values are defined for each event and centroid
-        self.intensity = self.intensity.tocsr()
-        self.fraction = self.intensity.copy()
-        self.fraction.data.fill(1.0)
+        self.intensity = intensity.tocsr()
+        self.fraction = sparse.csr_matrix(self.intensity.shape)
 
     def identify_clusters(self, clus_thresh_xy=None, clus_thresh_t=None, min_samples=None):
         """call clustering functions to identify the clusters inside the dataframe
@@ -547,11 +538,7 @@ class LowFlow(Hazard):
         -------
         float
         """
-        if centroids.meta:
-            res_centr = abs(centroids.meta['transform'][4]), \
-                        centroids.meta['transform'][0]
-        else:
-            res_centr = np.abs(u_coord.get_resolution(centroids.lat, centroids.lon))
+        res_centr = np.abs(u_coord.get_resolution(centroids.lat, centroids.lon))
         if np.abs(res_centr[0] - res_centr[1]) > 1.0e-6:
             LOGGER.warning('Centroids do not represent regular pixels %s.', str(res_centr))
             return (res_centr[0] + res_centr[1]) / 2
@@ -653,7 +640,6 @@ def _init_centroids(dis_xarray, centr_res_factor=1):
         (dis_xarray.lon.values.min(), dis_xarray.lat.values.min(),
          dis_xarray.lon.values.max(), dis_xarray.lat.values.max()),
         res=res_data / centr_res_factor)
-    centroids.set_meta_to_lat_lon()
     centroids.set_area_approx()
     centroids.set_on_land()
     centroids.empty_geometry_points()
@@ -764,7 +750,7 @@ def data_preprocessing_percentile(percentile, yearrange, yearrange_ref,
                 dataf = _xarray_to_geopandas(data_chunk)
                 first_file = False
             else:
-                dataf = dataf.append(_xarray_to_geopandas(data_chunk))
+                dataf = pd.concat([dataf, _xarray_to_geopandas(data_chunk)])
     del data_chunk
     dataf = dataf.sort_values(['lat', 'lon', 'dtime'], ascending=[True, True, True])
     return dataf.reset_index(drop=True), centroids

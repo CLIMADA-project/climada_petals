@@ -38,12 +38,6 @@ class TestRelativeCropyield(unittest.TestCase):
 
         self.assertEqual(haz.crop, 'whe')
         self.assertEqual(haz.haz_type, 'RC')
-        [filename] = haz.tag.file_name
-        self.assertIn('lpjml', filename)
-        self.assertIn('ipsl-cm5a-lr', filename)
-        self.assertIn('hist', filename)
-        self.assertIn('2005soc', filename)
-        self.assertIn('noirr', filename)
 
         self.assertEqual(haz.centroids.lon.min(), -4.75)
         self.assertEqual(haz.centroids.lon.max(), 15.75)

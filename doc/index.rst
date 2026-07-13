@@ -58,6 +58,13 @@ Jump right in:
 
 
 .. toctree::
+   :caption: Documentation
+   :maxdepth: 1
+
+   glofas_rf
+
+
+.. toctree::
    :caption: API Reference
    :hidden:
 
@@ -71,6 +78,7 @@ Jump right in:
 
    Hazard <tutorial/hazard>
    tutorial/climada_engine_SupplyChain
+   tutorial/climada_engine_CATBonds
    tutorial/climada_entity_BlackMarble
    tutorial/climada_exposures_openstreetmap
    tutorial/climada_hazard_drought
@@ -87,3 +95,4 @@ Jump right in:
    Changelog <misc/CHANGELOG>
    List of Authors <misc/AUTHORS>
    Contribution Guide <https://climada-python.readthedocs.io/en/latest/misc/CONTRIBUTING.html>
+   Citation Guide <https://climada-python.readthedocs.io/en/latest/misc/citation.html>

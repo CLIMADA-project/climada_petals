@@ -71,7 +71,7 @@ def seasonal_average(data, season):
         data = data[(data['year'] > year_min) & (data['year'] <= year_max)]
     data = data.reset_index(drop=True)
     data = data.groupby('year').mean().reset_index()
-    return data.drop('month', 1)
+    return data.drop('month', axis=1)
 
 
 def seasonal_statistics(events, season):

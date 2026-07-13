@@ -1,0 +1,13 @@
+name: GitHub CI
+
+on: [push]
+
+jobs:
+  ci:
+    name: Petals
+    uses: ./.github/workflows/testing.yml
+    with:
+      petals_branch: ${{ github.ref }}
+    permissions:
+      # For publishing results
+      checks: write

@@ -246,8 +246,7 @@ class RelativeCropyield(Hazard):
         haz.units = 't / y / ha'
         haz.date = np.array(dt.str_to_date(
             [event_ + '-01-01' for event_ in haz.event_name]))
-        haz.centroids.set_meta_to_lat_lon()
-        haz.centroids.region_id = (
+        haz.centroids.gdf['region_id'] = (
             coord.coord_on_land(haz.centroids.lat, haz.centroids.lon)).astype(dtype=int)
         haz.check()
         return haz
@@ -370,8 +369,6 @@ class RelativeCropyield(Hazard):
             event = self.event_name
         else:
             event = [str(n) for n in range(event[0], event[1] + 1)]
-
-        self.centroids.set_meta_to_lat_lon()
 
         # definition of plot extents
         len_lat = abs(self.centroids.lat[0] - self.centroids.lat[-1]) * (2.5 / 13.5)

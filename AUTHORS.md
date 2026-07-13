@@ -23,4 +23,9 @@
 * Emanuel Schmid
 * Chris Fairless
 * Jan Wüthrich
-* Zélie Standhanske
+* Zélie Stalhandske
+* Lukas Riedel
+* Samuel Juhel
+* Jere Lehtomaa
+* Valentin Gebhard
+* Dahyann Araya

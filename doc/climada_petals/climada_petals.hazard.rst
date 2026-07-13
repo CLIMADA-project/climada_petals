@@ -4,6 +4,7 @@ climada\_petals\.hazard package
 .. toctree::
 
     climada_petals.hazard.emulator
+    climada_petals.hazard.rf_glofas
 
 climada\_petals\.hazard\.drought module
 ---------------------------------------

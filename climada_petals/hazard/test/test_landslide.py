@@ -34,6 +34,8 @@ LS_PROB_FILE = DATA_DIR / 'test_ls_prob.tif'
 
 class TestLandslideModule(unittest.TestCase):
 
+    # TODO: there is a probabilistic element in most of these tests, which is unsatisfying.
+
     def test_from_hist(self):
         """ Test function from_hist()"""
         LS_hist = Landslide.from_hist(bbox=(20,40,23,46),
@@ -86,10 +88,11 @@ class TestLandslideModule(unittest.TestCase):
         self.assertEqual(LS_prob.haz_type, 'LS')
         self.assertEqual(LS_prob.intensity.shape,(n_years, 43200))
         self.assertEqual(LS_prob.fraction.shape,(n_years, 43200))
-        self.assertEqual(max(LS_prob.intensity.data),1)
-        self.assertEqual(min(LS_prob.intensity.data),1)
-        self.assertEqual(max(LS_prob.fraction.data),1)
-        self.assertEqual(min(LS_prob.fraction.data),1)
+        if LS_prob.intensity.size:  # no non-zero value in the Landslide
+            self.assertEqual(max(LS_prob.intensity.data),1)
+            self.assertEqual(min(LS_prob.intensity.data),1)
+            self.assertEqual(max(LS_prob.fraction.data),1)
+            self.assertEqual(min(LS_prob.fraction.data),1)
         self.assertEqual(LS_prob.frequency.shape, (n_years,))
         self.assertEqual(LS_prob.frequency[0],1/n_years)
         self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
@@ -103,10 +106,11 @@ class TestLandslideModule(unittest.TestCase):
         self.assertEqual(LS_prob.haz_type, 'LS')
         self.assertEqual(LS_prob.intensity.shape,(n_years, 43200))
         self.assertEqual(LS_prob.fraction.shape,(n_years, 43200))
-        self.assertEqual(max(LS_prob.intensity.data),1)
-        self.assertEqual(min(LS_prob.intensity.data),1)
-        self.assertEqual(max(LS_prob.fraction.data),1)
-        self.assertEqual(min(LS_prob.fraction.data),1)
+        if LS_prob.intensity.size:  # no non-zero value in the Landslide
+            self.assertEqual(max(LS_prob.intensity.data),1)
+            self.assertEqual(min(LS_prob.intensity.data),1)
+            self.assertEqual(max(LS_prob.fraction.data),1)
+            self.assertEqual(min(LS_prob.fraction.data),1)
         self.assertEqual(LS_prob.frequency.shape, (n_years,))
         self.assertEqual(LS_prob.frequency[0],1/n_years)
         self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
@@ -121,10 +125,11 @@ class TestLandslideModule(unittest.TestCase):
         self.assertEqual(LS_prob.haz_type, 'LS')
         self.assertEqual(LS_prob.intensity.shape,(n_years, 43200))
         self.assertEqual(LS_prob.fraction.shape,(n_years, 43200))
-        self.assertEqual(max(LS_prob.intensity.data),1)
-        self.assertEqual(min(LS_prob.intensity.data),1)
-        self.assertEqual(max(LS_prob.fraction.data),1)
-        self.assertEqual(min(LS_prob.fraction.data),1)
+        if LS_prob.intensity.size:  # no non-zero value in the Landslide
+            self.assertEqual(max(LS_prob.intensity.data),1)
+            self.assertEqual(min(LS_prob.intensity.data),1)
+            self.assertEqual(max(LS_prob.fraction.data),1)
+            self.assertEqual(min(LS_prob.fraction.data),1)
         self.assertEqual(LS_prob.frequency.shape, (n_years,))
         self.assertEqual(LS_prob.frequency[0],1/n_years)
         self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
@@ -142,10 +147,11 @@ class TestLandslideModule(unittest.TestCase):
         self.assertEqual(LS_prob.haz_type, 'LS')
         self.assertEqual(LS_prob.intensity.shape,(n_years, 43200))
         self.assertEqual(LS_prob.fraction.shape,(n_years, 43200))
-        self.assertEqual(max(LS_prob.intensity.data),1)
-        self.assertEqual(min(LS_prob.intensity.data),1)
-        self.assertEqual(max(LS_prob.fraction.data),1)
-        self.assertEqual(min(LS_prob.fraction.data),1)
+        if LS_prob.intensity.size:  # no non-zero value in the Landslide
+            self.assertEqual(max(LS_prob.intensity.data),1)
+            self.assertEqual(min(LS_prob.intensity.data),1)
+            self.assertEqual(max(LS_prob.fraction.data),1)
+            self.assertEqual(min(LS_prob.fraction.data),1)
         self.assertEqual(LS_prob.frequency.shape, (n_years,))
         self.assertEqual(LS_prob.frequency[0],1/n_years)
         self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
@@ -160,10 +166,11 @@ class TestLandslideModule(unittest.TestCase):
         self.assertEqual(LS_prob.haz_type, 'LS')
         self.assertEqual(LS_prob.intensity.shape,(n_years, 43200))
         self.assertEqual(LS_prob.fraction.shape,(n_years, 43200))
-        self.assertEqual(max(LS_prob.intensity.data),1)
-        self.assertEqual(min(LS_prob.intensity.data),1)
-        self.assertEqual(max(LS_prob.fraction.data),1)
-        self.assertEqual(min(LS_prob.fraction.data),1)
+        if LS_prob.intensity.size:  # no non-zero value in the Landslide
+            self.assertEqual(max(LS_prob.intensity.data),1)
+            self.assertEqual(min(LS_prob.intensity.data),1)
+            self.assertEqual(max(LS_prob.fraction.data),1)
+            self.assertEqual(min(LS_prob.fraction.data),1)
         self.assertEqual(LS_prob.frequency.shape, (n_years,))
         self.assertEqual(LS_prob.frequency[0],1/n_years)
         self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
@@ -171,20 +178,21 @@ class TestLandslideModule(unittest.TestCase):
         self.assertTrue(LS_prob.centroids.coord.min() >= 8)
 
         LS_prob = Landslide()
-        corr_fact = 1.8*10e6
-        n_years=500
-        LS_prob.set_ls_prob(bbox=(8,45,11,46),
+        corr_fact = 1.8e7
+        n_years = 500
+        LS_prob.set_ls_prob(bbox=(8, 45, 11, 46),
                             path_sourcefile=LS_PROB_FILE, n_years=n_years,
                             dist='poisson', corr_fact=corr_fact)
         self.assertEqual(LS_prob.haz_type, 'LS')
-        self.assertEqual(LS_prob.intensity.shape,(n_years, 43200))
-        self.assertEqual(LS_prob.fraction.shape,(n_years, 43200))
-        self.assertEqual(max(LS_prob.intensity.data),1)
-        self.assertEqual(min(LS_prob.intensity.data),1)
-        self.assertEqual(max(LS_prob.fraction.data),1)
-        self.assertEqual(min(LS_prob.fraction.data),1)
+        self.assertEqual(LS_prob.intensity.shape, (n_years, 43200))
+        self.assertEqual(LS_prob.fraction.shape, (n_years, 43200))
+        if LS_prob.intensity.size:  # no non-zero value in the Landslide
+            self.assertEqual(max(LS_prob.intensity.data), 1)
+            self.assertEqual(min(LS_prob.intensity.data), 1)
+            self.assertEqual(max(LS_prob.fraction.data), 1)
+            self.assertEqual(min(LS_prob.fraction.data), 1)
         self.assertEqual(LS_prob.frequency.shape, (n_years,))
-        self.assertEqual(LS_prob.frequency[0],1/n_years)
+        self.assertEqual(LS_prob.frequency[0], 1/n_years)
         self.assertEqual(LS_prob.centroids.crs.to_epsg(), 4326)
         self.assertTrue(LS_prob.centroids.coord.max() <= 46)
         self.assertTrue(LS_prob.centroids.coord.min() >= 8)
@@ -217,12 +225,18 @@ class TestLandslideModule(unittest.TestCase):
             LS_PROB_FILE, geometry=[shapely.geometry.box(*bbox, ccw=True)])
         prob_matrix = prob_matrix.squeeze()/corr_fact
 
-        events = sample_events(prob_matrix, n_years, dist='binom')
-        self.assertTrue(events[events.nonzero()].max() <= 1)
+        for i in range(5):
+            events = sample_events(prob_matrix, n_years, dist='binom')
+            if events.nonzero()[0].size:  # skip (most) all-zero-events
+                break
+        self.assertTrue(events[events.nonzero()].max() <= 1)  # fails for all-zero-events
         self.assertEqual(events.shape, (n_years, prob_matrix.shape[0]))
 
-        events = sample_events(prob_matrix, n_years, dist='poisson')
-        self.assertTrue(events[events.nonzero()].max() <= 1)
+        for i in range(5):
+            events = sample_events(prob_matrix, n_years, dist='poisson')
+            if events.nonzero()[0].size:  # skip (most) all-zero-events
+                break
+        self.assertTrue(events[events.nonzero()].max() <= 1)  # fails for all-zero-events
         self.assertEqual(events.shape, (n_years, prob_matrix.shape[0]))
 
 
