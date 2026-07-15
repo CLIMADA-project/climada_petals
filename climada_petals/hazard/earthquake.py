@@ -63,24 +63,7 @@ class Earthquake(Hazard):
         format_date = "%Y-%m-%d %H:%M:%S.%f"
         dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
         years = np.array([date.year for date in dates])
-
-        quake = cls()
-        quake.tag.desription = \
-        ('Earthquakes from events epicenters positions, depth, and MW energy. '
-        'Using modified Mercalli Intensity (MMI) https://doi.org/10.1201/9781482271645')
         n_years = years.max() - years.min() + 1
-        quake.units = 'MMI'
-        quake.centroids = centroids
-        # following values are defined for each event
-        quake.event_id = df.eventid.to_numpy()
-        quake.frequency = np.repeat(1 / n_years, len(df))
-        quake.event_name = df.eventid.astype('str').to_list()
-        quake.date = np.array([date.toordinal() for date in dates])
-        if orig:
-            quake.orig = np.ones(len(df))
-        else:
-            quake.orig = np.zeros(len(df))
-        # following values are defined for each event and centroid
 
         int_list = []
         cent_idx_list = []
@@ -106,7 +89,7 @@ class Earthquake(Hazard):
             cent_lat = all_cent_lat[mask]
             cent_lon = all_cent_lon[mask]
             if cent_lat.size > 0:
-                int_list.append(quake.footprint_MMI(cent_lat, cent_lon, epi_lat, epi_lon, mag, depth))
+                int_list.append(footprint_MMI(cent_lat, cent_lon, epi_lat, epi_lon, mag, depth))
                 cent_idx_list.append(np.where(mask)[0])
                 ev_idx_list.append(np.repeat(idx, np.count_nonzero(mask)))
 
@@ -115,10 +98,17 @@ class Earthquake(Hazard):
         col = np.hstack(cent_idx_list)
         row = np.hstack(ev_idx_list)
         data = np.hstack(int_list).ravel()
-        quake.intensity = sparse.csr_matrix((data, (row, col)), shape=(n_events, n_centroids))  # events x centroids
-        quake.fraction = quake.intensity.copy()
-        quake.fraction.data.fill(1) # events x centroids
-        return quake
+
+        return cls(
+            units='MMI',
+            centroids=centroids
+            event_id=df.eventid.to_numpy(),
+            frequency=np.repeat(1 / n_years, len(df)),
+            event_name=df.eventid.astype('str').to_list(),
+            date=np.array([date.toordinal() for date in dates])
+            orig=np.ones(len(df)) if orig else np.zeros(len(df))
+            intensity=sparse.csr_matrix((data, (row, col)), shape=(n_events, n_centroids))  # events x centroids
+        )
 
     @classmethod
     def uniform_random_events(cls, df, centroids, n=1, loc_shift_deg=1.0, depth_mult=0.2, mag_mult=0.5):
@@ -164,7 +154,7 @@ class Earthquake(Hazard):
 
     @classmethod
     def interpolate_random_events(cls, df, centroids, n=1, rnd_buffer=5, mw_min=4.75, mw_max=9.55,
-                                  depth_mult = 0.2, mw_mult = 0.1):
+                                  depth_mult = 0.2, mw_mult = 0.1, verbose=False):
 
         lat_orig = df['lat'].to_numpy()
         lon_orig = df['lon'].to_numpy()
@@ -216,6 +206,8 @@ class Earthquake(Hazard):
             new_depth = np.random.uniform(depth_min * (1- depth_mult), depth_max*(1+depth_mult), size=n)
             rnd_depth.append(new_depth)
             rnd_mw.append(new_mw)
+            if i % 1000 == 0 and verbose:
+                print(f'Interpolating random events: {i} of {len(lat_orig)}')
 
 
         format_date = "%Y-%m-%d %H:%M:%S.%f"
@@ -245,68 +237,68 @@ class Earthquake(Hazard):
         return cls.from_Mw_depth(df=rnd_df, centroids=centroids, orig=False)
 
 
-    def footprint_MMI(self, cent_lat, cent_lon, epi_lat, epi_lon, mag, depth):
-        """
-        Compute the footprint (intensity in MMI) at centroids position for
-        epicenter position, depth and magnitude in Mw
+def footprint_MMI(cent_lat, cent_lon, epi_lat, epi_lon, mag, depth):
+    """
+    Compute the footprint (intensity in MMI) at centroids position for
+    epicenter position, depth and magnitude in Mw
 
-        Parameters
-        ----------
-        cent_lat : np.array
-            centroids latitudes
-        cent_lon : np.array
-            centroids longitudes
-        epi_lat : float
-            epicenter latitude
-        epi_lon : float
-            epienter longitude
-        mag : float
-            magnitude of earthquake in MMI
-        depth : float
-            depth in km
+    Parameters
+    ----------
+    cent_lat : np.array
+        centroids latitudes
+    cent_lon : np.array
+        centroids longitudes
+    epi_lat : float
+        epicenter latitude
+    epi_lon : float
+        epienter longitude
+    mag : float
+        magnitude of earthquake in MMI
+    depth : float
+        depth in km
 
-        Returns
-        -------
-        np.array
-            array of intensities
+    Returns
+    -------
+    np.array
+        array of intensities
 
-        """
-        cent_lat, cent_lon = np.array([cent_lat]), np.array([cent_lon])
-        dists = u_coord.dist_approx(cent_lat, cent_lon, np.array([[epi_lat]]), np.array([[epi_lon]]))
-        return self.attenuation_MMI(dists, mag, depth)
+    """
+    cent_lat, cent_lon = np.array([cent_lat]), np.array([cent_lon])
+    dists = u_coord.dist_approx(cent_lat, cent_lon, np.array([[epi_lat]]), np.array([[epi_lon]]))
+    return attenuation_MMI(dists, mag, depth)
 
-    def attenuation_MMI(self, dist, mag, depth, corr=0.0, a1=1.7, a2=1.5, a3=1.1726, a4=0.00106, b=0.0):
-        """
-        Modified Mercalli Intensity (MMI)
-        https://doi.org/10.1201/9781482271645
+def attenuation_MMI(dist, mag, depth, corr=0.0, a1=1.7, a2=1.5, a3=1.1726, a4=0.00106, b=0.0):
+    """
+    Modified Mercalli Intensity (MMI)
+    https://doi.org/10.1201/9781482271645
 
-        Parameters
-        ----------
-        dist : np.array
-            distances in KM
-        mag : float
-            earthquake magnitude in Mw
-        depth : float
-            distance in KM
-        corr : float, optional
-            see MMI. The default is 0.
-        a1 : float, optional
-            see MMI. The default is 1.7.
-        a2 : float, optional
-            see MMI. The default is 1.5.
-        a3 : float optional
-            see MMI. The default is 1.1726.
-        a4 : float optional
-            see MMI. The default is 0.00106.
-        b : float, optional
-            see MMI. The default is 0.
+    Parameters
+    ----------
+    dist : np.array
+        distances in KM
+    mag : float
+        earthquake magnitude in Mw
+    depth : float
+        distance in KM
+    corr : float, optional
+        see MMI. The default is 0.
+    a1 : float, optional
+        see MMI. The default is 1.7.
+    a2 : float, optional
+        see MMI. The default is 1.5.
+    a3 : float optional
+        see MMI. The default is 1.1726.
+    a4 : float optional
+        see MMI. The default is 0.00106.
+    b : float, optional
+        see MMI. The default is 0.
 
-        Returns
-        -------
-        np.array
-            MMI values for all distances
+    Returns
+    -------
+    np.array
+        MMI values for all distances
 
-        """
-        max_MMI = 1.5 * (mag - 1.0)
-        mmi = a1 + a2 * mag - a3 * np.log(dist + corr) - a4 * dist + b * depth
-        return np.clip(mmi, a_min=MIN_MMI, a_max=max_MMI)
+    """
+    max_MMI = 1.5 * (mag - 1.0)
+    mmi = a1 + a2 * mag - a3 * np.log(dist + corr) - a4 * dist + b * depth
+    return np.clip(mmi, a_min=MIN_MMI, a_max=max_MMI)
