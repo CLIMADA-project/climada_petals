@@ -39,266 +39,379 @@ MAX_DIST_DEG = 3
 """Maximum distance of the centroids from the epicenters in degrees"""
 
 class Earthquake(Hazard):
-    """Earthquate class"""
-    def __init__(self):
-        Hazard.__init__(self, haz_type=HAZ_TYPE, pool=None)
+    """Earthquake hazard represented by Modified Mercalli Intensities.
+
+    This class stores earthquake events and their spatial intensity footprints
+    on a set of centroids. Intensities are expressed on the Modified Mercalli
+    Intensity (MMI) scale.
+
+    Attributes
+    ----------
+    haz_type : str
+        Hazard type identifier.
+    units : str
+        Unit of the hazard intensity values.
+    centroids : climada.hazard.centroids.centr.Centroids
+        Spatial centroids associated with the hazard.
+    intensity : scipy.sparse.csr_matrix
+        Event intensity values with shape ``(n_events, n_centroids)``.
+    """
+
+    def __init__(self, **kwargs):
+        """Initialize an empty earthquake hazard."""
+        Hazard.__init__(self, haz_type=HAZ_TYPE, pool=None, **kwargs)
 
     @classmethod
     def from_Mw_depth(cls, df, centroids, orig=True):
-        """
-        Earthquakes from events epicenters positions, depth, and MW energy.
-        Date column in format %Y-%m-%d %H:%M:%S.%f" .
+        """Create an earthquake hazard from magnitude and depth data.
+
+        Events outside the centroid extent expanded by ``MAX_DIST_DEG`` are
+        discarded before intensity footprints are computed.
+
+        The input catalogue must contain event locations, moment magnitudes,
+        focal depths, event identifiers, and dates. Event dates are expected in
+        the format ``%Y-%m-%d %H:%M:%S.%f``. MMI footprints are computed for
+        centroids within ``MAX_DIST_DEG`` degrees of each epicentre.
 
         Parameters
         ----------
-        df : DataFrame
-            lat, lon, mw, depth, eventid, date
+        df : pandas.DataFrame
+            Earthquake catalogue with columns ``lat``, ``lon``, ``mw``,
+            ``depth``, ``eventid``, and ``date``. Depth is given in kilometres
+            and magnitude as moment magnitude Mw.
+        centroids : climada.hazard.centroids.centr.Centroids
+            Centroids at which earthquake intensities are computed.
+        orig : bool, optional
+            Whether the catalogue events are original historical events. The
+            default is ``True``.
 
         Returns
         -------
-        Hazard: hazard Earthquake
+        Earthquake
+            Earthquake hazard containing catalogue events in the vicinity of the
+            centroids and their MMI intensity footprints.
 
+        Raises
+        ------
+        ValueError
+            If no catalogue events are located within the buffered centroid
+            extent.
         """
+        all_cent_lat = centroids.lat
+        all_cent_lon = centroids.lon
+
+        # Select only catalogue events that could affect the centroid region.
+        lon_min, lat_min, lon_max, lat_max = u_coord.latlon_bounds(
+            all_cent_lat,
+            all_cent_lon,
+            buffer=MAX_DIST_DEG,
+        )
+
+        event_lon_normalized = u_coord.lon_normalize(
+            df["lon"].to_numpy().copy(),
+            center=0.5 * (lon_min + lon_max),
+        )
+
+        event_mask = (
+            (event_lon_normalized >= lon_min)
+            & (event_lon_normalized <= lon_max)
+            & (df["lat"].to_numpy() >= lat_min)
+            & (df["lat"].to_numpy() <= lat_max)
+        )
+
+        df = df.loc[event_mask].reset_index(drop=True)
+
+        if df.empty:
+            raise ValueError(
+                "No earthquake catalogue events are located within "
+                f"{MAX_DIST_DEG} degrees of the centroid extent."
+            )
 
         format_date = "%Y-%m-%d %H:%M:%S.%f"
-        dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
+        dates = [
+            datetime.strptime(date_str, format_date)
+            for date_str in df["date"]
+        ]
+
         years = np.array([date.year for date in dates])
         n_years = years.max() - years.min() + 1
+
+        lat = df["lat"].to_numpy()
+        lon = df["lon"].to_numpy()
+        mw = df["mw"].to_numpy()
+        depths = df["depth"].to_numpy()
 
         int_list = []
         cent_idx_list = []
         ev_idx_list = []
 
-        lat = df['lat'].to_numpy()
-        lon = df['lon'].to_numpy()
-        mw = df['mw'].to_numpy()
-        depth = df['depth'].to_numpy()
-
-        all_cent_lat, all_cent_lon = centroids.lat, centroids.lon
-
-        for idx, (epi_lat, epi_lon, mag, depth) in enumerate(zip(lat, lon, mw, depth)):
-
-            lon_min, lat_min, lon_max, lat_max =\
-                u_coord.latlon_bounds(np.array([epi_lat]), np.array([epi_lon]), buffer=MAX_DIST_DEG)
-
-            all_cent_lon_normalized = u_coord.lon_normalize(all_cent_lon.copy(), center=0.5 * (lon_min + lon_max))
-            mask = (
-              (all_cent_lon_normalized >= lon_min) & (all_cent_lon_normalized <= lon_max) &
-              (all_cent_lat >= lat_min) & (all_cent_lat <= lat_max)
+        for event_idx, (epi_lat, epi_lon, mag, event_depth) in enumerate(
+            zip(lat, lon, mw, depths)
+        ):
+            lon_min, lat_min, lon_max, lat_max = u_coord.latlon_bounds(
+                np.array([epi_lat]),
+                np.array([epi_lon]),
+                buffer=MAX_DIST_DEG,
             )
-            cent_lat = all_cent_lat[mask]
-            cent_lon = all_cent_lon[mask]
-            if cent_lat.size > 0:
-                int_list.append(footprint_MMI(cent_lat, cent_lon, epi_lat, epi_lon, mag, depth))
-                cent_idx_list.append(np.where(mask)[0])
-                ev_idx_list.append(np.repeat(idx, np.count_nonzero(mask)))
+
+            cent_lon_normalized = u_coord.lon_normalize(
+                all_cent_lon.copy(),
+                center=0.5 * (lon_min + lon_max),
+            )
+
+            centroid_mask = (
+                (cent_lon_normalized >= lon_min)
+                & (cent_lon_normalized <= lon_max)
+                & (all_cent_lat >= lat_min)
+                & (all_cent_lat <= lat_max)
+            )
+
+            centroid_indices = np.flatnonzero(centroid_mask)
+
+            if centroid_indices.size == 0:
+                continue
+
+            intensities = footprint_MMI(
+                all_cent_lat[centroid_mask],
+                cent_lon_normalized[centroid_mask],
+                epi_lat,
+                epi_lon,
+                mag,
+                event_depth,
+            )
+
+            int_list.append(np.asarray(intensities).ravel())
+            cent_idx_list.append(centroid_indices)
+            ev_idx_list.append(
+                np.full(centroid_indices.size, event_idx, dtype=int)
+            )
 
         n_events = len(df)
-        n_centroids = len(centroids.lat)
-        col = np.hstack(cent_idx_list)
-        row = np.hstack(ev_idx_list)
-        data = np.hstack(int_list).ravel()
+        n_centroids = len(all_cent_lat)
+
+        if int_list:
+            data = np.concatenate(int_list)
+            row = np.concatenate(ev_idx_list)
+            col = np.concatenate(cent_idx_list)
+
+            intensity = sparse.csr_matrix(
+                (data, (row, col)),
+                shape=(n_events, n_centroids),
+            )
+        else:
+            intensity = sparse.csr_matrix(
+                (n_events, n_centroids),
+                dtype=float,
+            )
 
         return cls(
-            units='MMI',
-            centroids=centroids
-            event_id=df.eventid.to_numpy(),
-            frequency=np.repeat(1 / n_years, len(df)),
-            event_name=df.eventid.astype('str').to_list(),
-            date=np.array([date.toordinal() for date in dates])
-            orig=np.ones(len(df)) if orig else np.zeros(len(df))
-            intensity=sparse.csr_matrix((data, (row, col)), shape=(n_events, n_centroids))  # events x centroids
+            units="MMI",
+            centroids=centroids,
+            event_id=df["eventid"].to_numpy(),
+            frequency=np.full(n_events, 1.0 / n_years),
+            event_name=df["eventid"].astype(str).to_list(),
+            date=np.array([date.toordinal() for date in dates]),
+            orig=np.full(n_events, orig, dtype=bool),
+            intensity=intensity,
         )
 
     @classmethod
-    def uniform_random_events(cls, df, centroids, n=1, loc_shift_deg=1.0, depth_mult=0.2, mag_mult=0.5):
+    def uniform_random_events(
+        cls,
+        df,
+        centroids,
+        n=1,
+        loc_shift_deg=1.0,
+        depth_mult=0.2,
+        mag_mult=0.5,
+        buffer_deg=2.0,
+    ):
+        """Generate uniformly perturbed synthetic earthquake events.
 
-        lat_orig = df['lat'].to_numpy()
-        lon_orig = df['lon'].to_numpy()
-        mw_orig = df['mw'].to_numpy()
-        depth_orig = df['depth'].to_numpy()
+        Events outside the buffered geographical extent of the centroids are
+        excluded before synthetic events are generated. The selection buffer also
+        accounts for the maximum location perturbation.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Earthquake catalogue with columns ``lat``, ``lon``, ``mw``, ``depth``,
+            ``eventid``, and ``date``.
+        centroids : climada.hazard.centroids.centr.Centroids
+            Centroids at which earthquake intensities are computed.
+        n : int, optional
+            Number of synthetic events generated per catalogue event. The default
+            is ``1``.
+        loc_shift_deg : float, optional
+            Full width, in degrees, of the uniform perturbation interval applied
+            independently to latitude and longitude. The default is ``1.0``.
+        depth_mult : float, optional
+            Full width of the relative uniform perturbation interval applied to
+            event depth. The default is ``0.2``.
+        mag_mult : float, optional
+            Full width of the additive uniform perturbation interval applied to
+            moment magnitude. The default is ``0.5``.
+        buffer_deg : float, optional
+            Additional buffer around the centroid extent in degrees. The default
+            is ``2.0``.
+
+        Returns
+        -------
+        Earthquake
+            Earthquake hazard containing the generated synthetic events.
+        """
+        # Include events that may enter the buffered centroid region after the
+        # maximum possible random location shift.
+        selection_buffer = buffer_deg + loc_shift_deg / 2
+
+        lat_min = np.min(centroids.lat) - selection_buffer
+        lat_max = np.max(centroids.lat) + selection_buffer
+        lon_min = np.min(centroids.lon) - selection_buffer
+        lon_max = np.max(centroids.lon) + selection_buffer
+
+        event_mask = (
+            df["lat"].between(lat_min, lat_max)
+            & df["lon"].between(lon_min, lon_max)
+        )
+        df = df.loc[event_mask].copy()
+
+        lat_orig = df["lat"].to_numpy()
+        lon_orig = df["lon"].to_numpy()
+        mw_orig = df["mw"].to_numpy()
+        depth_orig = df["depth"].to_numpy()
 
         n_tot = n * len(df)
 
-        lat_rnd = np.random.uniform(-loc_shift_deg/2, loc_shift_deg/2, size=n_tot)
-        lon_rnd = np.random.uniform(-loc_shift_deg/2, loc_shift_deg/2, size=n_tot)
-
-        mw_rnd = np.random.uniform(-mag_mult/2, mag_mult/2, size=n_tot)
-        depth_rnd = np.random.uniform(-depth_mult/2, depth_mult/2, size=n_tot)
+        lat_rnd = np.random.uniform(
+            -loc_shift_deg / 2,
+            loc_shift_deg / 2,
+            size=n_tot,
+        )
+        lon_rnd = np.random.uniform(
+            -loc_shift_deg / 2,
+            loc_shift_deg / 2,
+            size=n_tot,
+        )
+        mw_rnd = np.random.uniform(
+            -mag_mult / 2,
+            mag_mult / 2,
+            size=n_tot,
+        )
+        depth_rnd = np.random.uniform(
+            -depth_mult / 2,
+            depth_mult / 2,
+            size=n_tot,
+        )
 
         format_date = "%Y-%m-%d %H:%M:%S.%f"
-        dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
+        dates = [
+            datetime.strptime(date_str, format_date)
+            for date_str in df["date"]
+        ]
         years = np.array([date.year for date in dates])
         n_years = np.max(years) - np.min(years)
 
         new_dates = []
-        for n_rnd in range(1, n+1):
+        for n_rnd in range(1, n + 1):
             for date in dates:
-                new_year = date.year + n_rnd *  n_years
-                if date.month == 2 and date.day==29:
+                new_year = date.year + n_rnd * n_years
+                if date.month == 2 and date.day == 29:
                     new_dates.append(date.replace(year=new_year, day=28))
                 else:
                     new_dates.append(date.replace(year=new_year))
+
         new_dates = [date.strftime(format_date) for date in new_dates]
 
-        rnd_df = pd.DataFrame({
-            'lat' : lat_rnd + np.repeat(lat_orig, n),
-            'lon' : lon_rnd + np.repeat(lon_orig, n),
-            'mw' : mw_rnd + np.repeat(mw_orig, n),
-            'depth' : depth_rnd + np.repeat(depth_orig, n),
-            'date' : new_dates,
-            'eventid': np.arange(1, len(new_dates)+1)
-            })
+        rnd_df = pd.DataFrame(
+            {
+                "lat": lat_rnd + np.tile(lat_orig, n),
+                "lon": lon_rnd + np.tile(lon_orig, n),
+                "mw": mw_rnd + np.tile(mw_orig, n),
+                "depth": depth_rnd + np.tile(depth_orig, n),
+                "date": new_dates,
+                "eventid": np.arange(1, len(new_dates) + 1),
+            }
+        )
 
-        return cls.from_Mw_depth(df=rnd_df, centroids=centroids, orig=False)
-
-    @classmethod
-    def interpolate_random_events(cls, df, centroids, n=1, rnd_buffer=5, mw_min=4.75, mw_max=9.55,
-                                  depth_mult = 0.2, mw_mult = 0.1, verbose=False):
-
-        lat_orig = df['lat'].to_numpy()
-        lon_orig = df['lon'].to_numpy()
-        mw_orig = df['mw'].to_numpy()
-        depth_orig = df['depth'].to_numpy()
-
-        import math
-        from sklearn.neighbors import KernelDensity
-        from scipy.stats import genextreme
-
-        rnd_lat = []
-        rnd_lon = []
-        rnd_mw = []
-        rnd_depth = []
-        for i, (epi_lat, epi_lon) in enumerate(zip(lat_orig, lon_orig)):
-            lon_min, lat_min, lon_max, lat_max =\
-                u_coord.latlon_bounds(
-                    np.array([epi_lat]), np.array([epi_lon]), buffer=rnd_buffer
-                    )
-            lon_orig_normalized = u_coord.lon_normalize(
-                lon_orig.copy(), center=0.5 * (lon_min + lon_max)
-                )
-            mask = (
-              (lon_orig_normalized >= lon_min) & (lon_orig <= lon_max) &
-              (lat_orig >= lat_min) & (lat_orig <= lat_max)
-            )
-            close_lat = lat_orig[mask]
-            close_lon = lon_orig[mask]
-            close_mw = mw_orig[mask]
-            close_depth = depth_orig[mask]
-            depth_min, depth_max = close_depth.min(), close_depth.max()
-
-            Xtrain = np.vstack([close_lat / math.pi, close_lon / 2 / math.pi]).T
-            kde = KernelDensity(
-                bandwidth=0.04, metric="haversine", kernel="gaussian", algorithm="ball_tree"
-                )
-            kde.fit(Xtrain)
-            new_lat, new_lon = kde.sample(n).T
-            new_lat *= math.pi
-            new_lon *= 2*math.pi
-            rnd_lat.append(new_lat)
-            rnd_lon.append(new_lon)
-            try:
-                params = genextreme.fit(close_mw)
-                new_mw = genextreme(*params).rvs(size=n)
-            except RuntimeWarning:
-                new_mw = np.repeat(mw_orig[i], n) * (1+np.random.uniform(-mw_mult/2, mw_mult/2, size=n))
-            new_mw = np.clip(new_mw, mw_min*(1-mw_mult), mw_max*(1+mw_mult))
-            new_depth = np.random.uniform(depth_min * (1- depth_mult), depth_max*(1+depth_mult), size=n)
-            rnd_depth.append(new_depth)
-            rnd_mw.append(new_mw)
-            if i % 1000 == 0 and verbose:
-                print(f'Interpolating random events: {i} of {len(lat_orig)}')
-
-
-        format_date = "%Y-%m-%d %H:%M:%S.%f"
-        dates = [datetime.strptime(date_str, format_date) for date_str in df.date]
-        years = np.array([date.year for date in dates])
-        n_years_orig = np.max(years) - np.min(years)
-
-        new_dates = []
-        for n_rnd in range(1, n+1):
-            for date in dates:
-                new_year = date.year + n_rnd *  n_years_orig
-                if date.month == 2 and date.day==29:
-                    new_dates.append(date.replace(year=new_year, day=28))
-                else:
-                    new_dates.append(date.replace(year=new_year))
-        new_dates = [date.strftime(format_date) for date in new_dates]
-
-        rnd_df = pd.DataFrame({
-            'lat' : np.hstack(rnd_lat),
-            'lon' : np.hstack(rnd_lon),
-            'mw' : np.hstack(rnd_mw),
-            'depth' : np.hstack(rnd_depth),
-            'date' : new_dates,
-            'eventid': np.arange(1, len(new_dates)+1)
-            })
-
-        return cls.from_Mw_depth(df=rnd_df, centroids=centroids, orig=False)
+        return cls.from_Mw_depth(
+            df=rnd_df,
+            centroids=centroids,
+            orig=False,
+        )
 
 
 def footprint_MMI(cent_lat, cent_lon, epi_lat, epi_lon, mag, depth):
-    """
-    Compute the footprint (intensity in MMI) at centroids position for
-    epicenter position, depth and magnitude in Mw
+    """Compute an earthquake MMI footprint at specified centroids.
 
     Parameters
     ----------
-    cent_lat : np.array
-        centroids latitudes
-    cent_lon : np.array
-        centroids longitudes
+    cent_lat : array_like
+        Latitude coordinates of the centroids in degrees.
+    cent_lon : array_like
+        Longitude coordinates of the centroids in degrees.
     epi_lat : float
-        epicenter latitude
+        Epicentre latitude in degrees.
     epi_lon : float
-        epienter longitude
+        Epicentre longitude in degrees.
     mag : float
-        magnitude of earthquake in MMI
+        Earthquake moment magnitude Mw.
     depth : float
-        depth in km
+        Earthquake focal depth in kilometres.
 
     Returns
     -------
-    np.array
-        array of intensities
-
+    numpy.ndarray
+        Modified Mercalli Intensity values at the supplied centroids.
     """
     cent_lat, cent_lon = np.array([cent_lat]), np.array([cent_lon])
     dists = u_coord.dist_approx(cent_lat, cent_lon, np.array([[epi_lat]]), np.array([[epi_lon]]))
     return attenuation_MMI(dists, mag, depth)
 
-def attenuation_MMI(dist, mag, depth, corr=0.0, a1=1.7, a2=1.5, a3=1.1726, a4=0.00106, b=0.0):
-    """
-    Modified Mercalli Intensity (MMI)
-    https://doi.org/10.1201/9781482271645
+
+def attenuation_MMI(
+    dist, mag, depth, corr=0.0, a1=1.7, a2=1.5, a3=1.1726, a4=0.00106, b=0.0
+):
+    """Compute Modified Mercalli Intensity using an attenuation relation.
+
+    The implemented relation follows the MMI attenuation formulation described
+    in https://doi.org/10.1201/9781482271645. Values exceeding the
+    magnitude-dependent maximum MMI are capped, while values below ``MIN_MMI``
+    are set to zero.
 
     Parameters
     ----------
-    dist : np.array
-        distances in KM
+    dist : array_like
+        Source-to-site distances in kilometres.
     mag : float
-        earthquake magnitude in Mw
+        Earthquake moment magnitude Mw.
     depth : float
-        distance in KM
+        Earthquake focal depth in kilometres.
     corr : float, optional
-        see MMI. The default is 0.
+        Additive distance correction inside the logarithmic term. The default is
+        ``0.0``.
     a1 : float, optional
-        see MMI. The default is 1.7.
+        Intercept coefficient. The default is ``1.7``.
     a2 : float, optional
-        see MMI. The default is 1.5.
-    a3 : float optional
-        see MMI. The default is 1.1726.
-    a4 : float optional
-        see MMI. The default is 0.00106.
+        Magnitude coefficient. The default is ``1.5``.
+    a3 : float, optional
+        Log-distance attenuation coefficient. The default is ``1.1726``.
+    a4 : float, optional
+        Linear-distance attenuation coefficient. The default is ``0.00106``.
     b : float, optional
-        see MMI. The default is 0.
+        Depth coefficient. The default is ``0.0``.
 
     Returns
     -------
-    np.array
-        MMI values for all distances
-
+    numpy.ndarray
+        Modified Mercalli Intensity values. Values below ``MIN_MMI`` are zero.
     """
-    max_MMI = 1.5 * (mag - 1.0)
-    mmi = a1 + a2 * mag - a3 * np.log(dist + corr) - a4 * dist + b * depth
-    return np.clip(mmi, a_min=MIN_MMI, a_max=max_MMI)
+    max_mmi = 1.5 * (mag - 1.0)
+    mmi = (
+        a1
+        + a2 * mag
+        - a3 * np.log(np.asarray(dist) + corr)
+        - a4 * np.asarray(dist)
+        + b * depth
+    )
+    mmi = np.minimum(mmi, max_mmi)
+    return np.where(mmi < MIN_MMI, 0.0, mmi)
