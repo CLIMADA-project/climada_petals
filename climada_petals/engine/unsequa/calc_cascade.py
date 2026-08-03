@@ -219,11 +219,16 @@ class CalcCascade(Calc):
         elapsed_time = time.time() - start
         self.est_comp_time(unc_sample.n_samples, elapsed_time, processes)
 
-        imp_met_list = self._compute_metrics(
+        imp_met_unc_list = self._compute_metrics(
             samples_df, chunksize=chunksize, processes=processes
         )
+        print(len(imp_met_unc_list))
+        print(imp_met_unc_list)
         # Assign computed impact distribution data to self
-        imp_met_unc_df = pd.DataFrame(imp_met_list, index=self.ci_types).T
+        imp_met_unc_df = pd.concat(
+            imp_met_unc_list, ignore_index=True
+        )  # pd.concat(imp_met_unc_list, ignore_index=True)
+        # imp_met_unc_df = pd.DataFrame(imp_met_list, index=self.ci_types).T
         # freq_curve_unc_df = pd.DataFrame(
         #    freq_curve_list, columns=["rp" + str(n) for n in rp]
         # )
@@ -289,8 +294,7 @@ class CalcCascade(Calc):
 
         # Perform the actual computation
         with log_level(level="ERROR", name_prefix="climada"):
-            return _transpose_chunked_data(imp_metrics)
-            # return imp_metrics
+            return imp_metrics  # _transpose_chunked_data(imp_metrics)
 
 
 def _map_impact_calc(
@@ -338,33 +342,35 @@ def _map_impact_calc(
         haz = haz_input_var.evaluate(**haz_samples)
 
         # disrupt network
-        #create nw_impact_object
-        nw_impact_calc = NetworkImpactCalc(network=nw,
-                                           impf_set=impf,
-                                           impf_thresh_set=thresh_func_dict,
-                                           haz=haz,
-                                           exp_list=exp_list)
+        # create nw_impact_object
+        nw_impact_calc = NetworkImpactCalc(
+            network=nw,
+            impf_set=impf,
+            impf_thresh_set=thresh_func_dict,
+            haz=haz,
+            exp_list=exp_list,
+        )
 
-        #run impact calculation
+        # run impact calculation
         nw_disr, _ = nw_impact_calc.disrupt_network()
 
-        #cascade
-        nw_calc = NetworkCalcs(network=nw_disr,
-                               dep_table=df_dep,
-                               friction_surf=friction_surf)
+        # cascade
+        nw_calc = NetworkCalcs(
+            network=nw_disr, dep_table=df_dep, friction_surf=friction_surf
+        )
         nw_calc.cascade(initial=False, rerouting=True, friction_surf=friction_surf)
         nw_disr_casc = nw_calc.network
 
         # CALC IMPACTSTATS
-        imp_dict = nwu.disaster_impact_allservices_df(
-            nw.nodes, nw_disr_casc.nodes, services=ci_types
-        )
-        imp_types = [
-            ci_type + "_access" if ci_type != "people" else ci_type
-            for ci_type in ci_types
-        ]
-        #print(imp_types)
+        imp_dict = nwu.make_network_stat(nw_disr_casc)
+        # imp_types = [
+        #    ci_type + "_access" if ci_type != "people" else ci_type
+        #    for ci_type in ci_types
+        # ]
+        # print(imp_types)
         # {uncertainty_values[k].append(v) for k, v in imp_dict.items()}
-        imp_list = [imp_dict[imp_type] for imp_type in imp_types]
-        uncertainty_values.append(imp_list)
-    return list(zip(*uncertainty_values))
+        # imp_list = [imp_dict[imp_type] for imp_type in imp_types]
+        # imp_list = [imp_dict[k] for k in imp_dict.keys()]
+        uncertainty_values.append(imp_dict)
+        # uncertainty_values.append(pd.DataFrame.from_dict(imp_dict, orient="index").T)
+    return pd.DataFrame.from_dict(uncertainty_values)
