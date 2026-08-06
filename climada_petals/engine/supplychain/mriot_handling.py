@@ -566,6 +566,48 @@ def download_mriot(
 
         pymrio.download_oecd(storage_folder=download_dir, years=year_group)
 
+def check_mriot_members(mriot:pymrio.IOSystem) -> pymrio.IOSystem:
+    """Checks that required mriot members are present and correct.
+
+    The main check is whether total final demand has negative
+    values, which can lead to unwanted behavior in the modeling.
+    The correction is to clip the negative accounts to 0 for the
+    total final demand accounts that are negative.
+
+    The second part, makes sure that mriot members are present and
+    consistent with possible changes to the final demand, by recomputing
+    them with pymrio.
+
+    Parameters
+    ----------
+    mriot : pymrio.IOSystem
+        The IO system to check
+
+    Returns
+    -------
+    pymrio.IOSystem
+
+    """
+
+    # Check if negative demand - this happens when the
+    # "Changes in Inventory (CII)" demand category is
+    # larger than the sum of all other categories
+    if (mriot.Y.sum(axis=1) < 0).any():
+        warnings.warn(
+            "Found negatives values in total final demand, "
+            "setting them to 0 and recomputing production vector"
+        )
+        mriot.Y.loc[mriot.Y.sum(axis=1) < 0] = mriot.Y.loc[
+            mriot.Y.sum(axis=1) < 0
+        ].clip(lower=0)
+
+    mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
+    mriot.A = pymrio.calc_A(mriot.Z, mriot.x)
+    mriot.L = pymrio.calc_L(mriot.A)
+    mriot.B = pymrio.calc_B(mriot.Z, mriot.x)
+    mriot.G = pymrio.calc_G(mriot.B)
+    return mriot
+
 
 def parse_mriot(
     mriot_type: str, downloaded_file: pathlib.Path, mriot_year: int, **kwargs
@@ -612,23 +654,8 @@ def parse_mriot(
         "description", "Metadata for pymrio Multi Regional Input-Output Table"
     )
     mriot.meta.change_meta("name", f"{mriot_type}-{mriot_year}")
-
-    # Check if negative demand - this happens when the
-    # "Changes in Inventory (CII)" demand category is
-    # larger than the sum of all other categories
-    if (mriot.Y.sum(axis=1) < 0).any():
-        warnings.warn(
-            "Found negatives values in total final demand, "
-            "setting them to 0 and recomputing production vector"
-        )
-        mriot.Y.loc[mriot.Y.sum(axis=1) < 0] = mriot.Y.loc[
-            mriot.Y.sum(axis=1) < 0
-        ].clip(lower=0)
-        mriot.x = pymrio.calc_x(mriot.Z, mriot.Y)
-        mriot.A = pymrio.calc_A(mriot.Z, mriot.x)
-
+    mriot = check_mriot_members(mriot)
     return mriot
-
 
 def get_mriot(
     mriot_type: str, mriot_year: int, redownload: bool = False, save: bool = True
