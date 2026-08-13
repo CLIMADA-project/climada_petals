@@ -270,10 +270,6 @@ def glofas_request(
             f"product = {product}. Choose from {list(DEFAULT_REQUESTS.keys())}"
         ) from err
 
-    # Preflight status check: avoid misleading 400 invalid-request errors while a
-    # collection is unavailable on EWDS.
-    _check_ewds_collection_availability(glofas_product)
-
     # Update with request_kw
     if request_kw is not None:
         default_request.update(**request_kw)
