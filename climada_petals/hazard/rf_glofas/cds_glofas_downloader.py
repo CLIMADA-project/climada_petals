@@ -30,6 +30,7 @@ import logging
 import hashlib
 
 from cdsapi import Client
+import requests
 from ruamel.yaml import YAML
 from ruamel.yaml.compat import StringIO
 import pandas as pd
@@ -155,7 +156,11 @@ def glofas_request_single(
     if client_kw is not None:
         client_kw_default.update(client_kw)
     client = Client(**client_kw_default)
-    client.retrieve(product, request, outfile)
+    try:
+        client.retrieve(product, request, outfile)
+    except requests.exceptions.HTTPError as e:
+        LOGGER.error("Error occurred while retrieving data: %s, returning None", e)
+        return None
 
     # Dump request
     yaml = YAML()
