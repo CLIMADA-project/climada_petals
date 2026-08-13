@@ -66,6 +66,18 @@ DEFAULT_REQUESTS = {
         "day": ["01"],
         "leadtime_hour": (np.arange(1, 31) * 24).astype(str).tolist(),
     },
+    "reforecast": {
+        "variable": ["river_discharge_in_the_last_24_hours"],
+        "product_type": ["ensemble_perturbed_reforecast"],
+        "system_version": ["version_4_0"],
+        "hydrological_model": ["lisflood"],
+        "data_format": "grib2",
+        "download_format": "unarchived",
+        "hyear": ["1999"],
+        "hmonth": ["01"],
+        "hday": ["03"],
+        "leadtime_hour": (np.arange(1, 31) * 24).astype(str).tolist(),
+    },
 }
 """Default request keyword arguments to be updated by the user requests"""
 
@@ -77,7 +89,7 @@ def datetime_index_to_request(
     index: pd.DatetimeIndex, product: str
 ) -> dict[str, list[str]]:
     """Create a request-compatible dict from a series"""
-    prefix = "h" if product == "historical" else ""
+    prefix = "" if product == "forecast" else "h"
     return {
         prefix + "year": list(map(str, index.year.unique())),
         prefix + "month": list(map(lambda x: f"{x:02d}", index.month.unique())),
@@ -257,6 +269,10 @@ def glofas_request(
         raise NotImplementedError(
             f"product = {product}. Choose from {list(DEFAULT_REQUESTS.keys())}"
         ) from err
+
+    # Preflight status check: avoid misleading 400 invalid-request errors while a
+    # collection is unavailable on EWDS.
+    _check_ewds_collection_availability(glofas_product)
 
     # Update with request_kw
     if request_kw is not None:
