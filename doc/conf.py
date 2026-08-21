@@ -262,8 +262,9 @@ autodoc_member_order = "bysource"
 
 # Mock imports that do not work in the readthedocs environment
 autodoc_mock_imports = [
-    # Does not work because it would require a reload of the environment after
+    # Cannot be loaded because it would require a reload of the environment after
     # installation (which is not done by readthedocs.org)
+    # Also, considered optional now.
     "xesmf"
 ]
 

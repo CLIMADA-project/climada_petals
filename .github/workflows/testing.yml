@@ -69,6 +69,7 @@ jobs:
             python=${{ matrix.python-version }}
             make
             gfortran>=13
+            xesmf>0.8
           # Persist environment for branch, Python version, single day
           cache-environment-key: env-${{ github.ref }}-${{ matrix.python-version }}-${{ steps.date.outputs.date }}
       -

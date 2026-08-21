@@ -5,19 +5,18 @@ channels:
 dependencies:
   - boario>=0.6.2
   - cdsapi>=0.7
-  - esmpy>=8.4.2  # 8.4.1 has an issue with ESMFMKFILE env var being required
-  - importlib-metadata<8.0  # 8.0 is incompatible with esmpy 8.4 (which is the only version available for windows 2024-07)
+  - gfortran>=13.0
   - libgdal>=3.10
   - lxml>=6
   - meson>=1.4,<1.5  # meson >=1.5 may break geoclaw setup (at least for python 3.11)
   - meson-python>=0.18
   - osm-flex>=1.1
   - overpy>=0.7
+  - pooch>=1.9
   - pymrio>=0.6
   - rioxarray>=0.19
   - ruamel.yaml>=0.18
   - scikit-image>=0.25
-  - xesmf>=0.8
   - pip:
     - openpyxl==3.1.0  # this is necessary as currently (2026-02-26) in conda-forge there is
                        # no openpyxl 3.1.* version compatible with python 3.12 and pymrio 0.6
