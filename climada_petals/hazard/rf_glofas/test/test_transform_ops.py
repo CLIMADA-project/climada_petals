@@ -358,48 +358,50 @@ class TestGlofasDownloadOps(unittest.TestCase):
             | {"year": ["2000"], "month": ["03"], "day": ["11"]},
         )
 
-class TestRegrid(unittest.TestCase):
 
+class TestRegrid(unittest.TestCase):
     def setUp(self) -> None:
         """Initialize test values"""
         x = np.arange(4.0)
         y = np.flip(x)
+        a = np.arange(2)
+        b = np.arange(2)
         x_diff = x * 0.9
         y_diff = y * 0.8
-        xx, yy = np.meshgrid(x, y, indexing="xy")
+        xx, yy, _, _ = np.meshgrid(x, y, a, b, indexing="xy")
         values = xx + yy
 
         self.da_values = xr.DataArray(
             data=values,
-            dims=["latitude", "longitude"],
-            coords=dict(longitude=x, latitude=y),
+            dims=["latitude", "longitude", "a", "b"],
+            coords={"longitude": x, "latitude": y, "a": a, "b": b},
         )
         self.da_coords = xr.DataArray(
-            data=[values] * 3,
+            data=[values[..., 0, 0]] * 3,
             dims=["return_period", "latitude", "longitude"],
-            coords=dict(longitude=x_diff, latitude=y_diff, return_period=[1, 10, 100]),
+            coords={
+                "longitude": x_diff,
+                "latitude": y_diff,
+                "return_period": [1, 10, 100],
+            },
         )
         self.da_coords.rio.write_crs("epsg:4326", inplace=True)
 
-        xx_diff, yy_diff = np.meshgrid(x_diff, y_diff, indexing="xy")
+        xx_diff, yy_diff, _, _ = np.meshgrid(x_diff, y_diff, a, b, indexing="xy")
         expected_values = xx_diff + yy_diff
         self.da_expected = xr.DataArray(
             data=expected_values,
-            dims=["latitude", "longitude"],
-            coords=dict(longitude=x_diff, latitude=y_diff),
-        )
+            dims=["latitude", "longitude", "a", "b"],
+            coords={"longitude": x_diff, "latitude": y_diff, "a": a, "b": b},
+        ).transpose("a", "b", "latitude", "longitude")
         self.da_expected.rio.write_crs("epsg:4326", inplace=True)
 
     def assert_result(self, da_result, da_expected_values, **kwargs):
-            """Check if result is as expected"""
-            npt.assert_array_equal(
-                da_result["longitude"], da_expected_values["longitude"]
-            )
-            npt.assert_array_equal(
-                da_result["latitude"], da_expected_values["latitude"]
-            )
-            # Interpolation causes some noise, so "allclose" is enough here
-            xrt.assert_allclose(da_result, da_expected_values, **kwargs)
+        """Check if result is as expected"""
+        npt.assert_array_equal(da_result["longitude"], da_expected_values["longitude"])
+        npt.assert_array_equal(da_result["latitude"], da_expected_values["latitude"])
+        # Interpolation causes some noise, so "allclose" is enough here
+        xrt.assert_allclose(da_result, da_expected_values, **kwargs)
 
     def test_interpolate_space(self):
         """Test 'interpolate_space' and 'regrid' operations"""
@@ -409,8 +411,8 @@ class TestRegrid(unittest.TestCase):
         self.assert_result(da_result, self.da_expected)
 
         # Nearest neighbor extrapolation (from resulting grid)
-        self.da_values[2:, 2:] = np.nan
-        self.da_expected[1:, 2:] = [[4.2, 5.1], [1.7, 5.1], [0.9, 0.9]]
+        self.da_values[2:, 2:, ...] = np.nan
+        self.da_expected[..., 1:, 2:] = [[4.2, 5.1], [1.7, 5.1], [0.9, 0.9]]
 
         da_result = interpolate_space(self.da_values, self.da_coords)
         self.assert_result(da_result, self.da_expected)
@@ -426,8 +428,8 @@ class TestRegrid(unittest.TestCase):
         )
 
         # Nearest neighbor extrapolation (from source grid)
-        self.da_values[2:, 2:] = np.nan
-        self.da_expected[1:, 2:] = [[4, 5], [2, 5], [1, 1]]
+        self.da_values[2:, 2:, ...] = np.nan
+        self.da_expected[..., 1:, 2:] = [[4, 5], [2, 5], [1, 1]]
 
         # 'regrid'
         da_result = regrid(self.da_values, self.da_coords)
@@ -436,6 +438,7 @@ class TestRegrid(unittest.TestCase):
             self.da_expected,
             rtol=1e-3,  # Regridding has lower accuracy
         )
+
 
 class TestTransformOps(unittest.TestCase):
     """Test case for other dantro operations"""

@@ -30,17 +30,21 @@ from typing import (
     Iterable,
     Callable,
     Sequence,
+    Literal,
 )
 from collections import deque
 from copy import deepcopy
 
+import rioxarray.rioxarray
 import xarray as xr
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 from scipy.stats import gumbel_r
+from scipy.interpolate import griddata
 from numba import guvectorize
 import rioxarray
+from rioxarray._spatial_utils import _add_attrs_proj
 
 from climada.util.coordinates import get_country_geometries, country_to_iso
 from .cds_glofas_downloader import (
@@ -638,6 +642,104 @@ def return_period_resample(
     )
 
 
+def _interpolate_na(
+    src_data: np.ndarray,
+    x_coords: np.ndarray,
+    y_coords: np.ndarray,
+    *,
+    nodata: float,
+    method: Literal["linear", "nearest", "cubic"] = "nearest",
+) -> np.ndarray:
+    """
+    This method uses scipy.interpolate.griddata to interpolate missing data.
+
+    Parameters
+    ----------
+    src_data: Any
+        Input data array.
+    method: {'linear', 'nearest', 'cubic'}, optional
+        The method to use for interpolation in `scipy.interpolate.griddata`.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`:
+        An interpolated :class:`numpy.ndarray`.
+    """
+    src_data_flat = src_data.flatten()
+    try:
+        data_isnan = np.isnan(nodata)  # type: ignore
+    except TypeError:
+        data_isnan = False
+    if not data_isnan:
+        data_bool = src_data_flat != nodata
+    else:
+        data_bool = ~np.isnan(src_data_flat)
+
+    if not data_bool.any():
+        return src_data
+
+    x_coords, y_coords = np.meshgrid(x_coords, y_coords)
+
+    out = griddata(
+        points=(x_coords.flatten()[data_bool], y_coords.flatten()[data_bool]),
+        values=src_data_flat[data_bool],
+        xi=(x_coords, y_coords),
+        method=method,
+        fill_value=nodata,
+    )
+    return out
+
+
+def interpolate_na(
+    data: xr.DataArray,
+    nodata: float = np.nan,
+) -> xr.DataArray:
+    """Multi-dimensional interpolate_na for geospatial arrays and datasets
+
+    Parameters
+    ----------
+    data : xr.DataArray | xr.Dataset
+        The data to interpolate
+    nodata : float or None
+        The nodata value to assign to the dataset. If ``None``, no nodata value is
+        assigned. Default: ``np.nan``.
+
+    See Also
+    --------
+    rioxarray.RasterArray.interpolate_na
+        https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.interpolate_na
+    """
+    # Assert we have nodata
+    data = data.rio.write_nodata(nodata)
+
+    # Use default for 2D/3D
+    if len(data.sizes) < 4:
+        return data.rio.interpolate_na()
+
+    # Interpolate non-core dims
+    out = xr.apply_ufunc(
+        _interpolate_na,
+        data,
+        data[data.rio.x_dim],
+        data[data.rio.y_dim],
+        input_core_dims=[
+            [data.rio.y_dim, data.rio.x_dim],  # lat/lon
+            [data.rio.x_dim],
+            [data.rio.y_dim],
+        ],
+        output_core_dims=[
+            [data.rio.y_dim, data.rio.x_dim],  # lat/lon
+        ],
+        vectorize=True,
+        kwargs={
+            "nodata": data.rio.nodata,
+        },
+        keep_attrs="no_conflicts",
+    )
+    _add_attrs_proj(new_data_array=out, src_data_array=data)
+    return out
+
+
 def interpolate_space(
     return_period: xr.DataArray,
     flood_maps: xr.DataArray,
@@ -655,8 +757,7 @@ def interpolate_space(
         kwargs=dict(fill_value=None),  # Extrapolate
     )
     return_period_regridded.rio.write_crs(flood_maps.rio.crs, inplace=True)
-    return_period_regridded.rio.write_nodata(np.nan, inplace=True)
-    return_period_regridded = return_period_regridded.rio.interpolate_na()
+    return_period_regridded = interpolate_na(return_period_regridded, nodata=np.nan)
 
     # Set values that do not exist in the flood hazard maps to NaN
     if mask_values:
