@@ -11,6 +11,7 @@ Code freeze date: YYYY-MM-DD
 ### Dependency Changes
 
 ### Added
+- Module to compute Earthquakes in MMI scale from ISC-GEM catalogue. [#201](https://github.com/CLIMADA-project/climada_petals/pull/201)
 
 ### Changed
 
