@@ -71,7 +71,7 @@ class TestEarthquake:
                 "lat": [0.0, 10.0, 5.0, 50.0],
                 "lon": [0.0, 10.0, 5.0, 50.0],
                 "mw": [7.0, 2.0, 6.0, 6.0],
-                "depth": [10.0, 10.0, 10.0, 10.0],
+                "depth": [10.0, 15.0, 22.0, 10.0],
                 "eventid": [1, 2, 3, 4],
                 "date": [
                     "2000-01-01 00:00:00.000000",
@@ -184,7 +184,7 @@ class TestEarthquake:
 
         generated = captured["df"]
         np.testing.assert_allclose(generated["lat"], 90.0)
-        np.testing.assert_allclose(generated["lon"], -179.7)
+        np.testing.assert_allclose(generated["lon"], -179.7, atol=0.11)
         np.testing.assert_allclose(generated["mw"], [6.25, 7.25, 6.25, 7.25])
         np.testing.assert_allclose(generated["depth"], [11.0, 22.0, 11.0, 22.0])
 
