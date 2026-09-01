@@ -49,6 +49,10 @@ class Earthquake(Hazard):
     on a set of centroids. Intensities are expressed on the Modified Mercalli
     Intensity (MMI) scale.
 
+    The default MII is computed using an attenuation relation.
+    Alternative parametrizations are available at
+    https://doi.org/10.1201/9781482271645, chapter 2.4.4.
+
     Attributes
     ----------
     haz_type : str
@@ -460,9 +464,11 @@ def attenuation_MMI(
     """Compute Modified Mercalli Intensity using an attenuation relation.
 
     The implemented relation follows the MMI attenuation formulation described
-    in https://doi.org/10.1201/9781482271645. Values exceeding the
-    magnitude-dependent maximum MMI are capped, while values below ``MIN_MMI``
-    are set to zero.
+    in https://doi.org/10.1201/9781482271645 (alternative parametrizations are available at
+    in Chapter 2.4.4).
+    Values exceeding the magnitude-dependent maximum MMI are capped, while values
+    below ``MIN_MMI`` are set to zero.
+
 
     Parameters
     ----------
