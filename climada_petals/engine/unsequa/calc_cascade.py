@@ -222,8 +222,7 @@ class CalcCascade(Calc):
         imp_met_unc_list = self._compute_metrics(
             samples_df, chunksize=chunksize, processes=processes
         )
-        print(len(imp_met_unc_list))
-        print(imp_met_unc_list)
+
         # Assign computed impact distribution data to self
         imp_met_unc_df = pd.concat(
             imp_met_unc_list, ignore_index=True
