@@ -16,6 +16,7 @@ Code freeze date: YYYY-MM-DD
 ### Changed
 
 ### Fixed
+- `Landslide.sample_events` sparsifies each sampled year instead of building the whole simulation densely, reducing peak memory by 60x-120x in `Landslide.from_prob`. Output unchanged. [#35](https://github.com/CLIMADA-project/climada_petals/issues/35)
 
 ### Deprecated
 
