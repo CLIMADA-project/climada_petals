@@ -75,11 +75,13 @@ def sample_events(prob_matrix, n_years, dist='binom'):
     Landslide.from_prob()
     """
 
-    events = [
-        sample_event_from_probs(prob_matrix, n_samples=1, dist=dist)
+    # Sparsify each year as it is drawn: passing a list of dense rows to
+    # sparse.csr_matrix() holds two copies of the whole simulation at once.
+    rows = [
+        sparse.csr_matrix(sample_event_from_probs(prob_matrix, n_samples=1, dist=dist))
         for i in range(n_years)
         ]
-    return sparse.csr_matrix(events)
+    return sparse.vstack(rows, format="csr")
 
 
 def sample_event_from_probs(prob_matrix, n_samples, dist):
@@ -307,7 +309,8 @@ class Landslide(Hazard):
         # sample events from probabilities
         haz.intensity = sample_events(prob_matrix, n_years, dist)
         haz.fraction = haz.intensity.copy()
-        haz.fraction[haz.intensity.nonzero()] = 1
+        # the stored values are exactly the nonzeros, so no fancy-index needed
+        haz.fraction.data[:] = 1
         haz.frequency = np.ones(n_years) / n_years
 
         # meaningless, such that check() method passes:

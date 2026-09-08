@@ -18,6 +18,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Unit test landslide module.
 """
+import tracemalloc
 import unittest
 import geopandas as gpd
 import numpy as np
@@ -238,6 +239,35 @@ class TestLandslideModule(unittest.TestCase):
                 break
         self.assertTrue(events[events.nonzero()].max() <= 1)  # fails for all-zero-events
         self.assertEqual(events.shape, (n_years, prob_matrix.shape[0]))
+
+    def test_sample_events_is_sparse(self):
+        """Peak memory tracks the result, not n_years x n_pixels."""
+        _meta, prob_matrix = u_coord.read_raster(
+            LS_PROB_FILE, geometry=[shapely.geometry.box(8, 45, 11, 46)])
+        prob_matrix = prob_matrix.squeeze() / 10e6
+        n_years = 500
+        n_pixels = prob_matrix.shape[0]
+        dense_bytes = n_years * n_pixels * 8
+
+        tracemalloc.start()
+        events = sample_events(prob_matrix, n_years, dist='binom')
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        self.assertEqual(events.shape, (n_years, n_pixels))
+        self.assertLess(peak, dense_bytes / 10)
+
+    def test_from_prob_fraction_marks_intensity(self):
+        """fraction is 1 exactly where intensity is stored."""
+        np.random.seed(42)
+        haz = Landslide.from_prob(bbox=(8, 45, 11, 46),
+                                  path_sourcefile=LS_PROB_FILE, n_years=500,
+                                  dist='binom')
+
+        self.assertGreater(haz.fraction.nnz, 0)
+        self.assertEqual(haz.fraction.nnz, haz.intensity.nnz)
+        np.testing.assert_array_equal(np.unique(haz.fraction.data), np.array([1]))
+        np.testing.assert_array_equal(haz.fraction.nonzero(), haz.intensity.nonzero())
 
 
 if __name__ == "__main__":
