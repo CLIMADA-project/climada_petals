@@ -736,7 +736,7 @@ def _get_coco_MRIOT_name(mriot_name, is_custom=False):
     match = MRIOT_FULLNAME_REGEX.match(mriot_name)
     if not match:
         raise ValueError(
-            f"Input string '{mriot_name}' is not in the correct format '<MRIOT-name>_<year>' or not recognized."
+            f"Input string '{mriot_name}' is not in the correct format '<MRIOT-name>-<year>' or not recognized."
         )
 
     mriot_type = match.group("mrio_type")
