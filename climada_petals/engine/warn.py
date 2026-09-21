@@ -113,9 +113,9 @@ class Operation(Enum):
     median_filtering : function
         Links to median filtering operation.
     """
-    dilation = member(partial(dilation))
-    erosion = member(partial(erosion))
-    median_filtering = member(partial(median_filtering))
+    dilation = member(dilation)
+    erosion = member(erosion)
+    median_filtering = member(median_filtering)
 
     def __call__(self, *args, **kwargs):
         return self.value(*args, **kwargs)
