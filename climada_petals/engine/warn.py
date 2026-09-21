@@ -21,7 +21,7 @@ Define the Warn module.
 import logging
 import copy
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, member
 from functools import partial
 
 from typing import List, Tuple
@@ -113,9 +113,9 @@ class Operation(Enum):
     median_filtering : function
         Links to median filtering operation.
     """
-    dilation = partial(dilation)
-    erosion = partial(erosion)
-    median_filtering = partial(median_filtering)
+    dilation = member(partial(dilation))
+    erosion = member(partial(erosion))
+    median_filtering = member(partial(median_filtering))
 
     def __call__(self, *args, **kwargs):
         return self.value(*args, **kwargs)
