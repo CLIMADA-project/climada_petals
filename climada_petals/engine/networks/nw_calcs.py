@@ -48,7 +48,7 @@ class NetworkCalcs:
     cascades and dependency setups.
     """
 
-    def __init__(self, network, dep_table, friction_surf=None, directed=True):
+    def __init__(self, network, dep_table=None, friction_surf=None, directed=True):
         self._network = network
         self.dep_table = dep_table
         self._graph_calc = GraphCalcs(
@@ -130,12 +130,23 @@ class NetworkCalcs:
         # base state
         # do it after build up of physical dependencies so that created edge also receive
         # functionality states
+
+        if self.dep_table is None:
+            raise ValueError(
+                "Cannot initialize base state without a dependency table. Please provide a dependency table at initialization."
+            )
         self.network.initialize_funcstates()
         self.network.initialize_capacity(self.dep_table)
         self.network.initialize_supply(self.dep_table)
 
     def setup_dependencies(self):
         """Create dependency links and initialize end-user access"""
+
+        if self.dep_table is None:
+            raise ValueError(
+                "Cannot setup dependencies without a dependency table. Please provide a dependency table at initialization."
+            )
+
         for i, row in self.dep_table.iterrows():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
             self._graph_calc.calc_dependencies(
@@ -203,6 +214,12 @@ class NetworkCalcs:
         - Resets network IDs to account for newly created edges
         - Invalidates cached graph data after completion
         """
+
+        if self.dep_table is None:
+            raise ValueError(
+                "Cannot propagate cascade failure without a dependency table. Please provide a dependency table at initialization."
+            )
+
         delta = -1
         cycles = 0
         while delta != 0:
