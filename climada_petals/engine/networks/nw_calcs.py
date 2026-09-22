@@ -172,7 +172,6 @@ class NetworkCalcs:
         p_sink="power_line",
         source_var="el_generation",
         demand_var="el_consumption",
-        initial=False,
         friction_surf=None,
         rerouting=True,
         access_check_method="routing",
@@ -193,9 +192,6 @@ class NetworkCalcs:
             Variable name for source generation (default is 'el_generation').
         demand_var : str, optional
             Variable name for demand consumption (default is 'el_consumption').
-        initial : bool, optional
-            If True, forces end-user dependency update even if convergence occurs
-            in first cycle (default is False).
         friction_surf : optional
             Friction surface data for routing calculations (default is None).
         rerouting : bool, optional
