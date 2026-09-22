@@ -18,20 +18,18 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Define the Warn module.
 """
-import logging
 import copy
+import logging
 from dataclasses import dataclass, field
 from enum import Enum, member
-from functools import partial
 
-from typing import List, Tuple
-from matplotlib.colors import ListedColormap
 import numpy as np
-import xarray as xr
 import skimage
+import xarray as xr
+from matplotlib.colors import ListedColormap
 
-from climada.util.plot import geo_scatter_categorical
 from climada.util.coordinates import get_resolution as u_get_resolution
+from climada.util.plot import geo_scatter_categorical
 
 LOGGER = logging.getLogger(__name__)
 
@@ -160,8 +158,8 @@ class Warn:
             If strictly larger than 1, the levels of too small regions are changed to its
             surrounding levels. If 0 or None, the levels are not changed.
         """
-        warn_levels: List[float]
-        operations: List[Tuple[Operation, int]] = field(default_factory=lambda:
+        warn_levels: list[float]
+        operations: list[tuple[Operation, int]] = field(default_factory=lambda:
             [(Operation.dilation, 2),
              (Operation.erosion, 3),
              (Operation.dilation, 7),
