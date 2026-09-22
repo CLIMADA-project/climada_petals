@@ -7,7 +7,7 @@ name = "climada_petals"
 version = "6.2.1-dev"
 description = "CLIMADA Extensions"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.11,<3.14"
 license = { text = "GNU General Public License v3 (GPLv3)" }
 authors = [
     { name = "ETH", email = "climada-info@sympa.ethz.ch" }
