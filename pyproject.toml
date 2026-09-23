@@ -22,8 +22,10 @@ classifiers = [
 ]
 dependencies = [
     "boario",
-    "climada>=6.1",
     "cdsapi",
+    "climada>=6.1",
+    "country-converter",
+    "progressbar2",
     "osm-flex",
     "pymrio",
     "rioxarray",
