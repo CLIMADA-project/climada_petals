@@ -25,7 +25,7 @@ dependencies = [
     "cdsapi",
     "climada>=6.1",
     "country-converter",
-    "progressbar2"
+    "progressbar2",
     "osm-flex",
     "pymrio",
     "rioxarray",
