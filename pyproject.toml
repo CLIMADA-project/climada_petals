@@ -26,6 +26,7 @@ dependencies = [
     "cdsapi",
     "osm-flex",
     "pymrio",
+    "progressbar2",
     "rioxarray",
     "ruamel.yaml",
     "scikit-image",
