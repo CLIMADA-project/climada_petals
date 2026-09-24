@@ -322,7 +322,9 @@ def _ensure_edge_id_column(edges):
         edge_id_col = "__edge_uid"
         edges[edge_id_col] = edges.index.to_numpy()
     elif edges[edge_id_col].isna().any():
-        edges[edge_id_col] = edges[edge_id_col].fillna(pd.Series(edges.index, index=edges.index))
+        edges[edge_id_col] = edges[edge_id_col].fillna(
+            pd.Series(edges.index, index=edges.index)
+        )
     return edges, edge_id_col
 
 
@@ -1108,19 +1110,15 @@ def simplified_network(network):
     return network_simp
 
 
-def ordered_network(network, attrs={}):
+def ordered_network(network):
     """Return a column-ordered network for igraph graph generation.
 
-    Reorders node and edge columns to the format expected by igraph
-    and optionally adds additional attributes.
+    Reorders node and edge columns to the format expected by igraph.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
-    attrs : dict, optional
-        Additional attributes to add to both edges and nodes.
-        Default: {}.
 
     Returns
     -------
@@ -1132,7 +1130,31 @@ def ordered_network(network, attrs={}):
 
     network_ord.nodes = _vcols_to_graphorder(network_ord.nodes)
     network_ord.edges = _ecols_to_graphorder(network_ord.edges)
-    for key, value in attrs.items():
-        network_ord.edges[key] = value
-        network_ord.nodes[key] = value
     return network_ord
+
+
+def add_attributes(network, attrs, on="both"):
+    """
+    Add attributes to both edges and nodes of a network.
+
+    Parameters
+    ----------
+    network : Network
+        The network to add attributes to.
+    attrs : dict
+        A dictionary of attributes to add.
+    on : str, optional
+        The elements to add the attributes to. Can be "both", "edges", or "nodes".
+        Default is "both".
+
+    Returns
+    -------
+    Network
+        The network with the added attributes.
+    """
+    for key, value in attrs.items():
+        if on in ["both", "edges"]:
+            network.edges[key] = value
+        if on in ["both", "nodes"]:
+            network.nodes[key] = value
+    return network
