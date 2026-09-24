@@ -18,6 +18,10 @@ Code freeze date: YYYY-MM-DD
 ### Fixed
 - Fixed a wrong error message on required MRIOT name format in the supplychain module ("_" instead of "-") [#205](https://github.com/CLIMADA-project/climada_petals/pull/205)
 
+Fixed minor bugs in the supplychain module [[#187](https://github.com/CLIMADA-project/climada_petals/issues/187)]:
+    - An index name was not set that generated errors when merging results
+    - Attributes of the MRIOT (such as the G matrix) could be absent
+
 ### Deprecated
 
 ### Removed
