@@ -11,6 +11,7 @@ Code freeze date: YYYY-MM-DD
 ### Dependency Changes
 
 ### Added
+- Module to compute Earthquakes in MMI scale from ISC-GEM catalogue. [#201](https://github.com/CLIMADA-project/climada_petals/pull/201)
 
 ### Changed
 
@@ -23,6 +24,20 @@ Fixed minor bugs in the supplychain module [[#187](https://github.com/CLIMADA-pr
 ### Deprecated
 
 ### Removed
+
+## 6.2.0
+
+Release date: 2026-06-15
+
+### Dependency Changes
+
+Added:
+
+- `pymoo`
+
+### Added
+
+- Module to compute multi-country optimised CATBonds. [#186](https://github.com/CLIMADA-project/climada_petals/pull/186)
 
 ## 6.1.0
 
