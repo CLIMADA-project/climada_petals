@@ -16,6 +16,7 @@ Code freeze date: YYYY-MM-DD
 ### Changed
 
 ### Fixed
+- Fixed a wrong error message on required MRIOT name format in the supplychain module ("_" instead of "-") [#205](https://github.com/CLIMADA-project/climada_petals/pull/205)
 
 ### Deprecated
 
