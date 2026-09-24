@@ -655,7 +655,9 @@ def _resample_res(filepath, upscale_factor, nodata, extent=None):
     return arr, transform
 
 
-def load_resampled_raster(filepath, upscale_factor, nodata=-99999.0, extent=None):
+def load_resampled_raster(
+    filepath, upscale_factor=1.0, nodata=-99999.0, extent=None, crs="EPSG:4326"
+):
     """Load a raster file, resample it, and return as a GeoDataFrame.
 
     Resamples the raster by the given factor and converts non-zero cells
@@ -666,12 +668,14 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999.0, extent=None
     ----------
     filepath : str or pathlib.Path
         Path to the raster file.
-    upscale_factor : float
-        Factor by which to upscale the resolution.
+    upscale_factor : float, optional
+        Factor by which to upscale the resolution. Default: 1.0 (no resampling).
     nodata : float, optional
         Nodata value in the raster. Default: -99999.0.
     extent : tuple of float, optional
         Geographic extent as (xmin, ymin, xmax, ymax). Default: None.
+    crs : str, optional
+        Coordinate reference system for the output GeoDataFrame. Default: "EPSG:4326".
 
     Returns
     -------
@@ -690,7 +694,7 @@ def load_resampled_raster(filepath, upscale_factor, nodata=-99999.0, extent=None
         }
     )
     gdf = gdf[gdf.counts != 0].reset_index(drop=True)
-
+    gdf.crs = crs
     # manual correction for over-estimate after aggregation:
     arr_orig, __ = _resample_res(filepath, 1, nodata, extent)
     corr_factor = arr_orig.squeeze().flatten().sum() / arr.squeeze().flatten().sum()
