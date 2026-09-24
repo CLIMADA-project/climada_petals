@@ -1,6 +1,10 @@
 climada\_petals\.engine package
 ===============================
 
+.. toctree::
+
+    climada_petals.engine.cat_bonds
+
 climada\_petals\.engine\.supplychain module
 -------------------------------------------
 

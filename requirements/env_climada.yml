@@ -3,7 +3,6 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - boario>=0.6.2
   - cdsapi>=0.7
   - esmpy>=8.4.2  # 8.4.1 has an issue with ESMFMKFILE env var being required
   - importlib-metadata<8.0  # 8.0 is incompatible with esmpy 8.4 (which is the only version available for windows 2024-07)
@@ -13,9 +12,13 @@ dependencies:
   - meson-python>=0.18
   - osm-flex>=1.1
   - overpy>=0.7
-  - pymrio>=0.6
   - python-igraph>=1.0
   - rioxarray>=0.19
   - ruamel.yaml>=0.18
   - scikit-image>=0.25
   - xesmf>=0.8
+  - pip:
+    - boario>=0.6.2
+    - country-converter>=0.8  # implicitly required by pymrio
+    - progressbar2>=4.2  # implicitly required by boario
+    - pymrio>=0.6
