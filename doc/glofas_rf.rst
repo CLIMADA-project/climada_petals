@@ -3,8 +3,8 @@ River Flood Hazards from GloFAS Discharge Data
 ==============================================
 
 This tutorial will guide you through the GloFAS River Flood module of CLIMADA Petals.
-It's purpose is to download river discharge data from the Global Flood Awareness System (GloFAS) and compute flood depths from it.
-The data is stored by the `Copernicus Data Store (CDS) <https://cds.climate.copernicus.eu/#!/home>`_ and will be automatically downloaded in the process.
+Its purpose is to download river discharge data from the Global Flood Awareness System (GloFAS) and compute flood depths from it.
+The data is stored by the `CEMS Early Warning Data Store <https://ewds.climate.copernicus.eu/>`_ and will be automatically downloaded in the process.
 
 --------
 Overview
@@ -27,11 +27,12 @@ Preparations
 We need to prepare three things: The flood hazard maps, the extreme value distributions, and access to the CDS API.
 
 Copernicus Data Store API Access
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1. Register at the `Copernicus Data Store (CDS) <https://cds.climate.copernicus.eu/#!/home>`_ and log in.
-2. Check out the `CDS API HowTo <https://cds.climate.copernicus.eu/api-how-to>`_.
-   In the section "Install the CDS API key", copy the content of the black box on the right.
-3. Create a file called ``.cdsapirc`` in your home directory and paste the contents of the black box into it.
+#. Register at the `CEMS Early Warning Data Store <https://ewds.climate.copernicus.eu/>`_ and log in.
+#. Go to your `CEMS profile <https://ewds.climate.copernicus.eu/profile>`_.
+#. Scroll down to the "API Key" section and click on the second "Copy" symbol to the right, below the instructions "To easily use your API key, you can configure it inside your ``.cdsapirc`` file:"
+#. Create a file called ``.cdsapirc`` in your home directory and paste the copied contents into it.
 
    If you are unsure where to put the file and you are working on a Linux or macOS system, open a terminal and execute
 
@@ -45,7 +46,7 @@ Copernicus Data Store API Access
 Use Prepared Datasets
 ^^^^^^^^^^^^^^^^^^^^^
 
-The Gumbel distribution fit parameter data has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience: `Gumbel distribution fit parameters for historical GloFAS river discharge data (1979–2015) <https://doi.org/10.3929/ethz-b-000641667>`_
+The Gumbel distribution fit parameter data has been uploaded to the `ETH Research Collection <https://www.research-collection.ethz.ch/>`_ for your convenience: `Gumbel distribution fit parameters for historical GloFAS river discharge data (1979–2023)) <https://doi.org/10.3929/ethz-b-000726304>`_
 
 This dataset and the global flood hazard maps will be automatically downloaded when executing
 
@@ -61,8 +62,28 @@ your machine.
 After this step, you should have the following files in your ``<climada-dir>/data/river-flood-computation``:
 
 * ``gumbel-fit.nc``: A NetCDF file containing ``loc``, ``scale`` and ``samples`` variables with dimensions ``latitude`` and ``longitude`` on a grid matching the input discharge data (here: GloFAS).
-* ``flood-maps.nc``: A NetCDF file giving the ``flood_depth`` with dimensions ``latitude``, ``longitude``, and ``return_period``. The grid is allowed to differ from that of the discharge and the Gumbel fit parameters and is expected to have a higher resolution.
 * ``FLOPROS_shp_V1/FLOPROS_shp_V1.shp``: A shapefile containing flood protection standards for the entire world, encoded as return period against which the local measures are protecting against. 
+
+Optional Dependency: ``xesmf``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you followed the CLIMADA installation instructions, you are ready to use the module, as explained below.
+However, you may want to benefit from the advanced regrid features of the `xesmf <https://xesmf.readthedocs.io/en/stable/>`_ package.
+
+.. warning::
+
+    The package is considered an optional dependency because Conda Forge does not provide its latest version for Windows.
+    You hence might run into some trouble trying to install it on this operating system.
+
+You can install ``xesmf`` with Conda as follows:
+
+.. code-block:: shell
+
+   mamba install -n climada_env -c conda-forge xesmf
+
+This should work without issues on Linux and macOS.
+
+After installation, :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.regrid` will utilize ``xesmf`` for regridding by default.
 
 .. _compute:
 
@@ -128,11 +149,22 @@ The single steps are as follows:
 
         return_period = rf.return_period_resample(10, discharge)
 
+#. Loading the flood hazard maps matching the extent of the downloaded discharge data with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.load_flood_maps`:
+
+   .. code-block:: python
+
+        flood_maps = self.load_flood_maps(discharge, coarsening=3)
+    
+   This downloads the tiles of the flood hazard maps intersecting the downloaded discharge data.
+   The flood hazard maps have a very high resolution of 3 arc seconds (around 90 m at the equator).
+   This resolution is unfeasible for computations of larger-scale flood events on memory-limited hardware.
+   Therefore, a default coarsening is applied, raising the resolution to 21 arc seconds (``coarsening=7``).
+
 #. Regridding the return period onto the higher resolution grid of the flood hazard maps with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.regrid`:
 
    .. code-block:: python
 
-        return_period_regrid = rf.regrid(return_period)
+        return_period_regrid = rf.regrid(return_period, flood_maps=flood_maps)
 
 #. *Optional:* Applying the protection level with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.apply_protection`:
 
@@ -144,15 +176,15 @@ The single steps are as follows:
 
    .. code-block:: python
 
-        flood_depth = rf.flood_depth(return_period_regrid)
-        flood_depth_protect = rf.flood_depth(return_period_regrid_protect)
+        flood_depth = rf.flood_depth(return_period_regrid, flood_maps=flood_maps)
+        flood_depth_protect = rf.flood_depth(return_period_regrid_protect, flood_maps=flood_maps)
 
    If :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` was executed with ``apply_protection="both"`` (default), it will merge the data arrays for flood depth without protection applied and with protection applied, respectively, into a single dataset and return it.
 
 Passing Keyword-Arguments to ``compute``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you want to pass custom arguments to the methods called by :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` without calling each method individually, you can do so via the ``resample_kws`` and ``regrid_kws`` arguments.
+If you want to pass custom arguments to the methods called by :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` without calling each method individually, you can do so via the ``load_flood_maps_kws``, ``resample_kws`` and ``regrid_kws`` arguments.
 
 If you add ``resample_kws``, :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.compute` will call :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period_resample` instead of :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.return_period` and pass the mapping as keyword arguments.
 
@@ -160,9 +192,12 @@ Likewise, ``regrid_kws`` will be passed as keyword arguments to :py:meth:`~clima
 
 .. code-block:: python
 
+    import numpy as np
+
     ds_flood = rf.compute(
-        resample_kws=dict(num_bootstrap_samples=20, num_workers=4),
-        regrid_kws=dict(reuse_regridder=True)
+        load_flood_maps_kws={"coarsening": 3, "coarsen_agg": np.max},
+        resample_kws={"num_bootstrap_samples": 20, "num_workers": 4},
+        regrid_kws={"reuse_regridder": True},
     )
 
 Creating Hazards from the Data

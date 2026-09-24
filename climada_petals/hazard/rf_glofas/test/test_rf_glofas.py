@@ -1,3 +1,24 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Tests for rf_glofas.py
+"""
+
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -40,6 +61,7 @@ class TestHazardSeriesFromDataset(unittest.TestCase):
 
     def test_single_hazard(self):
         """Test hazard_series_from_dataset resulting in single hazard"""
+        freq = 0.5
         ds = xr.Dataset(
             data_vars=dict(
                 intensity=(["time", "latitude", "longitude"], np.zeros((4, 2, 3)))
@@ -53,6 +75,7 @@ class TestHazardSeriesFromDataset(unittest.TestCase):
                 ),
                 latitude=("latitude", np.arange(2)),
                 longitude=("longitude", np.arange(3)),
+                frequency=freq,
             ),
         )
 
@@ -66,11 +89,16 @@ class TestHazardSeriesFromDataset(unittest.TestCase):
         num_centroids = ds.sizes["latitude"] * ds.sizes["longitude"]
         self.assertEqual(haz.centroids.size, num_centroids)
         self.assertTupleEqual(haz.intensity.shape, (num_events, num_centroids))
+        npt.assert_array_equal(haz.frequency, np.ones(num_events) * freq / num_events)
 
         # Check data
         npt.assert_array_equal(
             haz.date, [pd.to_datetime(x).toordinal() for x in ds["time"].values]
         )
+
+        # Check frequency scaling
+        haz = hazard_series_from_dataset(ds, "intensity", "time", scale_frequency=False)
+        npt.assert_array_equal(haz.frequency, np.ones(num_events) * freq)
 
     def _check_series(self, series, length, num_events, num_centroids):
         """Check the value within a hazard series"""
