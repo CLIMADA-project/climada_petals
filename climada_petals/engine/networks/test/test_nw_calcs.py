@@ -120,44 +120,10 @@ def test_network_calcs_graph_property(network_calcs):
     assert isinstance(graph, ig.Graph)
 
 
-def test_cascade_initial(network_calcs):
-    """Test cascade with initial flag"""
-    network_calcs.network.initialize_capacity(network_calcs.dep_table)
-    network_calcs.network.initialize_supply(network_calcs.dep_table)
-    network_calcs.setup_dependencies()
-
-    # Run cascade with initial=True
-    network_calcs.cascade(initial=True, friction_surf=None, rerouting=False)
-
-    # Verify network state was updated
-    assert "actual_supply_road_people" in network_calcs.network.nodes.columns
-    assert "actual_supply_healthcare_people" in network_calcs.network.nodes.columns
-    assert (
-        np.all(
-            network_calcs.network.nodes.loc[
-                network_calcs.network.nodes["ci_type"] == "people",
-                "actual_supply_road_people",
-            ]
-        )
-        == 1
-    )
-    assert (
-        np.all(
-            network_calcs.network.nodes.loc[
-                network_calcs.network.nodes["ci_type"] == "people",
-                "actual_supply_healthcare_people",
-            ]
-        )
-        == 1
-    )
-
-
-def test_cascade_simple(network_calcs):
-    """Test simple cascade without friction surface"""
+def test_cascade_nofail_norerouting(network_calcs):
+    """Test simple cascade without rerouting"""
     network_calcs.initialize_base_state()
     network_calcs.setup_dependencies()
-    network_calcs.cascade(initial=True, friction_surf=None, rerouting=False)
-
     assert (
         np.all(
             network_calcs.network.nodes.loc[
@@ -165,7 +131,7 @@ def test_cascade_simple(network_calcs):
                 "actual_supply_road_people",
             ]
         )
-        == 1
+        == 0
     )
     assert (
         np.all(
@@ -174,17 +140,19 @@ def test_cascade_simple(network_calcs):
                 "actual_supply_healthcare_people",
             ]
         )
-        == 1
+        == 0
     )
 
-    # fail hospital node
-    network_calcs.network.nodes.loc[
-        (network_calcs.network.nodes["ci_type"] == "healthcare"),
-        "func_tot",
-    ] = 0
+    assert np.all(
+        network_calcs.network.nodes.loc[
+            network_calcs.network.nodes["ci_type"] == "people",
+            "access_state_healthcare_people",
+        ]
+        == "no base access"
+    )
 
-    network_calcs.cascade(initial=False, friction_surf=None, rerouting=False)
-
+    # first try with no rerouting
+    network_calcs.cascade(friction_surf=None, rerouting=False)
     # Verify cascade completed
     assert (
         np.all(
@@ -202,151 +170,249 @@ def test_cascade_simple(network_calcs):
                 "actual_supply_healthcare_people",
             ]
         )
+        == 1
+    )
+    assert np.all(
+        network_calcs.network.nodes.loc[
+            network_calcs.network.nodes["ci_type"] == "people",
+            "access_state_healthcare_people",
+        ]
+        == "access undisrupted"
+    )
+
+    # try with rerouting
+    network_calcs.cascade(friction_surf=None, rerouting=True)
+    # Verify cascade completed
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_road_people",
+            ]
+        )
+        == 1
+    )
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_healthcare_people",
+            ]
+        )
+        == 1
+    )
+    assert np.all(
+        network_calcs.network.nodes.loc[
+            network_calcs.network.nodes["ci_type"] == "people",
+            "access_state_healthcare_people",
+        ]
+        == "access undisrupted"
+    )
+
+
+def test_cascade_nofail_rerouting(network_calcs):
+    """Test simple cascade without rerouting"""
+    network_calcs.initialize_base_state()
+    network_calcs.setup_dependencies()
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_road_people",
+            ]
+        )
+        == 0
+    )
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_healthcare_people",
+            ]
+        )
+        == 0
+    )
+
+    assert np.all(
+        network_calcs.network.nodes.loc[
+            network_calcs.network.nodes["ci_type"] == "people",
+            "access_state_healthcare_people",
+        ]
+        == "no base access"
+    )
+
+    # first try with no rerouting
+    network_calcs.cascade(friction_surf=None, rerouting=True)
+    # Verify cascade completed
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_road_people",
+            ]
+        )
+        == 1
+    )
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_healthcare_people",
+            ]
+        )
+        == 1
+    )
+    assert np.all(
+        network_calcs.network.nodes.loc[
+            network_calcs.network.nodes["ci_type"] == "people",
+            "access_state_healthcare_people",
+        ]
+        == "access undisrupted"
+    )
+
+    # try with rerouting
+    network_calcs.cascade(friction_surf=None, rerouting=True)
+    # Verify cascade completed
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_road_people",
+            ]
+        )
+        == 1
+    )
+    assert (
+        np.all(
+            network_calcs.network.nodes.loc[
+                network_calcs.network.nodes["ci_type"] == "people",
+                "actual_supply_healthcare_people",
+            ]
+        )
+        == 1
+    )
+    assert np.all(
+        network_calcs.network.nodes.loc[
+            network_calcs.network.nodes["ci_type"] == "people",
+            "access_state_healthcare_people",
+        ]
+        == "access undisrupted"
+    )
+
+
+def test_cascade_sourcefail_rerouting(network_calcs):
+    """Test simple cascade with rerouting"""
+    network_calcs.initialize_base_state()
+    network_calcs.setup_dependencies()
+
+    # fail hospital node
+    network_fail = cp.deepcopy(network_calcs.network)
+    network_fail.nodes.loc[
+        (network_calcs.network.nodes["ci_type"] == "healthcare"),
+        "func_tot",
+    ] = 0
+
+    network_calcs_fail = NetworkCalcs(
+        network=network_fail, dep_table=network_calcs.dep_table
+    )
+    network_calcs_fail.cascade(friction_surf=None, rerouting=False)
+
+    # Verify cascade completed
+    assert (
+        np.all(
+            network_calcs_fail.network.nodes.loc[
+                network_calcs_fail.network.nodes["ci_type"] == "people",
+                "actual_supply_road_people",
+            ]
+        )
+        == 1
+    )
+    assert (
+        np.all(
+            network_calcs_fail.network.nodes.loc[
+                network_calcs_fail.network.nodes["ci_type"] == "people",
+                "actual_supply_healthcare_people",
+            ]
+        )
         == 0
     )
 
 
-@pytest.mark.skip(reason="powercap_from_clusters method not implemented")
-def test_cascade_with_dependencies():
-    """Test cascade with complete dependency setup"""
-    # Create a more complex network
-    nodes = gpd.GeoDataFrame(
-        {
-            "id": [0, 1, 2, 3, 4],
-            "orig_id": [0, 1, 2, 3, 4],
-            "ci_type": ["healthcare", "healthcare", "road", "road", "people"],
-            "func_tot": [1, 1, 1, 1, 1],
-            "geometry": [
-                Point(0, 0),
-                Point(1, 1),
-                Point(2, 2),
-                Point(3, 3),
-                Point(4, 4),
-            ],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    edges = gpd.GeoDataFrame(
-        {
-            "from_id": [0, 1, 2, 3],
-            "to_id": [1, 2, 3, 4],
-            "id": [0, 1, 2, 3],
-            "orig_id": [0, 1, 2, 3],
-            "osm_id": [100, 101, 102, 103],
-            "ci_type": ["healthcare", "road", "road", "road"],
-            "func_tot": [1, 1, 1, 1],
-            "distance": [157200, 157200, 157200, 157200],
-            "geometry": [
-                LineString([(0, 0), (1, 1)]),
-                LineString([(1, 1), (2, 2)]),
-                LineString([(2, 2), (3, 3)]),
-                LineString([(3, 3), (4, 4)]),
-            ],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    network = Network(edges=edges, nodes=nodes)
+def test_cascade_sourcefail_norerouting(network_calcs):
+    """Test simple cascade without rerouting"""
+    network_calcs.initialize_base_state()
+    network_calcs.setup_dependencies()
 
-    dep_table = pd.DataFrame(
-        {
-            "source": ["healthcare", "road"],
-            "target": ["road", "people"],
-            "type_I": ["functional", "enduser"],
-            "via_link": ["road", "road"],
-            "link_condition": ["distance", "distance"],
-            "thresh_dist": [np.inf, np.inf],
-            "bidir_link": [False, False],
-            "access_cnstr": [False, False],
-            "n_links": [1, 1],
-            "thresh_func": [0.5, 0.5],
-        }
+    # fail hospital node
+    network_fail = cp.deepcopy(network_calcs.network)
+    network_fail.nodes.loc[
+        (network_calcs.network.nodes["ci_type"] == "healthcare"),
+        "func_tot",
+    ] = 0
+
+    network_calcs_fail = NetworkCalcs(
+        network=network_fail, dep_table=network_calcs.dep_table
+    )
+    network_calcs_fail.cascade(friction_surf=None, rerouting=False)
+
+    # Verify cascade completed
+    assert (
+        np.all(
+            network_calcs_fail.network.nodes.loc[
+                network_calcs_fail.network.nodes["ci_type"] == "people",
+                "actual_supply_road_people",
+            ]
+        )
+        == 1
+    )
+    assert (
+        np.all(
+            network_calcs_fail.network.nodes.loc[
+                network_calcs_fail.network.nodes["ci_type"] == "people",
+                "actual_supply_healthcare_people",
+            ]
+        )
+        == 0
     )
 
-    nc = NetworkCalcs(network=network, dep_table=dep_table)
-    nc.initialize_base_state()
 
-    # Set a failure
-    nc.network.nodes.loc[1, "func_tot"] = 0
+def test_cascade_edgefail_rerouting(network_calcs):
+    """Test cascade with edge failure and rerouting"""
+    network_calcs.initialize_base_state()
+    network_calcs.setup_dependencies()
 
-    # Run cascade
-    nc.cascade(
-        p_source="healthcare",
-        p_sink="road",
-        source_var="capacity",
-        demand_var="demand",
-        initial=False,
-        friction_surf=None,
-        rerouting=False,
+    # fail road edge
+    network_fail = cp.deepcopy(network_calcs.network)
+    network_fail.edges.loc[3, "func_tot"] = 0
+
+    network_calcs_fail = NetworkCalcs(
+        network=network_fail, dep_table=network_calcs.dep_table
+    )
+    network_calcs_fail.cascade(friction_surf=None, rerouting=False)
+
+    # Verify cascade completed
+    assert (
+        np.all(
+            network_calcs_fail.network.nodes.loc[
+                network_calcs_fail.network.nodes["ci_type"] == "people",
+                "actual_supply_road_people",
+            ]
+        )
+        == 1
+    )
+    assert (
+        np.all(
+            network_calcs_fail.network.nodes.loc[
+                network_calcs_fail.network.nodes["ci_type"] == "people",
+                "actual_supply_healthcare_people",
+            ]
+        )
+        == 0
     )
 
-    # Verify cascade completed and network was updated
-    assert nc.network is not None
-    assert "func_tot" in nc.network.nodes.columns
 
-
-@pytest.mark.skip(reason="powercap_from_clusters method not implemented")
-def test_cascade_multiple_iterations():
-    """Test cascade that requires multiple iterations"""
-    nodes = gpd.GeoDataFrame(
-        {
-            "id": [0, 1, 2],
-            "orig_id": [0, 1, 2],
-            "ci_type": ["healthcare", "road", "road"],
-            "func_tot": [1, 1, 1],
-            "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    edges = gpd.GeoDataFrame(
-        {
-            "from_id": [0, 1],
-            "to_id": [1, 2],
-            "id": [0, 1],
-            "orig_id": [0, 1],
-            "osm_id": [100, 101],
-            "ci_type": ["road", "road"],
-            "func_tot": [1, 1],
-            "distance": [157200, 157200],
-            "geometry": [LineString([(0, 0), (1, 1)]), LineString([(1, 1), (2, 2)])],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    network = Network(edges=edges, nodes=nodes)
-
-    dep_table = pd.DataFrame(
-        {
-            "source": ["healthcare"],
-            "target": ["road"],
-            "type_I": ["functional"],
-            "via_link": ["road"],
-            "link_condition": ["distance"],
-            "thresh_dist": [np.inf],
-            "bidir_link": [False],
-            "access_cnstr": [False],
-            "n_links": [1],
-            "thresh_func": [0.5],
-        }
-    )
-
-    nc = NetworkCalcs(network=network, dep_table=dep_table)
-    nc.initialize_base_state()
-
-    nc.cascade(
-        p_source="healthcare",
-        p_sink="road",
-        source_var="capacity",
-        demand_var="demand",
-        initial=True,
-    )
-
-    assert nc.network is not None
-
-
-def test_initial_cascade_with_setup_dependencies(network_with_ci_types):
+@pytest.mark.skip(reason="initial no longer used")
+def test_cascade_with_setup_dependencies(network_with_ci_types):
     """Test that initial cascade works correctly even when setup_dependencies is called first"""
     import numpy as np
 
@@ -396,8 +462,8 @@ def test_initial_cascade_with_setup_dependencies(network_with_ci_types):
     # Setup dependencies (this creates the dependency edges)
     nw_calc.setup_dependencies()
 
-    # Run initial cascade - this should treat it as initial state, not former access
-    nw_calc.cascade(initial=True)
+    # Run initial cascade
+    nw_calc.cascade()
 
     # Check that people have access undisrupted, not access disrupted source
     people_nodes = nw_calc.graph.vs.select(ci_type="people")

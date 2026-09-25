@@ -15,14 +15,5 @@ You should have received a copy of the GNU General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
-
-init hazard
 """
 
-from .tc_tracks_forecast import *
-from .tc_rainfield import *
-from .tc_surge_bathtub import *
-from .wildfire import *
-from .river_flood import *
-from .coastal_flood import *
-from .earthquake import *

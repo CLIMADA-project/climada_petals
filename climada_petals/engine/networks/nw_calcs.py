@@ -48,7 +48,7 @@ class NetworkCalcs:
     cascades and dependency setups.
     """
 
-    def __init__(self, network, dep_table, friction_surf=None, directed=True):
+    def __init__(self, network, dep_table=None, friction_surf=None, directed=True):
         self._network = network
         self.dep_table = dep_table
         self._graph_calc = GraphCalcs(
@@ -88,7 +88,7 @@ class NetworkCalcs:
             Connectivity mode for the graph. Default is ``"weak"``.
         """
         iter_count = 0
-        n_clusters = len(self.graph.connected_components())
+        n_clusters = len(self.graph.connected_components(mode=graph_connectivity_mode))
         LOGGER.info("Number of clusters in the network before merging: %i", n_clusters)
         # dist_thresh = cntry_shape.area / nclusters
         while (n_clusters > 1) and (iter_count < max_iter):
@@ -100,7 +100,9 @@ class NetworkCalcs:
             iter_count += 1
             self.network = Network.from_graphs(self.graph, crs=self.network.crs)
             self._graph_calc.full_reset()
-        n_clusters = len(self.graph.connected_components())
+            n_clusters = len(
+                self.graph.connected_components(mode=graph_connectivity_mode)
+            )
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
 
     def add_physical_links(self, physical_dependencies):
@@ -130,12 +132,23 @@ class NetworkCalcs:
         # base state
         # do it after build up of physical dependencies so that created edge also receive
         # functionality states
+
+        if self.dep_table is None:
+            raise ValueError(
+                "Cannot initialize base state without a dependency table. Please provide a dependency table at initialization."
+            )
         self.network.initialize_funcstates()
         self.network.initialize_capacity(self.dep_table)
         self.network.initialize_supply(self.dep_table)
 
     def setup_dependencies(self):
         """Create dependency links and initialize end-user access"""
+
+        if self.dep_table is None:
+            raise ValueError(
+                "Cannot setup dependencies without a dependency table. Please provide a dependency table at initialization."
+            )
+
         for i, row in self.dep_table.iterrows():
             dependency_name = f'dependency_{row["source"]}_{row["target"]}'
             self._graph_calc.calc_dependencies(
@@ -161,7 +174,6 @@ class NetworkCalcs:
         p_sink="power_line",
         source_var="el_generation",
         demand_var="el_consumption",
-        initial=False,
         friction_surf=None,
         rerouting=True,
         access_check_method="routing",
@@ -182,9 +194,6 @@ class NetworkCalcs:
             Variable name for source generation (default is 'el_generation').
         demand_var : str, optional
             Variable name for demand consumption (default is 'el_consumption').
-        initial : bool, optional
-            If True, forces end-user dependency update even if convergence occurs
-            in first cycle (default is False).
         friction_surf : optional
             Friction surface data for routing calculations (default is None).
         rerouting : bool, optional
@@ -203,6 +212,12 @@ class NetworkCalcs:
         - Resets network IDs to account for newly created edges
         - Invalidates cached graph data after completion
         """
+
+        if self.dep_table is None:
+            raise ValueError(
+                "Cannot propagate cascade failure without a dependency table. Please provide a dependency table at initialization."
+            )
+
         delta = -1
         cycles = 0
         while delta != 0:

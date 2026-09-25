@@ -1010,6 +1010,7 @@ class GraphCalcs:
             Via edge filters.
         link_attrs : dict
             Attributes assigned to new dependency edges.
+            If ``ci_type`` is not specified, it defaults to ``"dependency_{source}_{target}"``.
         link_condition : str
             Condition type (e.g., ``"distance"``, ``"duration"``, ``"edgecond"``).
         dist_thresh : float

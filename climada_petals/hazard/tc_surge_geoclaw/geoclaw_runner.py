@@ -387,10 +387,10 @@ include $(CLAW)/clawutil/src/Makefile.common
         clawdata.checkpt_style = -3
         clawdata.checkpt_interval = 25
         clawdata.lower = [
-            lim - self.outer_pad_deg for lim in self.areas["wind_area"][:2]
+            float(lim - self.outer_pad_deg) for lim in self.areas["wind_area"][:2]
         ]
         clawdata.upper = [
-            lim + self.outer_pad_deg for lim in self.areas["wind_area"][2:]
+            float(lim + self.outer_pad_deg) for lim in self.areas["wind_area"][2:]
         ]
         clawdata.num_cells = [
             # coarsest resolution: appx. 0.25 degrees
@@ -456,7 +456,7 @@ include $(CLAW)/clawutil/src/Makefile.common
         for area in self.areas["surge_areas"]:
             x_1, y_1, x_2, y_2 = area
             regions.append([maxlevel - 1, maxlevel, t_1, t_2, x_1, x_2, y_1, y_2])
-        refinedata.speed_tolerance = list(np.arange(1.0, maxlevel - 2))
+        refinedata.speed_tolerance = np.arange(1.0, maxlevel - 2).tolist()
         refinedata.variable_dt_refinement_ratios = True
         refinedata.wave_tolerance = 1.0
 
@@ -506,7 +506,7 @@ include $(CLAW)/clawutil/src/Makefile.common
             [
                 clawdata.lower,
                 clawdata.upper,
-                [np.infty, 0.0, -np.infty],
+                [np.inf, 0.0, -np.inf],
                 [0.050, 0.025],
             ]
         )
