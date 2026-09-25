@@ -583,6 +583,130 @@ class TestEndpoints:
         assert result.nodes.crs.to_string() == "EPSG:32632"
         assert len(result.nodes) == 3
 
+    def test_get_endpoints_inherits_ci_type(self, simple_network):
+        """Endpoints inherit the ci_type of the edge they belong to."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = ["road", "road", "power_line", "power_line"]
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert "ci_type" in endpoints.columns
+        assert endpoints["ci_type"].tolist() == [
+            "road",
+            "road",
+            "road",
+            "road",
+            "power_line",
+            "power_line",
+            "power_line",
+            "power_line",
+        ]
+
+    def test_get_endpoints_only_propagates_requested_attrs(self, simple_network):
+        """Edge-only attributes (distance, ids, topology) are not propagated."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert set(endpoints.columns) == {"geometry", "ci_type"}
+
+    def test_get_endpoints_without_ci_type_column(self, simple_network):
+        """No attribute column is added if the edges do not have it."""
+        assert "ci_type" not in simple_network.edges.columns
+
+        endpoints = nw_preps.get_endpoints(simple_network)
+
+        assert list(endpoints.columns) == ["geometry"]
+
+    def test_get_endpoints_no_attrs(self, simple_network):
+        """attrs=None or empty disables attribute propagation."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        assert list(nw_preps.get_endpoints(network, attrs=None).columns) == [
+            "geometry"
+        ]
+        assert list(nw_preps.get_endpoints(network, attrs=()).columns) == [
+            "geometry"
+        ]
+
+    def test_get_endpoints_multilinestring_inherits_ci_type(self):
+        """Endpoints of each part of a MultiLineString inherit the edge ci_type."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road"],
+                "geometry": [
+                    MultiLineString([[(0, 0), (1, 0)], [(2, 0), (3, 0)]]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges)
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert len(endpoints) == 4
+        assert (endpoints["ci_type"] == "road").all()
+
+    def test_add_endpoints_nodes_inherit_ci_type(self, simple_network):
+        """Nodes created from edge endpoints carry the edge ci_type."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        network = Network(
+            edges=edges,
+            nodes=gpd.GeoDataFrame(geometry=[], crs="EPSG:4326"),
+        )
+
+        result = nw_preps.add_endpoints(network)
+
+        assert len(result.nodes) == 5
+        assert result.nodes["ci_type"].notna().all()
+        assert (result.nodes["ci_type"] == "road").all()
+
+    def test_add_endpoints_keeps_existing_node_attrs(self, simple_network):
+        """An existing node at an endpoint keeps its own ci_type."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        nodes = gpd.GeoDataFrame(
+            {"ci_type": ["healthcare"], "geometry": [Point(4, 4)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        result = nw_preps.add_endpoints(network)
+
+        assert len(result.nodes) == 5
+        ci_by_coords = {
+            (shapely.get_x(geom), shapely.get_y(geom)): ci
+            for geom, ci in zip(result.nodes.geometry, result.nodes["ci_type"])
+        }
+        assert ci_by_coords[(4.0, 4.0)] == "healthcare"
+        assert all(
+            ci == "road" for coords, ci in ci_by_coords.items() if coords != (4.0, 4.0)
+        )
+
+    def test_add_endpoints_custom_inherit_attrs(self, simple_network):
+        """inherit_attrs controls which edge columns are copied to new nodes."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        edges["operator"] = "utility_a"
+        network = Network(
+            edges=edges,
+            nodes=gpd.GeoDataFrame(geometry=[], crs="EPSG:4326"),
+        )
+
+        result = nw_preps.add_endpoints(network, inherit_attrs=("operator",))
+
+        assert (result.nodes["operator"] == "utility_a").all()
+        assert "ci_type" not in result.nodes.columns
+        assert "distance" not in result.nodes.columns
+
 
 # ========================================================================
 # Tests: merge_multilinestring / merge_multilinestrings
@@ -1181,6 +1305,19 @@ class TestSimplifiedNetwork:
         ]
         assert (0.0, 0.0) in all_node_coords
         assert (4.0, 4.0) in all_node_coords
+
+    def test_nodes_inherit_ci_type(self, edges_gdf):
+        """Nodes created by simplifying a line network keep the edge ci_type."""
+        edges = edges_gdf.copy()
+        edges["ci_type"] = "road"
+        network = Network(edges=edges)  # line network without nodes
+
+        result = nw_preps.simplified_network(network)
+
+        assert len(result.nodes) >= 2
+        assert result.nodes["ci_type"].notna().all()
+        assert (result.nodes["ci_type"] == "road").all()
+        assert "distance" not in result.nodes.columns
 
 
 # ========================================================================

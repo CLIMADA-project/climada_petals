@@ -88,7 +88,7 @@ class NetworkCalcs:
             Connectivity mode for the graph. Default is ``"weak"``.
         """
         iter_count = 0
-        n_clusters = len(self.graph.connected_components())
+        n_clusters = len(self.graph.connected_components(mode=graph_connectivity_mode))
         LOGGER.info("Number of clusters in the network before merging: %i", n_clusters)
         # dist_thresh = cntry_shape.area / nclusters
         while (n_clusters > 1) and (iter_count < max_iter):
@@ -100,7 +100,9 @@ class NetworkCalcs:
             iter_count += 1
             self.network = Network.from_graphs(self.graph, crs=self.network.crs)
             self._graph_calc.full_reset()
-        n_clusters = len(self.graph.connected_components())
+            n_clusters = len(
+                self.graph.connected_components(mode=graph_connectivity_mode)
+            )
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
 
     def add_physical_links(self, physical_dependencies):

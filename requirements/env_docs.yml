@@ -20,7 +20,7 @@ dependencies:
   - nb_conda_kernels
   - pandoc
   - pip
-  - sphinx>=2.0
+  - sphinx>=2.0,<9.0
   - pip:
     - coverage>=4.5
     - descartes
