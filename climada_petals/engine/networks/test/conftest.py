@@ -16,19 +16,37 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Test network modules
+Shared pytest fixtures for the network module tests.
+
+Pytest discovers the fixtures in this file automatically; test modules do not
+need to import them.
+
+Toy networks (EPSG:4326)
+------------------------
+``nodes_gdf`` / ``edges_gdf``: a chain of 5 nodes on the diagonal (0,0)-(4,4)
+connected by 4 directed edges 0->1->2->3->4.
+
+``network_with_ci_types``: the chain with ci_types
+    node 0: people, nodes 1-3: road, node 4: healthcare; all edges: road.
+``network_with_remote_node_missing_edge``: adds a second healthcare node 5
+    far away at (4, 50), not connected to the rest.
+``network_with_remote_node``: same, connected by a road edge 2->5.
+``network_with_edge_fail``: road edge 3->4 and road node 2 dysfunctional.
+``network_with_source_fail``: both healthcare nodes dysfunctional.
 """
 
-import pytest
-import tempfile
-import shutil
-import geopandas as gpd
-import pandas as pd
-from shapely.geometry import Point, LineString
 import copy as cp
+import shutil
+import tempfile
+
+import geopandas as gpd
 import numpy as np
+import pandas as pd
+import pytest
+from shapely.geometry import LineString, MultiLineString, Point
+
+from climada_petals.engine.networks.graph_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.nw_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_calcs import NetworkCalcs
 
 
@@ -85,7 +103,7 @@ def edges_gdf():
 
 @pytest.fixture
 def network_with_ci_types(edges_gdf, nodes_gdf):
-    """Create a network with CI type information"""
+    """Chain network with ci_types: people (0), road (1-3), healthcare (4)."""
     nodes = cp.deepcopy(nodes_gdf)
     nodes["ci_type"] = ["people", "road", "road", "road", "healthcare"]
     edges = cp.deepcopy(edges_gdf)
@@ -97,7 +115,7 @@ def network_with_ci_types(edges_gdf, nodes_gdf):
 
 @pytest.fixture
 def network_with_remote_node_missing_edge(network_with_ci_types):
-    """Create a network with CI type information"""
+    """Chain network plus an unconnected, remote healthcare node 5 at (4, 50)."""
     network = cp.deepcopy(network_with_ci_types)
     # add far away hospital node
     new_node = gpd.GeoDataFrame(
@@ -117,7 +135,7 @@ def network_with_remote_node_missing_edge(network_with_ci_types):
 
 @pytest.fixture
 def network_with_remote_node(network_with_remote_node_missing_edge):
-    """Create a network with CI type information"""
+    """Chain network plus a remote healthcare node 5 connected by road edge 2->5."""
     network = cp.deepcopy(network_with_remote_node_missing_edge)
     # add edge from last road node to far away hospital node
     new_edge = gpd.GeoDataFrame(
@@ -141,20 +159,18 @@ def network_with_remote_node(network_with_remote_node_missing_edge):
 
 @pytest.fixture
 def network_with_edge_fail(network_with_remote_node):
-    """Create a network with CI type information"""
+    """Remote-node network with road edge 3->4 and road node 2 dysfunctional."""
     network = cp.deepcopy(network_with_remote_node)
-    network.edges.loc[3, "func_tot"] = 0  # ci fail for testing
-    network.nodes.loc[2, "func_tot"] = 0  # road node needs to fail too
+    network.edges.loc[3, "func_tot"] = 0  # road edge 3->4
+    network.nodes.loc[2, "func_tot"] = 0  # road node 2
     return network
 
 
 @pytest.fixture
 def network_with_source_fail(network_with_remote_node):
-    """Create a network with a failed source CI"""
+    """Remote-node network with both healthcare nodes (4 and 5) dysfunctional."""
     network = cp.deepcopy(network_with_remote_node)
-    network.nodes.loc[network.nodes["ci_type"] == "healthcare", "func_tot"] = (
-        0  # ci fail for testing
-    )
+    network.nodes.loc[network.nodes["ci_type"] == "healthcare", "func_tot"] = 0
     return network
 
 
@@ -166,37 +182,30 @@ def network_with_source_fail(network_with_remote_node):
 @pytest.fixture
 def graph_calcs(network_with_ci_types):
     """Create GraphCalcs instance with test network"""
-    nw_calcs_mock = type("obj", (object,), {"network": network_with_ci_types})()
     return GraphCalcs(network=network_with_ci_types, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_source_fail(network_with_source_fail):
     """Create GraphCalcs instance with test network containing CI failures"""
-    nw_calcs_mock = type("obj", (object,), {"network": network_with_source_fail})()
     return GraphCalcs(network=network_with_source_fail, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_edge_ci_fail(network_with_edge_fail):
     """Create GraphCalcs instance with test network containing edge CI failures"""
-    nw_calcs_mock = type("obj", (object,), {"network": network_with_edge_fail})()
     return GraphCalcs(network=network_with_edge_fail, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_remote_node_missing_edge(network_with_remote_node_missing_edge):
     """Create GraphCalcs instance with test network containing missing edge"""
-    nw_calcs_mock = type(
-        "obj", (object,), {"network": network_with_remote_node_missing_edge}
-    )()
     return GraphCalcs(network=network_with_remote_node_missing_edge, directed=True)
 
 
 @pytest.fixture
 def graph_calcs_with_remote_node(network_with_remote_node):
     """Create GraphCalcs instance with test network containing remote node"""
-    nw_calcs_mock = type("obj", (object,), {"network": network_with_remote_node})()
     return GraphCalcs(network=network_with_remote_node, directed=True)
 
 
@@ -264,45 +273,12 @@ def network_calcs(network_with_ci_types, dependency_table):
 
 
 @pytest.fixture
-def network_calcs_edge_fail(network_with_edge_fail, dependency_table):
-    """Create NetworkCalcs instance"""
-    return NetworkCalcs(network=network_with_edge_fail, dep_table=dependency_table)
-
-
-@pytest.fixture
-def network_calcs_source_fail(network_with_source_fail, dependency_table):
-    """Create NetworkCalcs instance"""
-    return NetworkCalcs(network=network_with_source_fail, dep_table=dependency_table)
-
-
-@pytest.fixture
 def expected_dep_pairs():
-    """Expected dependency edges between node pairs."""
+    """Expected dependency edges as ``{link type: ([sources], [targets])}``."""
     return {
-        "dependency_road_people": (
-            [
-                1,
-            ],
-            [
-                0,
-            ],
-        ),  # sources targets
-        "dependency_healthcare_people": (
-            [
-                4,
-            ],
-            [
-                0,
-            ],
-        ),
-        "dependency_road_healthcare": (
-            [
-                3,
-            ],
-            [
-                4,
-            ],
-        ),
+        "dependency_road_people": ([1], [0]),
+        "dependency_healthcare_people": ([4], [0]),
+        "dependency_road_healthcare": ([3], [4]),
     }
 
 
@@ -377,7 +353,4 @@ def network_projected_disconnected(edges_projected_gdf, nodes_projected_gdf):
 @pytest.fixture
 def graph_calcs_projected_disconnected(network_projected_disconnected):
     """GraphCalcs instance for a disconnected projected-CRS network."""
-    nw_calcs_mock = type(
-        "obj", (object,), {"network": network_projected_disconnected}
-    )()
     return GraphCalcs(network=network_projected_disconnected, directed=True)
