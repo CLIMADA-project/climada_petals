@@ -61,7 +61,7 @@ def people_attr(graph, attr):
 
 def test_graph_calcs_init(network_with_ci_types):
     """Test GraphCalcs initialization"""
-    gc = GraphCalcs(network=network_with_ci_types, directed=True)
+    gc = GraphCalcs(network=network_with_ci_types)
 
     assert gc.network is network_with_ci_types
     assert gc.directed is True

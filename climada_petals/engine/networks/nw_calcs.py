@@ -48,12 +48,10 @@ class NetworkCalcs:
     cascades and dependency setups.
     """
 
-    def __init__(self, network, dep_table=None, friction_surf=None, directed=True):
+    def __init__(self, network, dep_table=None, friction_surf=None):
         self._network = network
         self.dep_table = dep_table
-        self._graph_calc = GraphCalcs(
-            network=network, directed=directed, friction_surf=friction_surf
-        )
+        self._graph_calc = GraphCalcs(network=network, friction_surf=friction_surf)
 
     @property
     def network(self):

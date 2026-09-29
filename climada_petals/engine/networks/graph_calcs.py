@@ -117,7 +117,7 @@ class GraphCalcs:
         network : Network
             Network to perform graph calculations on.
         directed : bool, optional
-            Whether to build a directed igraph representation. Default is ``True``.
+            If ``True``, create a directed graph. Default is ``True``.
         friction_surf : object, optional
             Friction surface used for duration-based linking. Default is ``None``.
         auto_sync : bool, optional
@@ -128,7 +128,8 @@ class GraphCalcs:
 
         Notes
         -----
-        The graph is lazily built and cached on first access via `graph`.
+        Graph calculations require a direct graph to account for target-source dependencies.
+        Flow along both directions is handled by creating bidirectional links when needed.
 
         When ``auto_sync=True``, each graph-modifying method will call ``sync()``
         automatically, ensuring the network GeoDataFrames are always up-to-date with
