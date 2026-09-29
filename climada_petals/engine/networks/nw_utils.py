@@ -1146,6 +1146,7 @@ def make_network_stat(
             pop_mask & indir_affected_mask, "value"
         ].sum()
     else:
+        indir_affected_mask = pd.Series(False, index=network.nodes.index)
         indirectly_affected_pop = 0
 
     # Get total affected people combining direct and indirect impacts without double counting
