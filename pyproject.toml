@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "climada_petals"
-version = "6.1.1-dev"
+version = "6.2.1-dev"
 description = "CLIMADA Extensions"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.11,<3.14"
 license = { text = "GNU General Public License v3 (GPLv3)" }
 authors = [
     { name = "ETH", email = "climada-info@sympa.ethz.ch" }
@@ -22,14 +22,17 @@ classifiers = [
 ]
 dependencies = [
     "boario",
-    "climada>=6.1",
     "cdsapi",
+    "climada>=6.1",
+    "country-converter",
+    "progressbar2",
     "osm-flex",
     "pymrio",
     "rioxarray",
     "ruamel.yaml",
     "scikit-image",
-    "xesmf"
+    "xesmf",
+    "pymoo"
 ]
 
 [project.urls]
