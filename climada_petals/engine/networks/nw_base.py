@@ -376,7 +376,7 @@ class Network:
 
         return cls(edges=edges, nodes=nodes)
 
-    def to_graph(self, directed=False):
+    def to_graph(self, directed=True):
         """Convert Network to an igraph.Graph object
 
         Creates an igraph.Graph representation of the network suitable for
@@ -386,7 +386,7 @@ class Network:
         Parameters
         ----------
         directed : bool, optional
-            Whether to create a directed graph. Defaults to False (undirected).
+            Whether to create a directed graph. Defaults to True (directed).
 
         Returns
         -------
@@ -463,7 +463,7 @@ class Network:
             ["id"] + [x for x in list(gdf_nodes) if x not in ["id"]], axis=1
         )
 
-    def _from_es(self, gdf_edges, gdf_nodes=None, directed=False):
+    def _from_es(self, gdf_edges, gdf_nodes=None, directed=True):
         """Construct igraph.Graph from edges with optional nodes
 
         Parameters
@@ -473,7 +473,7 @@ class Network:
         gdf_nodes : gpd.GeoDataFrame, optional
             Node data. If None, nodes are inferred from edge endpoints.
         directed : bool, optional
-            Whether to create a directed graph. Defaults to False (undirected).
+            Whether to create a directed graph. Defaults to True (directed).
 
         Returns
         -------
@@ -485,7 +485,7 @@ class Network:
         gdf_nodes = self._vcols_to_graphorder(gdf_nodes)
         return ig.Graph.DataFrame(gdf_edges, vertices=gdf_nodes, directed=directed)
 
-    def _from_vs(self, gdf_nodes, directed=False):
+    def _from_vs(self, gdf_nodes, directed=True):
         """Construct igraph.Graph from vertices only (no edges)
 
         Creates a graph with isolated vertices when no edge information is available.
@@ -495,7 +495,7 @@ class Network:
         gdf_nodes : gpd.GeoDataFrame
             Node data with all vertex attributes
         directed : bool, optional
-            Whether to create a directed graph. Defaults to False (undirected).
+            Whether to create a directed graph. Defaults to True (directed).
 
         Returns
         -------

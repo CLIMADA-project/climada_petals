@@ -117,7 +117,7 @@ class GraphCalcs:
         network : Network
             Network to perform graph calculations on.
         directed : bool, optional
-            Whether to build a directed igraph representation. Default is ``True``.
+            If ``True``, create a directed graph. Default is ``True``.
         friction_surf : object, optional
             Friction surface used for duration-based linking. Default is ``None``.
         auto_sync : bool, optional
@@ -128,7 +128,8 @@ class GraphCalcs:
 
         Notes
         -----
-        The graph is lazily built and cached on first access via `graph`.
+        Graph calculations require a direct graph to account for target-source dependencies.
+        Flow along both directions is handled by creating bidirectional links when needed.
 
         When ``auto_sync=True``, each graph-modifying method will call ``sync()``
         automatically, ensuring the network GeoDataFrames are always up-to-date with
@@ -300,11 +301,17 @@ class GraphCalcs:
         if self.auto_sync:
             self.sync()
 
-    def link_vertices_edgecond(self, target_attrs, edge_attrs, link_attrs, bidir=False):
+    def link_vertices_edgecond(
+        self, target_attrs, edge_attrs, link_attrs, k=None, bidir=False
+    ):
         """Link vertices based on existing edge conditions
 
         Creates dependency edges between vertices if an existing edge with
-        specified attributes already connects them.
+        specified attributes already connects them. The new links are directed
+        from the vertex of type ``edge_attrs["ci_type"]`` to the target,
+        whatever the direction of the existing edge. Each source-target pair
+        is linked once, even if several existing edges connect them (e.g. a
+        physical link stored in both directions).
 
         Parameters
         ----------
@@ -314,6 +321,10 @@ class GraphCalcs:
             Edge attributes that must be present on existing edges.
         link_attrs : dict
             Edge attributes for new dependency links.
+        k : int, optional
+            Maximum number of sources linked to each target, chosen by the
+            shortest connecting edge (``distance``). Default is ``None``
+            (all connected sources).
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
         """
@@ -341,20 +352,31 @@ class GraphCalcs:
             )
         ]
 
-        # make sure source are indeed of edge_attrs type and targets of target_attrs type
-        sources = []
-        targets = []
+        # make sure source are indeed of edge_attrs type and targets of target_attrs type.
+        # Collect, per target, the shortest connecting edge to each source.
+        candidates = {}  # {target: {source: distance}}
         for edge in pot_edges:
             source_vx = self.graph.vs[edge.source]
             target_vx = self.graph.vs[edge.target]
             if source_vx["ci_type"] == edge_attrs["ci_type"]:
-                sources.append(edge.source)
-                targets.append(edge.target)
+                source, target = edge.source, edge.target
             elif target_vx["ci_type"] == edge_attrs["ci_type"]:
-                sources.append(edge.target)
-                targets.append(edge.source)
+                source, target = edge.target, edge.source
             else:
                 raise ValueError("Edge does not connect correct ci_types!")
+            dist = edge.attributes().get("distance")
+            dist = np.inf if dist is None or pd.isna(dist) else dist
+            source_dists = candidates.setdefault(target, {})
+            source_dists[source] = min(dist, source_dists.get(source, np.inf))
+
+        sources = []
+        targets = []
+        for target, source_dists in candidates.items():
+            chosen = sorted(source_dists, key=source_dists.get)
+            if k is not None:
+                chosen = chosen[: int(k)]
+            sources.extend(chosen)
+            targets.extend([target] * len(chosen))
 
         self._edges_from_vlists(sources, targets, link_attrs)
         if bidir:
@@ -1055,6 +1077,7 @@ class GraphCalcs:
                 target_attrs=target_attrs,
                 edge_attrs=source_attrs,
                 link_attrs=link_attrs,
+                k=k,
                 bidir=bidir_link,
             )
         else:
@@ -1347,7 +1370,7 @@ class GraphCalcs:
             dist_thresh=row["thresh_dist"],
             dur_thresh=row["thresh_dur"],
             k=row["n_links"],
-            bidir_link=row["bidir_link"],
+            bidir_link=False,  # dependencies are directed
         )
 
         # Check if could have access if links were not broken
@@ -1363,7 +1386,7 @@ class GraphCalcs:
                 dist_thresh=row["thresh_dist"],
                 dur_thresh=row["thresh_dur"],
                 k=row["n_links"],
-                bidir_link=row["bidir_link"],
+                bidir_link=False,  # dependencies are directed
             )
 
             # People having access regardless of the state of the via link
