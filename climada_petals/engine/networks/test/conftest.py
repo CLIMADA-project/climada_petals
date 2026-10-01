@@ -257,12 +257,12 @@ def expected_physical_links():
     For the default toy network and ``n_links=1``:
     - road -> people links connect road node 1 to people node 0
     - healthcare -> people links connect healthcare node 4 to people node 0
-    ``add_physical_links`` adds links bidirectionally.
+    With ``bidir_link=False`` (default), one link per pair is added.
     """
     return {
-        "added_edge_count": 4,
-        "road_pairs": {(1, 0), (0, 1)},
-        "healthcare_pairs": {(4, 0), (0, 4)},
+        "added_edge_count": 2,
+        "road_pairs": {(1, 0)},
+        "healthcare_pairs": {(4, 0)},
     }
 
 

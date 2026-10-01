@@ -54,6 +54,43 @@ class NetworkCalcs:
         self._graph_calc = GraphCalcs(network=network, friction_surf=friction_surf)
 
     @property
+    def dep_table(self):
+        """Dependency table (validated when set)"""
+        return self._dep_table
+
+    @dep_table.setter
+    def dep_table(self, dep_table):
+        """Validate the dependency table before storing it"""
+        if dep_table is not None:
+            self._check_dep_table(dep_table)
+        self._dep_table = dep_table
+
+    @staticmethod
+    def _check_dep_table(dep_table):
+        """Check the dependency table for unsupported settings
+
+        Dependencies are directed from the source (provider) to the target
+        (user). Bidirectional dependency links are not supported: the reverse
+        links would make the sources appear as users in the access checks.
+        A mutual dependency must be defined with two rows, one per direction.
+
+        Raises
+        ------
+        ValueError
+            If a row has ``bidir_link=True``.
+        """
+        if "bidir_link" in dep_table.columns and dep_table["bidir_link"].any():
+            rows = dep_table.loc[dep_table["bidir_link"].astype(bool)]
+            pairs = ", ".join(
+                f"{row.source} -> {row.target}" for row in rows.itertuples()
+            )
+            raise ValueError(
+                "Bidirectional dependencies (bidir_link=True) are not supported "
+                f"({pairs}). Dependencies are directed from source to target; "
+                "define a mutual dependency with two rows instead."
+            )
+
+    @property
     def network(self):
         """Access the current network"""
         return self._network
@@ -104,7 +141,21 @@ class NetworkCalcs:
         LOGGER.info("Number of clusters in the network after merging: %i", n_clusters)
 
     def add_physical_links(self, physical_dependencies):
-        """Add physical links based on dependency table"""
+        """Add physical links based on a physical dependency table
+
+        Each target is linked to its ``n_links`` closest sources (within
+        ``thresh_dist``) with a link of type ``link``. Physical links represent
+        infrastructure without a direction (routing and connectivity ignore
+        the edge direction), so a single link per pair is created unless the
+        optional column ``bidir_link`` is ``True``.
+
+        Parameters
+        ----------
+        physical_dependencies : pd.DataFrame
+            Table with the columns ``source``, ``target``, ``link``,
+            ``thresh_dist``, ``n_links`` and optionally ``bidir_link``
+            (default ``False``).
+        """
 
         # create "missing physical structures" - needed for real world flows
         # syntax: each target is connected to max k sources given constraints
@@ -115,7 +166,7 @@ class NetworkCalcs:
                 target_attrs={"ci_type": row["target"]},
                 link_attrs={"ci_type": row["link"]},
                 dist_thresh=row["thresh_dist"],
-                bidir=True,
+                bidir=bool(row.get("bidir_link", False)),
                 k=row["n_links"],
             )
 
@@ -158,7 +209,7 @@ class NetworkCalcs:
                 dist_thresh=row["thresh_dist"],
                 dur_thresh=row["thresh_dur"],
                 k=row["n_links"],
-                bidir_link=row["bidir_link"],
+                bidir_link=False,  # dependencies are directed (see _check_dep_table)
             )
 
         # update network

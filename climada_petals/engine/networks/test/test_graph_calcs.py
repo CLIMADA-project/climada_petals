@@ -413,6 +413,68 @@ def test_link_vertices_edgecond(graph_calcs):
     assert graph_calcs.graph.ecount() == initial_edge_count + 1
 
 
+def test_link_vertices_edgecond_deduplicates_pairs(graph_calcs):
+    """A pair connected by edges in both directions is linked only once."""
+    graph_calcs.build_graph()
+    # road link 0->1 exists; add the reverse 1->0
+    graph_calcs.graph.add_edge(1, 0, ci_type="road", distance=157200.0)
+
+    graph_calcs.link_vertices_edgecond(
+        target_attrs={"ci_type": "people"},
+        edge_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dependency_road_people"},
+    )
+
+    dep_edges = graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    assert [(e.source, e.target) for e in dep_edges] == [(1, 0)]
+
+
+@pytest.mark.parametrize(
+    "k, expected_pairs",
+    [
+        (1, [(2, 0)]),  # only the closest road node
+        (2, [(2, 0), (1, 0)]),
+        (None, [(2, 0), (1, 0)]),  # all connected road nodes, closest first
+    ],
+)
+def test_link_vertices_edgecond_k(graph_calcs, k, expected_pairs):
+    """At most k sources per target are linked, the closest ones first."""
+    graph_calcs.build_graph()
+    # people (0) are connected to road node 1 (157.2 km) and road node 2 (1 km)
+    graph_calcs.graph.add_edge(2, 0, ci_type="road", distance=1000.0)
+
+    graph_calcs.link_vertices_edgecond(
+        target_attrs={"ci_type": "people"},
+        edge_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dependency_road_people"},
+        k=k,
+    )
+
+    dep_edges = graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    assert [(e.source, e.target) for e in dep_edges] == expected_pairs
+
+
+def test_calc_dependencies_edgecond_uses_k(graph_calcs):
+    """calc_dependencies passes the number of links (k) to the edge condition."""
+    graph_calcs.build_graph()
+    graph_calcs.graph.add_edge(2, 0, ci_type="road", distance=1000.0)
+
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_people"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+
+    dep_edges = graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    assert [(e.source, e.target) for e in dep_edges] == [(2, 0)]
+
+
 def test_link_vertices_edgecond_empty_target(graph_calcs):
     """No edges created when target filter matches no vertices."""
     graph_calcs.build_graph()

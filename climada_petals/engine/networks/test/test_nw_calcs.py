@@ -126,6 +126,28 @@ def test_cascade_without_dep_table_raises(network_with_ci_types):
         nc.cascade()
 
 
+def test_dep_table_bidir_link_raises(network_with_ci_types, dependency_table):
+    """Bidirectional dependencies are rejected, at init and when set later."""
+    dependency_table.loc[1, "bidir_link"] = True  # healthcare -> people
+
+    with pytest.raises(ValueError, match="healthcare -> people"):
+        NetworkCalcs(network=network_with_ci_types, dep_table=dependency_table)
+
+    nc = NetworkCalcs(network=network_with_ci_types)
+    with pytest.raises(ValueError, match="bidir_link"):
+        nc.dep_table = dependency_table
+
+
+def test_dep_table_without_bidir_column(network_calcs, dependency_table):
+    """The bidir_link column is optional."""
+    network_calcs.dep_table = dependency_table.drop(columns="bidir_link")
+
+    prepared_network_calcs(network_calcs)
+
+    dep_edges = network_calcs.graph.es.select(ci_type="dependency_healthcare_people")
+    assert [(e.source, e.target) for e in dep_edges] == [(4, 0)]
+
+
 # ========================================================================
 # Base state
 # ========================================================================
@@ -207,6 +229,25 @@ def test_add_physical_links(
     }
     assert pairs["road"] == expected_physical_links["road_pairs"]
     assert pairs["healthcare"] == expected_physical_links["healthcare_pairs"]
+
+
+@pytest.mark.parametrize("bidir_link", [True, None])
+def test_add_physical_links_bidir(network_calcs, physical_dependencies, bidir_link):
+    """bidir_link=True adds the links in both directions; without the column,
+    a single link per pair is added."""
+    if bidir_link is None:
+        physical_dependencies = physical_dependencies.drop(columns="bidir_link")
+        expected = {(1, 0), (4, 0)}
+    else:
+        physical_dependencies["bidir_link"] = bidir_link
+        expected = {(1, 0), (0, 1), (4, 0), (0, 4)}
+    n_edges = len(network_calcs.network.edges)
+
+    network_calcs.add_physical_links(physical_dependencies)
+
+    added_edges = network_calcs.network.edges.iloc[n_edges:]
+    assert {(int(e.from_id), int(e.to_id)) for e in added_edges.itertuples()} == expected
+    assert len(added_edges) == len(expected)
 
 
 def test_setup_dependencies(network_calcs, expected_dep_pairs):
