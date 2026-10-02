@@ -54,43 +54,6 @@ class NetworkCalcs:
         self._graph_calc = GraphCalcs(network=network, friction_surf=friction_surf)
 
     @property
-    def dep_table(self):
-        """Dependency table (validated when set)"""
-        return self._dep_table
-
-    @dep_table.setter
-    def dep_table(self, dep_table):
-        """Validate the dependency table before storing it"""
-        if dep_table is not None:
-            self._check_dep_table(dep_table)
-        self._dep_table = dep_table
-
-    @staticmethod
-    def _check_dep_table(dep_table):
-        """Check the dependency table for unsupported settings
-
-        Dependencies are directed from the source (provider) to the target
-        (user). Bidirectional dependency links are not supported: the reverse
-        links would make the sources appear as users in the access checks.
-        A mutual dependency must be defined with two rows, one per direction.
-
-        Raises
-        ------
-        ValueError
-            If a row has ``bidir_link=True``.
-        """
-        if "bidir_link" in dep_table.columns and dep_table["bidir_link"].any():
-            rows = dep_table.loc[dep_table["bidir_link"].astype(bool)]
-            pairs = ", ".join(
-                f"{row.source} -> {row.target}" for row in rows.itertuples()
-            )
-            raise ValueError(
-                "Bidirectional dependencies (bidir_link=True) are not supported "
-                f"({pairs}). Dependencies are directed from source to target; "
-                "define a mutual dependency with two rows instead."
-            )
-
-    @property
     def network(self):
         """Access the current network"""
         return self._network
