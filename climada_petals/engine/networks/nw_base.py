@@ -4,14 +4,14 @@ This file is part of CLIMADA.
 Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
 
 CLIMADA is free software: you can redistribute it and/or modify it under the
-terms of the GNU Lesser General Public License as published by the Free
+terms of the GNU General Public License as published by the Free
 Software Foundation, version 3.
 
 CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
-You should have received a copy of the GNU Lesser General Public License along
+You should have received a copy of the GNU General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
@@ -51,7 +51,7 @@ class Network:
 
         Creates a Network instance with optional edges (line features) and nodes (point features).
         If empty GeoDataFrames are provided, default structures with required columns are created.
-        The method automatically adds 'id' and 'orig_id' columns if they don't exist.
+        The method automatically adds 'id' columns if they don't exist.
 
         Parameters
         ----------
@@ -66,9 +66,9 @@ class Network:
         Attributes
         ----------
         edges : gpd.GeoDataFrame
-            Network edges with 'from_id', 'to_id', 'id', 'orig_id', and 'geometry' columns
+            Network edges with 'from_id', 'to_id', 'id', and 'geometry' columns
         nodes : gpd.GeoDataFrame
-            Network nodes with 'id', 'orig_id', and 'geometry' columns
+            Network nodes with 'id' and 'geometry' columns
 
         Examples
         --------
@@ -92,27 +92,20 @@ class Network:
         else:
             if not equal_crs(crs_edges, crs_nodes):
                 raise ValueError(
-                    "Edges and nodes must have the same CRS %s, %s",
-                    crs_edges,
-                    crs_nodes,
+                    f"Edges and nodes must have the same CRS {crs_edges}, {crs_nodes}"
                 )
         if edges is None:
             edges = gpd.GeoDataFrame(
-                columns=["from_id", "to_id", "id", "orig_id", "geometry"],
+                columns=["from_id", "to_id", "id", "geometry"],
                 geometry="geometry",
                 crs=crs_edges,
             )
         if nodes is None:
             nodes = gpd.GeoDataFrame(
-                columns=["id", "orig_id", "geometry"],
+                columns=["id", "geometry"],
                 geometry="geometry",
                 crs=crs_nodes,
             )
-
-        if "orig_id" not in edges.columns:
-            edges["orig_id"] = range(len(edges))
-        if "orig_id" not in nodes.columns:
-            nodes["orig_id"] = range(len(nodes))
 
         if "id" not in edges.columns:
             edges["id"] = range(len(edges))

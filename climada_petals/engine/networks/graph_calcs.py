@@ -26,7 +26,6 @@ import scipy
 from scipy.spatial.distance import cdist
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
-from climada_petals.engine.networks.nw_preps import reset_ids
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -739,6 +738,8 @@ class GraphCalcs:
 
         pairs = list(zip(v_ids_source, v_ids_target))
 
+        # work on a copy: the dict of the caller is not modified
+        link_attrs = dict(link_attrs) if link_attrs else {}
         link_attrs["geometry"] = make_edge_geometries(
             self.graph.vs[v_ids_source]["geometry"],
             self.graph.vs[v_ids_target]["geometry"],
@@ -866,10 +867,13 @@ class GraphCalcs:
 
         # vs_keep has indexing of original graph, subgraph has new indexing. There
         # is no way of keeping track of the re-ordering, other than to have a named
-        # attribute!
+        # attribute! "orig_id" is internal: it is only kept on the subgraph and
+        # removed from the graph, so that it does not end up in the network.
         self.graph.vs["orig_id"] = range(len(self.graph.vs))
         self.graph.es["orig_id"] = range(len(self.graph.es))
         subgraph = self.graph.induced_subgraph(vs_keep)
+        del self.graph.vs["orig_id"]
+        del self.graph.es["orig_id"]
 
         # delete remaining edges that have wrong attributes
         df_es_via = GraphCalcs._filter_edges(subgraph, via_attrs)
@@ -888,39 +892,17 @@ class GraphCalcs:
         Parameters
         ----------
         graph : igraph.Graph
-            Original graph with ``orig_id`` attributes.
+            Original graph (kept for backward compatibility, not used).
         subgraph : igraph.Graph
-            Induced subgraph built from ``graph``.
+            Subgraph built with ``_create_subgraph``, whose vertices carry
+            their index in the original graph as ``orig_id``.
 
         Returns
         -------
         dict
             Mapping ``{subgraph_index: graph_index}``.
         """
-        # Vectorized attribute access
-        subgraph_vs_indices = np.arange(len(subgraph.vs))
-        subgraph_orig_ids = np.array(subgraph.vs.get_attribute_values("orig_id"))
-
-        graph_vs_indices = np.arange(len(graph.vs))
-        graph_orig_ids = np.array(graph.vs.get_attribute_values("orig_id"))
-
-        # Use numpy argsort for faster mapping
-        sort_idx = np.argsort(graph_orig_ids)
-        graph_orig_ids_sorted = graph_orig_ids[sort_idx]
-        graph_vs_indices_sorted = graph_vs_indices[sort_idx]
-
-        # Use searchsorted to find indices - O(log n) instead of O(n)
-        positions = np.searchsorted(graph_orig_ids_sorted, subgraph_orig_ids)
-        result = {}
-        for i, orig_id in enumerate(subgraph_orig_ids):
-            pos = positions[i]  # Use precomputed position
-            if (
-                pos < len(graph_orig_ids_sorted)
-                and graph_orig_ids_sorted[pos] == orig_id
-            ):
-                result[subgraph_vs_indices[i]] = graph_vs_indices_sorted[pos]
-
-        return result
+        return dict(enumerate(subgraph.vs["orig_id"]))
 
     @staticmethod
     def _get_subgraph2graph_esdict(graph, subgraph):
@@ -929,39 +911,17 @@ class GraphCalcs:
         Parameters
         ----------
         graph : igraph.Graph
-            Original graph with ``orig_id`` attributes.
+            Original graph (kept for backward compatibility, not used).
         subgraph : igraph.Graph
-            Induced subgraph built from ``graph``.
+            Subgraph built with ``_create_subgraph``, whose edges carry
+            their index in the original graph as ``orig_id``.
 
         Returns
         -------
         dict
             Mapping ``{subgraph_index: graph_index}``.
         """
-        # Vectorized attribute access
-        subgraph_es_indices = np.arange(len(subgraph.es))
-        subgraph_orig_ids = np.array(subgraph.es.get_attribute_values("orig_id"))
-
-        graph_es_indices = np.arange(len(graph.es))
-        graph_orig_ids = np.array(graph.es.get_attribute_values("orig_id"))
-
-        # Use numpy argsort for faster mapping
-        sort_idx = np.argsort(graph_orig_ids)
-        graph_orig_ids_sorted = graph_orig_ids[sort_idx]
-        graph_es_indices_sorted = graph_es_indices[sort_idx]
-
-        # Use searchsorted for O(log n) lookup
-        positions = np.searchsorted(graph_orig_ids_sorted, subgraph_orig_ids)
-        result = {}
-        for i, orig_id in enumerate(subgraph_orig_ids):
-            pos = positions[i]  # Use precomputed position
-            if (
-                pos < len(graph_orig_ids_sorted)
-                and graph_orig_ids_sorted[pos] == orig_id
-            ):
-                result[subgraph_es_indices[i]] = graph_es_indices_sorted[pos]
-
-        return result
+        return dict(enumerate(subgraph.es["orig_id"]))
 
     @staticmethod
     def _calc_friction(edge_geoms, friction_surf):
@@ -1254,6 +1214,8 @@ class GraphCalcs:
 
         # specifically for powerlines: check power clusters
         if {p_source, p_sink}.issubset(set(self.graph.vs["ci_type"])):
+            raise NotImplementedError("Power cluster algorithm not yet implemented.")
+
             LOGGER.info("Updating power clusters")
             # For another version using pandapower, see nw_utils.py
             # Since powerlines are directed in a directed graph,
@@ -1775,7 +1737,9 @@ class GraphCalcs:
                 list(np.unique([*v_ids_target, *v_ids_source, *v_ids_via]))
             )
 
+            self.graph.vs["orig_id"] = range(len(self.graph.vs))
             subgraph = self.graph.induced_subgraph(v_seq)
+            del self.graph.vs["orig_id"]
             # subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
             subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(
                 self.graph, subgraph

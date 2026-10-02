@@ -355,6 +355,11 @@ def test_create_subgraph_filter(graph_calcs_with_remote_node):
         == set()
     )
     assert set(subgraph.es["ci_type"]).difference({"road"}) == set()
+    # the internal index is kept on the subgraph only, not on the graph
+    graph = graph_calcs_with_remote_node.graph
+    assert "orig_id" in subgraph.vs.attributes()
+    assert "orig_id" not in graph.vs.attributes()
+    assert "orig_id" not in graph.es.attributes()
 
 
 def test_create_subgraph_filter_source(graph_calcs_with_source_fail):
@@ -3094,12 +3099,12 @@ def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types
     for test_link in gc_manual.graph.es.select(ci_type="test_link"):
         source_idx = test_link.source
         target_idx = test_link.target
-        source_id = gc_manual.graph.vs[source_idx]["orig_id"]
-        target_id = gc_manual.graph.vs[target_idx]["orig_id"]
+        source_id = gc_manual.graph.vs[source_idx]["id"]
+        target_id = gc_manual.graph.vs[target_idx]["id"]
 
         # Find same link in auto version
-        auto_source = gc_auto.graph.vs.select(orig_id=source_id)[0].index
-        auto_target = gc_auto.graph.vs.select(orig_id=target_id)[0].index
+        auto_source = gc_auto.graph.vs.select(id=source_id)[0].index
+        auto_target = gc_auto.graph.vs.select(id=target_id)[0].index
 
         # Should have equivalent edge
         edge_exists = False
@@ -3161,11 +3166,6 @@ def test_no_auto_sync_without_explicit_call(graph_calcs):
 # ========================================================================
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=TypeError,
-    reason="link_attrs defaults to None but _edges_from_vlists writes into it",
-)
 def test_link_clusters_default_link_attrs(graph_calcs_with_remote_node_missing_edge):
     """link_clusters works with its default link_attrs."""
     gc = graph_calcs_with_remote_node_missing_edge
@@ -3173,21 +3173,3 @@ def test_link_clusters_default_link_attrs(graph_calcs_with_remote_node_missing_e
     gc.link_clusters(dist_thresh=np.inf)
 
     assert len(gc.graph.connected_components(mode="weak")) == 1
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="_create_subgraph overwrites the 'orig_id' vertex attribute",
-)
-def test_create_subgraph_keeps_orig_id(network_with_ci_types):
-    """Building a subgraph does not modify the original ids of the graph."""
-    network_with_ci_types.nodes["orig_id"] = [100, 101, 102, 103, 104]
-    gc = GraphCalcs(network=network_with_ci_types)
-
-    gc._create_subgraph(
-        source_attrs={"ci_type": "healthcare"},
-        target_attrs={"ci_type": "people"},
-        via_attrs={"ci_type": "road"},
-    )
-
-    assert gc.graph.vs["orig_id"] == [100, 101, 102, 103, 104]

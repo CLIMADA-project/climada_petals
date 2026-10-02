@@ -64,7 +64,6 @@ def nodes_gdf():
     return gpd.GeoDataFrame(
         {
             "id": [0, 1, 2, 3, 4],
-            "orig_id": [0, 1, 2, 3, 4],
             "geometry": [
                 Point(0, 0),
                 Point(1, 1),
@@ -86,7 +85,6 @@ def edges_gdf():
             "from_id": [0, 1, 2, 3],
             "to_id": [1, 2, 3, 4],
             "id": [0, 1, 2, 3],
-            "orig_id": [0, 1, 2, 3],
             "osm_id": [100, 101, 102, 103],
             "distance": [157200, 157200, 157200, 157200],  # approx distances in meters
             "geometry": [
@@ -248,7 +246,6 @@ def network_with_remote_node_missing_edge(network_with_ci_types):
     new_node = gpd.GeoDataFrame(
         {
             "id": [5],
-            "orig_id": [5],
             "ci_type": ["healthcare"],
             "func_tot": [1],
             "geometry": [Point(4, 50)],
@@ -270,7 +267,6 @@ def network_with_remote_node(network_with_remote_node_missing_edge):
             "from_id": [2],
             "to_id": [5],
             "id": [4],
-            "orig_id": [4],
             "osm_id": [104],
             "distance": [7000000],  # approx distances in meters
             "ci_type": ["road"],
@@ -427,7 +423,6 @@ def nodes_projected_gdf():
     return gpd.GeoDataFrame(
         {
             "id": [0, 1, 2, 3],
-            "orig_id": [0, 1, 2, 3],
             "geometry": [
                 Point(500000, 5000000),
                 Point(500100, 5000000),
@@ -448,7 +443,6 @@ def edges_projected_gdf():
             "from_id": [0, 1],
             "to_id": [1, 2],
             "id": [0, 1],
-            "orig_id": [0, 1],
             "osm_id": [100, 101],
             "distance": [100, 100],
             "geometry": [

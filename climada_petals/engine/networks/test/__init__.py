@@ -16,5 +16,5 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-init networks
+init networks test
 """
