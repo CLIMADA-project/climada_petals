@@ -26,7 +26,6 @@ import scipy
 from scipy.spatial.distance import cdist
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
-from climada_petals.engine.networks.nw_preps import reset_ids
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
