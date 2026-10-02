@@ -1253,6 +1253,8 @@ class GraphCalcs:
 
         # specifically for powerlines: check power clusters
         if {p_source, p_sink}.issubset(set(self.graph.vs["ci_type"])):
+            raise NotImplementedError("Power cluster algorithm not yet implemented.")
+
             LOGGER.info("Updating power clusters")
             # For another version using pandapower, see nw_utils.py
             # Since powerlines are directed in a directed graph,
