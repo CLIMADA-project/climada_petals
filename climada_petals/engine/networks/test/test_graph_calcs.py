@@ -36,7 +36,7 @@ import pytest
 from shapely.geometry import Point
 
 from climada.util.constants import ONE_LAT_KM
-from climada_petals.engine.networks.graph_calcs import GraphCalcs
+from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
 
 
 def make_enduser_dependencies(graph_calcs, dep_table):
@@ -1317,6 +1317,48 @@ def test_calc_dependencies_edgecond(graph_calcs):
     # Should add edges based on edge conditions
     assert graph_calcs.graph.ecount() == initial_edge_count + 1
     assert "edge_cond_link" in graph_calcs.graph.es["ci_type"]
+
+
+@pytest.mark.parametrize(
+    "link_attrs, expect_warning",
+    [
+        ({}, False),
+        ({"ci_type": "dependency_road_people"}, False),
+        ({"ci_type": "edge_cond_link"}, True),
+    ],
+)
+def test_calc_dependencies_link_name(graph_calcs, caplog, link_attrs, expect_warning):
+    """The cascade only recognises ``dependency_{source}_{target}`` edges:
+    this is the default name, and any other name triggers a warning"""
+    graph_calcs.build_graph()
+    expected_name = link_attrs.get("ci_type", "dependency_road_people")
+
+    # the climada_petals logger does not propagate to the root logger, so the
+    # capture handler has to be attached to it directly
+    logger = logging.getLogger("climada_petals")
+    logger.addHandler(caplog.handler)
+    try:
+        graph_calcs.calc_dependencies(
+            source_attrs={"ci_type": "road"},
+            target_attrs={"ci_type": "people"},
+            via_attrs={},
+            link_attrs=link_attrs,
+            link_condition="edgecond",
+            dist_thresh=None,
+            dur_thresh=np.inf,
+            k=1,
+            bidir_link=False,
+        )
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert expected_name in graph_calcs.graph.es["ci_type"]
+    assert ("will be ignored in the cascade" in caplog.text) == expect_warning
+
+
+def test_dependency_name():
+    """Test the naming convention of dependency edges"""
+    assert _dependency_name("road", "people") == "dependency_road_people"
 
 
 def test_calc_dependencies_distance_via_fail(graph_calcs_with_edge_ci_fail):
