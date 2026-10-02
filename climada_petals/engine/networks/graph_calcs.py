@@ -1090,6 +1090,14 @@ class GraphCalcs:
     def _propagate_check_fail(self, source, target, type_I, thresh_func):
         """Propagate functional failures for a source-target dependency
 
+        Each target receives the capacity of its functional sources along the
+        dependency edges ``dependency_{source}_{target}`` (one hop, directed
+        from source to target). Targets receiving less than ``thresh_func``
+        fail (functional dependencies) or lose their supply (enduser
+        dependencies). Other edges between source and target nodes, e.g.
+        physical links, are ignored, so the result does not depend on the
+        direction in which such edges are stored.
+
         Parameters
         ----------
         source : str
@@ -1104,39 +1112,39 @@ class GraphCalcs:
         Notes
         -----
         Updates ``func_tot`` or ``actual_supply`` on target nodes in-place.
+        The dependency edges must have been created beforehand (see
+        ``calc_dependencies``); targets without a dependency edge receive
+        no capacity.
         """
-        # Vectorized vertex selection by ci_type
+        dependency_name = f"dependency_{source}_{target}"
         ci_types = np.array(self.graph.vs["ci_type"])
-        source_ids = np.where(ci_types == source)[0]
-        target_ids = np.where(ci_types == target)[0]
-        all_ids = np.concatenate([source_ids, target_ids])
-        all_ids_list = all_ids.tolist()
+        target_graph_ids = np.where(ci_types == target)[0].tolist()
 
-        # Use direct adjacency matrix slicing instead of subgraph
-        adj_full = self.graph.get_adjacency_sparse()
-        adj_sub = adj_full[all_ids, :][:, all_ids]
-
-        # Vectorized capacity & func_tot reads via batch attribute access
-        func_tots = np.array(self.graph.vs[all_ids_list]["func_tot"], dtype=float)
-        capacities = np.array(
-            self.graph.vs[all_ids_list][f"capacity_{source}_{target}"], dtype=float
+        # capacity provided by each vertex: func_tot * capacity
+        func_capa = np.array(self.graph.vs["func_tot"], dtype=float) * np.array(
+            self.graph.vs[f"capacity_{source}_{target}"], dtype=float
         )
 
-        func_capa = func_tots * capacities
+        # dependency edges directed from a source to a target vertex
+        dep_edges = self.graph.es.select(ci_type=dependency_name)
+        edge_sources = np.array([edge.source for edge in dep_edges], dtype=int)
+        edge_targets = np.array([edge.target for edge in dep_edges], dtype=int)
+        valid = (ci_types[edge_sources] == source) & (ci_types[edge_targets] == target)
+        edge_sources, edge_targets = edge_sources[valid], edge_targets[valid]
+        if len(edge_sources) == 0:
+            LOGGER.warning(
+                "No %s edges found: no capacity is propagated from %s to %s. "
+                "Make sure dependency edges have been created beforehand.",
+                dependency_name,
+                source,
+                target,
+            )
 
-        # Matrix multiplication using sparse operations
-        capa_rec = scipy.sparse.csr_matrix(func_capa).dot(adj_sub).toarray().squeeze()
-        if capa_rec.ndim == 0:
-            capa_rec = np.array([capa_rec])
-
-        # Vectorized threshold check
-        is_target = np.array(self.graph.vs[all_ids_list]["ci_type"]) == target
-        func_thresh = np.where(is_target, thresh_func, 0)
-        capa_suff = (capa_rec >= func_thresh).astype(int)
-
-        # Extract target-only arrays for batch updates
-        target_graph_ids = all_ids[is_target].tolist()
-        target_capa_suff = capa_suff[is_target]
+        # sum, per vertex, the capacity received along its dependency edges
+        capa_rec = np.bincount(
+            edge_targets, weights=func_capa[edge_sources], minlength=self.graph.vcount()
+        )
+        target_capa_suff = (capa_rec[target_graph_ids] >= thresh_func).astype(int)
 
         # Batch update graph attributes using vectorized operations
         supply_attr = f"actual_supply_{source}_{target}"
