@@ -70,6 +70,12 @@ class Network:
         nodes : gpd.GeoDataFrame
             Network nodes with 'id' and 'geometry' columns
 
+        Notes
+        -----
+        The column name ``_orig_id`` is reserved for internal use in graph
+        calculations (see ``GraphCalcs``) and should not be used in ``edges``
+        or ``nodes``: such a column is overwritten and deleted.
+
         Examples
         --------
         >>> # Create empty network

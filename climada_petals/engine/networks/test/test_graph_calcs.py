@@ -141,7 +141,7 @@ def test_get_subgraph2graph_vsdict(graph_calcs):
 
     # Create a subgraph with all vertices
     subgraph = graph.induced_subgraph(range(graph.vcount()))
-    subgraph.vs["orig_id"] = [1, 0, 3, 2, 4]
+    subgraph.vs["_orig_id"] = [1, 0, 3, 2, 4]
 
     mapping = GraphCalcs._get_subgraph2graph_vsdict(graph, subgraph)
 
@@ -156,7 +156,7 @@ def test_get_subgraph2graph_esdict(graph_calcs):
 
     # Create a subgraph with all vertices
     subgraph = graph.induced_subgraph(range(graph.vcount()))
-    subgraph.es["orig_id"] = [1, 2, 0, 3]
+    subgraph.es["_orig_id"] = [1, 2, 0, 3]
 
     mapping = GraphCalcs._get_subgraph2graph_esdict(graph, subgraph)
 
@@ -357,9 +357,9 @@ def test_create_subgraph_filter(graph_calcs_with_remote_node):
     assert set(subgraph.es["ci_type"]).difference({"road"}) == set()
     # the internal index is kept on the subgraph only, not on the graph
     graph = graph_calcs_with_remote_node.graph
-    assert "orig_id" in subgraph.vs.attributes()
-    assert "orig_id" not in graph.vs.attributes()
-    assert "orig_id" not in graph.es.attributes()
+    assert "_orig_id" in subgraph.vs.attributes()
+    assert "_orig_id" not in graph.vs.attributes()
+    assert "_orig_id" not in graph.es.attributes()
 
 
 def test_create_subgraph_filter_source(graph_calcs_with_source_fail):

@@ -90,6 +90,13 @@ class GraphCalcs:
 
     Auto-sync adds minimal overhead but improves usability for interactive workflows.
 
+    Reserved attribute
+    ------------------
+    The vertex and edge attribute ``_orig_id`` is reserved for internal use: it
+    temporarily stores graph indices while subgraphs are built and is removed
+    afterwards. A column of that name in the network nodes or edges is
+    overwritten and deleted.
+
     Examples
     --------
     Direct instantiation for custom workflows:
@@ -867,13 +874,13 @@ class GraphCalcs:
 
         # vs_keep has indexing of original graph, subgraph has new indexing. There
         # is no way of keeping track of the re-ordering, other than to have a named
-        # attribute! "orig_id" is internal: it is only kept on the subgraph and
+        # attribute! "_orig_id" is internal: it is only kept on the subgraph and
         # removed from the graph, so that it does not end up in the network.
-        self.graph.vs["orig_id"] = range(len(self.graph.vs))
-        self.graph.es["orig_id"] = range(len(self.graph.es))
+        self.graph.vs["_orig_id"] = range(len(self.graph.vs))
+        self.graph.es["_orig_id"] = range(len(self.graph.es))
         subgraph = self.graph.induced_subgraph(vs_keep)
-        del self.graph.vs["orig_id"]
-        del self.graph.es["orig_id"]
+        del self.graph.vs["_orig_id"]
+        del self.graph.es["_orig_id"]
 
         # delete remaining edges that have wrong attributes
         df_es_via = GraphCalcs._filter_edges(subgraph, via_attrs)
@@ -895,14 +902,14 @@ class GraphCalcs:
             Original graph (kept for backward compatibility, not used).
         subgraph : igraph.Graph
             Subgraph built with ``_create_subgraph``, whose vertices carry
-            their index in the original graph as ``orig_id``.
+            their index in the original graph as ``_orig_id``.
 
         Returns
         -------
         dict
             Mapping ``{subgraph_index: graph_index}``.
         """
-        return dict(enumerate(subgraph.vs["orig_id"]))
+        return dict(enumerate(subgraph.vs["_orig_id"]))
 
     @staticmethod
     def _get_subgraph2graph_esdict(graph, subgraph):
@@ -914,14 +921,14 @@ class GraphCalcs:
             Original graph (kept for backward compatibility, not used).
         subgraph : igraph.Graph
             Subgraph built with ``_create_subgraph``, whose edges carry
-            their index in the original graph as ``orig_id``.
+            their index in the original graph as ``_orig_id``.
 
         Returns
         -------
         dict
             Mapping ``{subgraph_index: graph_index}``.
         """
-        return dict(enumerate(subgraph.es["orig_id"]))
+        return dict(enumerate(subgraph.es["_orig_id"]))
 
     @staticmethod
     def _calc_friction(edge_geoms, friction_surf):
@@ -1737,9 +1744,9 @@ class GraphCalcs:
                 list(np.unique([*v_ids_target, *v_ids_source, *v_ids_via]))
             )
 
-            self.graph.vs["orig_id"] = range(len(self.graph.vs))
+            self.graph.vs["_orig_id"] = range(len(self.graph.vs))
             subgraph = self.graph.induced_subgraph(v_seq)
-            del self.graph.vs["orig_id"]
+            del self.graph.vs["_orig_id"]
             # subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(v_seq)
             subgraph_graph_vsdict = self._get_subgraph2graph_vsdict(
                 self.graph, subgraph
