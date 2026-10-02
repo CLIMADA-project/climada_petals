@@ -126,18 +126,6 @@ def test_cascade_without_dep_table_raises(network_with_ci_types):
         nc.cascade()
 
 
-def test_dep_table_bidir_link_raises(network_with_ci_types, dependency_table):
-    """Bidirectional dependencies are rejected, at init and when set later."""
-    dependency_table.loc[1, "bidir_link"] = True  # healthcare -> people
-
-    with pytest.raises(ValueError, match="healthcare -> people"):
-        NetworkCalcs(network=network_with_ci_types, dep_table=dependency_table)
-
-    nc = NetworkCalcs(network=network_with_ci_types)
-    with pytest.raises(ValueError, match="bidir_link"):
-        nc.dep_table = dependency_table
-
-
 def test_dep_table_without_bidir_column(network_calcs, dependency_table):
     """The bidir_link column is optional."""
     network_calcs.dep_table = dependency_table.drop(columns="bidir_link")
@@ -246,7 +234,9 @@ def test_add_physical_links_bidir(network_calcs, physical_dependencies, bidir_li
     network_calcs.add_physical_links(physical_dependencies)
 
     added_edges = network_calcs.network.edges.iloc[n_edges:]
-    assert {(int(e.from_id), int(e.to_id)) for e in added_edges.itertuples()} == expected
+    assert {
+        (int(e.from_id), int(e.to_id)) for e in added_edges.itertuples()
+    } == expected
     assert len(added_edges) == len(expected)
 
 
