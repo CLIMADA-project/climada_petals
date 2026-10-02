@@ -1050,7 +1050,7 @@ class GraphCalcs:
                 link_attrs["ci_type"],
                 dependency_name,
             )
-        if "distance" in link_condition:
+        if link_condition == "distance":
             self.link_vertices_shortest_paths(
                 source_attrs=source_attrs,
                 target_attrs=target_attrs,
@@ -1060,7 +1060,7 @@ class GraphCalcs:
                 k=k,
                 bidir=bidir_link,
             )
-        elif "duration" in link_condition:
+        elif link_condition == "duration":
             self.link_vertices_friction_surf(
                 source_attrs=source_attrs,
                 target_attrs=target_attrs,
@@ -1070,7 +1070,7 @@ class GraphCalcs:
                 k=k,
                 bidir=bidir_link,
             )
-        elif "edgecond" in link_condition:
+        elif link_condition == "edgecond":
             self.link_vertices_edgecond(
                 target_attrs=target_attrs,
                 edge_attrs=source_attrs,
