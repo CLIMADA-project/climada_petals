@@ -41,10 +41,10 @@ def test_init_empty():
 
     assert network.edges.empty
     assert network.nodes.empty
-    assert {"from_id", "to_id", "id", "orig_id", "geometry"} <= set(
+    assert {"from_id", "to_id", "id", "geometry"} <= set(
         network.edges.columns
     )
-    assert {"id", "orig_id", "geometry"} <= set(network.nodes.columns)
+    assert {"id", "geometry"} <= set(network.nodes.columns)
     assert network.crs.to_string() == "EPSG:4326"
 
 
@@ -69,7 +69,7 @@ def test_init_nodes_only_takes_crs_from_nodes(nodes_projected_gdf):
 
 
 def test_init_adds_missing_id_columns():
-    """Missing 'id' and 'orig_id' columns are added as sequential integers."""
+    """Missing 'id' columns are added as sequential integers."""
     edges = gpd.GeoDataFrame(
         {
             "from_id": [0, 1],
@@ -88,18 +88,16 @@ def test_init_adds_missing_id_columns():
     network = Network(edges=edges, nodes=nodes)
 
     assert network.edges["id"].tolist() == [0, 1]
-    assert network.edges["orig_id"].tolist() == [0, 1]
     assert network.nodes["id"].tolist() == [0, 1, 2]
-    assert network.nodes["orig_id"].tolist() == [0, 1, 2]
 
 
 def test_init_keeps_existing_ids(edges_gdf, nodes_gdf):
-    """Existing 'id' and 'orig_id' columns are not overwritten."""
-    nodes_gdf["orig_id"] = [10, 11, 12, 13, 14]
+    """Existing 'id' columns are not overwritten."""
+    nodes_gdf["id"] = [10, 11, 12, 13, 14]
 
     network = Network(edges=edges_gdf, nodes=nodes_gdf)
 
-    assert network.nodes["orig_id"].tolist() == [10, 11, 12, 13, 14]
+    assert network.nodes["id"].tolist() == [10, 11, 12, 13, 14]
 
 
 def test_init_crs_mismatch_raises(edges_gdf, nodes_gdf):
@@ -215,7 +213,7 @@ def test_to_graph(edges_gdf, nodes_gdf, directed):
     assert graph.ecount() == 4
     assert [(e.source, e.target) for e in graph.es] == [(0, 1), (1, 2), (2, 3), (3, 4)]
     assert graph.es["osm_id"] == [100, 101, 102, 103]
-    assert graph.vs["orig_id"] == [0, 1, 2, 3, 4]
+    assert graph.vs["id"] == [0, 1, 2, 3, 4]
 
 
 def test_to_graph_nodes_only(nodes_gdf):
@@ -261,7 +259,7 @@ def test_from_graphs_with_added_vertex_and_edge(network_with_ci_types):
     """Vertices and edges added to the graph end up in the network."""
     graph = cp.deepcopy(network_with_ci_types).to_graph(directed=True)
     graph.add_vertex(
-        id=5, orig_id=5, ci_type="healthcare", func_tot=1, geometry=Point(5, 5)
+        id=5, ci_type="healthcare", func_tot=1, geometry=Point(5, 5)
     )
     graph.add_edge(2, 5, ci_type="road", geometry=LineString([(2, 2), (5, 5)]))
 

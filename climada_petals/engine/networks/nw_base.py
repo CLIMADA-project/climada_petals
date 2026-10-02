@@ -51,7 +51,7 @@ class Network:
 
         Creates a Network instance with optional edges (line features) and nodes (point features).
         If empty GeoDataFrames are provided, default structures with required columns are created.
-        The method automatically adds 'id' and 'orig_id' columns if they don't exist.
+        The method automatically adds 'id' columns if they don't exist.
 
         Parameters
         ----------
@@ -66,9 +66,9 @@ class Network:
         Attributes
         ----------
         edges : gpd.GeoDataFrame
-            Network edges with 'from_id', 'to_id', 'id', 'orig_id', and 'geometry' columns
+            Network edges with 'from_id', 'to_id', 'id', and 'geometry' columns
         nodes : gpd.GeoDataFrame
-            Network nodes with 'id', 'orig_id', and 'geometry' columns
+            Network nodes with 'id' and 'geometry' columns
 
         Examples
         --------
@@ -96,21 +96,16 @@ class Network:
                 )
         if edges is None:
             edges = gpd.GeoDataFrame(
-                columns=["from_id", "to_id", "id", "orig_id", "geometry"],
+                columns=["from_id", "to_id", "id", "geometry"],
                 geometry="geometry",
                 crs=crs_edges,
             )
         if nodes is None:
             nodes = gpd.GeoDataFrame(
-                columns=["id", "orig_id", "geometry"],
+                columns=["id", "geometry"],
                 geometry="geometry",
                 crs=crs_nodes,
             )
-
-        if "orig_id" not in edges.columns:
-            edges["orig_id"] = range(len(edges))
-        if "orig_id" not in nodes.columns:
-            nodes["orig_id"] = range(len(nodes))
 
         if "id" not in edges.columns:
             edges["id"] = range(len(edges))
