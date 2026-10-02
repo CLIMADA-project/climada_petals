@@ -26,7 +26,7 @@ import pyproj
 import scipy
 
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.graph_calcs import GraphCalcs
+from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
 
 from climada.entity.exposures.base import Exposures
@@ -199,7 +199,7 @@ class NetworkCalcs:
             )
 
         for i, row in self.dep_table.iterrows():
-            dependency_name = f'dependency_{row["source"]}_{row["target"]}'
+            dependency_name = _dependency_name(row["source"], row["target"])
             self._graph_calc.calc_dependencies(
                 source_attrs={"ci_type": row["source"]},
                 target_attrs={"ci_type": row["target"]},

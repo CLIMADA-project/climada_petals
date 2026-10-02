@@ -38,6 +38,27 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel("INFO")
 
 
+def _dependency_name(source, target):
+    """Edge ``ci_type`` of the dependency edges from ``source`` to ``target``
+
+    This is the only name under which the cascade (capacity propagation,
+    access checks, rerouting) looks up dependency edges.
+
+    Parameters
+    ----------
+    source : str
+        ``ci_type`` of the providing vertices.
+    target : str
+        ``ci_type`` of the dependent vertices.
+
+    Returns
+    -------
+    str
+        ``"dependency_{source}_{target}"``
+    """
+    return f"dependency_{source}_{target}"
+
+
 class GraphCalcs:
     """Complete graph-based CI network analysis toolkit
 
@@ -605,8 +626,6 @@ class GraphCalcs:
             Number of nearest sources per target to consider.
         dist_thresh : float, optional
             Maximum geographic distance (meters) for candidate links. Default is np.inf.
-        link_name : str, optional
-            Edge type name to assign. Default creates ``dependency_{source}_{target}``.
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
         """
@@ -1032,7 +1051,10 @@ class GraphCalcs:
             Via edge filters.
         link_attrs : dict
             Attributes assigned to new dependency edges.
-            If ``ci_type`` is not specified, it defaults to ``"dependency_{source}_{target}"``.
+            If ``ci_type`` is not specified, it defaults to
+            ``"dependency_{source}_{target}"``. The cascade only recognises
+            dependency edges under this name: edges created with another
+            ``ci_type`` are ignored by it (a warning is logged).
         link_condition : str
             Condition type (e.g., ``"distance"``, ``"duration"``, ``"edgecond"``).
         dist_thresh : float
@@ -1044,13 +1066,22 @@ class GraphCalcs:
         bidir_link : bool
             Whether to add reverse links.
         """
+        dependency_name = _dependency_name(
+            source_attrs["ci_type"], target_attrs["ci_type"]
+        )
         if "ci_type" not in link_attrs:
-            link_attrs["ci_type"] = (
-                f"dependency_{source_attrs['ci_type']}_{target_attrs['ci_type']}"
-            )
+            link_attrs["ci_type"] = dependency_name
             LOGGER.info(
                 "No ci_type specified for links; defaulting to %s",
                 link_attrs["ci_type"],
+            )
+        # "new_" + name is used internally for temporary edges during rerouting
+        elif link_attrs["ci_type"] not in (dependency_name, "new_" + dependency_name):
+            LOGGER.warning(
+                "Links are named %s instead of %s: they will be ignored in the"
+                " cascade (capacity propagation, access checks and rerouting).",
+                link_attrs["ci_type"],
+                dependency_name,
             )
         if "distance" in link_condition:
             self.link_vertices_shortest_paths(
@@ -1116,7 +1147,7 @@ class GraphCalcs:
         ``calc_dependencies``); targets without a dependency edge receive
         no capacity.
         """
-        dependency_name = f"dependency_{source}_{target}"
+        dependency_name = _dependency_name(source, target)
         ci_types = np.array(self.graph.vs["ci_type"])
         target_graph_ids = np.where(ci_types == target)[0].tolist()
 
@@ -1653,7 +1684,7 @@ class GraphCalcs:
         initial : bool, optional
             Whether this is an initial cascade. Default is ``False``.
         """
-        dependency_name = f"dependency_{row.source}_{row.target}"
+        dependency_name = _dependency_name(row.source, row.target)
 
         # Get former access information
         es_access_base, ppl_former_access, ppl_former_access_source_failed = (
@@ -1720,7 +1751,7 @@ class GraphCalcs:
         bidir : bool, optional
             Whether to add reverse links. Default is ``False``.
         """
-        es_check = self.graph.es.select(ci_type=f"dependency_{source_ci}_{target_ci}")
+        es_check = self.graph.es.select(ci_type=_dependency_name(source_ci, target_ci))
 
         bools_check = [self.graph.vs[edge.source]["func_tot"] > 0 for edge in es_check]
 
