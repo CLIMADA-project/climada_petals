@@ -26,6 +26,7 @@ optionally extended by a remote healthcare node 5 at (4, 50).
 """
 
 import copy as cp
+import logging
 
 import geopandas as gpd
 import igraph as ig
@@ -2012,6 +2013,73 @@ def test_propagate_check_fail_fail_enduser(graph_calcs):
     )
 
 
+def _init_road_healthcare_capacity(graph):
+    """Capacities for the functional dependency road -> healthcare."""
+    graph.vs["capacity_road_healthcare"] = 0
+    graph.vs.select(ci_type="road")["capacity_road_healthcare"] = 1
+    graph.vs.select(ci_type="healthcare")["capacity_road_healthcare"] = -1
+
+
+def test_propagate_check_fail_needs_dependency_edges(graph_calcs, caplog):
+    """Without dependency edges, physical edges alone carry no capacity.
+
+    The hospital (4) is connected to road node 3 by a road edge, but no
+    dependency_road_healthcare edge exists: it receives nothing and fails.
+    """
+    graph_calcs.build_graph()
+    _init_road_healthcare_capacity(graph_calcs.graph)
+
+    # the climada_petals logger does not propagate to the root logger, so the
+    # capture handler has to be attached to it directly
+    logger = logging.getLogger("climada_petals")
+    logger.addHandler(caplog.handler)
+    try:
+        graph_calcs._propagate_check_fail(
+            source="road", target="healthcare", type_I="functional", thresh_func=1
+        )
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert graph_calcs.graph.vs[4]["func_tot"] == 0
+    assert "No dependency_road_healthcare edges found" in caplog.text
+
+
+@pytest.mark.parametrize("physical_edge", [(2, 4), (4, 2)])
+def test_propagate_check_fail_ignores_physical_edges(graph_calcs, physical_edge):
+    """Only dependency edges carry capacity, whatever the direction in which
+    other (physical) edges between source and target nodes are stored.
+
+    The hospital (4) depends on road node 3, which fails. A physical road link
+    to the functional road node 2 does not keep the hospital functional.
+    """
+    graph_calcs.build_graph()
+    graph = graph_calcs.graph
+    _init_road_healthcare_capacity(graph)
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_healthcare"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+    dep_edges = graph.es.select(ci_type="dependency_road_healthcare")
+    assert [(e.source, e.target) for e in dep_edges] == [(3, 4)]
+    graph.add_edge(*physical_edge, ci_type="road", distance=1000.0, func_tot=1)
+    graph.vs[3]["func_tot"] = 0
+
+    graph_calcs._propagate_check_fail(
+        source="road", target="healthcare", type_I="functional", thresh_func=1
+    )
+
+    assert graph.vs[4]["func_tot"] == 0
+    # sources are never modified by the propagation
+    assert graph.vs[2]["func_tot"] == 1
+
+
 def test_update_internal_dependencies_roads(graph_calcs):
     """A failed road edge makes its road end nodes dysfunctional, and only those."""
     graph_calcs.build_graph()
@@ -2053,6 +2121,19 @@ def test_update_functional_dependencies(graph_calcs):
         v["capacity_road_healthcare"] = 1
     for v in graph_calcs.graph.vs.select(ci_type="healthcare"):
         v["capacity_road_healthcare"] = -1
+
+    # dependency edge road (3) -> healthcare (4) along which capacity is propagated
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_healthcare"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
 
     graph_calcs.update_functional_dependencies(df_dependencies)
     assert all(
@@ -2853,6 +2934,19 @@ def test_auto_sync_update_functional_dependencies(graph_calcs, dependency_table)
     gc_auto.network.nodes.loc[
         gc_auto.network.nodes["ci_type"] == "road", "func_tot"
     ] = 0
+
+    # dependency edge road (3) -> healthcare (4) along which capacity is propagated
+    gc_auto.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_healthcare"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
 
     # Set up initial state
     dep_df = dependency_table[dependency_table["type_I"] == "functional"]
