@@ -92,9 +92,7 @@ class Network:
         else:
             if not equal_crs(crs_edges, crs_nodes):
                 raise ValueError(
-                    "Edges and nodes must have the same CRS %s, %s",
-                    crs_edges,
-                    crs_nodes,
+                    f"Edges and nodes must have the same CRS {crs_edges}, {crs_nodes}"
                 )
         if edges is None:
             edges = gpd.GeoDataFrame(
