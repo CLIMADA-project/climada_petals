@@ -59,19 +59,18 @@ def _dependency_name(source, target):
 
 
 class GraphCalcs:
-    """Complete graph-based CI network analysis toolkit
+    """Complete graph-based critical infrastructure (CI) network analysis toolkit
 
-    Provides all graph operations for critical infrastructure (CI) networks,
-    including:
+    Provides all graph operations for CI networks, including:
     - Network construction (linking, clustering)
     - Dependency setup (shortest paths, friction surface, edge conditions)
-    - Cascade analysis (failure propagation, access checking, supply updates)
+    - CI failure cascade propagation (failure propagation, access checking, supply updates)
 
     Users can call methods in any order for maximum flexibility. For common
     workflows, see NetworkCalcs as a convenience wrapper.
 
-    Auto-Sync Feature
-    -----------------
+    Notes
+    -----
     By default (auto_sync=False), the underlying Network object is not automatically
     updated when the graph is modified. Call sync() manually after batch operations:
 
@@ -90,12 +89,6 @@ class GraphCalcs:
 
     Auto-sync adds minimal overhead but improves usability for interactive workflows.
 
-    Reserved attribute
-    ------------------
-    The vertex and edge attribute ``_orig_id`` is reserved for internal use: it
-    temporarily stores graph indices while subgraphs are built and is removed
-    afterwards. A column of that name in the network nodes or edges is
-    overwritten and deleted.
 
     Examples
     --------
@@ -107,8 +100,6 @@ class GraphCalcs:
         network = Network(edges=edges_gdf, nodes=nodes_gdf)
         gc = GraphCalcs(network=network, directed=True)
 
-        # Build graph
-        gc.build_graph()
 
         # Link vertices
         gc.link_vertices_closest_k(
@@ -155,12 +146,18 @@ class GraphCalcs:
 
         Notes
         -----
-        Graph calculations require a direct graph to account for target-source dependencies.
-        Flow along both directions is handled by creating bidirectional links when needed.
+        Graph calculations require a directed graph: dependency edges are directed
+        from the source (provider) to the target (user). Physical edges such as
+        roads are treated as direction-free in routing and connectivity checks.
 
         When ``auto_sync=True``, each graph-modifying method will call ``sync()``
         automatically, ensuring the network GeoDataFrames are always up-to-date with
         graph modifications. This adds minor overhead but improves usability.
+
+        The vertex and edge attribute ``_orig_id`` is reserved for internal use: it
+        temporarily stores graph indices while subgraphs are built and is removed
+        afterwards. A column of that name in the network nodes or edges is
+        overwritten and deleted.
         """
         self.network = network
         self._graph = None
@@ -182,6 +179,7 @@ class GraphCalcs:
 
     @property
     def graph(self):
+        """Cached igraph representation of the network, built on first access"""
         if self._graph is None:
             return self.build_graph()
         return self._graph
@@ -228,7 +226,7 @@ class GraphCalcs:
         dist_thresh : float, optional
             Maximum distance (in meters) to allow cluster linking. Default is ``np.inf``.
         graph_connectivity_mode : str, optional
-            Connectivity mode for the graph. Default is ``"weak"``.
+            Connectivity mode for the graph. Default is ``"weak"``, which ignores edge directions.
         link_attrs : dict, optional
             Edge attributes to set for newly created links.
         dist_auto_convert : bool, optional
@@ -415,10 +413,28 @@ class GraphCalcs:
     def _prefilter_geo(self, df_vs_source, df_vs_target, dist_thresh):
         """Prefilter target vertices by geographic distance to sources
 
-        Returns tuple of (source_indices, target_indices, geo_dists) where targets are
-        filtered to only those within geographic distance threshold of at least
-        one source. Sources are returned unfiltered. geo_dists is the full pairwise
-        geographic distance matrix (sources x targets) for later filtering.
+        Parameters
+        ----------
+        df_vs_source : pd.DataFrame
+            Source vertex dataframe with a ``geometry`` column.
+        df_vs_target : pd.DataFrame
+            Target vertex dataframe with a ``geometry`` column.
+        dist_thresh : float
+            Maximum straight-line distance, in the units of the coordinates
+            (degrees for a geographic CRS).
+
+        Returns
+        -------
+        source_indices : np.ndarray
+            Indices of all sources (not filtered).
+        target_indices : np.ndarray
+            Indices of the targets within ``dist_thresh`` of at least one source.
+        geo_dists : np.ndarray
+            Pairwise distances (sources x kept targets), for later filtering.
+
+        Notes
+        -----
+        All three arrays are empty if no target is within the threshold.
         """
         # Extract coordinates (in degrees for geographic CRS)
         source_geoms = df_vs_source.geometry.values
@@ -492,7 +508,8 @@ class GraphCalcs:
         link_attrs : dict
             Edge attributes for created dependency links.
         dist_thresh : float
-            Maximum path length to allow links.
+            Maximum path length to allow links, in the unit of ``criterion``
+            (meters for ``"distance"``).
         k : int
             Number of links per target.
         criterion : str, optional
@@ -626,8 +643,11 @@ class GraphCalcs:
             Source vertex attributes for filtering.
         target_attrs : dict
             Target vertex attributes for filtering.
+        link_attrs : dict
+            Edge attributes for created links.
         dur_thresh : float
-            Maximum travel duration to allow a link.
+            Maximum travel duration (in minutes) to allow a link. The
+            friction surface is expected in minutes per meter.
         k : int
             Number of nearest sources per target to consider.
         dist_thresh : float, optional
@@ -939,12 +959,13 @@ class GraphCalcs:
         edge_geoms : list
             Edge geometries (LineString) to evaluate.
         friction_surf : object
-            Friction surface hazard-like object used for impact calculation.
+            Friction surface hazard-like object used for impact calculation,
+            with intensity in minutes per meter.
 
         Returns
         -------
         np.ndarray
-            Aggregated duration per edge geometry.
+            Travel duration (in minutes) per edge geometry.
         """
 
         # define mapping as impact function.
@@ -1006,7 +1027,7 @@ class GraphCalcs:
         k,
         bidir_link,
     ):
-        """Dispatch dependency creation based on link condition
+        """Create dependency links with the method given by the link condition
 
         Parameters
         ----------
@@ -1023,15 +1044,30 @@ class GraphCalcs:
             dependency edges under this name: edges created with another
             ``ci_type`` are ignored by it (a warning is logged).
         link_condition : str
-            Condition type (e.g., ``"distance"``, ``"duration"``, ``"edgecond"``).
+            Linking method, exactly one of:
+
+            - ``"distance"``: shortest path along the via edges shorter than
+              ``dist_thresh``
+            - ``"duration"``: travel duration on the friction surface shorter
+              than ``dur_thresh``
+            - ``"edgecond"``: an existing edge connects source and target
         dist_thresh : float
-            Threshold for distance or duration (depending on condition).
+            Maximum distance in meters. Path length for ``"distance"``;
+            straight-line pre-selection of candidates for ``"duration"``. Not
+            used for ``"edgecond"``.
         dur_thresh : float
-            Threshold for duration (depending on condition).
+            Maximum travel duration in minutes. Only used for ``"duration"``.
         k : int
-            Number of shortest paths to consider.
+            Maximum number of sources linked to each target.
         bidir_link : bool
-            Whether to add reverse links.
+            Whether to add reverse links (target to source) as well. Must be
+            ``False`` for dependencies used in the cascade, which are directed
+            from source to target.
+
+        Raises
+        ------
+        NotImplementedError
+            If ``link_condition`` is not one of the values above.
         """
         dependency_name = _dependency_name(
             source_attrs["ci_type"], target_attrs["ci_type"]
@@ -1050,7 +1086,7 @@ class GraphCalcs:
                 link_attrs["ci_type"],
                 dependency_name,
             )
-        if "distance" in link_condition:
+        if link_condition == "distance":
             self.link_vertices_shortest_paths(
                 source_attrs=source_attrs,
                 target_attrs=target_attrs,
@@ -1060,7 +1096,7 @@ class GraphCalcs:
                 k=k,
                 bidir=bidir_link,
             )
-        elif "duration" in link_condition:
+        elif link_condition == "duration":
             self.link_vertices_friction_surf(
                 source_attrs=source_attrs,
                 target_attrs=target_attrs,
@@ -1070,7 +1106,7 @@ class GraphCalcs:
                 k=k,
                 bidir=bidir_link,
             )
-        elif "edgecond" in link_condition:
+        elif link_condition == "edgecond":
             self.link_vertices_edgecond(
                 target_attrs=target_attrs,
                 edge_attrs=source_attrs,
@@ -1257,7 +1293,7 @@ class GraphCalcs:
         Parameters
         ----------
         df_dependencies : pd.DataFrame
-            Dependency table with ``type_I == 'functional'``.
+            Dependency table. Only rows with ``type_I == 'functional'`` are used.
         """
 
         for __, row in df_dependencies[
@@ -1289,13 +1325,21 @@ class GraphCalcs:
         Parameters
         ----------
         df_dependencies : pd.DataFrame
-            Dependency table with ``type_I == 'enduser'``.
-        access_check_method : str
-            Method to check access either "routing" or "propagation". Default is ``"routing"``.,
+            Dependency table. Only rows with ``type_I == 'enduser'`` are used.
         friction_surf : object or None
             Friction surface used for routing when applicable.
+        access_check_method : str, optional
+            Method to check access, either ``"routing"`` (paths along the via
+            links are re-checked) or ``"propagation"`` (capacity is propagated
+            along the dependency edges, via links are ignored).
+            Default is ``"routing"``.
         rerouting : bool, optional
             Whether to allow rerouting to alternative sources. Default is ``True``.
+
+        Raises
+        ------
+        ValueError
+            If ``access_check_method`` is not ``"routing"`` or ``"propagation"``.
         """
 
         for __, row in df_dependencies[
@@ -1325,7 +1369,7 @@ class GraphCalcs:
             self.sync()
 
     def _get_former_access_info(self, dependency_name):
-        """Retrieve former access status for a dependency
+        """Retrieve former (pre-cascade) access status for a dependency
 
         Parameters
         ----------
@@ -1359,7 +1403,9 @@ class GraphCalcs:
         Returns
         -------
         tuple
-            ``(es_access_new, ppl_new_access, ppl_access_all_via)``.
+            ``(ppl_new_access, ppl_access_all_via)``: endusers with access after
+            rerouting, and endusers that would have access if all via links
+            were functional.
         """
         # Delete existing dependencies to recompute from scratch
         self.graph.delete_edges(ci_type=dependency_name)
@@ -1425,8 +1471,6 @@ class GraphCalcs:
             ``(source, target)`` vertex index pairs to validate.
         row : pd.Series
             Dependency configuration row.
-        graph_subgraph_vsdict : dict
-            Mapping from graph vertex ids to subgraph vertex ids.
         subgraph : igraph.Graph
             Subgraph containing only source, target, and via vertices.
 
@@ -1476,14 +1520,14 @@ class GraphCalcs:
         dependency_name : str
             Name of dependency edges.
         es_access_base : list
-            Base access edges.
-        ppl_former_access : list
-            People who had former access.
+            Dependency edges before the disruption.
 
         Returns
         -------
         tuple
-            ``(es_access_new, ppl_new_access, ppl_access_all_via)``.
+            ``(ppl_new_access, ppl_access_all_via)``: endusers that keep their
+            access, and endusers that would have access if all via links were
+            functional.
         """
 
         # Extract all data from edge objects BEFORE any deletions,
@@ -1647,11 +1691,12 @@ class GraphCalcs:
         row : pd.Series
             Dependency configuration row containing source, target, and via settings.
         friction_surf : object or None
-            Friction surface for duration-based routing (if used).
+            Friction surface for duration-based routing. Currently not used.
         rerouting : bool, optional
             Whether to allow rerouting to alternative sources. Default is ``True``.
         initial : bool, optional
-            Whether this is an initial cascade. Default is ``False``.
+            Whether this is an initial cascade. Currently not used.
+            Default is ``False``.
         """
         dependency_name = _dependency_name(row.source, row.target)
 

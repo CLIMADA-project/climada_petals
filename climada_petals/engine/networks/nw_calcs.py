@@ -49,6 +49,19 @@ class NetworkCalcs:
     """
 
     def __init__(self, network, dep_table=None, friction_surf=None):
+        """Create a network calculator
+
+        Parameters
+        ----------
+        network : Network
+            Network on which links, dependencies and cascades are computed.
+        dep_table : pd.DataFrame, optional
+            Dependency table with one row per source-target dependency. Required
+            by ``initialize_base_state``, ``setup_dependencies`` and ``cascade``.
+            Default is ``None``.
+        friction_surf : object, optional
+            Friction surface used for duration-based linking. Default is ``None``.
+        """
         self._network = network
         self.dep_table = dep_table
         self._graph_calc = GraphCalcs(network=network, friction_surf=friction_surf)
@@ -74,6 +87,12 @@ class NetworkCalcs:
     ):
         """Iteratively merge disconnected clusters
 
+        In each iteration, every cluster (connected component) is linked to its
+        closest other cluster within ``dist_thresh``. Iterations stop when the
+        network forms a single cluster or after ``max_iter`` iterations, so the
+        network can remain disconnected if clusters are further apart than
+        ``dist_thresh``. The network is updated in place.
+
         Parameters
         ----------
         ci_type : str
@@ -83,7 +102,8 @@ class NetworkCalcs:
         dist_thresh : float, optional
             Maximum distance (meters) for cluster linking. Default is ``30000``.
         graph_connectivity_mode : str, optional
-            Connectivity mode for the graph. Default is ``"weak"``.
+            Connectivity mode used to identify clusters (``"weak"`` or
+            ``"strong"``). Default is ``"weak"``, which ignores edge directions.
         """
         iter_count = 0
         n_clusters = len(self.graph.connected_components(mode=graph_connectivity_mode))
@@ -140,7 +160,29 @@ class NetworkCalcs:
         self._graph_calc.full_reset()
 
     def initialize_base_state(self):
-        """Initialize functional, capacity, and supply base state"""
+        """Initialize functional, capacity, and supply base state
+
+        Sets all nodes and edges to fully functional, and creates the capacity,
+        supply and access state attributes of the dependencies in the dependency
+        table.
+
+        Raises
+        ------
+        ValueError
+            If no dependency table was provided.
+
+        Notes
+        -----
+        The method should be called after all physical links have been added (``merge_clusters``,
+        ``add_physical_links``), so that these also receive a functional state, and
+        before ``setup_dependencies``.
+
+        See Also
+        --------
+        Network.initialize_funcstates, Network.initialize_capacity,
+        Network.initialize_supply
+        """
+
         # base state
         # do it after build up of physical dependencies so that created edge also receive
         # functionality states
@@ -154,7 +196,23 @@ class NetworkCalcs:
         self.network.initialize_supply(self.dep_table)
 
     def setup_dependencies(self):
-        """Create dependency links and initialize end-user access"""
+        """Create the dependency links of the dependency table
+
+        For each row of the dependency table, targets are linked to their sources
+        with edges of type ``dependency_{source}_{target}``, directed from source
+        to target, following the row's ``link_condition`` (``"distance"``,
+        ``"duration"`` or ``"edgecond"``), thresholds and ``n_links``. The network
+        is updated in place.
+
+        Raises
+        ------
+        ValueError
+            If no dependency table was provided.
+
+        See Also
+        --------
+        GraphCalcs.calc_dependencies
+        """
 
         if self.dep_table is None:
             raise ValueError(
@@ -172,7 +230,7 @@ class NetworkCalcs:
                 dist_thresh=row["thresh_dist"],
                 dur_thresh=row["thresh_dur"],
                 k=row["n_links"],
-                bidir_link=False,  # dependencies are directed (see _check_dep_table)
+                bidir_link=False,  # dependencies are directed from source to target
             )
 
         # update network
@@ -190,39 +248,44 @@ class NetworkCalcs:
         rerouting=True,
         access_check_method="routing",
     ):
-        """
-        Perform cascade failure analysis on the network.
-        This method iteratively updates the functional states of network components
-        until convergence, then updates end-user dependencies. The cascade process
-        models how failures propagate through the network based on internal and
-        functional dependencies.
+        """Perform cascade failure propagation on the network
+
+        Iteratively updates the functional states of network components until
+        convergence, then updates end-user dependencies. The cascade models how
+        failures propagate through the network based on internal and functional
+        dependencies. The network is updated in place.
+
         Parameters
         ----------
         p_source : str, optional
-            Type of source nodes (default is 'power_plant').
+            Type of power source nodes. Default is ``"power_plant"``.
         p_sink : str, optional
-            Type of sink nodes (default is 'power_line').
+            Type of power sink nodes. Default is ``"power_line"``.
         source_var : str, optional
-            Variable name for source generation (default is 'el_generation').
+            Attribute name for source generation. Default is ``"el_generation"``.
         demand_var : str, optional
-            Variable name for demand consumption (default is 'el_consumption').
-        friction_surf : optional
-            Friction surface data for routing calculations (default is None).
+            Attribute name for demand consumption. Default is ``"el_consumption"``.
+        friction_surf : object, optional
+            Friction surface for duration-based access checks. Default is ``None``.
         rerouting : bool, optional
-            If True, enables rerouting for end-user dependencies (default is True).
+            If ``True``, end-users whose source or path failed can be linked to
+            another source. Default is ``True``.
         access_check_method : str, optional
-            Method to use for checking access (default is "routing").
-        Returns
-        -------
-        None
-            Updates the network in place.
+            Method to check end-user access, ``"routing"`` or ``"propagation"``.
+            Default is ``"routing"``.
+
+        Raises
+        ------
+        ValueError
+            If no dependency table was provided.
+
         Notes
         -----
-        - The method iterates until functional states converge (delta = 0)
-        - Updates both internal and functional dependencies during iteration
-        - After convergence, updates end-user dependencies
-        - Resets network IDs to account for newly created edges
-        - Invalidates cached graph data after completion
+        - Internal and functional dependencies are updated until the functional
+          states no longer change.
+        - End-user dependencies are updated once, after convergence.
+        - The network is then rebuilt from the graph, so that edges created or
+          removed during the cascade are reflected, and the cached graph is reset.
         """
 
         if self.dep_table is None:

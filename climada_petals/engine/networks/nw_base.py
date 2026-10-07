@@ -39,6 +39,57 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Network:
+    """Class to store infrastructure and population networks
+
+    A network holds point features (nodes, e.g. facilities or population
+    centroids) and line features (edges, e.g. roads or power lines) as two
+    GeoDataFrames. Each component should be identified with a ``ci_type`` column.
+
+    Attributes
+    ----------
+    edges : gpd.GeoDataFrame
+        Network edges with 'from_id', 'to_id', 'id', and 'geometry' columns.
+    nodes : gpd.GeoDataFrame
+        Network nodes with 'id' and 'geometry' columns.
+    crs : pyproj.CRS
+        Coordinate reference system of the nodes and edges.
+
+    Notes
+    -----
+    The following column names are reserved and should not be used for own
+    data:
+
+    - ``name`` in ``nodes``: igraph uses it as vertex name. An existing
+      column is dropped when the network is converted to a graph, and
+      replaced by the vertex ids when the network is rebuilt from the graph.
+      Use another column name (e.g. ``label``) to keep facility names.
+    - ``_orig_id`` in ``nodes`` and ``edges``: used internally in graph
+      calculations (see ``GraphCalcs``). An existing column is overwritten
+      and deleted.
+    - ``source`` and ``target`` in ``edges``: igraph uses them for the
+      vertex indices of an edge. Existing columns collide with these when
+      the network is rebuilt from the graph.
+
+    The following columns are created or overwritten by the module. They can
+    be read, but own values are not preserved:
+
+    - ``id`` (``nodes`` and ``edges``), ``from_id`` and ``to_id`` (``edges``):
+      node ids are set to the vertex index whenever the network is rebuilt
+      from the graph.
+    - ``ci_type``: type of each component, used for all selections.
+      Dependency links get the type ``dependency_{source}_{target}``.
+    - ``geometry``: set on every link created by the module.
+    - ``distance`` (``edges``): length in meters, used as routing weight. It
+      is computed for new links only if absent, so an existing column must
+      be in meters as well.
+    - ``func_internal``, ``func_tot``, ``imp_dir``: functional states and
+      direct impacts, set by ``initialize_funcstates`` and updated by the
+      impact calculation and the cascade.
+    - ``capacity_{source}_{target}`` (``nodes``): set by
+      ``initialize_capacity``.
+    - ``access_state_{source}_{target}``, ``actual_supply_{source}_{target}``
+      (``nodes``): set by ``initialize_supply`` and updated by the cascade.
+    """
 
     # map methods
     plot_infra = infra_plot
@@ -63,18 +114,11 @@ class Network:
             GeoDataFrame containing network nodes (e.g., infrastructure facilities, people).
             Must have columns 'id' and 'geometry'.
             Defaults to an empty GeoDataFrame with EPSG:4326 CRS or the CRS of the other GeoDataFrame.
-        Attributes
-        ----------
-        edges : gpd.GeoDataFrame
-            Network edges with 'from_id', 'to_id', 'id', and 'geometry' columns
-        nodes : gpd.GeoDataFrame
-            Network nodes with 'id' and 'geometry' columns
 
-        Notes
-        -----
-        The column name ``_orig_id`` is reserved for internal use in graph
-        calculations (see ``GraphCalcs``) and should not be used in ``edges``
-        or ``nodes``: such a column is overwritten and deleted.
+        Raises
+        ------
+        ValueError
+            If edges and nodes have different coordinate reference systems.
 
         Examples
         --------
@@ -261,7 +305,7 @@ class Network:
                 gpd.GeoDataFrame(self.nodes).to_feather(buf_nodes)
                 zf.writestr(f"{savename}_nodes.feather", buf_nodes.getvalue())
 
-            # Save edges (optional if present)
+            # Save edges
             if hasattr(self, "edges") and not self.edges.empty:
                 buf_edges = io.BytesIO()
                 gpd.GeoDataFrame(self.edges).to_feather(buf_edges)
@@ -344,6 +388,12 @@ class Network:
             Coordinate reference system to assign to the resulting GeoDataFrames.
             Can be anything accepted by :py:meth:`geopandas.GeoDataFrame.set_crs`,
             such as an EPSG code (e.g., 'EPSG:4326'), a PROJ string, or a CRS object.
+
+        Returns
+        -------
+        Network
+            New Network instance built from the vertices and edges of the graph.
+
         Notes
         -----
         This method:
@@ -402,7 +452,7 @@ class Network:
 
         See Also
         --------
-        from_graph : Create network from an igraph.Graph object
+        from_graphs : Create network from an igraph.Graph object
         igraph.Graph.DataFrame : Underlying graph construction method
         """
 
@@ -423,27 +473,32 @@ class Network:
 
         Parameters
         ----------
-        gdf_nodes : gpd.GeoDataFrame or None
+        gdf_nodes : gpd.GeoDataFrame
             GeoDataFrame potentially containing a 'name' column
 
         Returns
         -------
-        gpd.GeoDataFrame or None
-            GeoDataFrame with 'name' column removed if it existed, or None
+        gpd.GeoDataFrame
+            GeoDataFrame with 'name' column removed if it existed
         """
-        if gdf_nodes is not None:
-            if "name" in gdf_nodes.columns:
-                gdf_nodes = gdf_nodes.drop("name", axis=1)
+        if "name" in gdf_nodes.columns:
+            gdf_nodes = gdf_nodes.drop("name", axis=1)
         return gdf_nodes
 
     # copied from nw_preps
     # TODO : decide if this should be a method of nw_preps or nw_base
     def _ecols_to_graphorder(self, gdf_edges):
-        """
-        order columns as igraph expects them for building a graph
+        """Order edge columns as igraph expects them for building a graph
 
         Parameters
         ----------
+        gdf_edges : gpd.GeoDataFrame
+            Edge data with 'from_id' and 'to_id' columns.
+
+        Returns
+        -------
+        gpd.GeoDataFrame
+            Edge data with 'from_id' and 'to_id' as the first two columns.
         """
         return gdf_edges.reindex(
             ["from_id", "to_id"]
@@ -452,25 +507,32 @@ class Network:
         )
 
     def _vcols_to_graphorder(self, gdf_nodes):
-        """
-        order columns as igraph expects them for building a graph
+        """Order node columns as igraph expects them for building a graph
 
         Parameters
         ----------
+        gdf_nodes : gpd.GeoDataFrame
+            Node data with an 'id' column.
+
+        Returns
+        -------
+        gpd.GeoDataFrame
+            Node data with 'id' as the first column.
         """
         return gdf_nodes.reindex(
             ["id"] + [x for x in list(gdf_nodes) if x not in ["id"]], axis=1
         )
 
-    def _from_es(self, gdf_edges, gdf_nodes=None, directed=True):
-        """Construct igraph.Graph from edges with optional nodes
+    def _from_es(self, gdf_edges, gdf_nodes, directed=True):
+        """Construct igraph.Graph from edges and nodes
 
         Parameters
         ----------
         gdf_edges : gpd.GeoDataFrame
             Edge data with 'from_id', 'to_id', and other attributes
-        gdf_nodes : gpd.GeoDataFrame, optional
-            Node data. If None, nodes are inferred from edge endpoints.
+        gdf_nodes : gpd.GeoDataFrame
+            Node data with an 'id' column matching the 'from_id' and 'to_id'
+            of the edges.
         directed : bool, optional
             Whether to create a directed graph. Defaults to True (directed).
 
@@ -593,9 +655,9 @@ class Network:
         Notes
         -----
         For each enduser dependency, creates two attributes:
-        - ``access_state_{source}_people``: Access state ("undefined" initially,
-          "no base access" for people nodes)
-        - ``actual_supply_{source}_people``: Current supply level (0 initially)
+        - ``access_state_{source}_{target}``: Access state ("undefined" initially,
+          "no base access" for the target nodes)
+        - ``actual_supply_{source}_{target}``: Current supply level (0 initially)
 
         Examples
         --------
