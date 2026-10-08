@@ -357,7 +357,7 @@ def _map_impact_calc(
         nw_calc = NetworkCalcs(
             network=nw_disr, dep_table=df_dep, friction_surf=friction_surf
         )
-        nw_calc.cascade(initial=False, rerouting=True, friction_surf=friction_surf)
+        nw_calc.cascade(rerouting=True, friction_surf=friction_surf)
         nw_disr_casc = nw_calc.network
 
         # CALC IMPACTSTATS
