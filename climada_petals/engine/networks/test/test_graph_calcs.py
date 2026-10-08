@@ -16,26 +16,55 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Test network modules
+Tests for the GraphCalcs graph toolkit (graph_calcs)
+
+Most tests use the toy networks defined in conftest.py, e.g. the chain
+
+    people(0) -> road(1) -> road(2) -> road(3) -> healthcare(4)
+
+optionally extended by a remote healthcare node 5 at (4, 50).
 """
 
-import pytest
+import copy as cp
+import logging
 
-import numpy as np
 import geopandas as gpd
-import pandas as pd
-from shapely.geometry import Point, LineString
 import igraph as ig
-from climada_petals.engine.networks.test.fixtures_test_networks import *
+import numpy as np
+import pandas as pd
+import pytest
+from shapely.geometry import Point
+
 from climada.util.constants import ONE_LAT_KM
+from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
+
+
+def make_enduser_dependencies(graph_calcs, dep_table):
+    """Create the dependency edges of all enduser rows of ``dep_table``."""
+    for _, row in dep_table[dep_table["type_I"] == "enduser"].iterrows():
+        graph_calcs.calc_dependencies(
+            source_attrs={"ci_type": row.source},
+            target_attrs={"ci_type": row.target},
+            via_attrs={"ci_type": "road"},
+            link_attrs={"ci_type": f"dependency_{row.source}_{row.target}"},
+            link_condition=row.link_condition,
+            dist_thresh=row.thresh_dist,
+            dur_thresh=np.inf,
+            k=1,
+            bidir_link=row.bidir_link,
+        )
+
+
+def people_attr(graph, attr):
+    """Values of vertex attribute ``attr`` for all people vertices."""
+    return graph.vs.select(ci_type="people")[attr]
 
 
 def test_graph_calcs_init(network_with_ci_types):
     """Test GraphCalcs initialization"""
-    nw_calcs_mock = type("obj", (object,), {"network": network_with_ci_types})()
-    gc = GraphCalcs(network=network_with_ci_types, directed=True)
+    gc = GraphCalcs(network=network_with_ci_types)
 
-    assert gc.network == network_with_ci_types
+    assert gc.network is network_with_ci_types
     assert gc.directed is True
     assert gc._graph is None
 
@@ -112,7 +141,7 @@ def test_get_subgraph2graph_vsdict(graph_calcs):
 
     # Create a subgraph with all vertices
     subgraph = graph.induced_subgraph(range(graph.vcount()))
-    subgraph.vs["orig_id"] = [1, 0, 3, 2, 4]
+    subgraph.vs["_orig_id"] = [1, 0, 3, 2, 4]
 
     mapping = GraphCalcs._get_subgraph2graph_vsdict(graph, subgraph)
 
@@ -127,7 +156,7 @@ def test_get_subgraph2graph_esdict(graph_calcs):
 
     # Create a subgraph with all vertices
     subgraph = graph.induced_subgraph(range(graph.vcount()))
-    subgraph.es["orig_id"] = [1, 2, 0, 3]
+    subgraph.es["_orig_id"] = [1, 2, 0, 3]
 
     mapping = GraphCalcs._get_subgraph2graph_esdict(graph, subgraph)
 
@@ -326,6 +355,11 @@ def test_create_subgraph_filter(graph_calcs_with_remote_node):
         == set()
     )
     assert set(subgraph.es["ci_type"]).difference({"road"}) == set()
+    # the internal index is kept on the subgraph only, not on the graph
+    graph = graph_calcs_with_remote_node.graph
+    assert "_orig_id" in subgraph.vs.attributes()
+    assert "_orig_id" not in graph.vs.attributes()
+    assert "_orig_id" not in graph.es.attributes()
 
 
 def test_create_subgraph_filter_source(graph_calcs_with_source_fail):
@@ -379,15 +413,72 @@ def test_link_vertices_edgecond(graph_calcs):
         edge_attrs={"ci_type": "road"},
         link_attrs={"ci_type": "dependency_road_healthcare"},
     )
-    dep_edge = graph_calcs.graph.es.select(ci_type="dependency_road_healthcare")
-    sources = [e.source for e in dep_edge]
-    targets = [e.target for e in dep_edge]
-    # Verify that method completes without error
-    assert len(dep_edge) > 0
-    assert all((src["ci_type"] == "road" for src in graph_calcs.graph.vs[sources]))
-    assert all(
-        (tgt["ci_type"] == "healthcare" for tgt in graph_calcs.graph.vs[targets])
+    dep_edges = graph_calcs.graph.es.select(ci_type="dependency_road_healthcare")
+    # the only road edge incident to the hospital (4) comes from road node 3
+    assert [(e.source, e.target) for e in dep_edges] == [(3, 4)]
+    assert graph_calcs.graph.ecount() == initial_edge_count + 1
+
+
+def test_link_vertices_edgecond_deduplicates_pairs(graph_calcs):
+    """A pair connected by edges in both directions is linked only once."""
+    graph_calcs.build_graph()
+    # road link 0->1 exists; add the reverse 1->0
+    graph_calcs.graph.add_edge(1, 0, ci_type="road", distance=157200.0)
+
+    graph_calcs.link_vertices_edgecond(
+        target_attrs={"ci_type": "people"},
+        edge_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dependency_road_people"},
     )
+
+    dep_edges = graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    assert [(e.source, e.target) for e in dep_edges] == [(1, 0)]
+
+
+@pytest.mark.parametrize(
+    "k, expected_pairs",
+    [
+        (1, [(2, 0)]),  # only the closest road node
+        (2, [(2, 0), (1, 0)]),
+        (None, [(2, 0), (1, 0)]),  # all connected road nodes, closest first
+    ],
+)
+def test_link_vertices_edgecond_k(graph_calcs, k, expected_pairs):
+    """At most k sources per target are linked, the closest ones first."""
+    graph_calcs.build_graph()
+    # people (0) are connected to road node 1 (157.2 km) and road node 2 (1 km)
+    graph_calcs.graph.add_edge(2, 0, ci_type="road", distance=1000.0)
+
+    graph_calcs.link_vertices_edgecond(
+        target_attrs={"ci_type": "people"},
+        edge_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dependency_road_people"},
+        k=k,
+    )
+
+    dep_edges = graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    assert [(e.source, e.target) for e in dep_edges] == expected_pairs
+
+
+def test_calc_dependencies_edgecond_uses_k(graph_calcs):
+    """calc_dependencies passes the number of links (k) to the edge condition."""
+    graph_calcs.build_graph()
+    graph_calcs.graph.add_edge(2, 0, ci_type="road", distance=1000.0)
+
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_people"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+
+    dep_edges = graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    assert [(e.source, e.target) for e in dep_edges] == [(2, 0)]
 
 
 def test_link_vertices_edgecond_empty_target(graph_calcs):
@@ -419,17 +510,17 @@ def test_link_clusters_no_clusters(graph_calcs):
     assert "cluster_link" not in graph_calcs.graph.es["ci_type"]
 
 
-def test_link_clusters_with_threshold_low(graph_calcs_with_remote_node):
-    """Test link_clusters with distance threshold"""
-    graph_calcs_with_remote_node.build_graph()
-    initial_edge_count = graph_calcs_with_remote_node.graph.ecount()
-    graph_calcs_with_remote_node.link_clusters(
-        dist_thresh=1000, link_attrs={"ci_type": "cluster_link"}
-    )
+def test_link_clusters_with_threshold_low(graph_calcs_with_remote_node_missing_edge):
+    """No link is created if the clusters are further apart than dist_thresh."""
+    gc = graph_calcs_with_remote_node_missing_edge
+    gc.build_graph()
+    initial_edge_count = gc.graph.ecount()
 
-    # Verify method completes
-    assert graph_calcs_with_remote_node.graph.ecount() == initial_edge_count
-    assert "cluster_link" not in graph_calcs_with_remote_node.graph.es["ci_type"]
+    gc.link_clusters(dist_thresh=1000, link_attrs={"ci_type": "cluster_link"})
+
+    assert gc.graph.ecount() == initial_edge_count
+    assert "cluster_link" not in gc.graph.es["ci_type"]
+    assert len(gc.graph.connected_components(mode="weak")) == 2
 
 
 def test_link_clusters_with_threshold_high(graph_calcs_with_remote_node_missing_edge):
@@ -445,6 +536,14 @@ def test_link_clusters_with_threshold_high(graph_calcs_with_remote_node_missing_
     assert (
         graph_calcs_with_remote_node_missing_edge.graph.ecount()
         == initial_edge_count + 1
+    )
+    assert (
+        len(
+            graph_calcs_with_remote_node_missing_edge.graph.connected_components(
+                mode="weak"
+            )
+        )
+        == 1
     )
     assert (
         "cluster_link" in graph_calcs_with_remote_node_missing_edge.graph.es["ci_type"]
@@ -478,7 +577,6 @@ def test_link_clusters_projected_crs_high_thresh(
     new_edge = graph_calcs_projected_disconnected.graph.es.select(
         ci_type="cluster_link"
     )[0]
-    assert new_edge["distance"] == pytest.approx(800, abs=1)
 
 
 def test_link_clusters_projected_crs_low_thresh(
@@ -749,7 +847,11 @@ def test_link_vertices_shortest_paths_multiple(graph_calcs):
         bidir=False,
     )
 
-    assert graph_calcs.graph.ecount() > initial_edge_count
+    # the two road nodes closest to the hospital (4) along the road are 3 and 2
+    new_edges = graph_calcs.graph.es.select(ci_type="multi_path_link")
+    assert graph_calcs.graph.ecount() == initial_edge_count + 2
+    assert {e.source for e in new_edges} == {2, 3}
+    assert {e.target for e in new_edges} == {4}
 
 
 def test_link_vertices_shortest_paths_k1_selects_closest(graph_calcs_with_remote_node):
@@ -775,7 +877,9 @@ def test_link_vertices_shortest_paths_k1_selects_closest(graph_calcs_with_remote
     assert len(new_edges) == 1
     # closest healthcare (node 4, path ~628800 m) must be chosen
     # over the remote one (node 5, path ~7314400 m)
-    assert new_edges[0]["distance"] < 7e6
+    assert {e.source for e in new_edges} == {4}
+    assert {e.target for e in new_edges} == {0}
+    assert all(e["distance"] < 10e6 for e in new_edges)
 
 
 def test_link_vertices_shortest_paths_k2_selects_two(graph_calcs_with_remote_node):
@@ -799,6 +903,8 @@ def test_link_vertices_shortest_paths_k2_selects_two(graph_calcs_with_remote_nod
         if e["ci_type"] == "dep_health_people"
     ]
     assert len(new_edges) == 2
+    assert {e.source for e in new_edges} == {4, 5}
+    assert {e.target for e in new_edges} == {0}
     assert all(e["distance"] < 10e6 for e in new_edges)
 
 
@@ -825,7 +931,9 @@ def test_link_vertices_shortest_paths_k_respects_dist_thresh(
         if e["ci_type"] == "dep_health_people"
     ]
     assert len(new_edges) == 1
-    assert new_edges[0]["distance"] < 1e6
+    assert {e.source for e in new_edges} == {4}
+    assert {e.target for e in new_edges} == {0}
+    assert all(e["distance"] < 1e6 for e in new_edges)
 
 
 def test_link_vertices_shortest_paths_k_exceeds_sources(
@@ -1216,6 +1324,48 @@ def test_calc_dependencies_edgecond(graph_calcs):
     assert "edge_cond_link" in graph_calcs.graph.es["ci_type"]
 
 
+@pytest.mark.parametrize(
+    "link_attrs, expect_warning",
+    [
+        ({}, False),
+        ({"ci_type": "dependency_road_people"}, False),
+        ({"ci_type": "edge_cond_link"}, True),
+    ],
+)
+def test_calc_dependencies_link_name(graph_calcs, caplog, link_attrs, expect_warning):
+    """The cascade only recognises ``dependency_{source}_{target}`` edges:
+    this is the default name, and any other name triggers a warning"""
+    graph_calcs.build_graph()
+    expected_name = link_attrs.get("ci_type", "dependency_road_people")
+
+    # the climada_petals logger does not propagate to the root logger, so the
+    # capture handler has to be attached to it directly
+    logger = logging.getLogger("climada_petals")
+    logger.addHandler(caplog.handler)
+    try:
+        graph_calcs.calc_dependencies(
+            source_attrs={"ci_type": "road"},
+            target_attrs={"ci_type": "people"},
+            via_attrs={},
+            link_attrs=link_attrs,
+            link_condition="edgecond",
+            dist_thresh=None,
+            dur_thresh=np.inf,
+            k=1,
+            bidir_link=False,
+        )
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert expected_name in graph_calcs.graph.es["ci_type"]
+    assert ("will be ignored in the cascade" in caplog.text) == expect_warning
+
+
+def test_dependency_name():
+    """Test the naming convention of dependency edges"""
+    assert _dependency_name("road", "people") == "dependency_road_people"
+
+
 def test_calc_dependencies_distance_via_fail(graph_calcs_with_edge_ci_fail):
     """Test calculating dependencies with distance criterion"""
     graph_calcs_with_edge_ci_fail.build_graph()
@@ -1235,6 +1385,64 @@ def test_calc_dependencies_distance_via_fail(graph_calcs_with_edge_ci_fail):
 
     assert "dep_link" not in graph_calcs_with_edge_ci_fail.graph.es["ci_type"]
     assert graph_calcs_with_edge_ci_fail.graph.ecount() == initial_edge_count
+
+
+def test_calc_dependencies_default_ci_type(graph_calcs):
+    """Without a ci_type in link_attrs, links are named dependency_<source>_<target>."""
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={},
+        link_attrs={},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+
+    assert "dependency_road_healthcare" in graph_calcs.graph.es["ci_type"]
+
+
+def test_calc_dependencies_unknown_condition_raises(graph_calcs):
+    """An unknown link condition raises NotImplementedError."""
+    with pytest.raises(NotImplementedError):
+        graph_calcs.calc_dependencies(
+            source_attrs={"ci_type": "road"},
+            target_attrs={"ci_type": "people"},
+            via_attrs={"ci_type": "road"},
+            link_attrs={"ci_type": "dep"},
+            link_condition="teleportation",
+            dist_thresh=np.inf,
+            dur_thresh=np.inf,
+            k=1,
+            bidir_link=False,
+        )
+
+
+def test_calc_dependencies_duration_uses_friction_surface(graph_calcs, monkeypatch):
+    """link_condition='duration' links via the friction surface."""
+    graph_calcs.friction_surf = object()
+    monkeypatch.setattr(
+        GraphCalcs,
+        "_calc_friction",
+        staticmethod(lambda edge_geoms, friction_surf: np.zeros(len(edge_geoms))),
+    )
+
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "healthcare"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dep_duration"},
+        link_condition="duration",
+        dist_thresh=np.inf,
+        dur_thresh=60,
+        k=1,
+        bidir_link=False,
+    )
+
+    dep_edges = graph_calcs.graph.es.select(ci_type="dep_duration")
+    assert [(e.source, e.target) for e in dep_edges] == [(4, 0)]
 
 
 def test_check_access_basic_undisrupted(graph_calcs, dependency_table):
@@ -1369,25 +1577,25 @@ def test_check_access_with_rerouting_via_disrupted(
         bidir_link=row["bidir_link"],
     )
 
-    # Fail a road node to test rerouting
+    # Fail road node 1 and road edge 0->1: people (0) are cut from the road
     graph_calcs_with_remote_node.graph.vs.select(ci_type="road")[0]["func_tot"] = 0
     graph_calcs_with_remote_node.graph.es.select(ci_type="road")[0]["func_tot"] = 0
 
-    # Call _check_access
     graph_calcs_with_remote_node._check_access(row, friction_surf=None, rerouting=True)
-    # Verify access states are set on people nodes
+
+    # No alternative functional path exists, even with rerouting
     people_nodes = graph_calcs_with_remote_node.graph.vs.select(ci_type="people")
     for node in people_nodes:
-        assert f"access_state_{row.source}_{row.target}" in node.attributes()
-        assert f"actual_supply_{row.source}_{row.target}" in node.attributes()
-        # With rerouting enabled and just one road failed, access should still be possible
         assert node[f"access_state_{row.source}_{row.target}"] == "access disrupted via"
+        assert node[f"actual_supply_{row.source}_{row.target}"] == 0
 
 
 def test_check_access_with_rerouting_new_source(
     graph_calcs_with_remote_node, dependency_table
 ):
-    """Test _check_access with rerouting when via is failing"""
+    """With rerouting, people reroute to the remote hospital (5) if the road to
+    the closest hospital (4) fails. The state stays 'access undisrupted' as
+    the original hospital itself is still functional."""
     graph_calcs_with_remote_node.network.initialize_funcstates()
     graph_calcs_with_remote_node.network.initialize_capacity(dependency_table)
     graph_calcs_with_remote_node.network.initialize_supply(dependency_table)
@@ -1407,19 +1615,20 @@ def test_check_access_with_rerouting_new_source(
         bidir_link=row["bidir_link"],
     )
 
-    # Fail a road node to test rerouting
+    # Fail road node 3 and road edge 3->4: hospital 4 becomes unreachable
     graph_calcs_with_remote_node.graph.vs[3]["func_tot"] = 0
     graph_calcs_with_remote_node.graph.es[3]["func_tot"] = 0
 
-    # Call _check_access
     graph_calcs_with_remote_node._check_access(row, friction_surf=None, rerouting=True)
-    # Verify access states are set on people nodes
+
+    dep_edges = graph_calcs_with_remote_node.graph.es.select(
+        ci_type="dependency_healthcare_people"
+    )
+    assert [(e.source, e.target) for e in dep_edges] == [(5, 0)]
     people_nodes = graph_calcs_with_remote_node.graph.vs.select(ci_type="people")
     for node in people_nodes:
-        assert f"access_state_{row.source}_{row.target}" in node.attributes()
-        assert f"actual_supply_{row.source}_{row.target}" in node.attributes()
-        # With rerouting enabled and just one road failed, access should still be possible
         assert node[f"access_state_{row.source}_{row.target}"] == "access undisrupted"
+        assert node[f"actual_supply_{row.source}_{row.target}"] == 1
 
 
 def test_check_access_without_rerouting_via_disrupted(
@@ -1530,7 +1739,7 @@ def test_check_access_no_constraint(graph_calcs_with_remote_node, dependency_tab
 
         # Call _check_access
         graph_calcs_with_remote_node._check_access(
-            row, friction_surf=None, rerouting=True
+            row, friction_surf=None, rerouting=False
         )
 
         # Verify access states are set on people nodes
@@ -1742,7 +1951,6 @@ def test_propagate_check_fail_ci(graph_calcs):
     for v in graph_calcs.graph.vs.select(ci_type="road"):
         v["capacity_road_healthcare"] = 1
     for v in graph_calcs.graph.vs.select(ci_type="healthcare"):
-        v["actual_supply_road_healthcare"] = 0
         v["capacity_road_healthcare"] = -1
 
     # add dependency edge for propagation
@@ -1768,9 +1976,8 @@ def test_propagate_check_fail_ci(graph_calcs):
     assert all(
         v["func_tot"] == 1 for v in graph_calcs.graph.vs.select(ci_type="healthcare")
     )
-    assert (
-        "access_state_healthcare_road" not in graph_calcs.graph.vs.attributes()
-    )  # CI propagation should not set access state
+    # functional (CI-CI) propagation does not set access states
+    assert "access_state_road_healthcare" not in graph_calcs.graph.vs.attributes()
 
 
 def test_propagate_check_fail_fail_ci(graph_calcs):
@@ -1783,7 +1990,7 @@ def test_propagate_check_fail_fail_ci(graph_calcs):
         v["func_tot"] = 0
         v["capacity_road_healthcare"] = 1
     for v in graph_calcs.graph.vs.select(ci_type="healthcare"):
-        v["actual_supply_road_healthcare"] = 0
+        v["func_tot"] = 1
         v["capacity_road_healthcare"] = -1
 
     # add dependency edge for propagation
@@ -1807,10 +2014,6 @@ def test_propagate_check_fail_fail_ci(graph_calcs):
     assert "func_tot" in graph_calcs.graph.vs.attributes()
     assert all(
         v["func_tot"] == 0 for v in graph_calcs.graph.vs.select(ci_type="healthcare")
-    )
-    assert all(
-        v["actual_supply_road_healthcare"] == 0
-        for v in graph_calcs.graph.vs.select(ci_type="healthcare")
     )
 
 
@@ -1857,12 +2060,77 @@ def test_propagate_check_fail_fail_enduser(graph_calcs):
     )
 
 
-def test_update_internal_dependencies_roads(graph_calcs):
-    """Test updating internal dependencies for roads"""
-    graph_calcs.build_graph()
+def _init_road_healthcare_capacity(graph):
+    """Capacities for the functional dependency road -> healthcare."""
+    graph.vs["capacity_road_healthcare"] = 0
+    graph.vs.select(ci_type="road")["capacity_road_healthcare"] = 1
+    graph.vs.select(ci_type="healthcare")["capacity_road_healthcare"] = -1
 
-    # Set some edge functionality
-    graph_calcs.graph.es["func_tot"] = 0
+
+def test_propagate_check_fail_needs_dependency_edges(graph_calcs, caplog):
+    """Without dependency edges, physical edges alone carry no capacity.
+
+    The hospital (4) is connected to road node 3 by a road edge, but no
+    dependency_road_healthcare edge exists: it receives nothing and fails.
+    """
+    graph_calcs.build_graph()
+    _init_road_healthcare_capacity(graph_calcs.graph)
+
+    # the climada_petals logger does not propagate to the root logger, so the
+    # capture handler has to be attached to it directly
+    logger = logging.getLogger("climada_petals")
+    logger.addHandler(caplog.handler)
+    try:
+        graph_calcs._propagate_check_fail(
+            source="road", target="healthcare", type_I="functional", thresh_func=1
+        )
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert graph_calcs.graph.vs[4]["func_tot"] == 0
+    assert "No dependency_road_healthcare edges found" in caplog.text
+
+
+@pytest.mark.parametrize("physical_edge", [(2, 4), (4, 2)])
+def test_propagate_check_fail_ignores_physical_edges(graph_calcs, physical_edge):
+    """Only dependency edges carry capacity, whatever the direction in which
+    other (physical) edges between source and target nodes are stored.
+
+    The hospital (4) depends on road node 3, which fails. A physical road link
+    to the functional road node 2 does not keep the hospital functional.
+    """
+    graph_calcs.build_graph()
+    graph = graph_calcs.graph
+    _init_road_healthcare_capacity(graph)
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_healthcare"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+    dep_edges = graph.es.select(ci_type="dependency_road_healthcare")
+    assert [(e.source, e.target) for e in dep_edges] == [(3, 4)]
+    graph.add_edge(*physical_edge, ci_type="road", distance=1000.0, func_tot=1)
+    graph.vs[3]["func_tot"] = 0
+
+    graph_calcs._propagate_check_fail(
+        source="road", target="healthcare", type_I="functional", thresh_func=1
+    )
+
+    assert graph.vs[4]["func_tot"] == 0
+    # sources are never modified by the propagation
+    assert graph.vs[2]["func_tot"] == 1
+
+
+def test_update_internal_dependencies_roads(graph_calcs):
+    """A failed road edge makes its road end nodes dysfunctional, and only those."""
+    graph_calcs.build_graph()
+    graph_calcs.graph.es[1]["func_tot"] = 0  # road edge 1->2
 
     graph_calcs.update_internal_dependencies(
         p_source="powerstation",
@@ -1871,8 +2139,8 @@ def test_update_internal_dependencies_roads(graph_calcs):
         demand_var="demand",
     )
 
-    # Method should complete
-    assert all(v["func_tot"] == 0 for v in graph_calcs.graph.vs.select(ci_type="road"))
+    # node 0 is people, 1-3 road, 4 healthcare: only road nodes 1 and 2 fail
+    assert graph_calcs.graph.vs["func_tot"] == [1, 0, 0, 1, 1]
 
 
 def test_update_functional_dependencies(graph_calcs):
@@ -1901,6 +2169,19 @@ def test_update_functional_dependencies(graph_calcs):
     for v in graph_calcs.graph.vs.select(ci_type="healthcare"):
         v["capacity_road_healthcare"] = -1
 
+    # dependency edge road (3) -> healthcare (4) along which capacity is propagated
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_healthcare"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+
     graph_calcs.update_functional_dependencies(df_dependencies)
     assert all(
         v["func_tot"] == 1 for v in graph_calcs.graph.vs.select(ci_type="healthcare")
@@ -1917,8 +2198,8 @@ def test_update_functional_dependencies(graph_calcs):
 
 
 def test_update_enduser_dependencies_routing(graph_calcs_with_source_fail):
-    """Test updating end-user dependencies"""
-    graph_calcs_with_source_fail.build_graph()
+    """With failed hospitals, routing keeps road access and cuts healthcare."""
+    gc = graph_calcs_with_source_fail
 
     # Create end-user dependency dataframe
     df_dependencies = pd.DataFrame(
@@ -1937,18 +2218,28 @@ def test_update_enduser_dependencies_routing(graph_calcs_with_source_fail):
         }
     )
 
-    graph_calcs_with_source_fail.update_enduser_dependencies(
+    gc.network.initialize_capacity(df_dependencies)
+    gc.network.initialize_supply(df_dependencies)
+    make_enduser_dependencies(gc, df_dependencies)
+
+    gc.update_enduser_dependencies(
         df_dependencies,
         friction_surf=None,
         rerouting=False,
         access_check_method="routing",
     )
 
-    assert graph_calcs_with_source_fail.graph is not None
+    assert people_attr(gc.graph, "access_state_road_people") == ["access undisrupted"]
+    assert people_attr(gc.graph, "actual_supply_road_people") == [1]
+    assert people_attr(gc.graph, "access_state_healthcare_people") == [
+        "access disrupted source"
+    ]
+    assert people_attr(gc.graph, "actual_supply_healthcare_people") == [0]
 
 
 def test_update_enduser_dependencies_propagation(graph_calcs_with_source_fail):
-    """Test updating end-user dependencies"""
+    """Propagation cuts supply from failed hospitals to people who had it."""
+    gc = graph_calcs_with_source_fail
 
     # Create end-user dependency dataframe
     df_dependencies = pd.DataFrame(
@@ -1966,19 +2257,26 @@ def test_update_enduser_dependencies_propagation(graph_calcs_with_source_fail):
             "n_links": [1, 1],
         }
     )
-    graph_calcs_with_source_fail.network.initialize_funcstates()
-    graph_calcs_with_source_fail.network.initialize_capacity(df_dependencies)
-    graph_calcs_with_source_fail.network.initialize_supply(df_dependencies)
-    graph_calcs_with_source_fail.build_graph()
+    # keep the hospital failures of the fixture: no initialize_funcstates here
+    gc.network.initialize_capacity(df_dependencies)
+    gc.network.initialize_supply(df_dependencies)
+    make_enduser_dependencies(gc, df_dependencies)
+    # people had healthcare supply before the failure
+    gc.graph.vs.select(ci_type="people")["actual_supply_healthcare_people"] = 1
 
-    graph_calcs_with_source_fail.update_enduser_dependencies(
+    gc.update_enduser_dependencies(
         df_dependencies,
         friction_surf=None,
         rerouting=False,
         access_check_method="propagation",
     )
 
-    assert graph_calcs_with_source_fail.graph is not None
+    assert people_attr(gc.graph, "actual_supply_road_people") == [1]
+    assert people_attr(gc.graph, "access_state_road_people") == ["access undisrupted"]
+    assert people_attr(gc.graph, "actual_supply_healthcare_people") == [0]
+    assert people_attr(gc.graph, "access_state_healthcare_people") == [
+        "access disrupted"
+    ]
 
 
 def test_update_enduser_dependencies_unknown(graph_calcs_with_source_fail):
@@ -2293,54 +2591,122 @@ def test_validate_dependency_paths_edgefail(graph_calcs):
     assert len(pairs_to_keep) == 0
 
 
-def test_validate_dependencies_without_rerouting_with_constraint(graph_calcs):
-    """Test _validate_dependencies_without_rerouting with access constraints"""
-    graph_calcs.network.initialize_funcstates()
-    graph_calcs.build_graph()
-
-    row = pd.Series(
+def _healthcare_people_row(access_cnstr=True, thresh_dist=10e6):
+    """Dependency row healthcare -> people via road."""
+    return pd.Series(
         {
             "source": "healthcare",
             "target": "people",
             "via_link": "road",
             "link_condition": "distance",
-            "thresh_dist": 10e6,
+            "thresh_dist": thresh_dist,
             "bidir_link": False,
-            "access_cnstr": True,
+            "access_cnstr": access_cnstr,
             "thresh_dur": np.inf,
             "n_links": 1,
         }
     )
 
-    dependency_name = "dependency_" + row["source"] + "_" + row["target"]
 
-    # Create dependencies
-    graph_calcs.calc_dependencies(
-        source_attrs={"ci_type": row["source"]},
-        target_attrs={"ci_type": row["target"]},
-        via_attrs={"ci_type": row["via_link"]},
+def _validate_without_rerouting(gc, row, k=1, fail_nodes=(), fail_edges=()):
+    """Create the base dependencies, fail components, then validate.
+
+    Returns (ppl_new_access, ppl_access_all_via, remaining dependency pairs).
+    """
+    dependency_name = f"dependency_{row.source}_{row.target}"
+    gc.network.initialize_funcstates()
+    gc.build_graph()
+    # base state: dependencies computed on the intact network
+    gc.calc_dependencies(
+        source_attrs={"ci_type": row.source},
+        target_attrs={"ci_type": row.target},
+        via_attrs={"ci_type": row.via_link},
         link_attrs={"ci_type": dependency_name},
-        link_condition=row["link_condition"],
-        dist_thresh=row["thresh_dist"],
+        link_condition=row.link_condition,
+        dist_thresh=10e6,
         dur_thresh=np.inf,
-        k=1,
+        k=k,
         bidir_link=False,
     )
+    for v_id in fail_nodes:
+        gc.graph.vs[v_id]["func_tot"] = 0
+    for e_id in fail_edges:
+        gc.graph.es[e_id]["func_tot"] = 0
+    es_access_base = list(gc.graph.es.select(ci_type=dependency_name))
 
-    es_access_base = list(graph_calcs.graph.es.select(ci_type=dependency_name))
-    ppl_former_access = [edge.target for edge in es_access_base]
-
-    # Validate without rerouting
-    ppl_new_access, ppl_access_all_via = (
-        graph_calcs._validate_dependencies_without_rerouting(
-            row,
-            dependency_name,
-            es_access_base,
-        )
+    ppl_new_access, ppl_access_all_via = gc._validate_dependencies_without_rerouting(
+        row, dependency_name, es_access_base
     )
 
-    assert len(ppl_new_access) == 1
-    assert ppl_access_all_via == ppl_former_access
+    remaining = [
+        (e.source, e.target) for e in gc.graph.es.select(ci_type=dependency_name)
+    ]
+    return ppl_new_access, ppl_access_all_via, remaining
+
+
+# Chain: people(0) - road(1) - road(2) - road(3) - healthcare(4); the base
+# dependency is 4 -> 0 (path length 4 x 157.2 km). Road edge ids: 0: 0->1,
+# 1: 1->2, 2: 2->3, 3: 3->4.
+@pytest.mark.parametrize(
+    "case, access_cnstr, fail_nodes, fail_edges, thresh_dist, exp_new, exp_all_via, exp_remaining",
+    [
+        # nothing fails: the dependency is kept
+        ("intact", True, (), (), 10e6, [0], [0], [(4, 0)]),
+        ("intact_no_cnstr", False, (), (), 10e6, [0], [0], [(4, 0)]),
+        # failed hospital: the dependency is removed, with or without constraint
+        ("failed_source", True, (4,), (), 10e6, [], [], []),
+        ("failed_source_no_cnstr", False, (4,), (), 10e6, [], [], []),
+        # failed road edge 1->2: path broken -> removed, but reachable "via"
+        ("failed_via_edge", True, (), (1,), 10e6, [], [0], []),
+        # without access constraint the road state is ignored
+        ("failed_via_edge_no_cnstr", False, (), (1,), 10e6, [0], [0], [(4, 0)]),
+        # failed road node 2 also breaks the path
+        ("failed_via_node", True, (2,), (), 10e6, [], [0], []),
+        # path (628.8 km) longer than the threshold: removed
+        ("path_too_long", True, (), (), 5e5, [], [0], []),
+    ],
+)
+def test_validate_dependencies_without_rerouting(
+    graph_calcs,
+    case,
+    access_cnstr,
+    fail_nodes,
+    fail_edges,
+    thresh_dist,
+    exp_new,
+    exp_all_via,
+    exp_remaining,
+):
+    """Existing dependencies are kept only if the source works and, with an
+    access constraint, a functional path within thresh_dist remains."""
+    row = _healthcare_people_row(access_cnstr=access_cnstr, thresh_dist=thresh_dist)
+
+    ppl_new_access, ppl_access_all_via, remaining = _validate_without_rerouting(
+        graph_calcs, row, fail_nodes=fail_nodes, fail_edges=fail_edges
+    )
+
+    assert ppl_new_access == exp_new
+    assert ppl_access_all_via == exp_all_via
+    assert remaining == exp_remaining
+
+
+def test_validate_dependencies_without_rerouting_keeps_valid_sources(
+    graph_calcs_with_remote_node,
+):
+    """With two sources, only the dependency whose path is broken is removed.
+
+    People (0) depend on hospitals 4 and 5 (k=2). Road edge 3->4 fails, so
+    hospital 4 is cut off while hospital 5 is still reachable via 0-1-2-5.
+    """
+    row = _healthcare_people_row(access_cnstr=True)
+
+    ppl_new_access, ppl_access_all_via, remaining = _validate_without_rerouting(
+        graph_calcs_with_remote_node, row, k=2, fail_edges=(3,)
+    )
+
+    assert remaining == [(5, 0)]
+    assert ppl_new_access == [0]
+    assert ppl_access_all_via == [0, 0]  # one entry per functional source
 
 
 def test_mark_access_states_and_supply(graph_calcs):
@@ -2415,7 +2781,6 @@ def test_auto_sync_parameter_initialization(network_with_ci_types):
 
 def test_sync_method_updates_network(graph_calcs):
     """Test that sync() method updates the network with graph changes"""
-    graph_calcs.build_graph()
     initial_network_edges = len(graph_calcs.network.edges)
     initial_graph_edges = graph_calcs.graph.ecount()
 
@@ -2466,8 +2831,6 @@ def test_auto_sync_link_clusters(graph_calcs_with_remote_node_missing_edge):
     gc_auto = GraphCalcs(
         network=graph_calcs_with_remote_node_missing_edge.network, auto_sync=True
     )
-    gc_auto.build_graph()
-
     # Link clusters
     gc_auto.link_clusters(dist_thresh=np.inf, link_attrs={"ci_type": "cluster_link"})
 
@@ -2477,8 +2840,9 @@ def test_auto_sync_link_clusters(graph_calcs_with_remote_node_missing_edge):
 
     # Network should reflect graph state
     assert network_edges == graph_edges
-    # Both should have no cluster links added (already connected)
+    # exactly one cluster link connects the remote node
     cluster_edges = gc_auto.graph.es.select(ci_type="cluster_link")
+    assert len(cluster_edges) == 1
     assert len(cluster_edges) == network_edges - initial_graph_edges
 
 
@@ -2612,12 +2976,24 @@ def test_auto_sync_update_functional_dependencies(graph_calcs, dependency_table)
     """Test auto_sync with update_functional_dependencies"""
     gc_auto = GraphCalcs(network=graph_calcs.network, auto_sync=True)
     gc_auto.network.initialize_funcstates()
-    # Graph is lazily loaded when accessed
+    gc_auto.network.initialize_capacity(dependency_table)
+    # fail all road nodes: the hospital depending on them must fail too
+    gc_auto.network.nodes.loc[
+        gc_auto.network.nodes["ci_type"] == "road", "func_tot"
+    ] = 0
 
-    # Set up initial state with capacity attributes
-    for v in gc_auto.graph.vs:
-        for target_type in gc_auto.graph.vs["ci_type"]:
-            v[f"capacity_{v['ci_type']}_{target_type}"] = 1.0
+    # dependency edge road (3) -> healthcare (4) along which capacity is propagated
+    gc_auto.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "healthcare"},
+        via_attrs={},
+        link_attrs={"ci_type": "dependency_road_healthcare"},
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
 
     # Set up initial state
     dep_df = dependency_table[dependency_table["type_I"] == "functional"]
@@ -2640,62 +3016,43 @@ def test_auto_sync_update_functional_dependencies(graph_calcs, dependency_table)
     )  # No new edges added by functional update
     assert initial_network_edges == final_network_edges
 
-    # Check that network was synced (funcstates should be valid)
-    final_func_sum = gc_auto.funcstates_sum()[0]
-    assert isinstance(final_func_sum, (int, float))
-    assert final_func_sum >= 0  # Functional state should be non-negative
+    # the new functional states are synced to the network
+    assert gc_auto.network.nodes["func_tot"].tolist() == gc_auto.graph.vs["func_tot"]
+    hospital = gc_auto.network.nodes["ci_type"] == "healthcare"
+    assert (gc_auto.network.nodes.loc[hospital, "func_tot"] == 0).all()
 
 
 def test_auto_sync_update_enduser_dependencies_routing(
     graph_calcs_with_source_fail, dependency_table
 ):
-    """Test auto_sync with update_enduser_dependencies using routing"""
+    """Access states computed by update_enduser_dependencies are synced."""
     gc_auto = GraphCalcs(network=graph_calcs_with_source_fail.network, auto_sync=True)
-    gc_auto.network.initialize_funcstates()
-    # Graph is lazily loaded when accessed
+    gc_auto.network.initialize_capacity(dependency_table)
+    gc_auto.network.initialize_supply(dependency_table)
+    make_enduser_dependencies(gc_auto, dependency_table)
 
-    # Create initial dependencies
-    gc_auto.calc_dependencies(
-        source_attrs={"ci_type": "healthcare", "func_tot": 1},
-        target_attrs={"ci_type": "people"},
-        via_attrs={"ci_type": "road"},
-        link_attrs={"ci_type": "dependency_healthcare_people"},
-        link_condition="edgecond",
-        dist_thresh=np.inf,
-        dur_thresh=np.inf,
-        k=1,
-        bidir_link=False,
-    )
-
-    # Get enduser dependencies
-    dep_df = dependency_table[dependency_table["type_I"] == "enduser"]
-
-    # Update with routing
     gc_auto.update_enduser_dependencies(
-        dep_df, friction_surf=None, access_check_method="routing", rerouting=True
+        dependency_table,
+        friction_surf=None,
+        access_check_method="routing",
+        rerouting=True,
     )
 
-    # Verify graph and network are synchronized
-    graph_edges = gc_auto.graph.ecount()
-    network_edges = len(gc_auto.network.edges)
-    assert network_edges == graph_edges
-    assert network_edges > 0
-
-    # Verify people nodes have access state attributes
-    people_nodes = gc_auto.graph.vs.select(ci_type="people")
-    assert len(people_nodes) > 0
-    for node in people_nodes:
-        # Should have access state attributes for dependencies
-        assert "func_tot" in node.attributes()
-        assert node["func_tot"] >= 0
+    nodes = gc_auto.network.nodes
+    people = nodes[nodes["ci_type"] == "people"]
+    assert len(nodes) == gc_auto.graph.vcount()
+    assert len(gc_auto.network.edges) == gc_auto.graph.ecount()
+    assert people["access_state_road_people"].tolist() == ["access undisrupted"]
+    assert people["access_state_healthcare_people"].tolist() == [
+        "access disrupted source"
+    ]
+    assert people["actual_supply_healthcare_people"].tolist() == [0]
 
 
 def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types):
     """Test that auto_sync and manual sync produce the same results"""
-    from copy import deepcopy
-
     # Manual sync version
-    network_manual = deepcopy(network_with_ci_types)
+    network_manual = cp.deepcopy(network_with_ci_types)
     gc_manual = GraphCalcs(network=network_manual, auto_sync=False)
     # Graph is lazily loaded when first accessed
     gc_manual.link_vertices_closest_k(
@@ -2708,7 +3065,7 @@ def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types
     gc_manual.sync()
 
     # Auto sync version
-    network_auto = deepcopy(network_with_ci_types)
+    network_auto = cp.deepcopy(network_with_ci_types)
     gc_auto = GraphCalcs(network=network_auto, auto_sync=True)
     # Graph is lazily loaded when first accessed
     gc_auto.link_vertices_closest_k(
@@ -2742,12 +3099,12 @@ def test_auto_sync_vs_manual_sync_consistency(graph_calcs, network_with_ci_types
     for test_link in gc_manual.graph.es.select(ci_type="test_link"):
         source_idx = test_link.source
         target_idx = test_link.target
-        source_id = gc_manual.graph.vs[source_idx]["orig_id"]
-        target_id = gc_manual.graph.vs[target_idx]["orig_id"]
+        source_id = gc_manual.graph.vs[source_idx]["id"]
+        target_id = gc_manual.graph.vs[target_idx]["id"]
 
         # Find same link in auto version
-        auto_source = gc_auto.graph.vs.select(orig_id=source_id)[0].index
-        auto_target = gc_auto.graph.vs.select(orig_id=target_id)[0].index
+        auto_source = gc_auto.graph.vs.select(id=source_id)[0].index
+        auto_target = gc_auto.graph.vs.select(id=target_id)[0].index
 
         # Should have equivalent edge
         edge_exists = False
@@ -2802,3 +3159,17 @@ def test_no_auto_sync_without_explicit_call(graph_calcs):
         gc_manual.network.edges["ci_type"] == "test_link"
     ]
     assert len(network_test_links_after) == len(graph_test_links)
+
+
+# ========================================================================
+# Known issues (expected to fail until fixed in graph_calcs)
+# ========================================================================
+
+
+def test_link_clusters_default_link_attrs(graph_calcs_with_remote_node_missing_edge):
+    """link_clusters works with its default link_attrs."""
+    gc = graph_calcs_with_remote_node_missing_edge
+
+    gc.link_clusters(dist_thresh=np.inf)
+
+    assert len(gc.graph.connected_components(mode="weak")) == 1

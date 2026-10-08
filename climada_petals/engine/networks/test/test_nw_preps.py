@@ -28,8 +28,7 @@ from shapely.geometry import Point, LineString, MultiLineString
 
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks import nw_preps
-from climada_petals.engine.networks.test.fixtures_test_networks import *  # noqa: F401,F403
-
+from climada_petals.engine.networks.test.fixtures_test_networks import *
 
 # ========================================================================
 # Tests: line_endpoints
@@ -264,7 +263,9 @@ class TestEnsureEdgeIdColumn:
         result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
 
         assert id_col == "osm_id"
-        np.testing.assert_array_equal(result_edges["osm_id"].values, [10001, 10002, 10003])
+        np.testing.assert_array_equal(
+            result_edges["osm_id"].values, [10001, 10002, 10003]
+        )
 
     def test_creates_temporary_column_when_missing(self):
         """Creates __edge_uid temporary column when no id column exists."""
@@ -627,12 +628,8 @@ class TestEndpoints:
         edges["ci_type"] = "road"
         network = Network(edges=edges, nodes=simple_network.nodes.copy())
 
-        assert list(nw_preps.get_endpoints(network, attrs=None).columns) == [
-            "geometry"
-        ]
-        assert list(nw_preps.get_endpoints(network, attrs=()).columns) == [
-            "geometry"
-        ]
+        assert list(nw_preps.get_endpoints(network, attrs=None).columns) == ["geometry"]
+        assert list(nw_preps.get_endpoints(network, attrs=()).columns) == ["geometry"]
 
     def test_get_endpoints_multilinestring_inherits_ci_type(self):
         """Endpoints of each part of a MultiLineString inherit the edge ci_type."""
@@ -1248,26 +1245,96 @@ class TestOrderedNetwork:
         assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
         assert result.nodes.columns[0] == "id"
 
-    def test_with_attrs(self, simple_network):
-        """Additional attributes are added to edges and nodes."""
-        attrs = {"test_attr": 42, "label": "abc"}
-        result = nw_preps.ordered_network(simple_network, attrs=attrs)
+    def test_keeps_columns_and_values(self, simple_network):
+        """Only the column order changes, not the columns or their values."""
+        result = nw_preps.ordered_network(simple_network)
 
-        assert "test_attr" in result.edges.columns
-        assert "test_attr" in result.nodes.columns
-        assert "label" in result.edges.columns
-        assert "label" in result.nodes.columns
-        assert (result.edges["test_attr"] == 42).all()
-        assert (result.nodes["test_attr"] == 42).all()
-        assert (result.edges["label"] == "abc").all()
-        assert (result.nodes["label"] == "abc").all()
+        assert set(result.edges.columns) == set(simple_network.edges.columns)
+        assert set(result.nodes.columns) == set(simple_network.nodes.columns)
+        pd.testing.assert_frame_equal(
+            result.edges[simple_network.edges.columns], simple_network.edges
+        )
+        pd.testing.assert_frame_equal(
+            result.nodes[simple_network.nodes.columns], simple_network.nodes
+        )
 
     def test_does_not_modify_original(self, simple_network):
         """Original network is not modified."""
         orig_edge_cols = list(simple_network.edges.columns)
-        _ = nw_preps.ordered_network(simple_network, attrs={"new": 1})
+        orig_node_cols = list(simple_network.nodes.columns)
+        _ = nw_preps.ordered_network(simple_network)
 
         assert list(simple_network.edges.columns) == orig_edge_cols
+        assert list(simple_network.nodes.columns) == orig_node_cols
+
+
+# ========================================================================
+# Tests: add_attributes
+# ========================================================================
+
+
+class TestAddAttributes:
+    def test_on_both(self, simple_network):
+        """By default, attributes are added to edges and nodes."""
+        attrs = {"test_attr": 42, "label": "abc"}
+        result = nw_preps.add_attributes(simple_network, attrs)
+
+        for gdf in (result.edges, result.nodes):
+            assert (gdf["test_attr"] == 42).all()
+            assert (gdf["label"] == "abc").all()
+
+    def test_on_edges(self, simple_network):
+        """on='edges' only adds attributes to edges."""
+        result = nw_preps.add_attributes(
+            simple_network, {"ci_type": "road"}, on="edges"
+        )
+
+        assert (result.edges["ci_type"] == "road").all()
+        assert "ci_type" not in result.nodes.columns
+
+    def test_on_nodes(self, simple_network):
+        """on='nodes' only adds attributes to nodes."""
+        result = nw_preps.add_attributes(
+            simple_network, {"ci_type": "road"}, on="nodes"
+        )
+
+        assert (result.nodes["ci_type"] == "road").all()
+        assert "ci_type" not in result.edges.columns
+
+    def test_overwrites_existing_attribute(self, simple_network):
+        """An existing column is overwritten with the new value."""
+        simple_network.nodes["ci_type"] = "people"
+        result = nw_preps.add_attributes(simple_network, {"ci_type": "road"})
+
+        assert (result.nodes["ci_type"] == "road").all()
+        assert (result.edges["ci_type"] == "road").all()
+
+    def test_empty_attrs(self, simple_network):
+        """An empty dict leaves the network unchanged."""
+        orig_edges = simple_network.edges.copy()
+        orig_nodes = simple_network.nodes.copy()
+        result = nw_preps.add_attributes(simple_network, {})
+
+        pd.testing.assert_frame_equal(result.edges, orig_edges)
+        pd.testing.assert_frame_equal(result.nodes, orig_nodes)
+
+    def test_modifies_in_place(self, simple_network):
+        """add_attributes modifies and returns the input network."""
+        result = nw_preps.add_attributes(simple_network, {"ci_type": "road"})
+
+        assert result is simple_network
+        assert (simple_network.edges["ci_type"] == "road").all()
+
+    def test_after_ordered_network_keeps_order(self, simple_network):
+        """ordered_network followed by add_attributes keeps igraph column order."""
+        result = nw_preps.add_attributes(
+            nw_preps.ordered_network(simple_network), {"ci_type": "road"}
+        )
+
+        assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
+        assert result.nodes.columns[0] == "id"
+        assert result.edges.columns[-1] == "ci_type"
+        assert result.nodes.columns[-1] == "ci_type"
 
 
 # ========================================================================
