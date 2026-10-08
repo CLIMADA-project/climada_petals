@@ -43,15 +43,16 @@ CDS_DOWNLOAD_DIR = Path(SYSTEM_DIR, "cds-download")
 
 DEFAULT_REQUESTS = {
     "historical": {
-        "variable": ["river_discharge_in_the_last_24_hours"],
+        "variable": ["average_river_discharge_in_the_last_24_hours"],
         "product_type": ["consolidated"],
         "system_version": ["version_4_0"],
         "hydrological_model": ["lisflood"],
         "data_format": "grib2",
         "download_format": "unarchived",
-        "hyear": ["1979"],
-        "hmonth": [f"{month:02}" for month in range(1, 13)],
-        "hday": [f"{day:02}" for day in range(1, 32)],
+        "timespan": "time_mean",
+        "year": ["1979"],
+        "month": [f"{month:02}" for month in range(1, 13)],
+        "day": [f"{day:02}" for day in range(1, 32)],
     },
     "forecast": {
         "variable": ["river_discharge_in_the_last_24_hours"],
