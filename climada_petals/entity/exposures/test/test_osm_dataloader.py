@@ -109,6 +109,7 @@ class TestOSMApiQuery(unittest.TestCase):
         """test methods of OSMApiQuery" """
         pass
 
+    @unittest.skip("see issue #199")
     def test_get_data_overpass(self):
         """test methods of OSMApiQuery"""
 

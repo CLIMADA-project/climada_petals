@@ -28,8 +28,7 @@ from shapely.geometry import Point, LineString, MultiLineString
 
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks import nw_preps
-from climada_petals.engine.networks.test.fixtures_test_networks import *  # noqa: F401,F403
-
+from climada_petals.engine.networks.test.fixtures_test_networks import *
 
 # ========================================================================
 # Tests: line_endpoints
@@ -264,7 +263,9 @@ class TestEnsureEdgeIdColumn:
         result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
 
         assert id_col == "osm_id"
-        np.testing.assert_array_equal(result_edges["osm_id"].values, [10001, 10002, 10003])
+        np.testing.assert_array_equal(
+            result_edges["osm_id"].values, [10001, 10002, 10003]
+        )
 
     def test_creates_temporary_column_when_missing(self):
         """Creates __edge_uid temporary column when no id column exists."""
@@ -582,6 +583,126 @@ class TestEndpoints:
         assert result.edges.crs.to_string() == "EPSG:32632"
         assert result.nodes.crs.to_string() == "EPSG:32632"
         assert len(result.nodes) == 3
+
+    def test_get_endpoints_inherits_ci_type(self, simple_network):
+        """Endpoints inherit the ci_type of the edge they belong to."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = ["road", "road", "power_line", "power_line"]
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert "ci_type" in endpoints.columns
+        assert endpoints["ci_type"].tolist() == [
+            "road",
+            "road",
+            "road",
+            "road",
+            "power_line",
+            "power_line",
+            "power_line",
+            "power_line",
+        ]
+
+    def test_get_endpoints_only_propagates_requested_attrs(self, simple_network):
+        """Edge-only attributes (distance, ids, topology) are not propagated."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert set(endpoints.columns) == {"geometry", "ci_type"}
+
+    def test_get_endpoints_without_ci_type_column(self, simple_network):
+        """No attribute column is added if the edges do not have it."""
+        assert "ci_type" not in simple_network.edges.columns
+
+        endpoints = nw_preps.get_endpoints(simple_network)
+
+        assert list(endpoints.columns) == ["geometry"]
+
+    def test_get_endpoints_no_attrs(self, simple_network):
+        """attrs=None or empty disables attribute propagation."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        assert list(nw_preps.get_endpoints(network, attrs=None).columns) == ["geometry"]
+        assert list(nw_preps.get_endpoints(network, attrs=()).columns) == ["geometry"]
+
+    def test_get_endpoints_multilinestring_inherits_ci_type(self):
+        """Endpoints of each part of a MultiLineString inherit the edge ci_type."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road"],
+                "geometry": [
+                    MultiLineString([[(0, 0), (1, 0)], [(2, 0), (3, 0)]]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges)
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert len(endpoints) == 4
+        assert (endpoints["ci_type"] == "road").all()
+
+    def test_add_endpoints_nodes_inherit_ci_type(self, simple_network):
+        """Nodes created from edge endpoints carry the edge ci_type."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        network = Network(
+            edges=edges,
+            nodes=gpd.GeoDataFrame(geometry=[], crs="EPSG:4326"),
+        )
+
+        result = nw_preps.add_endpoints(network)
+
+        assert len(result.nodes) == 5
+        assert result.nodes["ci_type"].notna().all()
+        assert (result.nodes["ci_type"] == "road").all()
+
+    def test_add_endpoints_keeps_existing_node_attrs(self, simple_network):
+        """An existing node at an endpoint keeps its own ci_type."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        nodes = gpd.GeoDataFrame(
+            {"ci_type": ["healthcare"], "geometry": [Point(4, 4)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        result = nw_preps.add_endpoints(network)
+
+        assert len(result.nodes) == 5
+        ci_by_coords = {
+            (shapely.get_x(geom), shapely.get_y(geom)): ci
+            for geom, ci in zip(result.nodes.geometry, result.nodes["ci_type"])
+        }
+        assert ci_by_coords[(4.0, 4.0)] == "healthcare"
+        assert all(
+            ci == "road" for coords, ci in ci_by_coords.items() if coords != (4.0, 4.0)
+        )
+
+    def test_add_endpoints_custom_inherit_attrs(self, simple_network):
+        """inherit_attrs controls which edge columns are copied to new nodes."""
+        edges = simple_network.edges.copy()
+        edges["ci_type"] = "road"
+        edges["operator"] = "utility_a"
+        network = Network(
+            edges=edges,
+            nodes=gpd.GeoDataFrame(geometry=[], crs="EPSG:4326"),
+        )
+
+        result = nw_preps.add_endpoints(network, inherit_attrs=("operator",))
+
+        assert (result.nodes["operator"] == "utility_a").all()
+        assert "ci_type" not in result.nodes.columns
+        assert "distance" not in result.nodes.columns
 
 
 # ========================================================================
@@ -1124,26 +1245,96 @@ class TestOrderedNetwork:
         assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
         assert result.nodes.columns[0] == "id"
 
-    def test_with_attrs(self, simple_network):
-        """Additional attributes are added to edges and nodes."""
-        attrs = {"test_attr": 42, "label": "abc"}
-        result = nw_preps.ordered_network(simple_network, attrs=attrs)
+    def test_keeps_columns_and_values(self, simple_network):
+        """Only the column order changes, not the columns or their values."""
+        result = nw_preps.ordered_network(simple_network)
 
-        assert "test_attr" in result.edges.columns
-        assert "test_attr" in result.nodes.columns
-        assert "label" in result.edges.columns
-        assert "label" in result.nodes.columns
-        assert (result.edges["test_attr"] == 42).all()
-        assert (result.nodes["test_attr"] == 42).all()
-        assert (result.edges["label"] == "abc").all()
-        assert (result.nodes["label"] == "abc").all()
+        assert set(result.edges.columns) == set(simple_network.edges.columns)
+        assert set(result.nodes.columns) == set(simple_network.nodes.columns)
+        pd.testing.assert_frame_equal(
+            result.edges[simple_network.edges.columns], simple_network.edges
+        )
+        pd.testing.assert_frame_equal(
+            result.nodes[simple_network.nodes.columns], simple_network.nodes
+        )
 
     def test_does_not_modify_original(self, simple_network):
         """Original network is not modified."""
         orig_edge_cols = list(simple_network.edges.columns)
-        _ = nw_preps.ordered_network(simple_network, attrs={"new": 1})
+        orig_node_cols = list(simple_network.nodes.columns)
+        _ = nw_preps.ordered_network(simple_network)
 
         assert list(simple_network.edges.columns) == orig_edge_cols
+        assert list(simple_network.nodes.columns) == orig_node_cols
+
+
+# ========================================================================
+# Tests: add_attributes
+# ========================================================================
+
+
+class TestAddAttributes:
+    def test_on_both(self, simple_network):
+        """By default, attributes are added to edges and nodes."""
+        attrs = {"test_attr": 42, "label": "abc"}
+        result = nw_preps.add_attributes(simple_network, attrs)
+
+        for gdf in (result.edges, result.nodes):
+            assert (gdf["test_attr"] == 42).all()
+            assert (gdf["label"] == "abc").all()
+
+    def test_on_edges(self, simple_network):
+        """on='edges' only adds attributes to edges."""
+        result = nw_preps.add_attributes(
+            simple_network, {"ci_type": "road"}, on="edges"
+        )
+
+        assert (result.edges["ci_type"] == "road").all()
+        assert "ci_type" not in result.nodes.columns
+
+    def test_on_nodes(self, simple_network):
+        """on='nodes' only adds attributes to nodes."""
+        result = nw_preps.add_attributes(
+            simple_network, {"ci_type": "road"}, on="nodes"
+        )
+
+        assert (result.nodes["ci_type"] == "road").all()
+        assert "ci_type" not in result.edges.columns
+
+    def test_overwrites_existing_attribute(self, simple_network):
+        """An existing column is overwritten with the new value."""
+        simple_network.nodes["ci_type"] = "people"
+        result = nw_preps.add_attributes(simple_network, {"ci_type": "road"})
+
+        assert (result.nodes["ci_type"] == "road").all()
+        assert (result.edges["ci_type"] == "road").all()
+
+    def test_empty_attrs(self, simple_network):
+        """An empty dict leaves the network unchanged."""
+        orig_edges = simple_network.edges.copy()
+        orig_nodes = simple_network.nodes.copy()
+        result = nw_preps.add_attributes(simple_network, {})
+
+        pd.testing.assert_frame_equal(result.edges, orig_edges)
+        pd.testing.assert_frame_equal(result.nodes, orig_nodes)
+
+    def test_modifies_in_place(self, simple_network):
+        """add_attributes modifies and returns the input network."""
+        result = nw_preps.add_attributes(simple_network, {"ci_type": "road"})
+
+        assert result is simple_network
+        assert (simple_network.edges["ci_type"] == "road").all()
+
+    def test_after_ordered_network_keeps_order(self, simple_network):
+        """ordered_network followed by add_attributes keeps igraph column order."""
+        result = nw_preps.add_attributes(
+            nw_preps.ordered_network(simple_network), {"ci_type": "road"}
+        )
+
+        assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
+        assert result.nodes.columns[0] == "id"
+        assert result.edges.columns[-1] == "ci_type"
+        assert result.nodes.columns[-1] == "ci_type"
 
 
 # ========================================================================
@@ -1181,6 +1372,19 @@ class TestSimplifiedNetwork:
         ]
         assert (0.0, 0.0) in all_node_coords
         assert (4.0, 4.0) in all_node_coords
+
+    def test_nodes_inherit_ci_type(self, edges_gdf):
+        """Nodes created by simplifying a line network keep the edge ci_type."""
+        edges = edges_gdf.copy()
+        edges["ci_type"] = "road"
+        network = Network(edges=edges)  # line network without nodes
+
+        result = nw_preps.simplified_network(network)
+
+        assert len(result.nodes) >= 2
+        assert result.nodes["ci_type"].notna().all()
+        assert (result.nodes["ci_type"] == "road").all()
+        assert "distance" not in result.nodes.columns
 
 
 # ========================================================================

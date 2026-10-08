@@ -185,47 +185,73 @@ def nearest_node(point, nodes, sindex):
     return nearest(point, nodes, sindex)
 
 
-def get_endpoints(network):
+def get_endpoints(network, attrs=("ci_type",)):
     """Get nodes for each edge endpoint.
+
+    Each endpoint inherits the values of the edge attributes listed in
+    ``attrs`` from the edge it belongs to, so that nodes created from line
+    networks keep e.g. their infrastructure type. Only attributes that are
+    meaningful for points should be propagated (edge properties such as
+    distances, ids or topology columns are not).
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
+    attrs : list or tuple of str, optional
+        Edge columns whose values are copied onto the endpoints. Columns not
+        present in the edges are ignored. Default: ``("ci_type",)``.
 
     Returns
     -------
     gpd.GeoDataFrame
-        GeoDataFrame with point geometries at each edge endpoint.
+        GeoDataFrame with point geometries at each edge endpoint and the
+        inherited attribute columns.
     """
     endpoints = []
-    for edge in tqdm(
-        network.edges.itertuples(), desc="endpoints", total=len(network.edges)
+    edge_pos = []  # positional index of the edge each endpoint comes from
+    for pos, edge in enumerate(
+        tqdm(network.edges.itertuples(), desc="endpoints", total=len(network.edges))
     ):
         if edge.geometry is None:
             continue
         # 5 is MULTILINESTRING
         if shapely.get_type_id(edge.geometry) == 5:
-            for line in edge.geometry.geoms:
-                start, end = line_endpoints(line)
-                endpoints.append(start)
-                endpoints.append(end)
+            lines = edge.geometry.geoms
         else:
-            start, end = line_endpoints(edge.geometry)
-            endpoints.append(start)
-            endpoints.append(end)
+            lines = [edge.geometry]
+        for line in lines:
+            start, end = line_endpoints(line)
+            endpoints += [start, end]
+            edge_pos += [pos, pos]
 
     # create dataframe to match the nodes geometry column name
-    return gpd.GeoDataFrame(geometry=endpoints, crs=network.edges.crs)
+    gdf_endpoints = gpd.GeoDataFrame(geometry=endpoints, crs=network.edges.crs)
+
+    if attrs:
+        cols = [col for col in attrs if col in network.edges.columns]
+        for col in cols:
+            gdf_endpoints[col] = network.edges[col].iloc[edge_pos].to_numpy()
+
+    return gdf_endpoints
 
 
-def add_endpoints(network):
+def add_endpoints(network, inherit_attrs=("ci_type",)):
     """Add nodes at line endpoints.
+
+    New endpoint nodes inherit the attributes listed in ``inherit_attrs`` from
+    the edge they belong to. Where an endpoint coincides with an existing node,
+    the existing node (and its attributes) is kept. Where several edges with
+    different attribute values share an endpoint, the value of the first edge
+    is used.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
+    inherit_attrs : list or tuple of str, optional
+        Edge columns whose values are copied onto new endpoint nodes.
+        Default: ``("ci_type",)``.
 
     Returns
     -------
@@ -233,7 +259,7 @@ def add_endpoints(network):
         Network with endpoint nodes added.
     """
 
-    endpoints = get_endpoints(network)
+    endpoints = get_endpoints(network, attrs=inherit_attrs)
 
     nodes = network.nodes.copy()
     edges = network.edges.copy()
@@ -322,7 +348,9 @@ def _ensure_edge_id_column(edges):
         edge_id_col = "__edge_uid"
         edges[edge_id_col] = edges.index.to_numpy()
     elif edges[edge_id_col].isna().any():
-        edges[edge_id_col] = edges[edge_id_col].fillna(pd.Series(edges.index, index=edges.index))
+        edges[edge_id_col] = edges[edge_id_col].fillna(
+            pd.Series(edges.index, index=edges.index)
+        )
     return edges, edge_id_col
 
 
@@ -1080,6 +1108,10 @@ def simplified_network(network):
     duplicate geometries, resetting ids, adding distances, and merging
     MultiLineStrings.
 
+    Nodes created at edge endpoints inherit the ``ci_type`` of their edge
+    (see :func:`add_endpoints`). Set ``ci_type`` on the edges before calling
+    this function if the created nodes should carry it.
+
     Parameters
     ----------
     network : Network
@@ -1108,19 +1140,15 @@ def simplified_network(network):
     return network_simp
 
 
-def ordered_network(network, attrs={}):
+def ordered_network(network):
     """Return a column-ordered network for igraph graph generation.
 
-    Reorders node and edge columns to the format expected by igraph
-    and optionally adds additional attributes.
+    Reorders node and edge columns to the format expected by igraph.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
-    attrs : dict, optional
-        Additional attributes to add to both edges and nodes.
-        Default: {}.
 
     Returns
     -------
@@ -1132,7 +1160,31 @@ def ordered_network(network, attrs={}):
 
     network_ord.nodes = _vcols_to_graphorder(network_ord.nodes)
     network_ord.edges = _ecols_to_graphorder(network_ord.edges)
-    for key, value in attrs.items():
-        network_ord.edges[key] = value
-        network_ord.nodes[key] = value
     return network_ord
+
+
+def add_attributes(network, attrs, on="both"):
+    """
+    Add attributes to both edges and nodes of a network.
+
+    Parameters
+    ----------
+    network : Network
+        The network to add attributes to.
+    attrs : dict
+        A dictionary of attributes to add.
+    on : str, optional
+        The elements to add the attributes to. Can be "both", "edges", or "nodes".
+        Default is "both".
+
+    Returns
+    -------
+    Network
+        The network with the added attributes.
+    """
+    for key, value in attrs.items():
+        if on in ["both", "edges"]:
+            network.edges[key] = value
+        if on in ["both", "nodes"]:
+            network.nodes[key] = value
+    return network

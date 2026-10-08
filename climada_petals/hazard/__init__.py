@@ -25,3 +25,4 @@ from .tc_surge_bathtub import *
 from .wildfire import *
 from .river_flood import *
 from .coastal_flood import *
+from .earthquake import *

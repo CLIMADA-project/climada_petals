@@ -346,7 +346,7 @@ def download_glofas_discharge(
         open_kwargs.update(open_mfdataset_kw)
 
     # Squeeze all dimensions except time
-    arr = xr.open_mfdataset(files, **open_kwargs)["dis24"]#engine="cfgrib"
+    arr = xr.open_mfdataset(files, **open_kwargs)["dis24"]  # engine="cfgrib"
     dims = {dim for dim, size in arr.sizes.items() if size == 1} - {"time"}
     return arr.squeeze(dim=dims)
 
@@ -725,10 +725,8 @@ def flood_depth(
 
     # Clip infinite return periods
     return_period = return_period.clip(
-        min=1,
-        max=flood_maps["return_period"].max().astype(return_period.dtype),
-        keep_attrs=True,
-    )
+        min=1, max=flood_maps["return_period"].max(), keep_attrs=True
+    ).astype(np.float32)
 
     # All but 'longitude' and 'latitude' are core dimensions for this operation
     core_dims = list(return_period.dims)
