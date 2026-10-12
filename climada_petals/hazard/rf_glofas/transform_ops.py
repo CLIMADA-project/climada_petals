@@ -20,29 +20,47 @@ Transformations for dantro data pipeline
 """
 
 import logging
-import re
 from pathlib import Path
-from typing import Optional, Union, List, Mapping, Any, Iterable, Tuple, Callable
+from typing import (
+    Optional,
+    Union,
+    List,
+    Mapping,
+    Any,
+    Iterable,
+    Callable,
+    Sequence,
+    Literal,
+)
 from collections import deque
 from copy import deepcopy
 
+import rioxarray.rioxarray
 import xarray as xr
 import numpy as np
 import pandas as pd
 import geopandas as gpd
 from scipy.stats import gumbel_r
-import xesmf as xe
+from scipy.interpolate import griddata
 from numba import guvectorize
+import rioxarray
+from rioxarray._spatial_utils import _add_attrs_proj
 
 from climada.util.coordinates import get_country_geometries, country_to_iso
-from .cds_glofas_downloader import glofas_request, CDS_DOWNLOAD_DIR
+from .cds_glofas_downloader import (
+    glofas_request,
+    datetime_index_to_request,
+    CDS_DOWNLOAD_DIR,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 
 def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
     """Select a lon/lat slice from 'target' using coordinates of 'source'"""
-    return target.sel({c: slice(*source[c][[0, -1]]) for c in ["longitude", "latitude"]})
+    return target.sel(
+        {c: slice(*source[c][[0, -1]]) for c in ["longitude", "latitude"]}
+    )
 
 
 def rp_comp(
@@ -77,8 +95,10 @@ def rp_comp(
         The return period(s) for the input parameters
     """
     cdf = gumbel_r.cdf(sample, loc=loc, scale=scale)
-    rp_from_cdf = np.where(cdf >= 1.0, np.inf, 1.0 / np.fmax(1.0 - cdf, np.spacing(1)))
-    return np.fmin(rp_from_cdf, max_rp)
+    rp_from_cdf = np.where(
+        cdf >= 1.0, np.inf, 1.0 / np.maximum(1.0 - cdf, np.spacing(1.0))
+    )
+    return np.minimum(rp_from_cdf, max_rp)
 
 
 def reindex(
@@ -148,40 +168,6 @@ def reindex(
     return target
 
 
-def merge_flood_maps(flood_maps: Mapping[str, xr.DataArray]) -> xr.DataArray:
-    """Merge the flood maps GeoTIFFs into one NetCDF file
-
-    Adds a "zero" flood map (all zeros)
-
-    Parameters
-    ----------
-    flood_maps : dict(str, xarray.DataArray)
-        The mapping of GeoTIFF file paths to respective DataArray. Each flood map is
-        identified through the folder containing it. The folders are expected to follow
-        the naming scheme ``floodMapGL_rpXXXy``, where ``XXX`` indicates the return
-        period of the respective map.
-    """
-    expr = re.compile(r"floodMapGL_rp(\d+)y")
-    years = [int(expr.search(name).group(1)) for name in flood_maps]
-    idx = np.argsort(years)
-    darrs = list(flood_maps.values())
-    darrs = [
-        darrs[i].drop_vars("spatial_ref", errors="ignore").squeeze("band", drop=True)
-        for i in idx
-    ]
-
-    # Add zero flood map
-    # NOTE: Return period of 1 is the minimal value
-    da_null_flood = xr.full_like(darrs[0], np.nan)
-    darrs.insert(0, da_null_flood)
-
-    # Concatenate and rename
-    years = np.insert(np.array(years)[idx], 0, 1)
-    da_flood_maps = xr.concat(darrs, pd.Index(years, name="return_period"))
-    da_flood_maps = da_flood_maps.rename(x="longitude", y="latitude")
-    return da_flood_maps.rename("flood_depth")
-
-
 def fit_gumbel_r(
     input_data: xr.DataArray,
     time_dim: str = "year",
@@ -243,20 +229,14 @@ def fit_gumbel_r(
 
 def download_glofas_discharge(
     product: str,
-    date_from: str,
-    date_to: Optional[str],
+    dates: pd.DatetimeIndex,
     num_proc: int = 1,
-    download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
-    countries: Optional[Union[List[str], str]] = None,
-    preprocess: Optional[Callable] = None,
-    open_mfdataset_kw: Optional[Mapping[str, Any]] = None,
+    download_path: str | Path = CDS_DOWNLOAD_DIR,
+    countries: list[str] | str | None = None,
+    split_request: bool | str = True,
     **request_kwargs,
-) -> xr.DataArray:
-    """Download the GloFAS data and return the resulting dataset
-
-    Several parameters are passed directly to
-    :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`. See
-    this functions documentation for further information.
+) -> list[Path]:
+    """Download the GloFAS data and return the file paths of the stored data.
 
     Parameters
     ----------
@@ -264,11 +244,8 @@ def download_glofas_discharge(
         The string identifier of the product to download. See
         :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`
         for supported products.
-    date_from : str
-        Earliest date to download. Specification depends on the ``product`` chosen.
-    date_to : str or None
-        Latest date to download. If ``None``, only download the ``date_from``.
-        Specification depends on the ``product`` chosen.
+    dates : pd.DatetimeIndex
+        Dates to download data for.
     num_proc : int
         Number of parallel processes to use for downloading. Defaults to 1.
     download_path : str or pathlib.Path
@@ -278,18 +255,46 @@ def download_glofas_discharge(
     countries : str or list of str, optional
         Countries to download data for. Uses the maximum extension of all countries for
         selecting the latitude/longitude range of data to download.
-    preprocess : str, optional
-        String expression for preprocessing the data before merging it into one dataset.
-        Must be valid Python code. The downloaded data is passed as variable ``x``.
-    open_mfdataset_kw : dict, optional
-        Optional keyword arguments for the ``xarray.open_mfdataset`` function.
+    split_request : str or bool
+        How to split requests according to groupings of the ``dates``. This is either a
+        frequency string that will be inserted into a
+        `pandas.Grouper <https://pandas.pydata.org/docs/reference/api/pandas.Grouper.html#pandas.Grouper>`_
+        as ``freq`` parameter, or a boolean, in which case a split frequency of 1 day
+        (``freq="1D"``) is chosen for ``forecast`` products and 1 year (``freq="1YS"``)
+        is chosen for ``historical`` (or other) products.
     request_kwargs:
-        Keyword arguments for the Copernicus data store request.
+        Keyword arguments for the Copernicus data store request. See
+        :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`.
+
+    Returns
+    -------
+    list[Path]
+        The list of file paths to the downloaded files.
     """
     # Create the download path if it does not yet exist
     LOGGER.debug("Preparing download directory: %s", download_path)
     download_path = Path(download_path)  # Make sure it is a Path
     download_path.mkdir(parents=True, exist_ok=True)
+
+    # Parse input
+    if split_request is True:
+        split_request_freq = "1YS" if product == "historical" else "1D"
+    elif split_request is False:
+        split_request_freq = None
+    else:
+        split_request_freq = split_request
+
+    # Split requests according to dates
+    if split_request_freq is None:
+        requests = [datetime_index_to_request(dates, product)]
+    else:
+        requests = [
+            datetime_index_to_request(series.index, product)
+            for _, series in dates.to_series().groupby(
+                pd.Grouper(freq=split_request_freq, closed="left")
+            )
+            if not series.empty
+        ]
 
     # Determine area from 'countries'
     if countries is not None:
@@ -315,26 +320,117 @@ def download_glofas_discharge(
         request_kwargs["area"] = list(bounds)
 
     # Request the data
-    files = glofas_request(
+    return glofas_request(
         product=product,
-        date_from=date_from,
-        date_to=date_to,
         num_proc=num_proc,
         output_dir=download_path,
         request_kw=request_kwargs,
+        requests=requests,
     )
 
+
+def open_glofas_discharge(
+    files: Sequence[Path | str],
+    preprocess: Callable[[xr.DataArray], xr.DataArray] | None = None,
+    **open_mfdataset_kwargs,
+) -> xr.DataArray:
+    """Conveniently open GloFAS discharge data into a single xarray DataArray.
+
+    Parameters
+    ----------
+    files : Sequence of Path or str
+        The files to open.
+    preprocess : Callable, optional
+        A function taking the DataArray as argument and returning a transformed
+        DataArray.
+    open_mfdataset_kwargs
+        Optional keyword arguments for the ``xarray.open_mfdataset`` function.
+
+    Returns
+    -------
+    xr.DataArray
+        The discharge data opened as single data array.
+    """
     # Set arguments for 'open_mfdataset'
-    open_kwargs = dict(
-        chunks={}, combine="nested", concat_dim="time", preprocess=preprocess
-    )
-    if open_mfdataset_kw is not None:
-        open_kwargs.update(open_mfdataset_kw)
+    open_kwargs = {
+        "chunks": "auto",
+        "combine": "nested",
+        "concat_dim": "time",
+        "preprocess": preprocess,
+        "engine": "cfgrib",
+    } | open_mfdataset_kwargs
 
     # Squeeze all dimensions except time
     arr = xr.open_mfdataset(files, **open_kwargs)["dis24"]
     dims = {dim for dim, size in arr.sizes.items() if size == 1} - {"time"}
     return arr.squeeze(dim=dims)
+
+
+def get_glofas_discharge(
+    product: str,
+    dates: pd.DatetimeIndex,
+    num_proc: int = 1,
+    download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
+    countries: Optional[Union[List[str], str]] = None,
+    split_request: bool | str = True,
+    preprocess: Callable[[xr.DataArray], xr.DataArray] | None = None,
+    open_mfdataset_kws: Mapping[str, Any] | None = None,
+    **request_kwargs,
+) -> xr.DataArray:
+    """Download the GloFAS data and return the data as xarray DataArray.
+
+    Parameters
+    ----------
+    product : str
+        The string identifier of the product to download. See
+        :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`
+        for supported products.
+    dates : pd.DatetimeIndex
+        Dates to download data for.
+    num_proc : int
+        Number of parallel processes to use for downloading. Defaults to 1.
+    download_path : str or pathlib.Path
+        Directory to store the downloaded data. The directory (and all required parent
+        directories!) will be created if it does not yet exist. Defaults to
+        ``~/climada/data/glofas-discharge/``.
+    countries : str or list of str, optional
+        Countries to download data for. Uses the maximum extension of all countries for
+        selecting the latitude/longitude range of data to download.
+    split_request : str or bool
+        How to split requests according to groupings of the ``dates``. This is either a
+        frequency string that will be inserted into a
+        `pandas.Grouper <https://pandas.pydata.org/docs/reference/api/pandas.Grouper.html#pandas.Grouper>`_
+        as ``freq`` parameter, or a boolean, in which case a split frequency of 1 day
+        (``freq="1D"``) is chosen for ``forecast`` products and 1 year (``freq="1YS"``)
+        is chosen for ``historical`` (or other) products.
+    preprocess : Callable
+        A function taking the DataArray as argument and returning a transformed
+        DataArray.
+    open_mfdataset_kws
+        Additional keyword arguments to ``xarray.open_mfdataset``.
+    request_kwargs
+        Keyword arguments for the Copernicus data store request. See
+        :py:func:`climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request`.
+
+    Returns
+    -------
+    xr.DataArray
+        The downloaded discharge data opened as (squeezed) data array.
+    """
+    files = download_glofas_discharge(
+        product=product,
+        dates=dates,
+        num_proc=num_proc,
+        download_path=download_path,
+        countries=countries,
+        split_request=split_request,
+        **request_kwargs,
+    )
+    open_mfdataset_kws = open_mfdataset_kws or {}
+    return open_glofas_discharge(
+        files=files, preprocess=preprocess, **open_mfdataset_kws
+    )
+
 
 def max_from_isel(
     array: xr.DataArray, dim: str, selections: List[Union[Iterable, slice]]
@@ -348,7 +444,7 @@ def max_from_isel(
     data = [array.isel({dim: sel}) for sel in selections]
     return xr.concat(
         [da.max(dim=dim, skipna=True) for da in data],
-        dim=pd.Index(list(range(len(selections))), name="select")
+        dim=pd.Index(list(range(len(selections))), name="select"),
         # dim=xr.concat([da[dim].max() for da in data], dim=dim)
     )
 
@@ -380,7 +476,7 @@ def return_period(
 
     See Also
     --------
-    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp`
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp_comp`
     :py:func:`climada_petals.hazard.rf_glofas.transform_ops.return_period_resample`
     """
     reindex_kwargs = dict(tolerance=1e-3, fill_value=-1, assert_no_fill_value=True)
@@ -447,7 +543,7 @@ def return_period_resample(
 
     See Also
     --------
-    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp`
+    :py:func:`climada_petals.hazard.rf_glofas.transform_ops.rp_comp`
     :py:func:`climada_petals.hazard.rf_glofas.transform_ops.return_period`
     """
     reindex_kwargs = dict(tolerance=1e-3, fill_value=-1, assert_no_fill_value=True)
@@ -546,58 +642,128 @@ def return_period_resample(
     )
 
 
+def _interpolate_na(
+    src_data: np.ndarray,
+    x_coords: np.ndarray,
+    y_coords: np.ndarray,
+    *,
+    nodata: float,
+    method: Literal["linear", "nearest", "cubic"] = "nearest",
+) -> np.ndarray:
+    """
+    This method uses scipy.interpolate.griddata to interpolate missing data.
+
+    Parameters
+    ----------
+    src_data: Any
+        Input data array.
+    method: {'linear', 'nearest', 'cubic'}, optional
+        The method to use for interpolation in `scipy.interpolate.griddata`.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`:
+        An interpolated :class:`numpy.ndarray`.
+    """
+    src_data_flat = src_data.flatten()
+    try:
+        data_isnan = np.isnan(nodata)  # type: ignore
+    except TypeError:
+        data_isnan = False
+    if not data_isnan:
+        data_bool = src_data_flat != nodata
+    else:
+        data_bool = ~np.isnan(src_data_flat)
+
+    if not data_bool.any():
+        return src_data
+
+    x_coords, y_coords = np.meshgrid(x_coords, y_coords)
+
+    out = griddata(
+        points=(x_coords.flatten()[data_bool], y_coords.flatten()[data_bool]),
+        values=src_data_flat[data_bool],
+        xi=(x_coords, y_coords),
+        method=method,
+        fill_value=nodata,
+    )
+    return out
+
+
+def interpolate_na(
+    data: xr.DataArray,
+    nodata: float = np.nan,
+) -> xr.DataArray:
+    """Multi-dimensional interpolate_na for geospatial arrays and datasets
+
+    Parameters
+    ----------
+    data : xr.DataArray | xr.Dataset
+        The data to interpolate
+    nodata : float or None
+        The nodata value to assign to the dataset. If ``None``, no nodata value is
+        assigned. Default: ``np.nan``.
+
+    See Also
+    --------
+    rioxarray.RasterArray.interpolate_na
+        https://corteva.github.io/rioxarray/stable/rioxarray.html#rioxarray.raster_array.RasterArray.interpolate_na
+    """
+    # Assert we have nodata
+    data = data.rio.write_nodata(nodata)
+
+    # Use default for 2D/3D
+    if len(data.sizes) < 4:
+        return data.rio.interpolate_na()
+
+    # Interpolate non-core dims
+    out = xr.apply_ufunc(
+        _interpolate_na,
+        data,
+        data[data.rio.x_dim],
+        data[data.rio.y_dim],
+        input_core_dims=[
+            [data.rio.y_dim, data.rio.x_dim],  # lat/lon
+            [data.rio.x_dim],
+            [data.rio.y_dim],
+        ],
+        output_core_dims=[
+            [data.rio.y_dim, data.rio.x_dim],  # lat/lon
+        ],
+        vectorize=True,
+        kwargs={
+            "nodata": data.rio.nodata,
+        },
+        keep_attrs="no_conflicts",
+    )
+    _add_attrs_proj(new_data_array=out, src_data_array=data)
+    return out
+
+
 def interpolate_space(
     return_period: xr.DataArray,
     flood_maps: xr.DataArray,
     method: str = "linear",
+    mask_values: bool = True,
 ) -> xr.DataArray:
     """Interpolate the return period in space onto the flood maps grid"""
     # Select lon/lat for flood maps
     flood_maps = sel_lon_lat_slice(flood_maps, return_period)
 
     # Interpolate the return period
-    return return_period.interp(
+    return_period_regridded = return_period.interp(
         coords=dict(longitude=flood_maps["longitude"], latitude=flood_maps["latitude"]),
         method=method,
         kwargs=dict(fill_value=None),  # Extrapolate
     )
+    return_period_regridded.rio.write_crs(flood_maps.rio.crs, inplace=True)
+    return_period_regridded = interpolate_na(return_period_regridded, nodata=np.nan)
 
-
-def regrid(
-    return_period: xr.DataArray,
-    flood_maps: xr.DataArray,
-    method: str = "bilinear",
-    regridder: Optional[xe.Regridder] = None,
-    return_regridder: bool = False,
-) -> Union[xr.DataArray, Tuple[xr.DataArray, xe.Regridder]]:
-    """Regrid the return period onto the flood maps grid"""
-    # Select lon/lat for flood maps
-    flood_maps = sel_lon_lat_slice(flood_maps, return_period)
-
-    # Mask return period so NaNs are not propagated
-    rp = return_period.to_dataset(name="data")
-    dims_to_remove = set(rp.sizes.keys()) - {"longitude", "latitude"}
-    dims_to_remove = {dim: 0 for dim in dims_to_remove}
-    rp["mask"] = xr.where(rp["data"].isel(dims_to_remove).isnull(), 0, 1)
-
-    # NOTE: Masking here would omit all return periods outside flood plains
-    #       (This might be desirable at some point?)
-    flood = flood_maps.to_dataset(name="data")
-    # flood["mask"] = xr.where(flood["data"].isel(return_period=-1).isnull(), 0, 1)
-
-    # Perform regridding
-    if regridder is None:
-        regridder = xe.Regridder(
-            rp,
-            flood,
-            method=method,
-            extrap_method="nearest_s2d",
-            # unmapped_to_nan=False,
+    # Set values that do not exist in the flood hazard maps to NaN
+    if mask_values:
+        return_period_regridded = return_period_regridded.where(
+            ~np.isnan(flood_maps.isel(return_period=-1, drop=True))
         )
-
-    return_period_regridded = regridder(return_period).rename(return_period.name)
-    if return_regridder:
-        return return_period_regridded, regridder
 
     return return_period_regridded
 
@@ -631,8 +797,8 @@ def apply_flopros(
         threshold set to ``NaN``.
     """
     # Make GeoDataframe from existing geometry
-    latitude = return_period["latitude"].values
-    longitude = return_period["longitude"].values
+    latitude = return_period["latitude"]
+    longitude = return_period["longitude"]
     lon, lat = np.meshgrid(longitude, latitude, indexing="ij")
     df_geometry = gpd.GeoDataFrame(
         geometry=gpd.points_from_xy(lon.flat, lat.flat), crs="EPSG:4326"
@@ -659,7 +825,7 @@ def apply_flopros(
         """Create a xr.DataArray from a GeoDataFrame column"""
         return xr.DataArray(
             data=df_merged[col_name]
-            .to_numpy(dtype=np.float32)
+            .to_numpy(dtype=np.float32, copy=False)
             .reshape((longitude.size, latitude.size)),
             dims=["longitude", "latitude"],
             coords=dict(longitude=longitude, latitude=latitude),
@@ -698,13 +864,22 @@ def flood_depth(
 
     # Clip infinite return periods
     return_period = return_period.clip(
-        min=1, max=flood_maps["return_period"].max(), keep_attrs=True
-    ).astype(np.float32)
+        min=1,
+        max=flood_maps["return_period"].max().astype(return_period.dtype),
+        keep_attrs=True,
+    )
 
     # All but 'longitude' and 'latitude' are core dimensions for this operation
     core_dims = list(return_period.dims)
     core_dims.remove("longitude")
     core_dims.remove("latitude")
+
+    # Expand dimensions if we have no core dims
+    needs_expand = not bool(core_dims)
+    expand_dim = "_expand"
+    if needs_expand:
+        core_dims.append(expand_dim)
+        return_period = return_period.expand_dims(expand_dim)
 
     # Define input array layout
     # NOTE: This depends on the actual core dimensions put in, so we have to do this
@@ -763,6 +938,8 @@ def flood_depth(
     )
     if isinstance(out, xr.DataArray):
         out = out.rename("Flood Depth")
+    if needs_expand:
+        out = out.squeeze(dim=expand_dim, drop=True)
     return out
 
 
