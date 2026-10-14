@@ -699,10 +699,10 @@ def _interpolate_na(
         method=method,
         fill_value=nodata,
     )
-    return out
+    return out.astype(src_data.dtype, copy=False)
 
 
-def interpolate_na(
+def interpolate_na_old(
     data: xr.DataArray,
     nodata: float = np.nan,
 ) -> xr.DataArray:
@@ -728,6 +728,11 @@ def interpolate_na(
     if len(data.sizes) < 4:
         return data.rio.interpolate_na()
 
+    # The interpolation needs the full lat/lon plane of each slice, so these core
+    # dimensions must not be split across dask chunks
+    if data.chunks is not None:
+        data = data.chunk({data.rio.y_dim: -1, data.rio.x_dim: -1})
+
     # Interpolate non-core dims
     out = xr.apply_ufunc(
         _interpolate_na,
@@ -743,6 +748,8 @@ def interpolate_na(
             [data.rio.y_dim, data.rio.x_dim],  # lat/lon
         ],
         vectorize=True,
+        dask="parallelized",
+        output_dtypes=[data.dtype],
         kwargs={
             "nodata": data.rio.nodata,
         },
@@ -751,6 +758,51 @@ def interpolate_na(
     _add_attrs_proj(new_data_array=out, src_data_array=data)
     return out
 
+from scipy.ndimage import distance_transform_edt
+
+def _fill_nearest(block: np.ndarray, nodata: float) -> np.ndarray:
+    """Nearest-neighbour fill of nodata over the last two dims (y, x)"""
+    invalid = np.isnan(block) if np.isnan(nodata) else block == nodata
+    if not invalid.any():
+        return block
+
+    def indices(mask):
+        return distance_transform_edt(
+            mask, return_distances=False, return_indices=True
+        )
+
+    flat = block.reshape(-1, *block.shape[-2:])
+    inv = invalid.reshape(flat.shape)
+    out = flat.copy()
+    if (inv == inv[0]).all():          # same mask in every slice: one lookup
+        if not inv[0].all():
+            iy, ix = indices(inv[0])
+            out = flat[:, iy, ix]
+    else:                              # fallback: one lookup per slice
+        for i in range(flat.shape[0]):
+            if not inv[i].all():
+                iy, ix = indices(inv[i])
+                out[i] = flat[i][iy, ix]
+    return out.reshape(block.shape)
+
+
+def interpolate_na(data: xr.DataArray, nodata: float = np.nan) -> xr.DataArray:
+    data = data.rio.write_nodata(nodata)
+    y, x = data.rio.y_dim, data.rio.x_dim
+    if data.chunks is not None:
+        data = data.chunk({y: -1, x: -1})   # each lat/lon plane must be whole
+    out = xr.apply_ufunc(
+        _fill_nearest,
+        data,
+        input_core_dims=[[y, x]],
+        output_core_dims=[[y, x]],
+        dask="parallelized",
+        output_dtypes=[data.dtype],
+        kwargs={"nodata": data.rio.nodata},
+        keep_attrs=True,
+    ).transpose(*data.dims)
+    _add_attrs_proj(new_data_array=out, src_data_array=data)
+    return out
 
 def interpolate_space(
     return_period: xr.DataArray,
