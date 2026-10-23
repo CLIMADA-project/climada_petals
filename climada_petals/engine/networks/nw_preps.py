@@ -402,7 +402,6 @@ def clean_roundabouts(network):
                 new_co = np.concatenate((centroid_co, co_ords))
             else:
                 new_co = np.concatenate((co_ords, centroid_co))
-            snap_line = shapely.linestrings(new_co)
 
             snap_line = shapely.linestrings(new_co)
 
