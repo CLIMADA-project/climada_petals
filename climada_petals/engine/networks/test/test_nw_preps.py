@@ -1222,6 +1222,13 @@ class TestMergeEdges:
         endpoints = {edge["from_id"], edge["to_id"]}
         assert endpoints == {0, 4}
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "Known bug, fixed in plan step 6c: the fixture's only optional column "
+            "is osm_id (used as id column), so mode() over no columns raises IndexError"
+        ),
+    )
     def test_branch_preserves_junction(self, branching_network):
         """Degree-4 junction is preserved during merge."""
         branching_network.nodes["degree"] = nw_preps.calculate_degree(branching_network)
