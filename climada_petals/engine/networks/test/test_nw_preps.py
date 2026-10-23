@@ -1561,7 +1561,6 @@ def _copy_on_write():
 
 
 class TestKnownBugsIndexRobustness:
-    @_xfail("2", "_intersects_dataframe reads STRtree positions as index labels")
     def test_intersects_dataframe_non_range_index(self):
         geoms = gpd.GeoSeries(
             [Point(0, 0), Point(5, 5), Point(1, 1)],
@@ -1576,7 +1575,6 @@ class TestKnownBugsIndexRobustness:
 
         assert set(result.index) == {10, 30}
 
-    @_xfail("2", "drop_duplicate_geometries passes index labels to .iloc")
     def test_drop_duplicate_geometries_non_range_index(self):
         line_a = LineString([(0, 0), (1, 1)])
         line_b = LineString([(1, 1), (2, 2)])
@@ -1590,6 +1588,19 @@ class TestKnownBugsIndexRobustness:
         result = nw_preps.drop_duplicate_geometries(gdf)
 
         assert list(result.index) == [10, 12]
+
+    def test_clean_roundabouts_non_range_index(self, roundabout_network):
+        """clean_roundabouts gives the same geometries for a non-0..n-1 index."""
+        edges = roundabout_network.edges.copy()
+        edges.index = [10, 20, 30]
+        shifted = Network(edges=edges, nodes=roundabout_network.nodes.copy())
+
+        expected = nw_preps.clean_roundabouts(roundabout_network)
+        result = nw_preps.clean_roundabouts(shifted)
+
+        assert sorted(shapely.to_wkb(g) for g in result.edges.geometry) == sorted(
+            shapely.to_wkb(g) for g in expected.edges.geometry
+        )
 
 
 class TestKnownBugsIds:

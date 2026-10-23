@@ -25,6 +25,7 @@ import geopandas as gpd
 import numpy as np
 import logging
 import shapely
+from shapely.errors import GEOSException
 from tqdm import tqdm
 
 from climada.util.coordinates import compute_geodesic_lengths
@@ -384,7 +385,7 @@ def clean_roundabouts(network):
         edges_intersect = _intersects(roundabout.geometry, edges["geometry"], sindex)
         # index at e[0] geometry at e[1] of edges that intersect with
         for edg in edges_intersect.items():
-            edge = edges.iloc[edg[0]]
+            edge = edges.loc[edg[0]]
             edge_id_value = edge[edge_id_col]
             start = shapely.get_point(edg[1], 0)
             end = shapely.get_point(edg[1], -1)
@@ -751,8 +752,8 @@ def drop_duplicate_geometries(dataframe, keep="first"):
     """
 
     mask = dataframe.geometry.apply(lambda geom: shapely.to_wkb(geom))
-    # use dropped duplicates index to drop from actual dataframe
-    return dataframe.iloc[mask.drop_duplicates(keep=keep).index]
+    # boolean mask: works for any index, not only 0..n-1
+    return dataframe[~mask.duplicated(keep=keep)]
 
 
 def reset_ids(network):
@@ -916,7 +917,7 @@ def _intersects(geom, dataframe, sindex, tolerance=1e-9):
         buffer = geom
     try:
         return _intersects_dataframe(buffer, dataframe, sindex)
-    except:
+    except GEOSException:
         # can exceptionally buffer to an invalid geometry, so try re-buffering
         buffer = shapely.buffer(geom, 0)
         return _intersects_dataframe(buffer, dataframe, sindex)
@@ -932,14 +933,17 @@ def _intersects_dataframe(geom, dataframe, sindex):
     dataframe : gpd.GeoSeries
         GeoSeries of geometries to search.
     sindex : shapely.STRtree
-        Spatial index of the dataframe geometries.
+        Spatial index built from the ``dataframe`` geometries, in the same
+        row order.
 
     Returns
     -------
     gpd.GeoSeries
-        Subset of ``dataframe`` that intersects with ``geom``.
+        Subset of ``dataframe`` that intersects with ``geom``, with the
+        original index labels.
     """
-    return dataframe[sindex.query(geom, "intersects")]
+    # STRtree.query returns row positions, not index labels
+    return dataframe.iloc[sindex.query(geom, "intersects")]
 
 
 def intersects(geom, dataframe, sindex, tolerance=1e-9):
