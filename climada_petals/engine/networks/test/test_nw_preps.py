@@ -1765,7 +1765,6 @@ class TestKnownBugsTopology:
 
 
 class TestKnownBugsMergeEdges:
-    @_xfail("6a", "the final degree > 0 filter also removes isolated nodes")
     def test_merge_edges_keeps_isolated_node(self, edges_gdf, nodes_gdf):
         isolated = gpd.GeoDataFrame(
             {"id": [5], "geometry": [Point(10, 10)]},
@@ -1785,7 +1784,25 @@ class TestKnownBugsMergeEdges:
         assert len(result.edges) == 1
         assert any(geom.equals(Point(10, 10)) for geom in result.nodes.geometry)
 
-    @_xfail("6a", "without a degree column the final filter raises AttributeError")
+    def test_merge_edges_removes_only_inner_nodes(self, simple_network):
+        """Inner chain nodes are removed, the chain ends are kept."""
+        simple_network.nodes["degree"] = nw_preps.calculate_degree(simple_network)
+
+        result = nw_preps.merge_edges(simple_network)
+
+        coords = {(g.x, g.y) for g in result.nodes.geometry}
+        assert coords == {(0.0, 0.0), (4.0, 4.0)}
+
+    def test_merge_edges_does_not_modify_input(self, simple_network):
+        """The input network's nodes and degree column are left unchanged."""
+        simple_network.nodes["degree"] = nw_preps.calculate_degree(simple_network)
+        degree_before = simple_network.nodes["degree"].tolist()
+
+        nw_preps.merge_edges(simple_network)
+
+        assert len(simple_network.nodes) == 5
+        assert simple_network.nodes["degree"].tolist() == degree_before
+
     def test_merge_edges_without_degree_column(self, simple_network):
         assert "degree" not in simple_network.nodes.columns
 
@@ -1793,7 +1810,6 @@ class TestKnownBugsMergeEdges:
 
         assert len(result.edges) == 1
 
-    @_xfail("6a", "deg is a read-only view of nodes['degree'] under copy-on-write")
     def test_merge_edges_copy_on_write(self, simple_network):
         simple_network.nodes["degree"] = nw_preps.calculate_degree(simple_network)
 
@@ -1970,6 +1986,48 @@ class TestKnownBugsSimplifiedNetwork:
 
         with pytest.raises(ValueError, match="ci_type"):
             nw_preps.simplified_network(Network(edges=edges))
+
+    def test_node_ci_type_different_from_edges_raises(self, edges_gdf, nodes_gdf):
+        """Nodes of another ci_type (e.g. facilities) are rejected."""
+        edges = edges_gdf.copy()
+        edges["ci_type"] = "road"
+        nodes = nodes_gdf.copy()
+        nodes["ci_type"] = "healthcare"
+
+        with pytest.raises(ValueError, match="same single ci_type"):
+            nw_preps.simplified_network(Network(edges=edges, nodes=nodes))
+
+    def test_removes_isolated_nodes_with_warning(self, edges_gdf, nodes_gdf, caplog):
+        """Nodes of the same ci_type that touch no edge are removed and logged."""
+        edges = edges_gdf.copy()
+        edges["ci_type"] = "road"
+        isolated = gpd.GeoDataFrame(
+            {"id": [5], "geometry": [Point(10, 10)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            pd.concat([nodes_gdf, isolated], ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes["ci_type"] = "road"
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            result = nw_preps.simplified_network(Network(edges=edges, nodes=nodes))
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert not any(g.equals(Point(10, 10)) for g in result.nodes.geometry)
+        assert "Removed 1 of" in caplog.text
+
+    def test_nodes_only_network_keeps_all_nodes(self, nodes_only_network):
+        """A network without edges is returned with all its nodes."""
+        result = nw_preps.simplified_network(nodes_only_network)
+
+        assert len(result.nodes) == len(nodes_only_network.nodes)
 
     def test_missing_ci_type_warns(self, simple_network, caplog):
         """A warning is logged when the edges have no ci_type."""

@@ -646,7 +646,8 @@ def merge_edges(network, print_err=False):
     edges and nodes in both directions until a node of degree != 2 is found.
     Resets the geometry and from/to ids for the merged edge, and deletes the
     traversed nodes and edges. Uses the mode of edge attributes for the
-    merged edge's column values.
+    merged edge's column values. Only the inner nodes of merged chains are
+    removed; all other nodes, including isolated ones (degree 0), are kept.
 
     Parameters
     ----------
@@ -673,15 +674,19 @@ def merge_edges(network, print_err=False):
     optional_cols = edges.columns.difference(drop_cols)
     edg_sindex = shapely.STRtree(edges.geometry)
 
+    # deg is updated during the merge (merged nodes are set to 0), so it must
+    # be a writable copy, not a view of the column (read-only under
+    # copy-on-write, the default from pandas 3)
     if "degree" not in nodes.columns:
         deg = calculate_degree(network)
     else:
-        deg = nodes["degree"].to_numpy()
+        deg = nodes["degree"].to_numpy(copy=True)
     degree2 = np.where(deg == 2)
     n2 = set((nodes["id"].iloc[degree2]))
 
     nodGeom = nodes["geometry"]
     eIDtoRemove = []
+    removed_nodes = set()  # inner nodes of successfully merged chains
 
     # make progressbar with tqdm(total=len(n2))
     while n2:
@@ -731,8 +736,8 @@ def merge_edges(network, print_err=False):
                         next_node_1Geom, (match.geometry)
                     ),
                 )
-            except:
-                continue
+            except ValueError:  # no further edge at this node: stop the walk
+                break
             pos_0_deg.append(next_node_1)
             n2.discard(next_node_1)
             next_node_1 = (
@@ -756,8 +761,8 @@ def merge_edges(network, print_err=False):
                         next_node_2Geom, (match.geometry)
                     ),
                 )
-            except:
-                continue
+            except ValueError:  # no further edge at this node: stop the walk
+                break
             pos_0_deg.append(next_node_2)
             n2.discard(next_node_2)
             next_node_2 = (
@@ -781,6 +786,10 @@ def merge_edges(network, print_err=False):
             possibly_delete.append(info_first_edge)
             for x in pos_0_deg:
                 deg[x] = 0
+            # keep the end nodes of the merged edge (relevant for closed loops)
+            removed_nodes.update(
+                x for x in pos_0_deg if x not in (next_node_1, next_node_2)
+            )
             mode_edges = edges.loc[edges.id.isin(possibly_delete)]
             edges.loc[info_first_edge, optional_cols] = (
                 mode_edges[optional_cols].mode().iloc[0].values
@@ -795,8 +804,8 @@ def merge_edges(network, print_err=False):
 
     edges = edges.loc[~(edges.id.isin(eIDtoRemove))].reset_index(drop=True)
 
-    # We remove all degree 0 nodes, including those found in dropHanging
-    nodes = nodes.loc[nodes.degree > 0].reset_index(drop=True)
+    # remove only the inner nodes of merged chains (not isolated nodes)
+    nodes = nodes.loc[~nodes["id"].isin(removed_nodes)].reset_index(drop=True)
 
     return Network(edges, nodes)
 
@@ -1209,34 +1218,51 @@ def _vcols_to_graphorder(nodes):
 # =============================================================================
 
 
-def _check_single_ci_type(edges):
-    """Check that all edges share one ``ci_type``; warn if it is missing.
+def _check_single_ci_type(network):
+    """Check that edges and nodes share one ``ci_type``; warn if edges lack it.
 
     Parameters
     ----------
-    edges : gpd.GeoDataFrame
-        Edge GeoDataFrame to check.
+    network : Network
+        Network to check.
 
     Raises
     ------
     ValueError
-        If the edges have more than one ``ci_type``.
+        If the edges have more than one ``ci_type``, or the nodes have a
+        ``ci_type`` different from the edges.
     """
+    edges, nodes = network.edges, network.nodes
+    edge_types = (
+        set(edges["ci_type"].dropna()) if "ci_type" in edges.columns else set()
+    )
+    node_types = (
+        set(nodes["ci_type"].dropna()) if "ci_type" in nodes.columns else set()
+    )
+    hint = (
+        "Simplify each ci_type separately and combine the results with "
+        "Network.from_networks."
+    )
+    if len(edge_types) > 1:
+        raise ValueError(
+            f"Edges must have a single ci_type, got "
+            f"{sorted(str(ci) for ci in edge_types)}. {hint}"
+        )
+    if len(edge_types | node_types) > 1:
+        raise ValueError(
+            "Edges and nodes must have the same single ci_type, got edges "
+            f"{sorted(str(ci) for ci in edge_types)} and nodes "
+            f"{sorted(str(ci) for ci in node_types)}. Point infrastructure "
+            f"(e.g. facilities) belongs in its own network. {hint}"
+        )
     if edges.empty:
         return
-    if "ci_type" not in edges.columns or edges["ci_type"].isna().all():
+    if not edge_types:
         LOGGER.warning(
             "Edges have no ci_type: nodes created at edge endpoints will not "
             "have one either. Set edges['ci_type'] before simplifying."
         )
         return
-    ci_types = edges["ci_type"].dropna().unique()
-    if len(ci_types) > 1:
-        raise ValueError(
-            "Edges must have a single ci_type, got "
-            f"{sorted(str(ci) for ci in ci_types)}. Simplify each ci_type "
-            "separately and combine the results with Network.from_networks."
-        )
     n_missing = edges["ci_type"].isna().sum()
     if n_missing:
         LOGGER.warning(
@@ -1247,6 +1273,32 @@ def _check_single_ci_type(edges):
         )
 
 
+def _drop_isolated_nodes(network):
+    """Remove nodes that are not the end of any edge, logging how many.
+
+    Parameters
+    ----------
+    network : Network
+        Network with ``from_id`` / ``to_id`` referring to node ``id``.
+
+    Returns
+    -------
+    Network
+        Network without isolated nodes.
+    """
+    edges = network.edges.copy()
+    nodes = network.nodes.copy()
+    connected = set(edges["from_id"]) | set(edges["to_id"])
+    isolated = ~nodes["id"].isin(connected)
+    if isolated.any():
+        LOGGER.warning(
+            "Removed %d of %d nodes that are not connected to any edge.",
+            int(isolated.sum()),
+            len(nodes),
+        )
+    return Network(edges, nodes.loc[~isolated].reset_index(drop=True))
+
+
 def simplified_network(network):
     """Return a simplified network.
 
@@ -1255,12 +1307,15 @@ def simplified_network(network):
     duplicate geometries, resetting ids, adding distances, and merging
     MultiLineStrings.
 
-    The edges must all have the same ``ci_type``: simplify each
+    Edges and nodes must all have the same ``ci_type``: simplify each
     infrastructure type separately and combine the results with
     :meth:`Network.from_networks`. Nodes created at edge endpoints inherit
     the ``ci_type`` of their edge (see :func:`add_endpoints`), so set
     ``ci_type`` on the edges before calling this function; a warning is
-    logged if it is missing.
+    logged if it is missing. For a network with edges, nodes that end up
+    connected to no edge (e.g. endpoints of edges dropped by
+    :func:`add_topology`) are removed, with a warning giving their number.
+    A network without edges is returned with all its nodes.
 
     Parameters
     ----------
@@ -1275,9 +1330,10 @@ def simplified_network(network):
     Raises
     ------
     ValueError
-        If the edges have more than one ``ci_type``, or no CRS.
+        If edges and nodes do not share a single ``ci_type``, or the edges
+        have no CRS.
     """
-    _check_single_ci_type(network.edges)
+    _check_single_ci_type(network)
 
     network_simp = Network(network.edges.copy(), network.nodes.copy())
 
@@ -1290,6 +1346,8 @@ def simplified_network(network):
     network_simp.nodes["degree"] = calculate_degree(network_simp)
     network_simp = merge_edges(network_simp)
     network_simp.edges = drop_duplicate_geometries(network_simp.edges, keep="first")
+    if not network.edges.empty:
+        network_simp = _drop_isolated_nodes(network_simp)
     network_simp = reset_ids(network_simp)
     network_simp = add_distances(network_simp)
     network_simp = merge_multilinestrings(network_simp)
