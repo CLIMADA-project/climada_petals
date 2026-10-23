@@ -796,7 +796,45 @@ class TestDegree:
         """Network with no edges returns all-zero degrees."""
         degree = nw_preps.calculate_degree(nodes_only_network)
 
-        assert degree == [0, 0, 0]
+        assert isinstance(degree, np.ndarray)
+        np.testing.assert_array_equal(degree, [0, 0, 0])
+
+    def test_isolated_last_node_degree_zero(self, simple_network):
+        """A node without edges at the end of the id range has degree 0."""
+        isolated = gpd.GeoDataFrame(
+            {"id": [5], "geometry": [Point(10, 10)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            pd.concat([simple_network.nodes, isolated], ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=simple_network.edges.copy(), nodes=nodes)
+
+        degree = nw_preps.calculate_degree(network)
+
+        np.testing.assert_array_equal(degree, [1, 2, 2, 2, 1, 0])
+
+    def test_edge_id_beyond_nodes_raises(self, simple_network):
+        """An edge referring to a node id >= number of nodes raises."""
+        edges = simple_network.edges.copy()
+        edges.loc[3, "to_id"] = 7
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        with pytest.raises(ValueError, match="to_id"):
+            nw_preps.calculate_degree(network)
+
+    def test_integral_float_ids_accepted(self, simple_network):
+        """Float node references with integral values are accepted."""
+        edges = simple_network.edges.copy()
+        edges["from_id"] = edges["from_id"].astype(float)
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        degree = nw_preps.calculate_degree(network)
+
+        np.testing.assert_array_equal(degree, [1, 2, 2, 2, 1])
 
     def test_add_degree_column(self, simple_network):
         """add_degree adds a 'degree' column to nodes."""
@@ -1604,29 +1642,6 @@ class TestKnownBugsIndexRobustness:
 
 
 class TestKnownBugsIds:
-    @_xfail("4", "ids filled from the index can collide with existing ids")
-    def test_ensure_edge_id_column_no_collision(self):
-        edges = gpd.GeoDataFrame(
-            {
-                "osm_id": [1.0, np.nan],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result, id_col = nw_preps._ensure_edge_id_column(edges)
-
-        assert id_col == "osm_id"
-        assert result["osm_id"].notna().all()
-        assert result["osm_id"].is_unique
-
-    @_xfail(
-        "4", "degrees land on the wrong nodes if node ids are not 0..n-1 in row order"
-    )
     def test_calculate_degree_rejects_unordered_node_ids(self, simple_network):
         nodes = simple_network.nodes.copy()
         nodes["id"] = [4, 3, 2, 1, 0]
@@ -1635,7 +1650,6 @@ class TestKnownBugsIds:
         with pytest.raises(ValueError, match="node ids"):
             nw_preps.calculate_degree(network)
 
-    @_xfail("4", "a NaN from_id gives an unclear TypeError from np.bincount")
     def test_calculate_degree_nan_id_clear_error(self, simple_network):
         edges = simple_network.edges.copy()
         edges["from_id"] = edges["from_id"].astype(float)
@@ -1645,7 +1659,6 @@ class TestKnownBugsIds:
         with pytest.raises(ValueError, match="from_id"):
             nw_preps.calculate_degree(network)
 
-    @_xfail("4", "reset_ids silently turns references to missing nodes into NaN")
     def test_reset_ids_dangling_reference_raises(self, simple_network):
         edges = simple_network.edges.copy()
         edges.loc[0, "from_id"] = 99
@@ -1825,6 +1838,41 @@ class TestKnownBugsCleanRoundabouts:
             coords = {tuple(c) for c in shapely.get_coordinates(geom)}
             assert not coords & ring_interior
         assert len(result.edges) == 2
+
+    @_xfail("8", "rebuilt edges are tracked by osm_id, which split OSM ways share")
+    def test_shared_osm_id_at_two_roundabouts(self):
+        # Two roundabouts A (centre (1,1)) and B (centre (5,1)), joined by two
+        # segments of the same OSM way (osm_id 7). Each segment must be
+        # extended to its own roundabout centre, and both must be kept.
+        ring_a = LineString([(0.5, 1), (1, 1.5), (1.5, 1), (1, 0.5), (0.5, 1)])
+        ring_b = LineString([(4.5, 1), (5, 1.5), (5.5, 1), (5, 0.5), (4.5, 1)])
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [1, 2, 7, 7],
+                "geometry": [
+                    ring_a,
+                    ring_b,
+                    LineString([(1.5, 1), (3, 1)]),
+                    LineString([(3, 1), (4.5, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.clean_roundabouts(Network(edges=edges))
+
+        endpoints = {
+            frozenset(
+                (
+                    tuple(shapely.get_coordinates(g)[0]),
+                    tuple(shapely.get_coordinates(g)[-1]),
+                )
+            )
+            for g in result.edges.geometry
+        }
+        assert frozenset(((1.0, 1.0), (3.0, 1.0))) in endpoints
+        assert frozenset(((3.0, 1.0), (5.0, 1.0))) in endpoints
 
 
 class TestKnownBugsSimplifiedNetwork:

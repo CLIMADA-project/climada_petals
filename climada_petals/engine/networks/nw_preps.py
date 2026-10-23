@@ -449,8 +449,9 @@ def clean_roundabouts(network):
 def calculate_degree(network):
     """Calculate the degree of each node from from_id and to_id columns.
 
-    Should not be called after removing nodes or edges without first
-    resetting the ids.
+    Requires node ids ``0..n-1`` in row order (call :func:`reset_ids` after
+    removing nodes or edges): the returned degrees are ordered by node id and
+    assigned to the nodes by position.
 
     Parameters
     ----------
@@ -461,18 +462,68 @@ def calculate_degree(network):
     -------
     np.ndarray
         Array of connectivity degrees for each node.
+
+    Raises
+    ------
+    ValueError
+        If the node ids are not ``0..n-1`` in row order, or if ``from_id`` /
+        ``to_id`` are missing, not integers, or refer to node ids that do not
+        exist.
     """
+    n_nodes = len(network.nodes)
     if network.edges.empty:
-        return [0] * len(network.nodes)
-    # the number of nodes(from index) to use as the number of bins
-    ndC = len(network.nodes.index)
-    if ndC - 1 > max(network.edges.from_id) and ndC - 1 > max(network.edges.to_id):
-        LOGGER.debug(
-            "calculate_degree: the highest node ids do not appear in any edge."
+        return np.zeros(n_nodes, dtype=int)
+    if not np.array_equal(network.nodes["id"].to_numpy(), np.arange(n_nodes)):
+        raise ValueError(
+            "calculate_degree requires node ids 0..n-1 in row order; "
+            "call reset_ids first."
         )
-    return np.bincount(network.edges["from_id"], None, ndC) + np.bincount(
-        network.edges["to_id"], None, ndC
+    from_ids = _edge_node_ids(network.edges, "from_id", n_nodes)
+    to_ids = _edge_node_ids(network.edges, "to_id", n_nodes)
+    return np.bincount(from_ids, minlength=n_nodes) + np.bincount(
+        to_ids, minlength=n_nodes
     )
+
+
+def _edge_node_ids(edges, col, n_nodes):
+    """Return an edge node-reference column as validated integer node ids.
+
+    Parameters
+    ----------
+    edges : gpd.GeoDataFrame
+        Edge GeoDataFrame.
+    col : str
+        ``"from_id"`` or ``"to_id"``.
+    n_nodes : int
+        Number of nodes; valid ids are ``0..n_nodes-1``.
+
+    Returns
+    -------
+    np.ndarray
+        Integer node ids.
+
+    Raises
+    ------
+    ValueError
+        If the column has missing or non-integer values, or ids outside
+        ``0..n_nodes-1``.
+    """
+    values = edges[col]
+    if values.isna().any():
+        raise ValueError(f"Edge column '{col}' contains missing node ids.")
+    values = values.to_numpy()
+    if not np.issubdtype(values.dtype, np.integer):
+        if not np.issubdtype(values.dtype, np.number) or not np.all(
+            np.mod(values, 1) == 0
+        ):
+            raise ValueError(f"Edge column '{col}' must contain integer node ids.")
+        values = values.astype(int)
+    if values.min() < 0 or values.max() >= n_nodes:
+        raise ValueError(
+            f"Edge column '{col}' refers to node ids that do not exist "
+            f"(valid: 0..{n_nodes - 1})."
+        )
+    return values
 
 
 def add_degree(network):
@@ -771,6 +822,11 @@ def reset_ids(network):
     -------
     Network
         Network with sequentially renumbered node and edge ids.
+
+    Raises
+    ------
+    ValueError
+        If ``from_id`` or ``to_id`` refer to node ids that are not in the nodes.
     """
     # Copy nodes and edges to avoid modifying the original data
     nodes = network.nodes.copy()
@@ -782,9 +838,16 @@ def reset_ids(network):
     # Map old node IDs to new IDs using a dictionary
     id_map = dict(zip(nodes["id"], new_node_ids))
 
-    # Efficiently map old IDs to new IDs in 'to_id' and 'from_id' columns
-    edges["from_id"] = edges["from_id"].map(id_map)
-    edges["to_id"] = edges["to_id"].map(id_map)
+    # Map old IDs to new IDs in 'from_id' and 'to_id'; unknown ids become NaN
+    for col in ("from_id", "to_id"):
+        mapped = edges[col].map(id_map)
+        if mapped.isna().any():
+            unknown = sorted(edges.loc[mapped.isna(), col].unique().tolist())
+            raise ValueError(
+                f"Edge column '{col}' refers to node ids that are not in the "
+                f"nodes: {unknown[:10]}{' ...' if len(unknown) > 10 else ''}"
+            )
+        edges[col] = mapped.astype(int)
 
     # Update node and edge IDs
     nodes["id"] = new_node_ids
