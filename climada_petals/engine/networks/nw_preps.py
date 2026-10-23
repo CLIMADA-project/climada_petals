@@ -4,20 +4,20 @@ This file is part of CLIMADA.
 Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
 
 CLIMADA is free software: you can redistribute it and/or modify it under the
-terms of the GNU Lesser General Public License as published by the Free
+terms of the GNU General Public License as published by the Free
 Software Foundation, version 3.
 
 CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
-You should have received a copy of the GNU Lesser General Public License along
+You should have received a copy of the GNU General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 -------
 
-clean gdataframes with network data and convert to a nodes & edges structure
-compatible for igraph graph calculations
+Clean GeoDataFrames with network data and convert them to a nodes & edges
+structure compatible with igraph graph calculations.
 """
 
 import pandas as pd
@@ -31,17 +31,14 @@ from climada.util.coordinates import compute_geodesic_lengths
 from climada_petals.engine.networks.nw_base import Network
 
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel("INFO")
 
 
 # =============================================================================
 # Simplification methods from ElcoK/trails/simplify
 # =============================================================================
 
-"""
-all functions taken and slight modified from:
-https://github.com/ElcoK/trails/blob/main/src/trails/simplify.py
-"""
+# All functions in this section are taken and slightly modified from:
+# https://github.com/ElcoK/trails/blob/main/src/trails/simplify.py
 
 
 def add_ids(network, id_col="id"):
@@ -301,14 +298,12 @@ def merge_multilinestring(geom):
     Returns
     -------
     shapely.Geometry
-        A shapely LineString geometry if the merge was successful.
-        Otherwise, the original geometry is returned unchanged.
+        The merged geometry for a MultiLineString: a LineString if its parts
+        are connected, otherwise still a MultiLineString. Any other geometry
+        is returned unchanged.
     """
     if shapely.get_type_id(geom) == 5:
-        geom_inb = shapely.line_merge(geom)
-        if geom_inb.is_ring:  # still something to fix if desired
-            return geom_inb
-        return geom_inb
+        return shapely.line_merge(geom)
     return geom
 
 
@@ -471,7 +466,9 @@ def calculate_degree(network):
     # the number of nodes(from index) to use as the number of bins
     ndC = len(network.nodes.index)
     if ndC - 1 > max(network.edges.from_id) and ndC - 1 > max(network.edges.to_id):
-        print("Calculate_degree possibly unhappy")
+        LOGGER.debug(
+            "calculate_degree: the highest node ids do not appear in any edge."
+        )
     return np.bincount(network.edges["from_id"], None, ndC) + np.bincount(
         network.edges["to_id"], None, ndC
     )
@@ -566,7 +563,7 @@ def merge_edges(network, print_err=False):
     network : Network
         A network composed of nodes (points in space) and edges (lines).
     print_err : bool, optional
-        Whether to print error messages for failed merges. Default: False.
+        Whether to log a warning for each failed merge. Default: False.
 
     Returns
     -------
@@ -700,10 +697,9 @@ def merge_edges(network, print_err=False):
             )
         else:
             if print_err:
-                print(
-                    "Line",
+                LOGGER.warning(
+                    "Edge %s failed to merge, has shapely type %s",
                     info_first_edge,
-                    "failed to merge, has shapely type ",
                     shapely.get_type_id(edges.at[info_first_edge, "geometry"]),
                 )
 
