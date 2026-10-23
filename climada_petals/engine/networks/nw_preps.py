@@ -72,48 +72,68 @@ def add_ids(network, id_col="id"):
     return Network(edges, nodes)
 
 
-def add_topology(network, id_col="id"):
+def add_topology(network, id_col="id", tolerance=1e-9):
     """Add or replace from_id, to_id columns to edges.
+
+    Each edge end is attached to the nearest node within ``tolerance``. Edges
+    with an end that has no node within ``tolerance`` (and edges without a
+    LineString geometry, e.g. MultiLineStrings) are dropped, and a warning
+    with their number is logged. Run :func:`add_endpoints` first so that every
+    edge end has a node.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
     id_col : str, optional
-        Column name for the id. Default: 'id'.
+        Node column whose values are written to ``from_id`` / ``to_id``.
+        Default: 'id'.
+    tolerance : float, optional
+        Maximum distance between an edge end and its node, in CRS units.
+        The default only absorbs floating-point differences. Default: 1e-9.
 
     Returns
     -------
     Network
         Network with from_id and to_id columns added to edges.
     """
-
-    from_ids = []
-    to_ids = []
-    bugs = []
-
     nodes = network.nodes.copy()
     edges = network.edges.copy()
 
+    from_ids = []
+    to_ids = []
+    unmatched = []  # row positions of edges that cannot be attached
+
     sindex = shapely.STRtree(nodes.geometry)
-    for edge in tqdm(edges.itertuples(), desc="topology", total=len(edges)):
-        start, end = line_endpoints(edge.geometry)
-        try:
-            start_node = nearest_node(start, nodes, sindex)
-            from_ids.append(start_node[id_col])
-        except:
-            bugs.append(edge.id)
-            from_ids.append(-1)
-        try:
-            end_node = nearest_node(end, nodes, sindex)
-            to_ids.append(end_node[id_col])
-        except:
-            bugs.append(edge.id)
-            to_ids.append(-1)
+    for pos, edge in enumerate(
+        tqdm(edges.itertuples(), desc="topology", total=len(edges))
+    ):
+        node_ids = []
+        for point in line_endpoints(edge.geometry):
+            try:
+                node_ids.append(
+                    nearest_node(point, nodes, sindex, max_distance=tolerance)[id_col]
+                )
+            except ValueError:
+                node_ids.append(None)
+        if None in node_ids:
+            unmatched.append(pos)
+            node_ids = [-1, -1]
+        from_ids.append(node_ids[0])
+        to_ids.append(node_ids[1])
 
     edges["from_id"] = from_ids
     edges["to_id"] = to_ids
-    edges = edges.loc[~(edges.id.isin(list(bugs)))].reset_index(drop=True)
+    if unmatched:
+        LOGGER.warning(
+            "add_topology dropped %d of %d edges: an edge end has no node within "
+            "%g (CRS units), or the geometry is not a LineString.",
+            len(unmatched),
+            len(edges),
+            tolerance,
+        )
+        edges = edges.drop(index=edges.index[unmatched])
+    edges = edges.reset_index(drop=True)
 
     return Network(edges, nodes)
 
@@ -138,7 +158,7 @@ def line_endpoints(line):
     return start, end
 
 
-def nearest(geom, dataframe, sindex):
+def nearest(geom, dataframe, sindex, max_distance=None):
     """Find the element of a GeoDataFrame nearest a geometry.
 
     Parameters
@@ -148,22 +168,33 @@ def nearest(geom, dataframe, sindex):
     dataframe : gpd.GeoDataFrame
         GeoDataFrame with geometries to search.
     sindex : shapely.STRtree
-        Spatial index of the dataframe geometries.
+        Spatial index built from the ``dataframe`` geometries, in the same
+        row order.
+    max_distance : float, optional
+        Only consider elements within this distance (CRS units). Default:
+        None (no limit).
 
     Returns
     -------
     pandas.Series
-        Row from the dataframe nearest to ``geom``.
+        Row from the dataframe nearest to ``geom``. With several elements at
+        the same distance, the first one in row order.
+
+    Raises
+    ------
+    ValueError
+        If ``geom`` is missing or empty, or no element lies within
+        ``max_distance``.
     """
-    matches_idx = sindex.query(geom)
-    nearest_geom = min(
-        [dataframe.iloc[match_idx] for match_idx in matches_idx],
-        key=lambda match: shapely.measurement.distance(match.geometry, geom),
-    )
-    return nearest_geom
+    if geom is None or shapely.is_empty(geom):
+        raise ValueError("Cannot search the nearest element of a missing geometry.")
+    matches_idx = sindex.query_nearest(geom, max_distance=max_distance)
+    if len(matches_idx) == 0:
+        raise ValueError(f"No element found within max_distance={max_distance}.")
+    return dataframe.iloc[int(np.min(matches_idx))]
 
 
-def nearest_node(point, nodes, sindex):
+def nearest_node(point, nodes, sindex, max_distance=None):
     """Find the nearest node to a point.
 
     Parameters
@@ -174,13 +205,20 @@ def nearest_node(point, nodes, sindex):
         GeoDataFrame of network nodes.
     sindex : shapely.STRtree
         Spatial index of the node geometries.
+    max_distance : float, optional
+        Only consider nodes within this distance (CRS units). Default: None.
 
     Returns
     -------
     pandas.Series
         Row from nodes nearest to ``point``.
+
+    Raises
+    ------
+    ValueError
+        See :func:`nearest`.
     """
-    return nearest(point, nodes, sindex)
+    return nearest(point, nodes, sindex, max_distance=max_distance)
 
 
 def get_endpoints(network, attrs=("ci_type",)):

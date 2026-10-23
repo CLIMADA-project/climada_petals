@@ -476,6 +476,77 @@ class TestAddTopology:
         np.testing.assert_array_equal(result.edges["from_id"].values, [0, 1, 2, 3])
         np.testing.assert_array_equal(result.edges["to_id"].values, [1, 2, 3, 4])
 
+    @staticmethod
+    def _two_node_network(edge_geometry):
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1], "geometry": [Point(0, 0), Point(1, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {"geometry": [edge_geometry]}, geometry="geometry", crs="EPSG:4326"
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    @staticmethod
+    def _run_capturing_logs(caplog, func, *args, **kwargs):
+        # the climada_petals logger does not propagate to the root logger, so the
+        # capture handler has to be attached to it directly
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+    def test_end_within_tolerance_attached(self):
+        """An edge end off its node by a floating-point difference is attached."""
+        network = self._two_node_network(LineString([(0, 0), (1 + 1e-12, 0)]))
+
+        result = nw_preps.add_topology(network)
+
+        assert len(result.edges) == 1
+        assert result.edges["from_id"].iloc[0] == 0
+        assert result.edges["to_id"].iloc[0] == 1
+
+    def test_end_beyond_tolerance_dropped_with_warning(self, caplog):
+        """An edge whose end has no node within tolerance is dropped and logged."""
+        network = self._two_node_network(LineString([(0, 0), (1.5, 0)]))
+
+        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+
+        assert result.edges.empty
+        assert "add_topology dropped 1 of 1 edges" in caplog.text
+
+    def test_larger_tolerance_attaches(self):
+        """A larger tolerance attaches ends that are further away."""
+        network = self._two_node_network(LineString([(0, 0), (1.1, 0)]))
+
+        result = nw_preps.add_topology(network, tolerance=0.2)
+
+        assert result.edges["to_id"].iloc[0] == 1
+
+    def test_multilinestring_dropped_with_warning(self, caplog):
+        """Edges without a LineString geometry cannot be attached and are logged."""
+        network = self._two_node_network(
+            MultiLineString([[(0, 0), (0.5, 0)], [(0.5, 0), (1, 0)]])
+        )
+
+        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+
+        assert result.edges.empty
+        assert "add_topology dropped 1 of 1 edges" in caplog.text
+
+    def test_custom_id_col(self, simple_network):
+        """from_id / to_id take the values of the given node column."""
+        network = nw_preps.add_ids(simple_network)
+        network.nodes["node_ref"] = [10, 11, 12, 13, 14]
+
+        result = nw_preps.add_topology(network, id_col="node_ref")
+
+        np.testing.assert_array_equal(result.edges["from_id"].values, [10, 11, 12, 13])
+        np.testing.assert_array_equal(result.edges["to_id"].values, [11, 12, 13, 14])
+
 
 # ========================================================================
 # Tests: get_endpoints / add_endpoints
@@ -1669,7 +1740,6 @@ class TestKnownBugsIds:
 
 
 class TestKnownBugsTopology:
-    @_xfail("5", "nearest() only finds nodes at exactly the same coordinates")
     def test_nearest_finds_nearest_point(self):
         nodes = gpd.GeoDataFrame(
             {"id": [0, 1], "geometry": [Point(0, 0), Point(5, 5)]},
@@ -1681,6 +1751,17 @@ class TestKnownBugsTopology:
         result = nw_preps.nearest(Point(4, 4), nodes, sindex)
 
         assert result["id"] == 1
+
+    def test_nearest_max_distance_raises(self):
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1], "geometry": [Point(0, 0), Point(5, 5)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        sindex = shapely.STRtree(nodes.geometry)
+
+        with pytest.raises(ValueError, match="max_distance"):
+            nw_preps.nearest(Point(4, 4), nodes, sindex, max_distance=0.5)
 
 
 class TestKnownBugsMergeEdges:
