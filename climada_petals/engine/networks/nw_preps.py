@@ -1007,8 +1007,19 @@ def _edge_lengths_metres(edges):
     -------
     np.ndarray
         Edge lengths in metres.
+
+    Raises
+    ------
+    ValueError
+        If the edges have no CRS: the coordinate units are then unknown, and
+        assuming degrees would silently give wrong lengths for projected data.
     """
-    if edges.crs is not None and not edges.crs.is_geographic:
+    if edges.crs is None:
+        raise ValueError(
+            "Edges have no CRS, so edge lengths cannot be computed in metres. "
+            "Set it explicitly, e.g. edges.set_crs('EPSG:4326')."
+        )
+    if not edges.crs.is_geographic:
         # Projected CRS – shapely.length gives distances in CRS linear units.
         # Convert to metres if the CRS unit is not already metres.
         unit = edges.crs.axis_info[0].unit_name
@@ -1018,9 +1029,7 @@ def _edge_lengths_metres(edges):
             lengths = lengths * factor
         return lengths
 
-    # Geographic CRS (or None → assume WGS 84) – use geodesic distances.
-    if edges.crs is None:
-        edges = edges.set_crs("EPSG:4326")
+    # Geographic CRS – use geodesic distances.
     return compute_geodesic_lengths(edges).values
 
 
@@ -1099,6 +1108,44 @@ def _vcols_to_graphorder(nodes):
 # =============================================================================
 
 
+def _check_single_ci_type(edges):
+    """Check that all edges share one ``ci_type``; warn if it is missing.
+
+    Parameters
+    ----------
+    edges : gpd.GeoDataFrame
+        Edge GeoDataFrame to check.
+
+    Raises
+    ------
+    ValueError
+        If the edges have more than one ``ci_type``.
+    """
+    if edges.empty:
+        return
+    if "ci_type" not in edges.columns or edges["ci_type"].isna().all():
+        LOGGER.warning(
+            "Edges have no ci_type: nodes created at edge endpoints will not "
+            "have one either. Set edges['ci_type'] before simplifying."
+        )
+        return
+    ci_types = edges["ci_type"].dropna().unique()
+    if len(ci_types) > 1:
+        raise ValueError(
+            "Edges must have a single ci_type, got "
+            f"{sorted(str(ci) for ci in ci_types)}. Simplify each ci_type "
+            "separately and combine the results with Network.from_networks."
+        )
+    n_missing = edges["ci_type"].isna().sum()
+    if n_missing:
+        LOGGER.warning(
+            "%d of %d edges have no ci_type: nodes created at their endpoints "
+            "will not have one either.",
+            n_missing,
+            len(edges),
+        )
+
+
 def simplified_network(network):
     """Return a simplified network.
 
@@ -1107,9 +1154,12 @@ def simplified_network(network):
     duplicate geometries, resetting ids, adding distances, and merging
     MultiLineStrings.
 
-    Nodes created at edge endpoints inherit the ``ci_type`` of their edge
-    (see :func:`add_endpoints`). Set ``ci_type`` on the edges before calling
-    this function if the created nodes should carry it.
+    The edges must all have the same ``ci_type``: simplify each
+    infrastructure type separately and combine the results with
+    :meth:`Network.from_networks`. Nodes created at edge endpoints inherit
+    the ``ci_type`` of their edge (see :func:`add_endpoints`), so set
+    ``ci_type`` on the edges before calling this function; a warning is
+    logged if it is missing.
 
     Parameters
     ----------
@@ -1120,7 +1170,13 @@ def simplified_network(network):
     -------
     Network
         Simplified network.
+
+    Raises
+    ------
+    ValueError
+        If the edges have more than one ``ci_type``, or no CRS.
     """
+    _check_single_ci_type(network.edges)
 
     network_simp = Network(network.edges.copy(), network.nodes.copy())
 

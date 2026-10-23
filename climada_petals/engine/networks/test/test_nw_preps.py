@@ -20,6 +20,7 @@ Test nw_preps module
 """
 
 import contextlib
+import logging
 
 import pytest
 import numpy as np
@@ -1134,8 +1135,8 @@ class TestAddDistances:
         # 1° longitude at equator ≈ 111 195 m (WGS-84 geodesic)
         np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
 
-    def test_no_crs_treated_as_geographic(self):
-        """Edges without CRS are treated as geographic (EPSG:4326)."""
+    def test_no_crs_raises(self):
+        """Edges without CRS raise instead of being silently treated as degrees."""
         edges = gpd.GeoDataFrame(
             {
                 "from_id": [0],
@@ -1153,10 +1154,9 @@ class TestAddDistances:
             geometry="geometry",
         )
         network = Network(edges=edges, nodes=nodes)
-        result = nw_preps.add_distances(network)
 
-        # Should produce the same result as explicit EPSG:4326
-        np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
+        with pytest.raises(ValueError, match="no CRS"):
+            nw_preps.add_distances(network)
 
 
 # ========================================================================
@@ -1835,10 +1835,37 @@ class TestKnownBugsSimplifiedNetwork:
         assert len(result.edges) == 1
         assert shapely.get_type_id(result.edges.geometry.iloc[0]) == 1  # LineString
 
-    @_xfail("3", "edges of different ci_types are simplified together without error")
     def test_mixed_ci_type_raises(self, edges_gdf):
         edges = edges_gdf.copy()
         edges["ci_type"] = ["road", "road", "power_line", "power_line"]
 
         with pytest.raises(ValueError, match="ci_type"):
             nw_preps.simplified_network(Network(edges=edges))
+
+    def test_missing_ci_type_warns(self, simple_network, caplog):
+        """A warning is logged when the edges have no ci_type."""
+        assert "ci_type" not in simple_network.edges.columns
+
+        # the climada_petals logger does not propagate to the root logger, so the
+        # capture handler has to be attached to it directly
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.simplified_network(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "Edges have no ci_type" in caplog.text
+
+    def test_single_ci_type_no_warning(self, simple_network, caplog):
+        """No ci_type warning when all edges share one ci_type."""
+        simple_network.edges["ci_type"] = "road"
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.simplified_network(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "ci_type" not in caplog.text
