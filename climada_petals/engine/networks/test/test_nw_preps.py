@@ -1298,13 +1298,6 @@ class TestMergeEdges:
         endpoints = {edge["from_id"], edge["to_id"]}
         assert endpoints == {0, 4}
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Known bug, fixed in plan step 6c: the fixture's only optional column "
-            "is osm_id (used as id column), so mode() over no columns raises IndexError"
-        ),
-    )
     def test_branch_preserves_junction(self, branching_network):
         """Degree-4 junction is preserved during merge."""
         branching_network.nodes["degree"] = nw_preps.calculate_degree(branching_network)
@@ -1830,6 +1823,108 @@ class TestKnownBugsMergeEdges:
 
         assert result == (0, [], [])
 
+    @staticmethod
+    def _merge_capturing_logs(caplog, network, **kwargs):
+        # the climada_petals logger does not propagate to the root logger, so the
+        # capture handler has to be attached to it directly
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            return nw_preps.merge_edges(network, **kwargs)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+    # chain 0 -(length 1)- 1 -(length 3)- 2
+    _CHAIN_POINTS = [(0, 0), (1, 0), (4, 0)]
+    _CHAIN_PAIRS = [(0, 1), (1, 2)]
+
+    def test_merge_attrs_equal_values_kept_without_warning(self, caplog):
+        network = self._network(
+            self._CHAIN_POINTS,
+            self._CHAIN_PAIRS,
+            ci_type=["road", "road"],
+            highway=["primary", "primary"],
+        )
+
+        result = self._merge_capturing_logs(caplog, network)
+
+        assert len(result.edges) == 1
+        assert result.edges["highway"].iloc[0] == "primary"
+        assert "attribute values differed" not in caplog.text
+
+    def test_merge_attrs_length_weighted_majority(self, caplog):
+        """The value covering most of the length wins, not the alphabetical one."""
+        network = self._network(
+            self._CHAIN_POINTS,
+            self._CHAIN_PAIRS,
+            ci_type=["road", "road"],
+            highway=["primary", "secondary"],
+        )
+
+        result = self._merge_capturing_logs(caplog, network)
+
+        assert result.edges["highway"].iloc[0] == "secondary"
+        assert "highway (1 edges)" in caplog.text
+
+    def test_merge_attrs_nan_on_conflict(self, caplog):
+        network = self._network(
+            self._CHAIN_POINTS,
+            self._CHAIN_PAIRS,
+            ci_type=["road", "road"],
+            highway=["primary", "secondary"],
+        )
+
+        result = self._merge_capturing_logs(caplog, network, attr_conflict="nan")
+
+        assert pd.isna(result.edges["highway"].iloc[0])
+        assert result.edges["ci_type"].iloc[0] == "road"
+        assert "highway (1 edges)" in caplog.text
+
+    def test_merge_attrs_external_id_of_longest_edge(self, caplog):
+        network = self._network(
+            self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20]
+        )
+
+        result = self._merge_capturing_logs(caplog, network)
+
+        assert result.edges["osm_id"].iloc[0] == 20
+        assert "attribute values differed" not in caplog.text
+
+    def test_merge_attrs_custom_id_cols(self, caplog):
+        """A column passed in id_cols is treated as an external id."""
+        network = self._network(
+            self._CHAIN_POINTS, self._CHAIN_PAIRS, source_id=["a", "b"]
+        )
+
+        result = self._merge_capturing_logs(caplog, network, id_cols=("source_id",))
+
+        assert result.edges["source_id"].iloc[0] == "b"
+        assert "attribute values differed" not in caplog.text
+
+    def test_merge_attrs_osm_id_as_attribute_without_id_cols(self, caplog):
+        """With id_cols=(), osm_id is resolved like any other attribute."""
+        network = self._network(
+            self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20]
+        )
+
+        result = self._merge_capturing_logs(caplog, network, id_cols=())
+
+        assert result.edges["osm_id"].iloc[0] == 20  # longer edge = majority
+        assert "osm_id (1 edges)" in caplog.text
+
+    def test_merge_attrs_distance_summed(self):
+        network = self._network(
+            self._CHAIN_POINTS, self._CHAIN_PAIRS, distance=[100.0, 300.0]
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        assert result.edges["distance"].iloc[0] == pytest.approx(400.0)
+
+    def test_merge_attrs_invalid_conflict_rule_raises(self, simple_network):
+        with pytest.raises(ValueError, match="attr_conflict"):
+            nw_preps.merge_edges(simple_network, attr_conflict="mode")
+
     def test_merge_edges_two_independent_chains(self):
         """Two separate chains are merged independently."""
         points = [(0, 0), (1, 0), (2, 0), (0, 5), (1, 5), (2, 5)]
@@ -1937,7 +2032,6 @@ class TestKnownBugsMergeEdges:
         pairs = {frozenset((e.from_id, e.to_id)) for e in result.edges.itertuples()}
         assert frozenset((0, 2)) in pairs
 
-    @_xfail("6c", "mode() over no optional columns raises IndexError")
     def test_merge_edges_without_optional_columns(self, edges_gdf, nodes_gdf):
         edges = edges_gdf[["from_id", "to_id", "id", "geometry"]].copy()
         network = Network(edges=edges, nodes=nodes_gdf.copy())

@@ -33,6 +33,13 @@ from climada_petals.engine.networks.nw_base import Network
 
 LOGGER = logging.getLogger(__name__)
 
+#: Edge columns treated as external (source-data) ids by default, e.g. OSM
+#: way ids. They are carried along for provenance only and never used to
+#: identify edges internally. When edges are merged, the merged edge takes the
+#: value of the longest edge instead of a majority. Override with the
+#: ``id_cols`` argument of :func:`merge_edges` / :func:`simplified_network`.
+DEFAULT_ID_COLS = ("osm_id", "osmid", "edge_id")
+
 
 # =============================================================================
 # Simplification methods from ElcoK/trails/simplify
@@ -608,6 +615,69 @@ def concat_dedup(dataframes):
     return cat_dedup
 
 
+def _is_missing(value):
+    """True for None and float NaN (not for lists or other containers)."""
+    return value is None or (isinstance(value, float) and np.isnan(value))
+
+
+def _value_key(value):
+    """Hashable key for comparing attribute values (lists, e.g. osmnx osmid)."""
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return repr(value)
+
+
+def _same_value(a, b):
+    """Compare two attribute values, treating missing values as equal."""
+    if _is_missing(a) or _is_missing(b):
+        return _is_missing(a) and _is_missing(b)
+    return _value_key(a) == _value_key(b)
+
+
+def _merged_value(values, lengths, external_id, attr_conflict):
+    """Value of one attribute for an edge merged from a chain of edges.
+
+    Parameters
+    ----------
+    values : list
+        Attribute values of the chain's edges.
+    lengths : np.ndarray
+        Lengths of the chain's edges (same order).
+    external_id : bool
+        Whether the column is an external id (value of the longest edge).
+    attr_conflict : {"majority", "nan"}
+        Rule for differing values of other columns.
+
+    Returns
+    -------
+    value
+        Value for the merged edge.
+    conflict : bool
+        Whether the values differed (always False for external ids).
+    """
+    if all(_same_value(v, values[0]) for v in values):
+        return values[0], False
+    if external_id:
+        return values[int(np.argmax(lengths))], False
+    if attr_conflict == "nan":
+        return np.nan, True
+    totals, longest, first = {}, {}, {}
+    for value, length in zip(values, lengths):
+        if _is_missing(value):
+            continue
+        key = _value_key(value)
+        totals[key] = totals.get(key, 0.0) + length
+        longest[key] = max(longest.get(key, 0.0), length)
+        # original value per key: lists are compared by their text form
+        # (see _value_key), but the merged edge must get the list itself
+        if key not in first:
+            first[key] = value
+    best = max(totals, key=lambda k: (totals[k], longest[k]))
+    return first[best], True
+
+
 def _other_end(edge, node, from_ids, to_ids):
     """Return the node at the other end of ``edge`` (row position) from ``node``."""
     return to_ids[edge] if from_ids[edge] == node else from_ids[edge]
@@ -672,20 +742,36 @@ def _walk_chain(
     return node, chain_nodes, chain_edges
 
 
-def merge_edges(network, print_err=False):
+def merge_edges(
+    network, print_err=False, attr_conflict="majority", id_cols=DEFAULT_ID_COLS
+):
     """Remove degree-2 nodes and merge their associated edges.
 
     Finds nodes of degree 2, then follows the network topology (``from_id`` /
     ``to_id``) in both directions until a node of degree != 2 is reached, and
     merges the edges of this chain into one. The merged edge gets the merged
-    geometry, the chain's end nodes as ``from_id`` / ``to_id`` and, for the
-    other columns, the mode of the chain's edge values; the other edges of
-    the chain and its inner nodes are removed. All other nodes, including
-    isolated ones (degree 0), are kept. Closed loops made only of degree-2
-    nodes are left unchanged.
+    geometry and the chain's end nodes as ``from_id`` / ``to_id``; the other
+    edges of the chain and its inner nodes are removed. All other nodes,
+    including isolated ones (degree 0), are kept. Closed loops made only of
+    degree-2 nodes are left unchanged.
 
     Edges are selected by topology only, so edges that cross a node without
     being connected to it are never merged with it.
+
+    Attributes of the merged edge (all columns except ``geometry``,
+    ``from_id``, ``to_id`` and ``id``):
+
+    - a value shared by all edges of the chain is kept;
+    - external id columns (``id_cols``, by default ``osm_id``, ``osmid``,
+      ``edge_id``) take the value of the longest edge of the chain
+      (provenance: the merged edge maps back to that source feature);
+    - ``distance`` is the sum of the chain's distances (missing if any is
+      missing);
+    - other columns whose values differ are resolved according to
+      ``attr_conflict``: ``"majority"`` takes the value covering the largest
+      length of the chain (missing values are ignored; ties go to the value
+      of the longest edge), ``"nan"`` sets the value to missing. One warning
+      per call lists the columns and the number of merged edges concerned.
 
     Parameters
     ----------
@@ -694,6 +780,13 @@ def merge_edges(network, print_err=False):
         Node ids must be ``0..n-1`` in row order (see :func:`reset_ids`).
     print_err : bool, optional
         Whether to log a warning for each failed merge. Default: False.
+    attr_conflict : {"majority", "nan"}, optional
+        How to resolve attribute values that differ within a merged chain.
+        Default: "majority".
+    id_cols : sequence of str, optional
+        Columns holding external (source-data) ids, see above. Columns not
+        present in the edges are ignored. Default: :data:`DEFAULT_ID_COLS`
+        (``("osm_id", "osmid", "edge_id")``).
 
     Returns
     -------
@@ -703,9 +796,14 @@ def merge_edges(network, print_err=False):
     Raises
     ------
     ValueError
-        If the node ids are not ``0..n-1`` in row order, or ``from_id`` /
-        ``to_id`` are invalid (see :func:`calculate_degree`).
+        If the node ids are not ``0..n-1`` in row order, ``from_id`` /
+        ``to_id`` are invalid (see :func:`calculate_degree`), or
+        ``attr_conflict`` is not ``"majority"`` or ``"nan"``.
     """
+    if attr_conflict not in ("majority", "nan"):
+        raise ValueError(
+            f"attr_conflict must be 'majority' or 'nan', got {attr_conflict!r}."
+        )
     if network.edges.empty:
         return network
 
@@ -718,12 +816,14 @@ def merge_edges(network, print_err=False):
             "call reset_ids first."
         )
 
-    edge_id_col = _get_edge_id_column(edges)
-    drop_cols = ["geometry", "from_id", "to_id", "id"]
-    if edge_id_col is not None:
-        drop_cols.append(edge_id_col)
-    optional_cols = edges.columns.difference(drop_cols)
-    optional_pos = [edges.columns.get_loc(col) for col in optional_cols]
+    attr_cols = [
+        col for col in edges.columns if col not in ("geometry", "from_id", "to_id", "id")
+    ]
+    attr_values = {col: edges[col].tolist() for col in attr_cols}
+    changed_cols = set()
+    conflicts = {}  # column -> number of merged edges with differing values
+    n_merged = 0
+    lengths = shapely.length(edges["geometry"].to_numpy())
 
     # deg is updated during the merge (merged nodes are set to 0), so it must
     # be a writable copy, not a view of the column (read-only under
@@ -813,11 +913,40 @@ def merge_edges(network, print_err=False):
             deg[x] = 0
         # keep the end nodes of the merged edge (relevant for closed loops)
         removed_nodes.update(x for x in chain_nodes if x not in (end_1, end_2))
-        mode_edges = edges.iloc[members]
-        edges.iloc[edge_1, optional_pos] = (
-            mode_edges[optional_cols].mode().iloc[0].values
+        n_merged += 1
+        for col in attr_cols:
+            values = [attr_values[col][e] for e in members]
+            if col == "distance":  # lengths add up along the chain
+                new_value = (
+                    np.nan if any(_is_missing(v) for v in values) else sum(values)
+                )
+                if not _same_value(new_value, attr_values[col][edge_1]):
+                    attr_values[col][edge_1] = new_value
+                    changed_cols.add(col)
+                continue
+            new_value, conflict = _merged_value(
+                values,
+                lengths[members],
+                external_id=col in id_cols,
+                attr_conflict=attr_conflict,
+            )
+            if conflict:
+                conflicts[col] = conflicts.get(col, 0) + 1
+            if not _same_value(new_value, attr_values[col][edge_1]):
+                attr_values[col][edge_1] = new_value
+                changed_cols.add(col)
+
+    if conflicts:
+        LOGGER.warning(
+            "merge_edges: attribute values differed within merged edges and were "
+            "resolved by %s (%d edges merged): %s",
+            "length-weighted majority" if attr_conflict == "majority" else "NaN",
+            n_merged,
+            ", ".join(f"{col} ({n} edges)" for col, n in sorted(conflicts.items())),
         )
 
+    for col in changed_cols:
+        edges[col] = pd.Series(attr_values[col], index=edges.index)
     edges["from_id"] = from_ids
     edges["to_id"] = to_ids
     edges["geometry"] = gpd.GeoSeries(geoms, index=edges.index, crs=edges.crs)
@@ -1315,7 +1444,7 @@ def _drop_isolated_nodes(network):
     return Network(edges, nodes.loc[~isolated].reset_index(drop=True))
 
 
-def simplified_network(network):
+def simplified_network(network, id_cols=DEFAULT_ID_COLS):
     """Return a simplified network.
 
     Applies a series of simplification steps: cleaning roundabouts, adding
@@ -1337,6 +1466,9 @@ def simplified_network(network):
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
+    id_cols : sequence of str, optional
+        Edge columns holding external (source-data) ids, kept for provenance;
+        see :func:`merge_edges`. Default: :data:`DEFAULT_ID_COLS`.
 
     Returns
     -------
@@ -1360,7 +1492,7 @@ def simplified_network(network):
     network_simp = add_ids(network_simp)
     network_simp = add_topology(network_simp)
     network_simp.nodes["degree"] = calculate_degree(network_simp)
-    network_simp = merge_edges(network_simp)
+    network_simp = merge_edges(network_simp, id_cols=id_cols)
     network_simp.edges = drop_duplicate_geometries(network_simp.edges, keep="first")
     if not network.edges.empty:
         network_simp = _drop_isolated_nodes(network_simp)
