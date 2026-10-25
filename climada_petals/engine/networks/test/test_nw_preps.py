@@ -1000,39 +1000,6 @@ class TestDropDuplicateGeometries:
 
 
 # ========================================================================
-# Tests: find_closest_2_edges
-# ========================================================================
-
-
-class TestFindClosest2Edges:
-    def test_finds_two_edges(self, simple_network):
-        """Returns the two closest edges to a node."""
-        edges = simple_network.edges
-        node_geom = Point(1, 1)  # node 1, at junction of edges 0 and 1
-        edge_ids = list(range(len(edges)))
-
-        e1, e2 = nw_preps.find_closest_2_edges(edge_ids, edges, node_geom)
-
-        # Edges 0 and 1 touch node (1,1)
-        returned_ids = sorted([e1.name, e2.name])
-        assert returned_ids == [0, 1]
-
-    def test_finds_correct_edges_at_branch(self, branching_network):
-        """At branch node 2, finds two of the three edges."""
-        edges = branching_network.edges
-        node_geom = Point(2, 0)  # node 2
-        # Edges 1,2,3,4 are near node 2
-        edge_ids = [1, 2, 3, 4]
-
-        e1, e2 = nw_preps.find_closest_2_edges(edge_ids, edges, node_geom)
-
-        # Should return 2 of the edges incident to node 2
-        assert e1.name in [1, 2, 3, 4]
-        assert e2.name in [1, 2, 3, 4]
-        assert e1.name != e2.name
-
-
-# ========================================================================
 # Tests: node_connectivity_degree
 # ========================================================================
 
@@ -1803,6 +1770,114 @@ class TestKnownBugsMergeEdges:
         assert len(simple_network.nodes) == 5
         assert simple_network.nodes["degree"].tolist() == degree_before
 
+    @staticmethod
+    def _network(points, edge_pairs, **edge_cols):
+        """Network with point nodes and straight edges between node pairs."""
+        nodes = gpd.GeoDataFrame(
+            {"id": list(range(len(points))), "geometry": [Point(p) for p in points]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [a for a, _ in edge_pairs],
+                "to_id": [b for _, b in edge_pairs],
+                "id": list(range(len(edge_pairs))),
+                **edge_cols,
+                "geometry": [LineString([points[a], points[b]]) for a, b in edge_pairs],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    @staticmethod
+    def _chain_arrays():
+        """J -e0- A -e1- B -e2- C -e3- K as nodes 0..4 and edges 0..3."""
+        from_ids = np.array([0, 1, 2, 3])
+        to_ids = np.array([1, 2, 3, 4])
+        deg = np.array([1, 2, 2, 2, 1])
+        incident = [[0], [0, 1], [1, 2], [2, 3], [3]]
+        return deg, incident, from_ids, to_ids
+
+    def test_walk_chain_both_sides(self):
+        """From B, the two walks end at J and K and pass A and C."""
+        deg, incident, from_ids, to_ids = self._chain_arrays()
+        visited_nodes = {2}
+        visited_edges = {1, 2}
+
+        side_1 = nw_preps._walk_chain(
+            1, 1, deg, incident, from_ids, to_ids, visited_nodes, visited_edges
+        )
+        side_2 = nw_preps._walk_chain(
+            3, 2, deg, incident, from_ids, to_ids, visited_nodes, visited_edges
+        )
+
+        assert side_1 == (0, [1], [0])
+        assert side_2 == (4, [3], [3])
+        # nothing passed in is modified
+        assert visited_nodes == {2}
+        assert visited_edges == {1, 2}
+        np.testing.assert_array_equal(deg, [1, 2, 2, 2, 1])
+
+    def test_walk_chain_stops_at_non_degree_2_node(self):
+        """A walk starting at a node of degree != 2 returns it immediately."""
+        deg, incident, from_ids, to_ids = self._chain_arrays()
+
+        result = nw_preps._walk_chain(
+            0, 0, deg, incident, from_ids, to_ids, {1}, {0, 1}
+        )
+
+        assert result == (0, [], [])
+
+    def test_merge_edges_two_independent_chains(self):
+        """Two separate chains are merged independently."""
+        points = [(0, 0), (1, 0), (2, 0), (0, 5), (1, 5), (2, 5)]
+        network = self._network(
+            points, [(0, 1), (1, 2), (3, 4), (4, 5)], ci_type=["road"] * 4
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        pairs = {frozenset((e.from_id, e.to_id)) for e in result.edges.itertuples()}
+        assert pairs == {frozenset((0, 2)), frozenset((3, 5))}
+
+    def test_merge_edges_closed_loop_unchanged(self):
+        """A closed loop made only of degree-2 nodes is left unchanged."""
+        points = [(0, 0), (1, 0), (1, 1), (0, 1)]
+        network = self._network(
+            points, [(0, 1), (1, 2), (2, 3), (3, 0)], ci_type=["road"] * 4
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        assert len(result.edges) == 4
+        assert len(result.nodes) == 4
+
+    def test_merge_edges_loop_at_junction(self):
+        """A loop hanging at a junction becomes one closed edge at the junction."""
+        # junction 0 (degree 3: tail edge + both loop ends), loop 0-1-2-0
+        points = [(0, 0), (1, 1), (1, -1), (-1, 0)]
+        network = self._network(
+            points, [(0, 1), (1, 2), (2, 0), (3, 0)], ci_type=["road"] * 4
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        assert len(result.edges) == 2
+        loop = [e for e in result.edges.itertuples() if e.from_id == e.to_id]
+        assert len(loop) == 1
+        assert result.nodes.geometry.iloc[loop[0].from_id].equals(Point(0, 0))
+
+    def test_merge_edges_requires_range_node_ids(self, simple_network):
+        """merge_edges raises if node ids are not 0..n-1 in row order."""
+        nodes = simple_network.nodes.copy()
+        nodes["id"] = [4, 3, 2, 1, 0]
+        network = Network(edges=simple_network.edges.copy(), nodes=nodes)
+
+        with pytest.raises(ValueError, match="node ids"):
+            nw_preps.merge_edges(network)
+
     def test_merge_edges_without_degree_column(self, simple_network):
         assert "degree" not in simple_network.nodes.columns
 
@@ -1818,10 +1893,6 @@ class TestKnownBugsMergeEdges:
 
         assert len(result.edges) == 1
 
-    @_xfail(
-        "6b",
-        "edges at a degree-2 node are chosen geometrically, a crossing edge can win",
-    )
     def test_merge_edges_ignores_crossing_edge(self):
         # Node 1 has degree 2 (edges 1 and 2). Edge 0 crosses node 1 without
         # being connected to it and has the lowest id, so it is picked first.
@@ -1845,6 +1916,9 @@ class TestKnownBugsMergeEdges:
                 "to_id": [4, 1, 2],
                 "id": [0, 1, 2],
                 "osm_id": [30, 10, 11],
+                # an attribute column, so the test does not depend on the
+                # "no optional columns" bug fixed in Step 6c
+                "ci_type": ["road", "road", "road"],
                 "geometry": [
                     LineString([(1, -1), (1, 1)]),
                     LineString([(0, 0), (1, 0)]),

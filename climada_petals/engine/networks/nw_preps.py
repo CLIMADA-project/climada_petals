@@ -608,51 +608,90 @@ def concat_dedup(dataframes):
     return cat_dedup
 
 
-def find_closest_2_edges(edgeIDs, edges, nodGeometry):
-    """Find the two edges closest to a given node geometry.
+def _other_end(edge, node, from_ids, to_ids):
+    """Return the node at the other end of ``edge`` (row position) from ``node``."""
+    return to_ids[edge] if from_ids[edge] == node else from_ids[edge]
+
+
+def _walk_chain(
+    node, edge, deg, incident, from_ids, to_ids, visited_nodes, visited_edges
+):
+    """Walk along a chain of degree-2 nodes.
+
+    Starts at ``node``, reached through ``edge``, and repeatedly follows the
+    current node's other edge to that edge's far end, until it reaches a node
+    whose degree is not 2. It also stops at a node or edge that is already on
+    the chain (closed loop) and at a node whose incident edges do not match
+    its degree.
 
     Parameters
     ----------
-    edgeIDs : list of int
-        Indices of candidate edges. Modified in-place (first match removed).
-    edges : gpd.GeoDataFrame
-        GeoDataFrame of network edges.
-    nodGeometry : shapely.Point
-        Geometry of the node to find connected edges for.
+    node : int
+        Node (row position) where the walk starts.
+    edge : int
+        Edge (row position) through which ``node`` was reached.
+    deg : np.ndarray
+        Degree per node.
+    incident : list of list of int
+        Edges (row positions) incident to each node.
+    from_ids, to_ids : np.ndarray
+        End nodes (row positions) of each edge.
+    visited_nodes : set of int
+        Nodes already on the chain (at least the chain's start node).
+    visited_edges : set of int
+        Edges already on the chain.
 
     Returns
     -------
-    edge_path_1 : pandas.Series
-        The closest edge to the node.
-    edge_path_2 : pandas.Series
-        The second closest edge to the node.
+    end : int
+        Node where the walk stops: an end of the merged edge.
+    chain_nodes : list of int
+        Degree-2 nodes passed on the way (inner nodes of the merged edge).
+    chain_edges : list of int
+        Edges taken after ``edge``, in walking order.
+
+    Examples
+    --------
+    In ``J -e0- A -e1- B -e2- C -e3- K`` with A, B, C of degree 2, starting
+    at B: ``_walk_chain(A, e1, ...)`` returns ``(J, [A], [e0])`` and
+    ``_walk_chain(C, e2, ...)`` returns ``(K, [C], [e3])``.
     """
-    edge_path_1 = min(
-        [edges.iloc[match_idx] for match_idx in edgeIDs],
-        key=lambda match: shapely.distance(nodGeometry, match.geometry),
-    )
-    edgeIDs.remove(edge_path_1.name)
-    edge_path_2 = min(
-        [edges.iloc[match_idx] for match_idx in edgeIDs],
-        key=lambda match: shapely.distance(nodGeometry, match.geometry),
-    )
-    return edge_path_1, edge_path_2
+    chain_nodes = []
+    chain_edges = []
+    while deg[node] == 2 and node not in visited_nodes and node not in chain_nodes:
+        next_edges = [e for e in incident[node] if e != edge]
+        if len(next_edges) != 1:
+            break  # incident edges do not match the degree
+        next_edge = next_edges[0]
+        if next_edge in visited_edges or next_edge in chain_edges:
+            break  # back on this chain (closed loop)
+        chain_nodes.append(node)
+        chain_edges.append(next_edge)
+        edge = next_edge
+        node = _other_end(edge, node, from_ids, to_ids)
+    return node, chain_nodes, chain_edges
 
 
 def merge_edges(network, print_err=False):
     """Remove degree-2 nodes and merge their associated edges.
 
-    Finds nodes of degree 2 and their associated 2 edges, then traverses
-    edges and nodes in both directions until a node of degree != 2 is found.
-    Resets the geometry and from/to ids for the merged edge, and deletes the
-    traversed nodes and edges. Uses the mode of edge attributes for the
-    merged edge's column values. Only the inner nodes of merged chains are
-    removed; all other nodes, including isolated ones (degree 0), are kept.
+    Finds nodes of degree 2, then follows the network topology (``from_id`` /
+    ``to_id``) in both directions until a node of degree != 2 is reached, and
+    merges the edges of this chain into one. The merged edge gets the merged
+    geometry, the chain's end nodes as ``from_id`` / ``to_id`` and, for the
+    other columns, the mode of the chain's edge values; the other edges of
+    the chain and its inner nodes are removed. All other nodes, including
+    isolated ones (degree 0), are kept. Closed loops made only of degree-2
+    nodes are left unchanged.
+
+    Edges are selected by topology only, so edges that cross a node without
+    being connected to it are never merged with it.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
+        Node ids must be ``0..n-1`` in row order (see :func:`reset_ids`).
     print_err : bool, optional
         Whether to log a warning for each failed merge. Default: False.
 
@@ -660,19 +699,31 @@ def merge_edges(network, print_err=False):
     -------
     Network
         Network with degree-2 nodes removed and edges merged.
+
+    Raises
+    ------
+    ValueError
+        If the node ids are not ``0..n-1`` in row order, or ``from_id`` /
+        ``to_id`` are invalid (see :func:`calculate_degree`).
     """
     if network.edges.empty:
         return network
 
     nodes = network.nodes.copy()
     edges = network.edges.copy()
+    n_nodes = len(nodes)
+    if not np.array_equal(nodes["id"].to_numpy(), np.arange(n_nodes)):
+        raise ValueError(
+            "merge_edges requires node ids 0..n-1 in row order; "
+            "call reset_ids first."
+        )
 
     edge_id_col = _get_edge_id_column(edges)
     drop_cols = ["geometry", "from_id", "to_id", "id"]
     if edge_id_col is not None:
         drop_cols.append(edge_id_col)
     optional_cols = edges.columns.difference(drop_cols)
-    edg_sindex = shapely.STRtree(edges.geometry)
+    optional_pos = [edges.columns.get_loc(col) for col in optional_cols]
 
     # deg is updated during the merge (merged nodes are set to 0), so it must
     # be a writable copy, not a view of the column (read-only under
@@ -681,128 +732,97 @@ def merge_edges(network, print_err=False):
         deg = calculate_degree(network)
     else:
         deg = nodes["degree"].to_numpy(copy=True)
-    degree2 = np.where(deg == 2)
-    n2 = set((nodes["id"].iloc[degree2]))
 
-    nodGeom = nodes["geometry"]
-    eIDtoRemove = []
+    # Everything below works on row positions: edge e connects from_ids[e]
+    # and to_ids[e]; node ids are row positions (checked above)
+    from_ids = _edge_node_ids(edges, "from_id", n_nodes).copy()  # writable
+    to_ids = _edge_node_ids(edges, "to_id", n_nodes).copy()
+    geoms = edges["geometry"].to_numpy().copy()
+    node_geoms = nodes["geometry"].to_numpy()
+    incident = [[] for _ in range(n_nodes)]  # node -> positions of its edges
+    for pos, (from_id, to_id) in enumerate(zip(from_ids, to_ids)):
+        incident[from_id].append(pos)
+        incident[to_id].append(pos)
+
+    n2 = set(np.flatnonzero(deg == 2).tolist())
+    edges_to_remove = set()
     removed_nodes = set()  # inner nodes of successfully merged chains
 
-    # make progressbar with tqdm(total=len(n2))
     while n2:
-        newEdge = []
-        info_first_edge = []
-        possibly_delete = []
-        pos_0_deg = []
-        nodeID = n2.pop()
-        pos_0_deg.append(nodeID)
-        # Co-ordinates of current node
-        node_geometry = nodGeom[nodeID]
-        eID = set(edg_sindex.query(node_geometry, predicate="intersects"))
-        # Find the nearest 2 edges, unless there is an error in the dataframe
-        # this will return the connected edges using spatial indexing
-        if len(eID) > 2:
-            edge_path_1, edge_path_2 = find_closest_2_edges(eID, edges, node_geometry)
-        elif len(eID) < 2:
-            continue
-        else:
-            edge_path_1 = edges.iloc[eID.pop()]
-            edge_path_2 = edges.iloc[eID.pop()]
-        # For the two edges found, identify the next 2 nodes in either direction
-        next_node_1 = (
-            edge_path_1.to_id if edge_path_1.from_id == nodeID else edge_path_1.from_id
+        start = n2.pop()
+        start_edges = incident[start]
+        if len(start_edges) != 2 or start_edges[0] == start_edges[1]:
+            continue  # degree column inconsistent with the edges, or self-loop
+        edge_1, edge_2 = start_edges
+        next_1 = _other_end(edge_1, start, from_ids, to_ids)
+        next_2 = _other_end(edge_2, start, from_ids, to_ids)
+        if next_1 == next_2:
+            continue  # two parallel edges between the same nodes
+        # walk both sides of the chain; the merged edge keeps edge_1's row
+        end_1, nodes_1, edges_1 = _walk_chain(
+            next_1,
+            edge_1,
+            deg,
+            incident,
+            from_ids,
+            to_ids,
+            visited_nodes={start},
+            visited_edges={edge_1, edge_2},
         )
-        next_node_2 = (
-            edge_path_2.to_id if edge_path_2.from_id == nodeID else edge_path_2.from_id
+        end_2, nodes_2, edges_2 = _walk_chain(
+            next_2,
+            edge_2,
+            deg,
+            incident,
+            from_ids,
+            to_ids,
+            visited_nodes={start, *nodes_1},
+            visited_edges={edge_1, edge_2, *edges_1},
         )
-        if next_node_1 == next_node_2:
+        chain_nodes = [start, *nodes_1, *nodes_2]
+        members = [edge_1, edge_2, *edges_1, *edges_2]
+        n2.difference_update(chain_nodes)
+        if deg[end_1] == 2 and deg[end_2] == 2:
+            # neither side reached a node of degree != 2: a closed loop of
+            # degree-2 nodes (both walks end at the same node), or a degree
+            # column that does not match the edges -> leave unchanged
             continue
-        possibly_delete.append(edge_path_2.id)
-        # At the moment the first edge information is used for the merged edge
-        info_first_edge = edge_path_1.id
-        newEdge.append(edge_path_1.geometry)
-        newEdge.append(edge_path_2.geometry)
-        # While the next node along the path is degree 2 keep traversing
-        while deg[next_node_1] == 2:
-            if next_node_1 in pos_0_deg:
-                break
-            next_node_1Geom = nodGeom[next_node_1]
-            eID = set(edg_sindex.query(next_node_1Geom, predicate="intersects"))
-            eID.discard(edge_path_1.id)
-            try:
-                edge_path_1 = min(
-                    [edges.iloc[match_idx] for match_idx in eID],
-                    key=lambda match: shapely.distance(
-                        next_node_1Geom, (match.geometry)
-                    ),
-                )
-            except ValueError:  # no further edge at this node: stop the walk
-                break
-            pos_0_deg.append(next_node_1)
-            n2.discard(next_node_1)
-            next_node_1 = (
-                edge_path_1.to_id
-                if edge_path_1.from_id == next_node_1
-                else edge_path_1.from_id
-            )
-            newEdge.append(edge_path_1.geometry)
-            possibly_delete.append(edge_path_1.id)
 
-        while deg[next_node_2] == 2:
-            if next_node_2 in pos_0_deg:
-                break
-            next_node_2Geom = nodGeom[next_node_2]
-            eID = set(edg_sindex.query(next_node_2Geom, predicate="intersects"))
-            eID.discard(edge_path_2.id)
-            try:
-                edge_path_2 = min(
-                    [edges.iloc[match_idx] for match_idx in eID],
-                    key=lambda match: shapely.distance(
-                        next_node_2Geom, (match.geometry)
-                    ),
-                )
-            except ValueError:  # no further edge at this node: stop the walk
-                break
-            pos_0_deg.append(next_node_2)
-            n2.discard(next_node_2)
-            next_node_2 = (
-                edge_path_2.to_id
-                if edge_path_2.from_id == next_node_2
-                else edge_path_2.from_id
-            )
-            newEdge.append(edge_path_2.geometry)
-            possibly_delete.append(edge_path_2.id)
-        # Update the information of the first edge
-        new_merged_geom = shapely.line_merge(shapely.multilinestrings([newEdge]))
-        if shapely.get_type_id(new_merged_geom) == 1:
-            edges.at[info_first_edge, "geometry"] = new_merged_geom
-            if nodGeom[next_node_1] == shapely.get_point(new_merged_geom, 0):
-                edges.at[info_first_edge, "from_id"] = next_node_1
-                edges.at[info_first_edge, "to_id"] = next_node_2
-            else:
-                edges.at[info_first_edge, "from_id"] = next_node_2
-                edges.at[info_first_edge, "to_id"] = next_node_1
-            eIDtoRemove += possibly_delete
-            possibly_delete.append(info_first_edge)
-            for x in pos_0_deg:
-                deg[x] = 0
-            # keep the end nodes of the merged edge (relevant for closed loops)
-            removed_nodes.update(
-                x for x in pos_0_deg if x not in (next_node_1, next_node_2)
-            )
-            mode_edges = edges.loc[edges.id.isin(possibly_delete)]
-            edges.loc[info_first_edge, optional_cols] = (
-                mode_edges[optional_cols].mode().iloc[0].values
-            )
-        else:
+        new_merged_geom = shapely.line_merge(
+            shapely.multilinestrings([geoms[e] for e in members])
+        )
+        if shapely.get_type_id(new_merged_geom) != 1:
             if print_err:
                 LOGGER.warning(
-                    "Edge %s failed to merge, has shapely type %s",
-                    info_first_edge,
-                    shapely.get_type_id(edges.at[info_first_edge, "geometry"]),
+                    "Edge %s failed to merge, merged geometry has shapely type %s",
+                    edge_1,
+                    shapely.get_type_id(new_merged_geom),
                 )
+            continue
 
-    edges = edges.loc[~(edges.id.isin(eIDtoRemove))].reset_index(drop=True)
+        geoms[edge_1] = new_merged_geom
+        start_point = shapely.get_point(new_merged_geom, 0)
+        if shapely.distance(node_geoms[end_1], start_point) <= shapely.distance(
+            node_geoms[end_2], start_point
+        ):
+            from_ids[edge_1], to_ids[edge_1] = end_1, end_2
+        else:
+            from_ids[edge_1], to_ids[edge_1] = end_2, end_1
+        edges_to_remove.update(members[1:])
+        for x in chain_nodes:
+            deg[x] = 0
+        # keep the end nodes of the merged edge (relevant for closed loops)
+        removed_nodes.update(x for x in chain_nodes if x not in (end_1, end_2))
+        mode_edges = edges.iloc[members]
+        edges.iloc[edge_1, optional_pos] = (
+            mode_edges[optional_cols].mode().iloc[0].values
+        )
+
+    edges["from_id"] = from_ids
+    edges["to_id"] = to_ids
+    edges["geometry"] = gpd.GeoSeries(geoms, index=edges.index, crs=edges.crs)
+    keep = [pos for pos in range(len(edges)) if pos not in edges_to_remove]
+    edges = edges.iloc[keep].reset_index(drop=True)
 
     # remove only the inner nodes of merged chains (not isolated nodes)
     nodes = nodes.loc[~nodes["id"].isin(removed_nodes)].reset_index(drop=True)
@@ -1233,12 +1253,8 @@ def _check_single_ci_type(network):
         ``ci_type`` different from the edges.
     """
     edges, nodes = network.edges, network.nodes
-    edge_types = (
-        set(edges["ci_type"].dropna()) if "ci_type" in edges.columns else set()
-    )
-    node_types = (
-        set(nodes["ci_type"].dropna()) if "ci_type" in nodes.columns else set()
-    )
+    edge_types = set(edges["ci_type"].dropna()) if "ci_type" in edges.columns else set()
+    node_types = set(nodes["ci_type"].dropna()) if "ci_type" in nodes.columns else set()
     hint = (
         "Simplify each ci_type separately and combine the results with "
         "Network.from_networks."
