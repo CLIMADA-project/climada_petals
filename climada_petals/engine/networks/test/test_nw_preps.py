@@ -1528,6 +1528,115 @@ class TestSplitEdgesAtNodes:
 
         assert isinstance(result.edges, gpd.GeoDataFrame)
 
+    @staticmethod
+    def _network(lines, points, **edge_cols):
+        edges = gpd.GeoDataFrame(
+            {**edge_cols, "geometry": [LineString(c) for c in lines]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": list(range(len(points))), "geometry": [Point(p) for p in points]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    @staticmethod
+    def _lengths(network):
+        return sorted(round(g.length, 9) for g in network.edges.geometry)
+
+    def test_node_between_vertices_splits_by_default(self):
+        network = self._network([[(0, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert self._lengths(result) == [1.0, 1.0]
+
+    def test_node_between_vertices_ignored_in_vertex_mode(self):
+        network = self._network([[(0, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network, split_between_vertices=False)
+
+        assert self._lengths(result) == [2.0]
+
+    def test_vertex_mode_splits_at_shared_vertex(self):
+        network = self._network([[(0, 0), (1, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network, split_between_vertices=False)
+
+        assert self._lengths(result) == [1.0, 1.0]
+
+    def test_vertex_mode_no_spurious_split(self):
+        """Per point, not per coordinate: vertex (0,3) is not a split point."""
+        network = self._network(
+            [[(0, 0), (0, 3), (2, 3), (4, 0)]], [(0, 0), (2, 3), (4, 0)]
+        )
+
+        result = nw_preps.split_edges_at_nodes(network, split_between_vertices=False)
+
+        assert len(result.edges) == 2
+
+    def test_crossing_without_shared_vertex(self):
+        """Two crossing edges are split at the crossing by default only."""
+        lines = [[(0, 0), (2, 0)], [(1, -1), (1, 1)]]
+        points = [(0, 0), (2, 0), (1, -1), (1, 1)]
+
+        default = nw_preps.split_edges_at_nodes(self._network(lines, points))
+        vertex_mode = nw_preps.split_edges_at_nodes(
+            self._network(lines, points), split_between_vertices=False
+        )
+
+        assert self._lengths(default) == [1.0, 1.0, 1.0, 1.0]
+        assert self._lengths(vertex_mode) == [2.0, 2.0]
+
+    def test_pieces_copy_attributes(self):
+        network = self._network(
+            [[(0, 0), (2, 0)]],
+            [(0, 0), (1, 0), (2, 0)],
+            osm_id=[7],
+            highway=["primary"],
+        )
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert result.edges["osm_id"].tolist() == [7, 7]
+        assert result.edges["highway"].tolist() == ["primary", "primary"]
+
+    def test_duplicate_edges_not_split_at_their_vertices(self):
+        """An identical second edge does not add split points."""
+        line = [(0, 0), (1, 0), (2, 0)]
+        network = self._network([line, line], [(0, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert self._lengths(result) == [2.0, 2.0]
+
+    def test_partial_overlap_split_at_its_ends_only(self):
+        """A shared stretch splits at its start and end, not at inner vertices."""
+        long_way = [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]
+        short_way = [(1, 0), (2, 0), (3, 0)]  # shares (1,0)-(3,0) with long_way
+        network = self._network([long_way, short_way], [(0, 0), (4, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        # long_way: cut at (1,0) and (3,0) -> 1, 2, 1; short_way: not cut -> 2
+        assert self._lengths(result) == [1.0, 1.0, 2.0, 2.0]
+
+    def test_multilinestring_unchanged(self):
+        mls = MultiLineString([[(0, 0), (1, 0)], [(1, 0), (2, 0)]])
+        edges = gpd.GeoDataFrame(
+            {"geometry": [mls]}, geometry="geometry", crs="EPSG:4326"
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": [0], "geometry": [Point(1, 0)]}, geometry="geometry", crs="EPSG:4326"
+        )
+
+        result = nw_preps.split_edges_at_nodes(Network(edges=edges, nodes=nodes))
+
+        assert len(result.edges) == 1
+        assert result.edges.geometry.iloc[0].equals(mls)
+
 
 # ========================================================================
 # Tests: clean_roundabouts
@@ -1881,9 +1990,7 @@ class TestKnownBugsMergeEdges:
         assert "highway (1 edges)" in caplog.text
 
     def test_merge_attrs_external_id_of_longest_edge(self, caplog):
-        network = self._network(
-            self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20]
-        )
+        network = self._network(self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20])
 
         result = self._merge_capturing_logs(caplog, network)
 
@@ -1903,9 +2010,7 @@ class TestKnownBugsMergeEdges:
 
     def test_merge_attrs_osm_id_as_attribute_without_id_cols(self, caplog):
         """With id_cols=(), osm_id is resolved like any other attribute."""
-        network = self._network(
-            self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20]
-        )
+        network = self._network(self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20])
 
         result = self._merge_capturing_logs(caplog, network, id_cols=())
 
@@ -2043,7 +2148,6 @@ class TestKnownBugsMergeEdges:
 
 
 class TestKnownBugsSplitEdgesAtNodes:
-    @_xfail("7a", "vertices are matched per coordinate value, not per point")
     def test_no_spurious_split(self):
         # Real split points: (0,0), (2,3), (4,0). Vertex (0,3) takes its x
         # from (0,0) and its y from (2,3) and must not be split.
@@ -2062,7 +2166,6 @@ class TestKnownBugsSplitEdgesAtNodes:
 
         assert len(result.edges) == 2
 
-    @_xfail("7a", "the stretch beyond the outermost split point is dropped")
     def test_keeps_dead_end(self):
         edges = gpd.GeoDataFrame(
             {"id": [0], "geometry": [LineString([(0, 0), (1, 0), (2, 0)])]},
@@ -2080,7 +2183,6 @@ class TestKnownBugsSplitEdgesAtNodes:
         assert len(result.edges) == 1
         assert result.edges.geometry.iloc[0].length == pytest.approx(2.0)
 
-    @_xfail("7a", "an edge touching no node and no other edge is deleted")
     def test_keeps_isolated_edge(self):
         edges = gpd.GeoDataFrame(
             {"id": [0], "geometry": [LineString([(0, 0), (1, 0), (2, 0)])]},

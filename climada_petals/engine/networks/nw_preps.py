@@ -26,6 +26,7 @@ import numpy as np
 import logging
 import shapely
 from shapely.errors import GEOSException
+from shapely.ops import substring
 from tqdm import tqdm
 
 from climada.util.coordinates import compute_geodesic_lengths
@@ -817,7 +818,9 @@ def merge_edges(
         )
 
     attr_cols = [
-        col for col in edges.columns if col not in ("geometry", "from_id", "to_id", "id")
+        col
+        for col in edges.columns
+        if col not in ("geometry", "from_id", "to_id", "id")
     ]
     attr_values = {col: edges[col].tolist() for col in attr_cols}
     changed_cols = set()
@@ -1056,97 +1059,196 @@ def reset_ids(network):
     return Network(edges, nodes)
 
 
-def split_edges_at_nodes(network):
-    """Split network edges where they intersect node geometries.
+def split_edges_at_nodes(network, split_between_vertices=True, tolerance=1e-9):
+    """Split edges where they meet nodes or other edges.
+
+    The split points of an edge are
+
+    - the nodes within ``tolerance`` of the edge, and
+    - the points where it meets another edge: crossing or touching points,
+      and the start and end of stretches the two edges share (the inner
+      vertices of a shared stretch are not split points, so e.g. an identical
+      duplicate edge does not cut the edge at all).
+
+    With ``split_between_vertices=True`` (default) the edge is cut at every
+    split point, also between two of its vertices (the cut point becomes a new
+    vertex). With ``split_between_vertices=False`` it is only cut at its own
+    vertices that lie within ``tolerance`` of a split point; split points
+    between two vertices are ignored, so e.g. a side road ending in the middle
+    of a segment of a main road, without a shared vertex, stays unconnected.
+
+    Both ends of every edge are kept, so no geometry is lost. Each piece
+    copies all attributes of its edge, including ``id``, ``from_id``,
+    ``to_id`` and external ids such as ``osm_id``. Run :func:`add_ids` and
+    :func:`add_topology` afterwards to get unique ids and correct topology.
+    Edges that are not LineStrings (e.g. MultiLineStrings, see
+    :func:`merge_multilinestrings`) are returned unchanged.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
+    split_between_vertices : bool, optional
+        Whether split points between two vertices of an edge also split it.
+        Default: True.
+    tolerance : float, optional
+        Distance (CRS units) within which a node counts as lying on an edge,
+        a vertex as coinciding with a split point, and below which pieces are
+        not created. Default: 1e-9.
 
     Returns
     -------
     Network
-        Network with edges split at node intersection points.
+        Network with edges split at the split points.
     """
-    edges_src, edge_id_col = _ensure_edge_id_column(network.edges)
-    sindex_nodes = shapely.STRtree(network.nodes["geometry"])
-    sindex_edges = shapely.STRtree(edges_src["geometry"])
-    attributes = [
-        x for x in edges_src.columns if x not in ["index", "geometry", edge_id_col]
-    ]
-    grab_all_edges = []
-
-    # TODO: this takes really long. Rewrite?
-    for _, edge in tqdm(edges_src.iterrows(), desc="splitting", total=len(edges_src)):
-        hits_nodes = nodes_intersecting(
-            edge.geometry, network.nodes["geometry"], sindex_nodes, tolerance=1e-9
-        )
-        hits_edges = nodes_intersecting(
-            edge.geometry, edges_src["geometry"], sindex_edges, tolerance=1e-9
-        )
-        hits_edges = shapely.set_operations.intersection(edge.geometry, hits_edges)
-        try:
-            hits_edges = hits_edges[
-                ~(shapely.predicates.covers(hits_edges, edge.geometry))
-            ]
-            hits_edges = pd.Series(
-                [
-                    shapely.points(item)
-                    for sublist in [shapely.get_coordinates(x) for x in hits_edges]
-                    for item in sublist
-                ],
-                name="geometry",
-            )
-            hits = [
-                shapely.points(x)
-                for x in shapely.coordinates.get_coordinates(
-                    shapely.constructive.extract_unique_points(
-                        shapely.multipoints(pd.concat([hits_nodes, hits_edges]).values)
-                    )
-                )
-            ]
-        except TypeError:
-            return hits_edges
-        hits = pd.DataFrame(hits, columns=["geometry"])
-        # get points and geometry as list of coordinates
-        split_points = shapely.coordinates.get_coordinates(
-            shapely.snap(hits, edge.geometry, tolerance=1e-9)
-        )
-        coor_geom = shapely.coordinates.get_coordinates(edge.geometry)
-        # potentially split to multiple edges
-        split_locs = np.argwhere(np.isin(coor_geom, split_points).all(axis=1))[:, 0]
-        split_locs = list(zip(split_locs.tolist(), split_locs.tolist()[1:]))
-        new_edges = [
-            coor_geom[split_loc[0] : split_loc[1] + 1] for split_loc in split_locs
-        ]
-        attr_values = [edge[attr] for attr in attributes]
-        grab_all_edges.append(
-            [
-                [edge[edge_id_col]] * len(new_edges),
-                [shapely.linestrings(coords) for coords in new_edges],
-                [attr_values] * len(new_edges),
-            ]
-        )
-
-    big_list = [list(zip(x[0], x[1], x[2])) for x in grab_all_edges]
-
-    # combine all new edges
-    edges = gpd.GeoDataFrame(
-        [
-            [item[0], item[1]] + list(item[2])
-            for sublist in big_list
-            for item in sublist
-        ],
-        columns=[edge_id_col, "geometry"] + attributes,
-        geometry="geometry",
-        crs=network.edges.crs,
-    )
-    if edge_id_col == "__edge_uid":
-        edges = edges.drop(columns=[edge_id_col], errors="ignore")
+    edges = network.edges.copy()
     nodes = network.nodes.copy()
+    if edges.empty:
+        return Network(edges, nodes)
 
+    geoms = edges["geometry"].to_numpy()
+    is_line = shapely.get_type_id(geoms) == 1
+    line_pos = np.flatnonzero(is_line)
+    hits = {pos: [] for pos in line_pos.tolist()}
+
+    # Spatial queries below return pairs (k, i): the k-th *queried* geometry
+    # (a position within geoms[line_pos]) and the i-th geometry of the tree
+    # (a row position of nodes or edges). line_pos[k] translates k into the
+    # row position of the queried line.
+
+    # nodes within tolerance of each line
+    node_geoms = nodes["geometry"].to_numpy()
+    if len(node_geoms):
+        query_k, node_pos = shapely.STRtree(node_geoms).query(
+            geoms[line_pos], predicate="dwithin", distance=tolerance
+        )
+        line_of_pair = line_pos[query_k]  # row position of the line per pair
+        coords, pair = shapely.get_coordinates(node_geoms[node_pos], return_index=True)
+        for k, xy in zip(pair, coords):
+            hits[int(line_of_pair[k])].append(xy)
+
+    # points where each line meets another edge
+    query_k, other_pos = shapely.STRtree(geoms).query(
+        geoms[line_pos], predicate="intersects"
+    )
+    line_of_pair = line_pos[query_k]  # row position of the line per pair
+    not_self = line_of_pair != other_pos  # every line intersects itself
+    line_of_pair, other_pos = line_of_pair[not_self], other_pos[not_self]
+    intersections = shapely.intersection(geoms[line_of_pair], geoms[other_pos])
+    for pos, intersection in zip(line_of_pair.tolist(), intersections):
+        hits[pos].extend(_meeting_points(intersection))
+
+    rows, pieces = [], []
+    for pos in range(len(edges)):
+        if not is_line[pos]:
+            rows.append(pos)
+            pieces.append(geoms[pos])
+            continue
+        for piece in _split_line(
+            geoms[pos], hits[pos], split_between_vertices, tolerance
+        ):
+            rows.append(pos)
+            pieces.append(piece)
+
+    edges = edges.iloc[rows].reset_index(drop=True)
+    edges["geometry"] = gpd.GeoSeries(pieces, index=edges.index, crs=network.edges.crs)
     return Network(edges, nodes)
+
+
+def _meeting_points(intersection):
+    """Points where two lines meet, from the geometry of their intersection.
+
+    Point parts (crossing or touching points) are returned as they are. Line
+    parts (shared stretches) are first merged, and only the start and end of
+    each merged stretch are returned, not its inner vertices.
+
+    Parameters
+    ----------
+    intersection : shapely.Geometry
+        Intersection of two lines (Point, LineString, multi-part or
+        GeometryCollection).
+
+    Returns
+    -------
+    list of np.ndarray
+        ``(x, y)`` coordinates of the meeting points.
+    """
+    parts = shapely.get_parts(intersection)
+    while np.any(shapely.get_type_id(parts) >= 4):  # nested multi / collection
+        parts = shapely.get_parts(parts)
+    type_ids = shapely.get_type_id(parts)
+    points = list(shapely.get_coordinates(parts[type_ids == 0]))
+    lines = parts[(type_ids == 1) | (type_ids == 2)]
+    if len(lines):
+        merged = shapely.get_parts(shapely.line_merge(shapely.multilinestrings(lines)))
+        for stretch in merged:
+            coords = shapely.get_coordinates(stretch)
+            points.extend([coords[0], coords[-1]])
+    return points
+
+
+def _split_line(line, points, split_between_vertices, tolerance):
+    """Cut a LineString at the given points.
+
+    Parameters
+    ----------
+    line : shapely.LineString
+        Line to cut.
+    points : list of array_like
+        ``(x, y)`` split points on or near the line.
+    split_between_vertices : bool
+        Cut at any point along the line (True), or only at the line's own
+        vertices within ``tolerance`` of a split point (False).
+    tolerance : float
+        See :func:`split_edges_at_nodes`.
+
+    Returns
+    -------
+    list of shapely.LineString
+        Pieces in order along the line; ``[line]`` if it is not cut. The first
+        piece starts at the line's start and the last ends at its end.
+    """
+    if len(points) == 0:
+        return [line]
+    points = np.unique(np.asarray(points, dtype=float).reshape(-1, 2), axis=0)
+
+    if split_between_vertices:
+        distances = shapely.line_locate_point(line, shapely.points(points))
+        # sorted candidate cuts as distances along the line, incl. start and end
+        cuts = np.unique(np.concatenate(([0.0], distances, [line.length])))
+        # keep a cut only if it is more than `tolerance` beyond the last kept
+        # one: drops near-duplicate cuts, i.e. zero-length pieces
+        cut_positions = [cuts[0]]
+        for cut in cuts[1:]:
+            if cut - cut_positions[-1] > tolerance:
+                cut_positions.append(cut)
+        # if the end itself was dropped as a near-duplicate, move the last kept
+        # cut exactly onto the end so that no piece stops short of it
+        cut_positions[-1] = line.length
+        if len(cut_positions) <= 2:
+            return [line]
+        return [
+            substring(line, a, b) for a, b in zip(cut_positions[:-1], cut_positions[1:])
+        ]
+
+    coords = shapely.get_coordinates(line)
+    # distance of each vertex to its closest split point
+    vertex_dist = np.min(
+        np.hypot(
+            coords[:, None, 0] - points[None, :, 0],
+            coords[:, None, 1] - points[None, :, 1],
+        ),
+        axis=1,
+    )
+    cut_idx = sorted(
+        set(np.flatnonzero(vertex_dist <= tolerance).tolist()) | {0, len(coords) - 1}
+    )
+    if len(cut_idx) <= 2:
+        return [line]
+    return [
+        shapely.linestrings(coords[a : b + 1])
+        for a, b in zip(cut_idx[:-1], cut_idx[1:])
+    ]
 
 
 def _intersects(geom, dataframe, sindex, tolerance=1e-9):
