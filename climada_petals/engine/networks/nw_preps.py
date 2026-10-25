@@ -396,99 +396,138 @@ def _ensure_edge_id_column(edges):
     return edges, edge_id_col
 
 
-def clean_roundabouts(network):
-    """Clean roundabouts and junctions in the network.
+def _has_topology(edges):
+    """Whether the edges have (non-missing) ``from_id`` / ``to_id`` values."""
+    return (
+        {"from_id", "to_id"}.issubset(edges.columns)
+        and edges[["from_id", "to_id"]].notna().any().any()
+    )
 
-    Should be called before splitting edges at nodes to avoid logic conflicts.
+
+def clean_roundabouts(network, max_length=None, tolerance=1e-9):
+    """Collapse roundabouts into a single point.
+
+    A roundabout is an edge whose geometry is a closed ring (see
+    :func:`find_roundabouts`), optionally no longer than ``max_length``. Each
+    roundabout edge is removed, and every edge with an end on the ring is
+    extended by a straight segment from that end to the ring's centroid, so
+    that all roads meeting the roundabout meet at one point. An edge joining
+    two roundabouts is extended at both ends.
+
+    Edges that touch the ring but have no end on it (e.g. a road crossing it
+    on a bridge) are left unchanged and stay unconnected to it. Edges with
+    both ends on the same ring (e.g. a slip lane between two of its exits)
+    are removed, since they would become a loop at the centroid. Other closed
+    rings and non-LineString edges are left unchanged. Roundabouts drawn as
+    several edges (none of them a closed ring) are not detected.
+
+    Nodes and topology:
+
+    - Nodes lying on a collapsed ring (within ``tolerance``) are removed:
+      their role is taken over by the centroid, where the extended edges now
+      meet. No node is created at the centroid; :func:`add_endpoints` does
+      that. All other nodes are kept.
+    - ``from_id`` / ``to_id`` are not updated. If the edges already have them
+      and a roundabout is collapsed, they are outdated (an extended edge
+      still refers to its old junction node) and a warning is logged.
+
+    So call this function before :func:`add_endpoints`, :func:`add_ids` and
+    :func:`add_topology` (as :func:`simplified_network` does), or run them
+    again afterwards. Call it before :func:`split_edges_at_nodes`.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
+    max_length : float, optional
+        Maximum length of a ring, in metres, for it to count as a roundabout.
+        Longer closed rings (e.g. a ring road or a residential loop) are kept.
+        Default: None (no limit, every closed ring is a roundabout).
+    tolerance : float, optional
+        Distance (CRS units) within which an edge end counts as lying on a
+        ring. Default: 1e-9.
 
     Returns
     -------
     Network
-        Network with roundabout geometries replaced by centroid connections.
-    """
-    # TODO: Is reference to osm_id really necessary? Remove by alternative?
+        Network with roundabouts replaced by connections to their centroids,
+        without the nodes that lay on them.
 
+    Raises
+    ------
+    ValueError
+        If ``max_length`` is given and the edges have no CRS.
+    """
     edges = network.edges.copy()
     nodes = network.nodes.copy()
-    edges, edge_id_col = _ensure_edge_id_column(edges)
+    if edges.empty:
+        return Network(edges, nodes)
 
-    sindex = shapely.STRtree(edges["geometry"])
-    new_edge = []
-    remove_edge = []
-    new_edge_id = []
-    attributes = [x for x in edges.columns if x not in ["geometry", edge_id_col]]
+    original = edges["geometry"].to_numpy()
+    geoms = original.copy()  # updated as edges are extended
+    is_line = shapely.get_type_id(original) == 1
+    is_ring = is_line & shapely.is_ring(original)
+    ring_pos = np.flatnonzero(is_ring)
+    if max_length is not None and len(ring_pos):
+        ring_lengths = _edge_lengths_metres(edges.iloc[ring_pos])
+        roundabout_pos = ring_pos[np.asarray(ring_lengths) <= max_length]
+    else:
+        roundabout_pos = ring_pos
 
-    roundabouts = find_roundabouts(network)
-    for roundabout in roundabouts:
-        round_centroid = shapely.constructive.centroid(roundabout.geometry)
-        remove_edge.append(roundabout.Index)
+    tree = shapely.STRtree(original)
+    remove = set(roundabout_pos.tolist())
+    n_extended = 0
+    n_inner = 0
+    for ring_row in roundabout_pos.tolist():
+        ring = original[ring_row]
+        centroid_xy = shapely.get_coordinates(shapely.centroid(ring))
+        touching = tree.query(ring, predicate="dwithin", distance=tolerance)
+        for row in touching.tolist():
+            if row in remove or is_ring[row] or not is_line[row]:
+                continue
+            coords = shapely.get_coordinates(geoms[row])
+            start_on_ring = shapely.distance(shapely.points(coords[0]), ring) <= tolerance
+            end_on_ring = shapely.distance(shapely.points(coords[-1]), ring) <= tolerance
+            if start_on_ring and end_on_ring:
+                remove.add(row)
+                n_inner += 1
+            elif start_on_ring:
+                geoms[row] = shapely.linestrings(np.vstack([centroid_xy, coords]))
+                n_extended += 1
+            elif end_on_ring:
+                geoms[row] = shapely.linestrings(np.vstack([coords, centroid_xy]))
+                n_extended += 1
 
-        edges_intersect = _intersects(roundabout.geometry, edges["geometry"], sindex)
-        # index at e[0] geometry at e[1] of edges that intersect with
-        for edg in edges_intersect.items():
-            edge = edges.loc[edg[0]]
-            edge_id_value = edge[edge_id_col]
-            start = shapely.get_point(edg[1], 0)
-            end = shapely.get_point(edg[1], -1)
-            first_co_is_closer = shapely.measurement.distance(
-                end, round_centroid
-            ) > shapely.measurement.distance(start, round_centroid)
-            co_ords = shapely.coordinates.get_coordinates(edge.geometry)
-            centroid_co = shapely.coordinates.get_coordinates(round_centroid)
-            if first_co_is_closer:
-                new_co = np.concatenate((centroid_co, co_ords))
-            else:
-                new_co = np.concatenate((co_ords, centroid_co))
+    # nodes on collapsed rings: replaced by the centroids
+    n_nodes_removed = 0
+    if len(roundabout_pos) and not nodes.empty:
+        _, node_pos = shapely.STRtree(nodes["geometry"].to_numpy()).query(
+            original[roundabout_pos], predicate="dwithin", distance=tolerance
+        )
+        on_ring = np.unique(node_pos)
+        n_nodes_removed = len(on_ring)
+        nodes = nodes.drop(index=nodes.index[on_ring]).reset_index(drop=True)
 
-            snap_line = shapely.linestrings(new_co)
+    if len(ring_pos):
+        LOGGER.info(
+            "clean_roundabouts: collapsed %d roundabouts, extended %d edge ends "
+            "to their centroids, removed %d edges with both ends on a roundabout "
+            "and %d nodes on roundabouts; kept %d longer closed rings.",
+            len(roundabout_pos),
+            n_extended,
+            n_inner,
+            n_nodes_removed,
+            len(ring_pos) - len(roundabout_pos),
+        )
+    if len(roundabout_pos) and _has_topology(edges):
+        LOGGER.warning(
+            "clean_roundabouts: from_id / to_id are outdated after collapsing "
+            "roundabouts; run add_endpoints, add_ids and add_topology afterwards."
+        )
 
-            # an edge should never connect to>  2 roundabouts, if it does this will break
-            if edge_id_value in new_edge_id:
-                a = []
-                counter = 0
-                for x in new_edge:
-                    if x[0] == edge_id_value:
-                        a = counter
-                        break
-                    counter += 1
-                double_edge = new_edge.pop(a)
-                start = shapely.get_point(double_edge[-1], 0)
-                end = shapely.get_point(double_edge[-1], -1)
-                first_co_is_closer = shapely.measurement.distance(
-                    end, round_centroid
-                ) > shapely.measurement.distance(start, round_centroid)
-                co_ords = shapely.coordinates.get_coordinates(double_edge[-1])
-                if first_co_is_closer:
-                    new_co = np.concatenate((centroid_co, co_ords))
-                else:
-                    new_co = np.concatenate((co_ords, centroid_co))
-                snap_line = shapely.linestrings(new_co)
-                new_edge.append(
-                    [edge_id_value] + list(edge[list(attributes)]) + [snap_line]
-                )
-
-            else:
-                new_edge.append(
-                    [edge_id_value] + list(edge[list(attributes)]) + [snap_line]
-                )
-                new_edge_id.append(edge_id_value)
-            remove_edge.append(edg[0])
-
-    new = gpd.GeoDataFrame(
-        new_edge, columns=[edge_id_col] + attributes + ["geometry"], crs=edges.crs
-    )
-    edges = edges.loc[~edges.index.isin(remove_edge)]
-    edges = pd.concat([edges, new]).reset_index(drop=True)
-
-    # Drop temporary id column introduced only for preprocessing internals.
-    if edge_id_col == "__edge_uid":
-        edges = edges.drop(columns=[edge_id_col], errors="ignore")
-
+    edges["geometry"] = gpd.GeoSeries(geoms, index=edges.index, crs=edges.crs)
+    keep = [row for row in range(len(edges)) if row not in remove]
+    edges = edges.iloc[keep].reset_index(drop=True)
     return Network(edges, nodes)
 
 
@@ -1562,7 +1601,9 @@ def simplified_network(network, id_cols=DEFAULT_ID_COLS):
     logged if it is missing. For a network with edges, nodes that end up
     connected to no edge (e.g. endpoints of edges dropped by
     :func:`add_topology`) are removed, with a warning giving their number.
-    A network without edges is returned with all its nodes.
+    Nodes lying on collapsed roundabouts are removed by
+    :func:`clean_roundabouts`; the topology is built afterwards, so it is
+    consistent. A network without edges is returned with all its nodes.
 
     Parameters
     ----------

@@ -1714,6 +1714,150 @@ class TestCleanRoundabouts:
         for edge in result.edges.itertuples():
             assert not shapely.predicates.is_ring(edge.geometry)
 
+    # diamond-shaped ring around (1, 1) and a second one around (5, 1)
+    _RING_A = [(0.5, 1), (1, 1.5), (1.5, 1), (1, 0.5), (0.5, 1)]
+    _RING_B = [(4.5, 1), (5, 1.5), (5.5, 1), (5, 0.5), (4.5, 1)]
+
+    @staticmethod
+    def _edges_network(lines, crs="EPSG:4326"):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(c) for c in lines]}, geometry="geometry", crs=crs
+        )
+        return Network(edges=edges)
+
+    @staticmethod
+    def _end_points(network):
+        # rounded: ring centroids are computed and not exact
+        return {
+            frozenset(
+                (
+                    tuple(np.round(shapely.get_coordinates(g)[0], 9)),
+                    tuple(np.round(shapely.get_coordinates(g)[-1], 9)),
+                )
+            )
+            for g in network.edges.geometry
+        }
+
+    def test_edge_between_two_roundabouts_extended_at_both_ends(self):
+        network = self._edges_network(
+            [self._RING_A, self._RING_B, [(1.5, 1), (4.5, 1)]]
+        )
+
+        result = nw_preps.clean_roundabouts(network)
+
+        assert self._end_points(result) == {frozenset(((1.0, 1.0), (5.0, 1.0)))}
+
+    def test_crossing_road_not_connected(self):
+        """A road crossing the ring without an end on it is left unchanged."""
+        crossing = [(1, 0), (1, 2)]  # crosses the ring at (1, 0.5) and (1, 1.5)
+        network = self._edges_network([self._RING_A, crossing])
+
+        result = nw_preps.clean_roundabouts(network)
+
+        assert len(result.edges) == 1
+        assert result.edges.geometry.iloc[0].equals(LineString(crossing))
+
+    def test_edge_with_both_ends_on_ring_removed(self):
+        """A chord between two points of the ring is removed, spokes are kept."""
+        network = self._edges_network(
+            [self._RING_A, [(0.5, 1), (1.5, 1)], [(0, 1), (0.5, 1)]]
+        )
+
+        result = nw_preps.clean_roundabouts(network)
+
+        assert self._end_points(result) == {frozenset(((0.0, 1.0), (1.0, 1.0)))}
+
+    def test_max_length_keeps_longer_rings(self):
+        """Rings longer than max_length (metres) are not roundabouts."""
+        # ring of about 566 m circumference in UTM coordinates
+        ring = [
+            (500000, 5000100),
+            (500100, 5000200),
+            (500200, 5000100),
+            (500100, 5000000),
+            (500000, 5000100),
+        ]
+        spoke = [(499800, 5000100), (500000, 5000100)]
+
+        kept = nw_preps.clean_roundabouts(
+            self._edges_network([ring, spoke], crs="EPSG:32632"), max_length=100
+        )
+        collapsed = nw_preps.clean_roundabouts(
+            self._edges_network([ring, spoke], crs="EPSG:32632"), max_length=1000
+        )
+
+        assert len(kept.edges) == 2
+        assert len(collapsed.edges) == 1
+
+    def test_nodes_on_ring_removed_other_nodes_kept(self):
+        """Nodes on a collapsed ring are removed; all other nodes are kept."""
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(self._RING_A), LineString([(0, 1), (0.5, 1)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2, 3],
+                "geometry": [
+                    Point(0.5, 1),  # on the ring, where the spoke joins
+                    Point(1, 1.5),  # ring vertex without a road
+                    Point(0, 1),  # spoke end, off the ring
+                    Point(10, 10),  # elsewhere
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.clean_roundabouts(Network(edges=edges, nodes=nodes))
+
+        coords = {(g.x, g.y) for g in result.nodes.geometry}
+        assert coords == {(0.0, 1.0), (10.0, 10.0)}
+
+    def test_warns_when_topology_becomes_outdated(self, caplog):
+        """Existing from_id / to_id trigger a warning when a ring is collapsed."""
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [0, 1],
+                "to_id": [0, 0],
+                "geometry": [
+                    LineString(self._RING_A),
+                    LineString([(0, 1), (0.5, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges)
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.clean_roundabouts(network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "from_id / to_id are outdated" in caplog.text
+
+    def test_no_topology_warning_without_roundabouts(self, simple_network, caplog):
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.clean_roundabouts(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "outdated" not in caplog.text
+
+    def test_max_length_without_crs_raises(self):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(self._RING_A)]}, geometry="geometry"
+        )
+
+        with pytest.raises(ValueError, match="no CRS"):
+            nw_preps.clean_roundabouts(Network(edges=edges), max_length=100)
+
 
 # ========================================================================
 # Known bugs: regression tests (Step 0 of claude/nw-preps-update-plan.md)
@@ -2196,7 +2340,6 @@ class TestKnownBugsSplitEdgesAtNodes:
 
 
 class TestKnownBugsCleanRoundabouts:
-    @_xfail("8", "the ring intersects itself and is re-added, extended to its centroid")
     def test_ring_really_removed(self, roundabout_network):
         result = nw_preps.clean_roundabouts(roundabout_network)
 
@@ -2206,7 +2349,6 @@ class TestKnownBugsCleanRoundabouts:
             assert not coords & ring_interior
         assert len(result.edges) == 2
 
-    @_xfail("8", "rebuilt edges are tracked by osm_id, which split OSM ways share")
     def test_shared_osm_id_at_two_roundabouts(self):
         # Two roundabouts A (centre (1,1)) and B (centre (5,1)), joined by two
         # segments of the same OSM way (osm_id 7). Each segment must be
@@ -2229,11 +2371,12 @@ class TestKnownBugsCleanRoundabouts:
 
         result = nw_preps.clean_roundabouts(Network(edges=edges))
 
+        # rounded: the centroid is computed and not exactly (1, 1) / (5, 1)
         endpoints = {
             frozenset(
                 (
-                    tuple(shapely.get_coordinates(g)[0]),
-                    tuple(shapely.get_coordinates(g)[-1]),
+                    tuple(np.round(shapely.get_coordinates(g)[0], 9)),
+                    tuple(np.round(shapely.get_coordinates(g)[-1], 9)),
                 )
             )
             for g in result.edges.geometry
