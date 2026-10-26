@@ -334,6 +334,44 @@ def merge_multilinestrings(network):
     return Network(edges, nodes)
 
 
+def explode_multilinestrings(network):
+    """Split MultiLineString edges into one LineString edge per part.
+
+    Meant for MultiLineStrings whose parts do not connect (run
+    :func:`merge_multilinestrings` first): such an edge has no well-defined
+    start and end, so it cannot be attached to nodes. Each part becomes its
+    own edge with a copy of all attributes (``id``, ``from_id`` and
+    ``to_id`` included: run :func:`add_ids` and :func:`add_topology`
+    afterwards). Other geometries are left unchanged. Logs the number of
+    MultiLineStrings split.
+
+    Parameters
+    ----------
+    network : Network
+        A network composed of nodes (points in space) and edges (lines).
+
+    Returns
+    -------
+    Network
+        Network whose edges contain no MultiLineStrings.
+    """
+    edges = network.edges.copy()
+    nodes = network.nodes.copy()
+    is_multi = shapely.get_type_id(edges.geometry.to_numpy()) == 5
+    if not is_multi.any():
+        return Network(edges, nodes)
+    n_parts = int(shapely.get_num_geometries(edges.geometry.to_numpy()[is_multi]).sum())
+    LOGGER.info(
+        "Split %d MultiLineString edges with unconnected parts into %d edges.",
+        int(is_multi.sum()),
+        n_parts,
+    )
+    multi = edges.loc[is_multi].explode(index_parts=False)
+    # keep the parts at the position of their original edge
+    edges = pd.concat([edges.loc[~is_multi], multi]).sort_index(kind="stable")
+    return Network(edges.reset_index(drop=True), nodes)
+
+
 def merge_multilinestring(geom):
     """Merge a MultiLineString to a LineString.
 
@@ -1588,22 +1626,33 @@ def _drop_isolated_nodes(network):
 def simplified_network(network, id_cols=DEFAULT_ID_COLS):
     """Return a simplified network.
 
-    Applies a series of simplification steps: cleaning roundabouts, adding
-    endpoints, adding ids and topology, merging degree-2 edges, removing
-    duplicate geometries, resetting ids, adding distances, and merging
-    MultiLineStrings.
+    For a network with edges, applies in this order:
+
+    1. :func:`merge_multilinestrings`: MultiLineStrings whose parts connect
+       become LineStrings;
+    2. :func:`explode_multilinestrings`: remaining MultiLineStrings are split
+       into one LineString edge per part (attributes copied), so no edge is
+       lost;
+    3. :func:`drop_duplicate_geometries`: identical edges are removed (before
+       the topology is built, so they do not distort node degrees);
+    4. :func:`clean_roundabouts`: roundabouts collapse into their centroids;
+       nodes on them are removed;
+    5. :func:`add_endpoints`, :func:`add_ids`, :func:`add_topology`: nodes at
+       edge ends and ``from_id`` / ``to_id``;
+    6. :func:`merge_edges`: chains of degree-2 nodes merge into one edge;
+    7. nodes connected to no edge are removed (e.g. endpoints of edges
+       dropped by :func:`add_topology`), with a warning giving their number;
+    8. :func:`reset_ids` and :func:`add_distances`.
+
+    A summary of the changes is logged (INFO). A network without edges is
+    returned unchanged, with all its nodes.
 
     Edges and nodes must all have the same ``ci_type``: simplify each
     infrastructure type separately and combine the results with
     :meth:`Network.from_networks`. Nodes created at edge endpoints inherit
     the ``ci_type`` of their edge (see :func:`add_endpoints`), so set
     ``ci_type`` on the edges before calling this function; a warning is
-    logged if it is missing. For a network with edges, nodes that end up
-    connected to no edge (e.g. endpoints of edges dropped by
-    :func:`add_topology`) are removed, with a warning giving their number.
-    Nodes lying on collapsed roundabouts are removed by
-    :func:`clean_roundabouts`; the topology is built afterwards, so it is
-    consistent. A network without edges is returned with all its nodes.
+    logged if it is missing.
 
     Parameters
     ----------
@@ -1627,21 +1676,63 @@ def simplified_network(network, id_cols=DEFAULT_ID_COLS):
     _check_single_ci_type(network)
 
     network_simp = Network(network.edges.copy(), network.nodes.copy())
+    if network_simp.edges.empty:
+        return network_simp
 
+    counts = {"edges_in": len(network_simp.edges)}
+    n_multi = int(
+        (shapely.get_type_id(network_simp.edges.geometry.to_numpy()) == 5).sum()
+    )
+
+    network_simp = merge_multilinestrings(network_simp)
+    n_multi_left = int(
+        (shapely.get_type_id(network_simp.edges.geometry.to_numpy()) == 5).sum()
+    )
+    counts["multi_merged"] = n_multi - n_multi_left
+    n_before = len(network_simp.edges)
+    network_simp = explode_multilinestrings(network_simp)
+    counts["multi_split_added"] = len(network_simp.edges) - n_before
+
+    n_before = len(network_simp.edges)
+    network_simp.edges = drop_duplicate_geometries(network_simp.edges, keep="first")
+    counts["duplicates"] = n_before - len(network_simp.edges)
+
+    n_before = len(network_simp.edges)
     network_simp = clean_roundabouts(network_simp)
+    counts["roundabouts"] = n_before - len(network_simp.edges)
+
     network_simp = add_endpoints(network_simp)
     # network = split_edges_at_nodes(network) leave for now - takes too long
     # network = add_endpoints(network)
     network_simp = add_ids(network_simp)
+    n_before = len(network_simp.edges)
     network_simp = add_topology(network_simp)
+    counts["topology_dropped"] = n_before - len(network_simp.edges)
+
     network_simp.nodes["degree"] = calculate_degree(network_simp)
+    n_before = len(network_simp.edges)
     network_simp = merge_edges(network_simp, id_cols=id_cols)
-    network_simp.edges = drop_duplicate_geometries(network_simp.edges, keep="first")
-    if not network.edges.empty:
-        network_simp = _drop_isolated_nodes(network_simp)
+    counts["merged_away"] = n_before - len(network_simp.edges)
+
+    network_simp = _drop_isolated_nodes(network_simp)
     network_simp = reset_ids(network_simp)
     network_simp = add_distances(network_simp)
-    network_simp = merge_multilinestrings(network_simp)
+
+    LOGGER.info(
+        "simplified_network: %d edges in, %d out; %d MultiLineStrings merged, "
+        "%d edges added by splitting MultiLineStrings into parts, %d duplicate "
+        "edges removed, %d edges removed with roundabouts, %d edges dropped by "
+        "add_topology, %d edges merged into longer ones; %d nodes out.",
+        counts["edges_in"],
+        len(network_simp.edges),
+        counts["multi_merged"],
+        counts["multi_split_added"],
+        counts["duplicates"],
+        counts["roundabouts"],
+        counts["topology_dropped"],
+        counts["merged_away"],
+        len(network_simp.nodes),
+    )
     return network_simp
 
 

@@ -783,6 +783,29 @@ class TestEndpoints:
 # ========================================================================
 
 
+class TestExplodeMultiLineStrings:
+    def test_parts_become_edges_with_attributes(self):
+        mls = MultiLineString([[(0, 0), (1, 0)], [(5, 5), (6, 5)]])
+        line = LineString([(10, 0), (11, 0)])
+        edges = gpd.GeoDataFrame(
+            {"highway": ["primary", "track"], "geometry": [mls, line]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.explode_multilinestrings(Network(edges=edges))
+
+        assert len(result.edges) == 3
+        assert result.edges["highway"].tolist() == ["primary", "primary", "track"]
+        assert result.edges.geometry.iloc[2].equals(line)
+        assert result.edges.crs.to_string() == "EPSG:4326"
+
+    def test_no_multilinestrings_unchanged(self, simple_network):
+        result = nw_preps.explode_multilinestrings(simple_network)
+
+        assert len(result.edges) == len(simple_network.edges)
+
+
 class TestMergeMultiLineString:
     def test_linestring_unchanged(self):
         """A LineString is returned unchanged."""
@@ -2386,7 +2409,6 @@ class TestKnownBugsCleanRoundabouts:
 
 
 class TestKnownBugsSimplifiedNetwork:
-    @_xfail("9a", "MultiLineStrings are dropped by add_topology before they are merged")
     def test_multilinestring_edge_survives(self, multilinestring_network):
         result = nw_preps.simplified_network(multilinestring_network)
 
@@ -2437,10 +2459,61 @@ class TestKnownBugsSimplifiedNetwork:
         assert "Removed 1 of" in caplog.text
 
     def test_nodes_only_network_keeps_all_nodes(self, nodes_only_network):
-        """A network without edges is returned with all its nodes."""
+        """A network without edges is returned unchanged, with all its nodes."""
         result = nw_preps.simplified_network(nodes_only_network)
 
         assert len(result.nodes) == len(nodes_only_network.nodes)
+        assert "degree" not in result.nodes.columns
+
+    def test_disconnected_multilinestring_split_into_edges(self):
+        """Unconnected parts of a MultiLineString become separate edges."""
+        mls = MultiLineString([[(0, 0), (1, 0)], [(5, 5), (6, 5)]])
+        edges = gpd.GeoDataFrame(
+            {"osm_id": [9], "ci_type": ["road"], "geometry": [mls]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges))
+
+        assert len(result.edges) == 2
+        assert (shapely.get_type_id(result.edges.geometry.to_numpy()) == 1).all()
+        assert result.edges["osm_id"].tolist() == [9, 9]
+
+    def test_duplicated_stretch_still_merged(self):
+        """Duplicates are removed before the topology, so the chain merges."""
+        points = [(0, 0), (1, 0), (2, 0)]
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road"] * 3,
+                "geometry": [
+                    LineString([points[0], points[1]]),
+                    LineString([points[0], points[1]]),  # duplicate
+                    LineString([points[1], points[2]]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges))
+
+        assert len(result.edges) == 1
+        assert result.edges.geometry.iloc[0].length == pytest.approx(2.0)
+
+    def test_summary_logged(self, simple_network, caplog):
+        simple_network.edges["ci_type"] = "road"
+        logger = logging.getLogger("climada_petals")
+        level = logger.level
+        logger.setLevel(logging.INFO)
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.simplified_network(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+            logger.setLevel(level)
+
+        assert "simplified_network: 4 edges in, 1 out" in caplog.text
 
     def test_missing_ci_type_warns(self, simple_network, caplog):
         """A warning is logged when the edges have no ci_type."""
