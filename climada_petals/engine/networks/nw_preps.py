@@ -24,7 +24,6 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 import logging
-import warnings
 import shapely
 from shapely.ops import substring
 from tqdm import tqdm
@@ -1921,36 +1920,6 @@ def simplified_network(
         len(network_simp.nodes),
     )
     return network_simp
-
-
-def ordered_network(network):
-    """Return a column-ordered network for igraph graph generation.
-
-    .. deprecated::
-        Not needed: :meth:`Network.to_graph` orders the columns itself. Will
-        be removed.
-
-    Parameters
-    ----------
-    network : Network
-        A network composed of nodes (points in space) and edges (lines).
-
-    Returns
-    -------
-    Network
-        Copy of the network with ``from_id`` / ``to_id`` as first edge columns
-        and ``id`` as first node column.
-    """
-    warnings.warn(
-        "ordered_network is deprecated and will be removed: Network.to_graph "
-        "orders the columns itself.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    network_ord = Network(network.edges.copy(), network.nodes.copy())
-    network_ord.nodes = network_ord._vcols_to_graphorder(network_ord.nodes)
-    network_ord.edges = network_ord._ecols_to_graphorder(network_ord.edges)
-    return network_ord
 
 
 def add_attributes(network, attrs, on="both"):

@@ -1126,45 +1126,6 @@ class TestMergeEdges:
 
 
 # ========================================================================
-# Tests: ordered_network
-# ========================================================================
-
-
-class TestOrderedNetwork:
-    def test_column_order(self, simple_network):
-        """ordered_network reorders columns."""
-        with pytest.warns(DeprecationWarning, match="ordered_network"):
-            result = nw_preps.ordered_network(simple_network)
-
-        assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
-        assert result.nodes.columns[0] == "id"
-
-    def test_keeps_columns_and_values(self, simple_network):
-        """Only the column order changes, not the columns or their values."""
-        with pytest.warns(DeprecationWarning, match="ordered_network"):
-            result = nw_preps.ordered_network(simple_network)
-
-        assert set(result.edges.columns) == set(simple_network.edges.columns)
-        assert set(result.nodes.columns) == set(simple_network.nodes.columns)
-        pd.testing.assert_frame_equal(
-            result.edges[simple_network.edges.columns], simple_network.edges
-        )
-        pd.testing.assert_frame_equal(
-            result.nodes[simple_network.nodes.columns], simple_network.nodes
-        )
-
-    def test_does_not_modify_original(self, simple_network):
-        """Original network is not modified."""
-        orig_edge_cols = list(simple_network.edges.columns)
-        orig_node_cols = list(simple_network.nodes.columns)
-        with pytest.warns(DeprecationWarning, match="ordered_network"):
-            result = nw_preps.ordered_network(simple_network)
-
-        assert list(result.edges.columns) == orig_edge_cols
-        assert list(result.nodes.columns) == orig_node_cols
-
-
-# ========================================================================
 # Tests: add_attributes
 # ========================================================================
 
@@ -1225,17 +1186,6 @@ class TestAddAttributes:
     def test_invalid_on_raises(self, simple_network):
         with pytest.raises(ValueError, match="on must be"):
             nw_preps.add_attributes(simple_network, {"ci_type": "road"}, on="edge")
-
-    def test_after_ordered_network_keeps_order(self, simple_network):
-        """ordered_network followed by add_attributes keeps igraph column order."""
-        with pytest.warns(DeprecationWarning):
-            ordered = nw_preps.ordered_network(simple_network)
-        result = nw_preps.add_attributes(ordered, {"ci_type": "road"})
-
-        assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
-        assert result.nodes.columns[0] == "id"
-        assert result.edges.columns[-1] == "ci_type"
-        assert result.nodes.columns[-1] == "ci_type"
 
 
 # ========================================================================
