@@ -485,8 +485,8 @@ class Network:
             gdf_nodes = gdf_nodes.drop("name", axis=1)
         return gdf_nodes
 
-    # copied from nw_preps
-    # TODO : decide if this should be a method of nw_preps or nw_base
+    # column order expected by igraph; used by _from_es / _from_vs (the
+    # copies in nw_preps were removed)
     def _ecols_to_graphorder(self, gdf_edges):
         """Order edge columns as igraph expects them for building a graph
 

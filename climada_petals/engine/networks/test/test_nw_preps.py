@@ -19,6 +19,9 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test nw_preps module
 """
 
+import contextlib
+import logging
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -28,7 +31,6 @@ from shapely.geometry import Point, LineString, MultiLineString
 
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks import nw_preps
-from climada_petals.engine.networks.test.fixtures_test_networks import *
 
 # ========================================================================
 # Tests: line_endpoints
@@ -100,14 +102,14 @@ class TestNearest:
                 "id": [0, 1, 2],
                 "geometry": [
                     LineString([(0, 0), (0.1, 0.1)]),
-                    LineString([(3, 3), (3.1, 3.1)]),
+                    LineString([(5, 5), (5.1, 5.1)]),
                     LineString([(10, 10), (10.1, 10.1)]),
                 ],
             },
             geometry="geometry",
         )
         sindex = shapely.STRtree(nodes.geometry)
-        query_point = Point(2.5, 2.5).buffer(1)
+        query_point = Point(4, 4).buffer(2)
 
         result = nw_preps.nearest_node(query_point, nodes, sindex)
 
@@ -151,207 +153,11 @@ class TestAddIds:
 
 
 # ========================================================================
-# Tests: _get_edge_id_column / _ensure_edge_id_column
+# Tests: external ids are carried through as attributes
 # ========================================================================
 
 
-class TestGetEdgeIdColumn:
-    def test_prefers_osm_id(self, simple_network):
-        """osm_id is preferred over other id columns."""
-        edges = simple_network.edges.copy()
-        edges["edge_id"] = range(len(edges))
-        edges["id"] = range(100, 100 + len(edges))
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "osm_id"
-
-    def test_falls_back_to_osmid(self):
-        """Falls back to osmid when osm_id is missing."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osmid": [101, 102, 103],
-                "edge_id": [0, 1, 2],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "osmid"
-
-    def test_falls_back_to_edge_id(self):
-        """Falls back to edge_id when osm_id and osmid are missing."""
-        edges = gpd.GeoDataFrame(
-            {
-                "edge_id": [0, 1, 2],
-                "id": [100, 101, 102],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "edge_id"
-
-    def test_falls_back_to_id(self):
-        """Falls back to id when only id column exists."""
-        edges = gpd.GeoDataFrame(
-            {
-                "id": [0, 1, 2],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "id"
-
-    def test_returns_none_when_no_id_column(self):
-        """Returns None when no id column exists."""
-        edges = gpd.GeoDataFrame(
-            {
-                "name": ["edge1", "edge2"],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col is None
-
-
-class TestEnsureEdgeIdColumn:
-    def test_preserves_osm_id(self):
-        """osm_id is preserved when present."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osm_id": [10001, 10002, 10003],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
-
-        assert id_col == "osm_id"
-        np.testing.assert_array_equal(
-            result_edges["osm_id"].values, [10001, 10002, 10003]
-        )
-
-    def test_creates_temporary_column_when_missing(self):
-        """Creates __edge_uid temporary column when no id column exists."""
-        edges = gpd.GeoDataFrame(
-            {
-                "name": ["edge1", "edge2"],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
-
-        assert id_col == "__edge_uid"
-        assert "__edge_uid" in result_edges.columns
-        np.testing.assert_array_equal(result_edges["__edge_uid"].values, [0, 1])
-
-    def test_fills_nan_values_with_index(self):
-        """NaN values in id column are filled with index."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osm_id": [10001.0, np.nan, 10003.0],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
-
-        assert id_col == "osm_id"
-        # NaN values should be filled with corresponding index values
-        assert not result_edges["osm_id"].isna().any()
-        # Value at index 1 should be filled with index value 1
-        assert result_edges["osm_id"].iloc[1] == 1.0
-
-    def test_preserves_columns(self):
-        """All original columns are preserved."""
-        edges = gpd.GeoDataFrame(
-            {
-                "name": ["edge1", "edge2"],
-                "length": [100, 200],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, _ = nw_preps._ensure_edge_id_column(edges)
-
-        assert "name" in result_edges.columns
-        assert "length" in result_edges.columns
-        assert "geometry" in result_edges.columns
-
-    def test_original_dataframe_not_modified(self):
-        """Original dataframe is not modified."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osm_id": [10001, 10002],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-        original_columns = set(edges.columns)
-
-        result_edges, _ = nw_preps._ensure_edge_id_column(edges)
-
-        assert set(edges.columns) == original_columns
-
-
-class TestEdgeIdColumnIntegration:
+class TestExternalIdsCarriedThrough:
     def test_clean_roundabouts_with_osm_id(self, roundabout_network):
         """clean_roundabouts preserves osm_id column."""
         result = nw_preps.clean_roundabouts(roundabout_network)
@@ -360,8 +166,8 @@ class TestEdgeIdColumnIntegration:
         # osm_id values should still be present in some form
         assert len(result.edges) > 0
 
-    def test_clean_roundabouts_without_edge_id_creates_temporary(self):
-        """clean_roundabouts handles edges without id columns by creating temporary one."""
+    def test_clean_roundabouts_without_id_column(self):
+        """clean_roundabouts works on edges without any external id column."""
         # Create a roundabout network and remove osm_id
         ring = LineString([(0, 0), (1, 0), (1, 1), (0, 1), (0, 0)])
         line = LineString([(0, 0), (2, 2)])
@@ -385,7 +191,7 @@ class TestEdgeIdColumnIntegration:
         result = nw_preps.clean_roundabouts(network)
 
         assert result is not None
-        # Temporary __edge_uid column should not be in final output
+        # no helper id column is added
         assert "__edge_uid" not in result.edges.columns
 
     def test_split_edges_at_nodes_preserves_osm_id(self):
@@ -426,7 +232,7 @@ class TestEdgeIdColumnIntegration:
         assert result.edges["osm_id"].notna().all()
 
     def test_reset_ids_after_edge_id_operations(self):
-        """reset_ids works correctly after using ensure_edge_id_column."""
+        """reset_ids is not affected by an external id column (osm_id)."""
         # Network with osm_id but non-sequential node ids
         nodes = gpd.GeoDataFrame(
             {
@@ -473,6 +279,77 @@ class TestAddTopology:
 
         np.testing.assert_array_equal(result.edges["from_id"].values, [0, 1, 2, 3])
         np.testing.assert_array_equal(result.edges["to_id"].values, [1, 2, 3, 4])
+
+    @staticmethod
+    def _two_node_network(edge_geometry):
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1], "geometry": [Point(0, 0), Point(1, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {"geometry": [edge_geometry]}, geometry="geometry", crs="EPSG:4326"
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    @staticmethod
+    def _run_capturing_logs(caplog, func, *args, **kwargs):
+        # the climada_petals logger does not propagate to the root logger, so the
+        # capture handler has to be attached to it directly
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            return func(*args, **kwargs)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+    def test_end_within_tolerance_attached(self):
+        """An edge end off its node by a floating-point difference is attached."""
+        network = self._two_node_network(LineString([(0, 0), (1 + 1e-12, 0)]))
+
+        result = nw_preps.add_topology(network)
+
+        assert len(result.edges) == 1
+        assert result.edges["from_id"].iloc[0] == 0
+        assert result.edges["to_id"].iloc[0] == 1
+
+    def test_end_beyond_tolerance_dropped_with_warning(self, caplog):
+        """An edge whose end has no node within tolerance is dropped and logged."""
+        network = self._two_node_network(LineString([(0, 0), (1.5, 0)]))
+
+        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+
+        assert result.edges.empty
+        assert "add_topology dropped 1 of 1 edges" in caplog.text
+
+    def test_larger_tolerance_attaches(self):
+        """A larger tolerance attaches ends that are further away."""
+        network = self._two_node_network(LineString([(0, 0), (1.1, 0)]))
+
+        result = nw_preps.add_topology(network, tolerance=0.2)
+
+        assert result.edges["to_id"].iloc[0] == 1
+
+    def test_multilinestring_dropped_with_warning(self, caplog):
+        """Edges without a LineString geometry cannot be attached and are logged."""
+        network = self._two_node_network(
+            MultiLineString([[(0, 0), (0.5, 0)], [(0.5, 0), (1, 0)]])
+        )
+
+        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+
+        assert result.edges.empty
+        assert "add_topology dropped 1 of 1 edges" in caplog.text
+
+    def test_custom_id_col(self, simple_network):
+        """from_id / to_id take the values of the given node column."""
+        network = nw_preps.add_ids(simple_network)
+        network.nodes["node_ref"] = [10, 11, 12, 13, 14]
+
+        result = nw_preps.add_topology(network, id_col="node_ref")
+
+        np.testing.assert_array_equal(result.edges["from_id"].values, [10, 11, 12, 13])
+        np.testing.assert_array_equal(result.edges["to_id"].values, [11, 12, 13, 14])
 
 
 # ========================================================================
@@ -688,6 +565,57 @@ class TestEndpoints:
             ci == "road" for coords, ci in ci_by_coords.items() if coords != (4.0, 4.0)
         )
 
+    @staticmethod
+    def _two_edges_meeting(types):
+        """Edges (0,0)-(1,0) and (1,0)-(2,0) with the given ci_types."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": types,
+                "geometry": [
+                    LineString([(0, 0), (1, 0)]),
+                    LineString([(1, 0), (2, 0)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        return Network(edges=edges)
+
+    @staticmethod
+    def _ci_type_at(network, x):
+        nodes = network.nodes
+        return nodes.loc[nodes.geometry.x == x, "ci_type"].iloc[0]
+
+    def test_add_endpoints_conflicting_values_left_missing(self, caplog):
+        """Different values at a shared endpoint are not picked arbitrarily."""
+        network = self._two_edges_meeting(["road", "power_line"])
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            result = nw_preps.add_endpoints(network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert pd.isna(self._ci_type_at(result, 1.0))
+        assert self._ci_type_at(result, 0.0) == "road"
+        assert self._ci_type_at(result, 2.0) == "power_line"
+        assert "ci_type differed between the edges meeting at 1 endpoints" in caplog.text
+
+    def test_add_endpoints_missing_value_does_not_conflict(self, caplog):
+        """A missing value on one edge does not hide the other edge's value."""
+        network = self._two_edges_meeting([None, "road"])
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            result = nw_preps.add_endpoints(network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert self._ci_type_at(result, 1.0) == "road"
+        assert "differed" not in caplog.text
+
     def test_add_endpoints_custom_inherit_attrs(self, simple_network):
         """inherit_attrs controls which edge columns are copied to new nodes."""
         edges = simple_network.edges.copy()
@@ -708,6 +636,29 @@ class TestEndpoints:
 # ========================================================================
 # Tests: merge_multilinestring / merge_multilinestrings
 # ========================================================================
+
+
+class TestExplodeMultiLineStrings:
+    def test_parts_become_edges_with_attributes(self):
+        mls = MultiLineString([[(0, 0), (1, 0)], [(5, 5), (6, 5)]])
+        line = LineString([(10, 0), (11, 0)])
+        edges = gpd.GeoDataFrame(
+            {"highway": ["primary", "track"], "geometry": [mls, line]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.explode_multilinestrings(Network(edges=edges))
+
+        assert len(result.edges) == 3
+        assert result.edges["highway"].tolist() == ["primary", "primary", "track"]
+        assert result.edges.geometry.iloc[2].equals(line)
+        assert result.edges.crs.to_string() == "EPSG:4326"
+
+    def test_no_multilinestrings_unchanged(self, simple_network):
+        result = nw_preps.explode_multilinestrings(simple_network)
+
+        assert len(result.edges) == len(simple_network.edges)
 
 
 class TestMergeMultiLineString:
@@ -794,7 +745,60 @@ class TestDegree:
         """Network with no edges returns all-zero degrees."""
         degree = nw_preps.calculate_degree(nodes_only_network)
 
-        assert degree == [0, 0, 0]
+        assert isinstance(degree, np.ndarray)
+        np.testing.assert_array_equal(degree, [0, 0, 0])
+
+    def test_isolated_last_node_degree_zero(self, simple_network):
+        """A node without edges at the end of the id range has degree 0."""
+        isolated = gpd.GeoDataFrame(
+            {"id": [5], "geometry": [Point(10, 10)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            pd.concat([simple_network.nodes, isolated], ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=simple_network.edges.copy(), nodes=nodes)
+
+        degree = nw_preps.calculate_degree(network)
+
+        np.testing.assert_array_equal(degree, [1, 2, 2, 2, 1, 0])
+
+    def test_edge_id_beyond_nodes_raises(self, simple_network):
+        """An edge referring to a node id >= number of nodes raises."""
+        edges = simple_network.edges.copy()
+        edges.loc[3, "to_id"] = 7
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        with pytest.raises(ValueError, match="to_id"):
+            nw_preps.calculate_degree(network)
+
+    def test_integral_float_ids_accepted(self, simple_network):
+        """Float node references with integral values are accepted."""
+        edges = simple_network.edges.copy()
+        edges["from_id"] = edges["from_id"].astype(float)
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        degree = nw_preps.calculate_degree(network)
+
+        np.testing.assert_array_equal(degree, [1, 2, 2, 2, 1])
+
+    def test_degree_without_topology_raises(self):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString([(0, 0), (1, 0)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1], "geometry": [Point(0, 0), Point(1, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        with pytest.raises(ValueError, match="add_topology"):
+            nw_preps.add_degree(Network(edges=edges, nodes=nodes))
 
     def test_add_degree_column(self, simple_network):
         """add_degree adds a 'degree' column to nodes."""
@@ -889,70 +893,6 @@ class TestDropDuplicateGeometries:
 
 
 # ========================================================================
-# Tests: find_closest_2_edges
-# ========================================================================
-
-
-class TestFindClosest2Edges:
-    def test_finds_two_edges(self, simple_network):
-        """Returns the two closest edges to a node."""
-        edges = simple_network.edges
-        node_geom = Point(1, 1)  # node 1, at junction of edges 0 and 1
-        edge_ids = list(range(len(edges)))
-
-        e1, e2 = nw_preps.find_closest_2_edges(edge_ids, edges, node_geom)
-
-        # Edges 0 and 1 touch node (1,1)
-        returned_ids = sorted([e1.name, e2.name])
-        assert returned_ids == [0, 1]
-
-    def test_finds_correct_edges_at_branch(self, branching_network):
-        """At branch node 2, finds two of the three edges."""
-        edges = branching_network.edges
-        node_geom = Point(2, 0)  # node 2
-        # Edges 1,2,3,4 are near node 2
-        edge_ids = [1, 2, 3, 4]
-
-        e1, e2 = nw_preps.find_closest_2_edges(edge_ids, edges, node_geom)
-
-        # Should return 2 of the edges incident to node 2
-        assert e1.name in [1, 2, 3, 4]
-        assert e2.name in [1, 2, 3, 4]
-        assert e1.name != e2.name
-
-
-# ========================================================================
-# Tests: node_connectivity_degree
-# ========================================================================
-
-
-class TestNodeConnectivityDegree:
-    def test_endpoint_degree(self, simple_network):
-        """Endpoint node has connectivity degree 1."""
-        deg = nw_preps.node_connectivity_degree(0, simple_network)
-
-        assert deg == 1
-
-    def test_inner_degree(self, simple_network):
-        """Inner node has connectivity degree 2."""
-        deg = nw_preps.node_connectivity_degree(2, simple_network)
-
-        assert deg == 2
-
-    def test_branch_degree(self, branching_network):
-        """Branch node has connectivity degree 4."""
-        deg = nw_preps.node_connectivity_degree(2, branching_network)
-
-        assert deg == 4
-
-    def test_isolated_node(self, simple_network):
-        """A node id not referenced in any edge has degree 0."""
-        deg = nw_preps.node_connectivity_degree(999, simple_network)
-
-        assert deg == 0
-
-
-# ========================================================================
 # Tests: reset_ids
 # ========================================================================
 
@@ -1005,45 +945,36 @@ class TestResetIds:
 
 
 # ========================================================================
-# Tests: _intersects / _intersects_dataframe / intersects /
-#        nodes_intersecting
+# Tests: intersects
 # ========================================================================
 
 
 class TestIntersects:
-    def test_intersects_dataframe(self):
-        """_intersects_dataframe returns geometries that intersect."""
+    def test_points_on_line(self):
+        """Geometries on the line are returned, others not."""
         geoms = gpd.GeoSeries([Point(0, 0), Point(1, 1), Point(5, 5)], crs="EPSG:4326")
         sindex = shapely.STRtree(geoms)
-        query_line = LineString([(0, 0), (2, 2)])
 
-        result = nw_preps._intersects_dataframe(query_line, geoms, sindex)
+        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
 
-        # Points (0,0) and (1,1) are on the line
-        assert len(result) >= 2
-        coords = [(shapely.get_x(g), shapely.get_y(g)) for g in result.values]
-        assert (0.0, 0.0) in coords
-        assert (1.0, 1.0) in coords
+        assert list(result.index) == [0, 1]
 
-    def test_intersects_with_tolerance(self):
-        """_intersects finds geometries within buffer tolerance."""
+    def test_within_tolerance(self):
+        """Geometries within the tolerance are returned."""
         geoms = gpd.GeoSeries([Point(0, 0), Point(10, 10)], crs="EPSG:4326")
         sindex = shapely.STRtree(geoms)
-        query_point = Point(0.0000000001, 0)
 
-        result = nw_preps._intersects(query_point, geoms, sindex, tolerance=1e-9)
+        result = nw_preps.intersects(Point(1e-10, 0), geoms, sindex, tolerance=1e-9)
 
-        assert len(result) >= 1
+        assert list(result.index) == [0]
 
-    def test_nodes_intersecting(self):
-        """nodes_intersecting finds nodes along a line."""
-        nodes = gpd.GeoSeries([Point(0, 0), Point(1, 1), Point(5, 5)], crs="EPSG:4326")
-        sindex = shapely.STRtree(nodes)
-        line = LineString([(0, 0), (2, 2)])
+    def test_beyond_tolerance_not_returned(self):
+        geoms = gpd.GeoSeries([Point(0, 0)], crs="EPSG:4326")
+        sindex = shapely.STRtree(geoms)
 
-        result = nw_preps.nodes_intersecting(line, nodes, sindex)
+        result = nw_preps.intersects(Point(1e-6, 0), geoms, sindex, tolerance=1e-9)
 
-        assert len(result) >= 2
+        assert result.empty
 
 
 # ========================================================================
@@ -1133,8 +1064,8 @@ class TestAddDistances:
         # 1° longitude at equator ≈ 111 195 m (WGS-84 geodesic)
         np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
 
-    def test_no_crs_treated_as_geographic(self):
-        """Edges without CRS are treated as geographic (EPSG:4326)."""
+    def test_no_crs_raises(self):
+        """Edges without CRS raise instead of being silently treated as degrees."""
         edges = gpd.GeoDataFrame(
             {
                 "from_id": [0],
@@ -1152,47 +1083,9 @@ class TestAddDistances:
             geometry="geometry",
         )
         network = Network(edges=edges, nodes=nodes)
-        result = nw_preps.add_distances(network)
 
-        # Should produce the same result as explicit EPSG:4326
-        np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
-
-
-# ========================================================================
-# Tests: _ecols_to_graphorder / _vcols_to_graphorder
-# ========================================================================
-
-
-class TestColumnOrdering:
-    def test_ecols_order(self, simple_network):
-        """from_id and to_id are the first two columns."""
-        result = nw_preps._ecols_to_graphorder(simple_network.edges)
-
-        assert list(result.columns[:2]) == ["from_id", "to_id"]
-
-    def test_vcols_order(self, simple_network):
-        """id is the first column."""
-        result = nw_preps._vcols_to_graphorder(simple_network.nodes)
-
-        assert result.columns[0] == "id"
-
-    def test_ecols_preserves_data(self, simple_network):
-        """Reordering preserves all column data."""
-        original = simple_network.edges
-        result = nw_preps._ecols_to_graphorder(original)
-
-        assert set(result.columns) == set(original.columns)
-        np.testing.assert_array_equal(
-            result["from_id"].values, original["from_id"].values
-        )
-
-    def test_vcols_preserves_data(self, simple_network):
-        """Reordering preserves all column data."""
-        original = simple_network.nodes
-        result = nw_preps._vcols_to_graphorder(original)
-
-        assert set(result.columns) == set(original.columns)
-        np.testing.assert_array_equal(result["id"].values, original["id"].values)
+        with pytest.raises(ValueError, match="no CRS"):
+            nw_preps.add_distances(network)
 
 
 # ========================================================================
@@ -1240,14 +1133,16 @@ class TestMergeEdges:
 class TestOrderedNetwork:
     def test_column_order(self, simple_network):
         """ordered_network reorders columns."""
-        result = nw_preps.ordered_network(simple_network)
+        with pytest.warns(DeprecationWarning, match="ordered_network"):
+            result = nw_preps.ordered_network(simple_network)
 
         assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
         assert result.nodes.columns[0] == "id"
 
     def test_keeps_columns_and_values(self, simple_network):
         """Only the column order changes, not the columns or their values."""
-        result = nw_preps.ordered_network(simple_network)
+        with pytest.warns(DeprecationWarning, match="ordered_network"):
+            result = nw_preps.ordered_network(simple_network)
 
         assert set(result.edges.columns) == set(simple_network.edges.columns)
         assert set(result.nodes.columns) == set(simple_network.nodes.columns)
@@ -1262,10 +1157,11 @@ class TestOrderedNetwork:
         """Original network is not modified."""
         orig_edge_cols = list(simple_network.edges.columns)
         orig_node_cols = list(simple_network.nodes.columns)
-        _ = nw_preps.ordered_network(simple_network)
+        with pytest.warns(DeprecationWarning, match="ordered_network"):
+            result = nw_preps.ordered_network(simple_network)
 
-        assert list(simple_network.edges.columns) == orig_edge_cols
-        assert list(simple_network.nodes.columns) == orig_node_cols
+        assert list(result.edges.columns) == orig_edge_cols
+        assert list(result.nodes.columns) == orig_node_cols
 
 
 # ========================================================================
@@ -1318,18 +1214,23 @@ class TestAddAttributes:
         pd.testing.assert_frame_equal(result.edges, orig_edges)
         pd.testing.assert_frame_equal(result.nodes, orig_nodes)
 
-    def test_modifies_in_place(self, simple_network):
-        """add_attributes modifies and returns the input network."""
+    def test_returns_copy(self, simple_network):
+        """add_attributes returns a new network and leaves the input unchanged."""
         result = nw_preps.add_attributes(simple_network, {"ci_type": "road"})
 
-        assert result is simple_network
-        assert (simple_network.edges["ci_type"] == "road").all()
+        assert result is not simple_network
+        assert (result.edges["ci_type"] == "road").all()
+        assert "ci_type" not in simple_network.edges.columns
+
+    def test_invalid_on_raises(self, simple_network):
+        with pytest.raises(ValueError, match="on must be"):
+            nw_preps.add_attributes(simple_network, {"ci_type": "road"}, on="edge")
 
     def test_after_ordered_network_keeps_order(self, simple_network):
         """ordered_network followed by add_attributes keeps igraph column order."""
-        result = nw_preps.add_attributes(
-            nw_preps.ordered_network(simple_network), {"ci_type": "road"}
-        )
+        with pytest.warns(DeprecationWarning):
+            ordered = nw_preps.ordered_network(simple_network)
+        result = nw_preps.add_attributes(ordered, {"ci_type": "road"})
 
         assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
         assert result.nodes.columns[0] == "id"
@@ -1348,8 +1249,8 @@ class TestSimplifiedNetwork:
         result = nw_preps.simplified_network(simple_network)
 
         # After simplification, degree-2 nodes are merged
-        assert len(result.edges) >= 1
-        assert len(result.nodes) >= 2
+        assert len(result.edges) == 1
+        assert len(result.nodes) == 2
         assert "distance" in result.edges.columns
 
     def test_ids_sequential(self, simple_network):
@@ -1450,6 +1351,268 @@ class TestSplitEdgesAtNodes:
 
         assert isinstance(result.edges, gpd.GeoDataFrame)
 
+    @staticmethod
+    def _network(lines, points, **edge_cols):
+        edges = gpd.GeoDataFrame(
+            {**edge_cols, "geometry": [LineString(c) for c in lines]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": list(range(len(points))), "geometry": [Point(p) for p in points]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    @staticmethod
+    def _lengths(network):
+        return sorted(round(g.length, 9) for g in network.edges.geometry)
+
+    def test_node_between_vertices_splits_by_default(self):
+        network = self._network([[(0, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert self._lengths(result) == [1.0, 1.0]
+
+    def test_node_between_vertices_ignored_in_vertex_mode(self):
+        network = self._network([[(0, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network, mode="vertices")
+
+        assert self._lengths(result) == [2.0]
+
+    def test_vertex_mode_splits_at_shared_vertex(self):
+        network = self._network([[(0, 0), (1, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network, mode="vertices")
+
+        assert self._lengths(result) == [1.0, 1.0]
+
+    def test_vertex_mode_no_spurious_split(self):
+        """Per point, not per coordinate: vertex (0,3) is not a split point."""
+        network = self._network(
+            [[(0, 0), (0, 3), (2, 3), (4, 0)]], [(0, 0), (2, 3), (4, 0)]
+        )
+
+        result = nw_preps.split_edges_at_nodes(network, mode="vertices")
+
+        assert len(result.edges) == 2
+
+    def test_crossing_without_shared_vertex(self):
+        """Two crossing edges are split at the crossing by default only."""
+        lines = [[(0, 0), (2, 0)], [(1, -1), (1, 1)]]
+        points = [(0, 0), (2, 0), (1, -1), (1, 1)]
+
+        default = nw_preps.split_edges_at_nodes(self._network(lines, points))
+        vertex_mode = nw_preps.split_edges_at_nodes(
+            self._network(lines, points), mode="vertices"
+        )
+
+        assert self._lengths(default) == [1.0, 1.0, 1.0, 1.0]
+        assert self._lengths(vertex_mode) == [2.0, 2.0]
+
+    def test_pieces_copy_attributes(self):
+        network = self._network(
+            [[(0, 0), (2, 0)]],
+            [(0, 0), (1, 0), (2, 0)],
+            osm_id=[7],
+            highway=["primary"],
+        )
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert result.edges["osm_id"].tolist() == [7, 7]
+        assert result.edges["highway"].tolist() == ["primary", "primary"]
+
+    def test_duplicate_edges_not_split_at_their_vertices(self):
+        """An identical second edge does not add split points."""
+        line = [(0, 0), (1, 0), (2, 0)]
+        network = self._network([line, line], [(0, 0), (2, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        assert self._lengths(result) == [2.0, 2.0]
+
+    def test_partial_overlap_split_at_its_ends_only(self):
+        """A shared stretch splits at its start and end, not at inner vertices."""
+        long_way = [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]
+        short_way = [(1, 0), (2, 0), (3, 0)]  # shares (1,0)-(3,0) with long_way
+        network = self._network([long_way, short_way], [(0, 0), (4, 0)])
+
+        result = nw_preps.split_edges_at_nodes(network)
+
+        # long_way: cut at (1,0) and (3,0) -> 1, 2, 1; short_way: not cut -> 2
+        assert self._lengths(result) == [1.0, 1.0, 2.0, 2.0]
+
+    def test_invalid_mode_raises(self):
+        network = self._network([[(0, 0), (2, 0)]], [(0, 0), (2, 0)])
+
+        with pytest.raises(ValueError, match="mode must be"):
+            nw_preps.split_edges_at_nodes(network, mode="between")
+
+    def test_multilinestring_unchanged(self):
+        mls = MultiLineString([[(0, 0), (1, 0)], [(1, 0), (2, 0)]])
+        edges = gpd.GeoDataFrame(
+            {"geometry": [mls]}, geometry="geometry", crs="EPSG:4326"
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": [0], "geometry": [Point(1, 0)]}, geometry="geometry", crs="EPSG:4326"
+        )
+
+        result = nw_preps.split_edges_at_nodes(Network(edges=edges, nodes=nodes))
+
+        assert len(result.edges) == 1
+        assert result.edges.geometry.iloc[0].equals(mls)
+
+
+# ========================================================================
+# Tests: split_long_edges
+# ========================================================================
+
+
+class TestSplitLongEdges:
+    @staticmethod
+    def _network(line_coords, from_id=0, to_id=1, crs="EPSG:32632", **edge_cols):
+        """One edge between node 0 (line start) and node 1 (line end)."""
+        line = LineString(line_coords)
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1],
+                "ci_type": ["road", "road"],
+                "geometry": [Point(line_coords[0]), Point(line_coords[-1])],
+            },
+            geometry="geometry",
+            crs=crs,
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [from_id],
+                "to_id": [to_id],
+                "id": [0],
+                "ci_type": ["road"],
+                **edge_cols,
+                "geometry": [line],
+            },
+            geometry="geometry",
+            crs=crs,
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    _STRAIGHT = [(500000, 5000000), (500250, 5000000)]  # 250 m
+
+    def test_short_edge_unchanged(self):
+        network = self._network(self._STRAIGHT)
+
+        result = nw_preps.split_long_edges(network, max_length=300)
+
+        assert len(result.edges) == 1
+        assert len(result.nodes) == 2
+
+    def test_long_edge_split_into_equal_pieces(self):
+        network = self._network(self._STRAIGHT, distance=[250.0], osm_id=[7])
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        # ceil(250 / 100) = 3 pieces of about 83.3 m
+        assert len(result.edges) == 3
+        np.testing.assert_allclose(result.edges["distance"], [250 / 3] * 3)
+        assert result.edges["osm_id"].tolist() == [7, 7, 7]
+        np.testing.assert_array_equal(result.edges["id"], [0, 1, 2])
+
+    def test_new_nodes_inherit_ci_type_and_continue_ids(self):
+        network = self._network(self._STRAIGHT)
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        new = result.nodes[result.nodes["id"] >= 2]
+        assert new["id"].tolist() == [2, 3]
+        assert (new["ci_type"] == "road").all()
+
+    def test_pieces_chain_from_start_to_end(self):
+        network = self._network(self._STRAIGHT)
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        pairs = list(zip(result.edges["from_id"], result.edges["to_id"]))
+        assert pairs == [(0, 2), (2, 3), (3, 1)]
+        node_geom = dict(zip(result.nodes["id"], result.nodes.geometry))
+        for edge in result.edges.itertuples():
+            assert node_geom[edge.from_id].distance(
+                shapely.get_point(edge.geometry, 0)
+            ) == pytest.approx(0, abs=1e-6)
+
+    def test_reversed_edge_pieces_start_at_their_from_node(self):
+        """An edge whose from_id is at the line's end is handled as well."""
+        network = self._network(self._STRAIGHT, from_id=1, to_id=0)
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        node_geom = dict(zip(result.nodes["id"], result.nodes.geometry))
+        for edge in result.edges.itertuples():
+            assert node_geom[edge.from_id].distance(
+                shapely.get_point(edge.geometry, 0)
+            ) == pytest.approx(0, abs=1e-6)
+            assert node_geom[edge.to_id].distance(
+                shapely.get_point(edge.geometry, -1)
+            ) == pytest.approx(0, abs=1e-6)
+
+    def test_curved_geometry_kept(self):
+        """Pieces follow the line, the corner vertex is not cut away."""
+        corner = [(500000, 5000000), (500300, 5000000), (500300, 5000100)]  # 400 m
+        network = self._network(corner)
+
+        result = nw_preps.split_long_edges(network, max_length=250)
+
+        assert len(result.edges) == 2
+        total = sum(g.length for g in result.edges.geometry)
+        assert total == pytest.approx(400.0)
+        second = shapely.get_coordinates(result.edges.geometry.iloc[1]).tolist()
+        assert [500300.0, 5000000.0] in second
+
+    def test_geographic_crs(self):
+        """Lengths are geodesic in a geographic CRS (1 degree ~ 111 km)."""
+        network = self._network([(0, 0), (1, 0)], crs="EPSG:4326", distance=[0.0])
+
+        result = nw_preps.split_long_edges(network, max_length=50_000)
+
+        assert len(result.edges) == 3
+        assert result.edges["distance"].sum() == pytest.approx(111_195, rel=0.01)
+
+    def test_multilinestring_unchanged(self):
+        network = self._network(self._STRAIGHT)
+        network.edges["geometry"] = gpd.GeoSeries(
+            [
+                MultiLineString(
+                    [
+                        [(500000, 5000000), (500100, 5000000)],
+                        [(500100, 5000000), (500250, 5000000)],
+                    ]
+                )
+            ],
+            crs="EPSG:32632",
+        )
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        assert len(result.edges) == 1
+
+    def test_without_topology_raises(self):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(self._STRAIGHT)]},
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+
+        with pytest.raises(ValueError, match="from_id / to_id"):
+            nw_preps.split_long_edges(Network(edges=edges), max_length=100)
+
+    @pytest.mark.parametrize("max_length", [0, -5, None])
+    def test_invalid_max_length_raises(self, max_length):
+        with pytest.raises(ValueError, match="max_length"):
+            nw_preps.split_long_edges(self._network(self._STRAIGHT), max_length)
+
 
 # ========================================================================
 # Tests: clean_roundabouts
@@ -1526,3 +1689,944 @@ class TestCleanRoundabouts:
         # Ring should be removed
         for edge in result.edges.itertuples():
             assert not shapely.predicates.is_ring(edge.geometry)
+
+    # diamond-shaped ring around (1, 1) and a second one around (5, 1)
+    _RING_A = [(0.5, 1), (1, 1.5), (1.5, 1), (1, 0.5), (0.5, 1)]
+    _RING_B = [(4.5, 1), (5, 1.5), (5.5, 1), (5, 0.5), (4.5, 1)]
+
+    @staticmethod
+    def _edges_network(lines, crs="EPSG:4326"):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(c) for c in lines]}, geometry="geometry", crs=crs
+        )
+        return Network(edges=edges)
+
+    @staticmethod
+    def _end_points(network):
+        # rounded: ring centroids are computed and not exact
+        return {
+            frozenset(
+                (
+                    tuple(np.round(shapely.get_coordinates(g)[0], 9)),
+                    tuple(np.round(shapely.get_coordinates(g)[-1], 9)),
+                )
+            )
+            for g in network.edges.geometry
+        }
+
+    def test_edge_between_two_roundabouts_extended_at_both_ends(self):
+        network = self._edges_network(
+            [self._RING_A, self._RING_B, [(1.5, 1), (4.5, 1)]]
+        )
+
+        result = nw_preps.clean_roundabouts(network)
+
+        assert self._end_points(result) == {frozenset(((1.0, 1.0), (5.0, 1.0)))}
+
+    def test_crossing_road_not_connected(self):
+        """A road crossing the ring without an end on it is left unchanged."""
+        crossing = [(1, 0), (1, 2)]  # crosses the ring at (1, 0.5) and (1, 1.5)
+        network = self._edges_network([self._RING_A, crossing])
+
+        result = nw_preps.clean_roundabouts(network)
+
+        assert len(result.edges) == 1
+        assert result.edges.geometry.iloc[0].equals(LineString(crossing))
+
+    def test_edge_with_both_ends_on_ring_removed(self):
+        """A chord between two points of the ring is removed, spokes are kept."""
+        network = self._edges_network(
+            [self._RING_A, [(0.5, 1), (1.5, 1)], [(0, 1), (0.5, 1)]]
+        )
+
+        result = nw_preps.clean_roundabouts(network)
+
+        assert self._end_points(result) == {frozenset(((0.0, 1.0), (1.0, 1.0)))}
+
+    def test_max_length_keeps_longer_rings(self):
+        """Rings longer than max_length (metres) are not roundabouts."""
+        # ring of about 566 m circumference in UTM coordinates
+        ring = [
+            (500000, 5000100),
+            (500100, 5000200),
+            (500200, 5000100),
+            (500100, 5000000),
+            (500000, 5000100),
+        ]
+        spoke = [(499800, 5000100), (500000, 5000100)]
+
+        kept = nw_preps.clean_roundabouts(
+            self._edges_network([ring, spoke], crs="EPSG:32632"), max_length=100
+        )
+        collapsed = nw_preps.clean_roundabouts(
+            self._edges_network([ring, spoke], crs="EPSG:32632"), max_length=1000
+        )
+
+        assert len(kept.edges) == 2
+        assert len(collapsed.edges) == 1
+
+    def test_nodes_on_ring_removed_other_nodes_kept(self):
+        """Nodes on a collapsed ring are removed; all other nodes are kept."""
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(self._RING_A), LineString([(0, 1), (0.5, 1)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2, 3],
+                "geometry": [
+                    Point(0.5, 1),  # on the ring, where the spoke joins
+                    Point(1, 1.5),  # ring vertex without a road
+                    Point(0, 1),  # spoke end, off the ring
+                    Point(10, 10),  # elsewhere
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.clean_roundabouts(Network(edges=edges, nodes=nodes))
+
+        coords = {(g.x, g.y) for g in result.nodes.geometry}
+        assert coords == {(0.0, 1.0), (10.0, 10.0)}
+
+    def test_warns_when_topology_becomes_outdated(self, caplog):
+        """Existing from_id / to_id trigger a warning when a ring is collapsed."""
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [0, 1],
+                "to_id": [0, 0],
+                "geometry": [
+                    LineString(self._RING_A),
+                    LineString([(0, 1), (0.5, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges)
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.clean_roundabouts(network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "from_id / to_id are outdated" in caplog.text
+
+    def test_no_topology_warning_without_roundabouts(self, simple_network, caplog):
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.clean_roundabouts(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "outdated" not in caplog.text
+
+    def test_max_length_without_crs_raises(self):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(self._RING_A)]}, geometry="geometry"
+        )
+
+        with pytest.raises(ValueError, match="no CRS"):
+            nw_preps.clean_roundabouts(Network(edges=edges), max_length=100)
+
+
+# ========================================================================
+# Known bugs: regression tests (Step 0 of claude/nw-preps-update-plan.md)
+# ========================================================================
+# Each test below documents a confirmed bug and is marked
+# xfail(strict=True): it fails today, and the plan step that fixes the bug
+# must remove the marker. A fix that forgets to remove it makes the suite
+# fail (strict XPASS), so no fixed bug stays silently marked.
+
+
+def _xfail(step, reason):
+    """xfail marker for a known bug fixed in the given step of the update plan."""
+    return pytest.mark.xfail(
+        strict=True, reason=f"Known bug, fixed in plan step {step}: {reason}"
+    )
+
+
+def _copy_on_write():
+    """Context with pandas copy-on-write enabled (always on from pandas 3)."""
+    if int(pd.__version__.split(".")[0]) >= 3:
+        return contextlib.nullcontext()
+    return pd.option_context("mode.copy_on_write", True)
+
+
+class TestKnownBugsIndexRobustness:
+    def test_intersects_dataframe_non_range_index(self):
+        geoms = gpd.GeoSeries(
+            [Point(0, 0), Point(5, 5), Point(1, 1)],
+            index=[10, 20, 30],
+            crs="EPSG:4326",
+        )
+        sindex = shapely.STRtree(geoms)
+
+        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
+
+        assert set(result.index) == {10, 30}
+
+    def test_drop_duplicate_geometries_non_range_index(self):
+        line_a = LineString([(0, 0), (1, 1)])
+        line_b = LineString([(1, 1), (2, 2)])
+        gdf = gpd.GeoDataFrame(
+            {"geometry": [line_a, line_a, line_b]},
+            index=[10, 11, 12],
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.drop_duplicate_geometries(gdf)
+
+        assert list(result.index) == [10, 12]
+
+    def test_clean_roundabouts_non_range_index(self, roundabout_network):
+        """clean_roundabouts gives the same geometries for a non-0..n-1 index."""
+        edges = roundabout_network.edges.copy()
+        edges.index = [10, 20, 30]
+        shifted = Network(edges=edges, nodes=roundabout_network.nodes.copy())
+
+        expected = nw_preps.clean_roundabouts(roundabout_network)
+        result = nw_preps.clean_roundabouts(shifted)
+
+        assert sorted(shapely.to_wkb(g) for g in result.edges.geometry) == sorted(
+            shapely.to_wkb(g) for g in expected.edges.geometry
+        )
+
+
+class TestKnownBugsIds:
+    def test_calculate_degree_rejects_unordered_node_ids(self, simple_network):
+        nodes = simple_network.nodes.copy()
+        nodes["id"] = [4, 3, 2, 1, 0]
+        network = Network(edges=simple_network.edges.copy(), nodes=nodes)
+
+        with pytest.raises(ValueError, match="node ids"):
+            nw_preps.calculate_degree(network)
+
+    def test_calculate_degree_nan_id_clear_error(self, simple_network):
+        edges = simple_network.edges.copy()
+        edges["from_id"] = edges["from_id"].astype(float)
+        edges.loc[0, "from_id"] = np.nan
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        with pytest.raises(ValueError, match="from_id"):
+            nw_preps.calculate_degree(network)
+
+    def test_reset_ids_dangling_reference_raises(self, simple_network):
+        edges = simple_network.edges.copy()
+        edges.loc[0, "from_id"] = 99
+        network = Network(edges=edges, nodes=simple_network.nodes.copy())
+
+        with pytest.raises(ValueError, match="from_id"):
+            nw_preps.reset_ids(network)
+
+
+class TestKnownBugsTopology:
+    def test_nearest_finds_nearest_point(self):
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1], "geometry": [Point(0, 0), Point(5, 5)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        sindex = shapely.STRtree(nodes.geometry)
+
+        result = nw_preps.nearest(Point(4, 4), nodes, sindex)
+
+        assert result["id"] == 1
+
+    def test_nearest_max_distance_raises(self):
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1], "geometry": [Point(0, 0), Point(5, 5)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        sindex = shapely.STRtree(nodes.geometry)
+
+        with pytest.raises(ValueError, match="max_distance"):
+            nw_preps.nearest(Point(4, 4), nodes, sindex, max_distance=0.5)
+
+
+class TestKnownBugsMergeEdges:
+    def test_merge_edges_keeps_isolated_node(self, edges_gdf, nodes_gdf):
+        isolated = gpd.GeoDataFrame(
+            {"id": [5], "geometry": [Point(10, 10)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            pd.concat([nodes_gdf, isolated], ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges_gdf.copy(), nodes=nodes)
+        network.nodes["degree"] = nw_preps.calculate_degree(network)
+
+        result = nw_preps.merge_edges(network)
+
+        assert len(result.edges) == 1
+        assert any(geom.equals(Point(10, 10)) for geom in result.nodes.geometry)
+
+    def test_merge_edges_removes_only_inner_nodes(self, simple_network):
+        """Inner chain nodes are removed, the chain ends are kept."""
+        simple_network.nodes["degree"] = nw_preps.calculate_degree(simple_network)
+
+        result = nw_preps.merge_edges(simple_network)
+
+        coords = {(g.x, g.y) for g in result.nodes.geometry}
+        assert coords == {(0.0, 0.0), (4.0, 4.0)}
+
+    def test_merge_edges_does_not_modify_input(self, simple_network):
+        """The input network's nodes and degree column are left unchanged."""
+        simple_network.nodes["degree"] = nw_preps.calculate_degree(simple_network)
+        degree_before = simple_network.nodes["degree"].tolist()
+
+        nw_preps.merge_edges(simple_network)
+
+        assert len(simple_network.nodes) == 5
+        assert simple_network.nodes["degree"].tolist() == degree_before
+
+    @staticmethod
+    def _network(points, edge_pairs, **edge_cols):
+        """Network with point nodes and straight edges between node pairs."""
+        nodes = gpd.GeoDataFrame(
+            {"id": list(range(len(points))), "geometry": [Point(p) for p in points]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [a for a, _ in edge_pairs],
+                "to_id": [b for _, b in edge_pairs],
+                "id": list(range(len(edge_pairs))),
+                **edge_cols,
+                "geometry": [LineString([points[a], points[b]]) for a, b in edge_pairs],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    @staticmethod
+    def _chain_arrays():
+        """J -e0- A -e1- B -e2- C -e3- K as nodes 0..4 and edges 0..3."""
+        from_ids = np.array([0, 1, 2, 3])
+        to_ids = np.array([1, 2, 3, 4])
+        deg = np.array([1, 2, 2, 2, 1])
+        incident = [[0], [0, 1], [1, 2], [2, 3], [3]]
+        return deg, incident, from_ids, to_ids
+
+    def test_walk_chain_both_sides(self):
+        """From B, the two walks end at J and K and pass A and C."""
+        deg, incident, from_ids, to_ids = self._chain_arrays()
+        visited_nodes = {2}
+        visited_edges = {1, 2}
+
+        side_1 = nw_preps._walk_chain(
+            1, 1, deg, incident, from_ids, to_ids, visited_nodes, visited_edges
+        )
+        side_2 = nw_preps._walk_chain(
+            3, 2, deg, incident, from_ids, to_ids, visited_nodes, visited_edges
+        )
+
+        assert side_1 == (0, [1], [0])
+        assert side_2 == (4, [3], [3])
+        # nothing passed in is modified
+        assert visited_nodes == {2}
+        assert visited_edges == {1, 2}
+        np.testing.assert_array_equal(deg, [1, 2, 2, 2, 1])
+
+    def test_walk_chain_stops_at_non_degree_2_node(self):
+        """A walk starting at a node of degree != 2 returns it immediately."""
+        deg, incident, from_ids, to_ids = self._chain_arrays()
+
+        result = nw_preps._walk_chain(
+            0, 0, deg, incident, from_ids, to_ids, {1}, {0, 1}
+        )
+
+        assert result == (0, [], [])
+
+    @staticmethod
+    def _merge_capturing_logs(caplog, network, **kwargs):
+        # the climada_petals logger does not propagate to the root logger, so the
+        # capture handler has to be attached to it directly
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            return nw_preps.merge_edges(network, **kwargs)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+    # chain 0 -(length 1)- 1 -(length 3)- 2
+    _CHAIN_POINTS = [(0, 0), (1, 0), (4, 0)]
+    _CHAIN_PAIRS = [(0, 1), (1, 2)]
+
+    def test_merge_attrs_equal_values_kept_without_warning(self, caplog):
+        network = self._network(
+            self._CHAIN_POINTS,
+            self._CHAIN_PAIRS,
+            ci_type=["road", "road"],
+            highway=["primary", "primary"],
+        )
+
+        result = self._merge_capturing_logs(caplog, network)
+
+        assert len(result.edges) == 1
+        assert result.edges["highway"].iloc[0] == "primary"
+        assert "attribute values differed" not in caplog.text
+
+    def test_merge_attrs_length_weighted_majority(self, caplog):
+        """The value covering most of the length wins, not the alphabetical one."""
+        network = self._network(
+            self._CHAIN_POINTS,
+            self._CHAIN_PAIRS,
+            ci_type=["road", "road"],
+            highway=["primary", "secondary"],
+        )
+
+        result = self._merge_capturing_logs(caplog, network)
+
+        assert result.edges["highway"].iloc[0] == "secondary"
+        assert "highway (1 edges)" in caplog.text
+
+    def test_merge_attrs_nan_on_conflict(self, caplog):
+        network = self._network(
+            self._CHAIN_POINTS,
+            self._CHAIN_PAIRS,
+            ci_type=["road", "road"],
+            highway=["primary", "secondary"],
+        )
+
+        result = self._merge_capturing_logs(caplog, network, attr_conflict="nan")
+
+        assert pd.isna(result.edges["highway"].iloc[0])
+        assert result.edges["ci_type"].iloc[0] == "road"
+        assert "highway (1 edges)" in caplog.text
+
+    def test_merge_attrs_external_id_of_longest_edge(self, caplog):
+        network = self._network(self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20])
+
+        result = self._merge_capturing_logs(caplog, network)
+
+        assert result.edges["osm_id"].iloc[0] == 20
+        assert "attribute values differed" not in caplog.text
+
+    def test_merge_attrs_custom_id_cols(self, caplog):
+        """A column passed in id_cols is treated as an external id."""
+        network = self._network(
+            self._CHAIN_POINTS, self._CHAIN_PAIRS, source_id=["a", "b"]
+        )
+
+        result = self._merge_capturing_logs(caplog, network, id_cols=("source_id",))
+
+        assert result.edges["source_id"].iloc[0] == "b"
+        assert "attribute values differed" not in caplog.text
+
+    def test_merge_attrs_osm_id_as_attribute_without_id_cols(self, caplog):
+        """With id_cols=(), osm_id is resolved like any other attribute."""
+        network = self._network(self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20])
+
+        result = self._merge_capturing_logs(caplog, network, id_cols=())
+
+        assert result.edges["osm_id"].iloc[0] == 20  # longer edge = majority
+        assert "osm_id (1 edges)" in caplog.text
+
+    def test_merge_attrs_distance_summed(self):
+        network = self._network(
+            self._CHAIN_POINTS, self._CHAIN_PAIRS, distance=[100.0, 300.0]
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        assert result.edges["distance"].iloc[0] == pytest.approx(400.0)
+
+    def test_merge_attrs_invalid_conflict_rule_raises(self, simple_network):
+        with pytest.raises(ValueError, match="attr_conflict"):
+            nw_preps.merge_edges(simple_network, attr_conflict="mode")
+
+    def test_merge_edges_two_independent_chains(self):
+        """Two separate chains are merged independently."""
+        points = [(0, 0), (1, 0), (2, 0), (0, 5), (1, 5), (2, 5)]
+        network = self._network(
+            points, [(0, 1), (1, 2), (3, 4), (4, 5)], ci_type=["road"] * 4
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        pairs = {frozenset((e.from_id, e.to_id)) for e in result.edges.itertuples()}
+        assert pairs == {frozenset((0, 2)), frozenset((3, 5))}
+
+    def test_merge_edges_closed_loop_unchanged(self):
+        """A closed loop made only of degree-2 nodes is left unchanged."""
+        points = [(0, 0), (1, 0), (1, 1), (0, 1)]
+        network = self._network(
+            points, [(0, 1), (1, 2), (2, 3), (3, 0)], ci_type=["road"] * 4
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        assert len(result.edges) == 4
+        assert len(result.nodes) == 4
+
+    def test_merge_edges_loop_at_junction(self):
+        """A loop hanging at a junction becomes one closed edge at the junction."""
+        # junction 0 (degree 3: tail edge + both loop ends), loop 0-1-2-0
+        points = [(0, 0), (1, 1), (1, -1), (-1, 0)]
+        network = self._network(
+            points, [(0, 1), (1, 2), (2, 0), (3, 0)], ci_type=["road"] * 4
+        )
+
+        result = nw_preps.merge_edges(network)
+
+        assert len(result.edges) == 2
+        loop = [e for e in result.edges.itertuples() if e.from_id == e.to_id]
+        assert len(loop) == 1
+        assert result.nodes.geometry.iloc[loop[0].from_id].equals(Point(0, 0))
+
+    def test_merge_edges_requires_range_node_ids(self, simple_network):
+        """merge_edges raises if node ids are not 0..n-1 in row order."""
+        nodes = simple_network.nodes.copy()
+        nodes["id"] = [4, 3, 2, 1, 0]
+        network = Network(edges=simple_network.edges.copy(), nodes=nodes)
+
+        with pytest.raises(ValueError, match="node ids"):
+            nw_preps.merge_edges(network)
+
+    def test_merge_edges_without_degree_column(self, simple_network):
+        assert "degree" not in simple_network.nodes.columns
+
+        result = nw_preps.merge_edges(simple_network)
+
+        assert len(result.edges) == 1
+
+    def test_merge_edges_copy_on_write(self, simple_network):
+        simple_network.nodes["degree"] = nw_preps.calculate_degree(simple_network)
+
+        with _copy_on_write():
+            result = nw_preps.merge_edges(simple_network)
+
+        assert len(result.edges) == 1
+
+    def test_merge_edges_ignores_crossing_edge(self):
+        # Node 1 has degree 2 (edges 1 and 2). Edge 0 crosses node 1 without
+        # being connected to it and has the lowest id, so it is picked first.
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1, 2, 3, 4],
+                "geometry": [
+                    Point(0, 0),
+                    Point(1, 0),
+                    Point(2, 0),
+                    Point(1, -1),
+                    Point(1, 1),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [3, 0, 1],
+                "to_id": [4, 1, 2],
+                "id": [0, 1, 2],
+                "osm_id": [30, 10, 11],
+                # an attribute column, so the test does not depend on the
+                # "no optional columns" bug fixed in Step 6c
+                "ci_type": ["road", "road", "road"],
+                "geometry": [
+                    LineString([(1, -1), (1, 1)]),
+                    LineString([(0, 0), (1, 0)]),
+                    LineString([(1, 0), (2, 0)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+        network.nodes["degree"] = nw_preps.calculate_degree(network)
+
+        result = nw_preps.merge_edges(network)
+
+        assert len(result.edges) == 2
+        pairs = {frozenset((e.from_id, e.to_id)) for e in result.edges.itertuples()}
+        assert frozenset((0, 2)) in pairs
+
+    def test_merge_edges_without_optional_columns(self, edges_gdf, nodes_gdf):
+        edges = edges_gdf[["from_id", "to_id", "id", "geometry"]].copy()
+        network = Network(edges=edges, nodes=nodes_gdf.copy())
+        network.nodes["degree"] = nw_preps.calculate_degree(network)
+
+        result = nw_preps.merge_edges(network)
+
+        assert len(result.edges) == 1
+
+
+class TestKnownBugsSplitEdgesAtNodes:
+    def test_no_spurious_split(self):
+        # Real split points: (0,0), (2,3), (4,0). Vertex (0,3) takes its x
+        # from (0,0) and its y from (2,3) and must not be split.
+        edges = gpd.GeoDataFrame(
+            {"id": [0], "geometry": [LineString([(0, 0), (0, 3), (2, 3), (4, 0)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1, 2], "geometry": [Point(0, 0), Point(2, 3), Point(4, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.split_edges_at_nodes(Network(edges=edges, nodes=nodes))
+
+        assert len(result.edges) == 2
+
+    def test_keeps_dead_end(self):
+        edges = gpd.GeoDataFrame(
+            {"id": [0], "geometry": [LineString([(0, 0), (1, 0), (2, 0)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": [0], "geometry": [Point(0, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.split_edges_at_nodes(Network(edges=edges, nodes=nodes))
+
+        assert len(result.edges) == 1
+        assert result.edges.geometry.iloc[0].length == pytest.approx(2.0)
+
+    def test_keeps_isolated_edge(self):
+        edges = gpd.GeoDataFrame(
+            {"id": [0], "geometry": [LineString([(0, 0), (1, 0), (2, 0)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.split_edges_at_nodes(Network(edges=edges))
+
+        assert len(result.edges) == 1
+
+
+class TestKnownBugsCleanRoundabouts:
+    def test_ring_really_removed(self, roundabout_network):
+        result = nw_preps.clean_roundabouts(roundabout_network)
+
+        ring_interior = {(1.0, 1.5), (1.0, 0.5)}
+        for geom in result.edges.geometry:
+            coords = {tuple(c) for c in shapely.get_coordinates(geom)}
+            assert not coords & ring_interior
+        assert len(result.edges) == 2
+
+    def test_shared_osm_id_at_two_roundabouts(self):
+        # Two roundabouts A (centre (1,1)) and B (centre (5,1)), joined by two
+        # segments of the same OSM way (osm_id 7). Each segment must be
+        # extended to its own roundabout centre, and both must be kept.
+        ring_a = LineString([(0.5, 1), (1, 1.5), (1.5, 1), (1, 0.5), (0.5, 1)])
+        ring_b = LineString([(4.5, 1), (5, 1.5), (5.5, 1), (5, 0.5), (4.5, 1)])
+        edges = gpd.GeoDataFrame(
+            {
+                "osm_id": [1, 2, 7, 7],
+                "geometry": [
+                    ring_a,
+                    ring_b,
+                    LineString([(1.5, 1), (3, 1)]),
+                    LineString([(3, 1), (4.5, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.clean_roundabouts(Network(edges=edges))
+
+        # rounded: the centroid is computed and not exactly (1, 1) / (5, 1)
+        endpoints = {
+            frozenset(
+                (
+                    tuple(np.round(shapely.get_coordinates(g)[0], 9)),
+                    tuple(np.round(shapely.get_coordinates(g)[-1], 9)),
+                )
+            )
+            for g in result.edges.geometry
+        }
+        assert frozenset(((1.0, 1.0), (3.0, 1.0))) in endpoints
+        assert frozenset(((3.0, 1.0), (5.0, 1.0))) in endpoints
+
+
+class TestKnownBugsSimplifiedNetwork:
+    def test_multilinestring_edge_survives(self, multilinestring_network):
+        result = nw_preps.simplified_network(multilinestring_network)
+
+        assert len(result.edges) == 1
+        assert shapely.get_type_id(result.edges.geometry.iloc[0]) == 1  # LineString
+
+    def test_mixed_ci_type_raises(self, edges_gdf):
+        edges = edges_gdf.copy()
+        edges["ci_type"] = ["road", "road", "power_line", "power_line"]
+
+        with pytest.raises(ValueError, match="ci_type"):
+            nw_preps.simplified_network(Network(edges=edges))
+
+    def test_node_ci_type_different_from_edges_raises(self, edges_gdf, nodes_gdf):
+        """Nodes of another ci_type (e.g. facilities) are rejected."""
+        edges = edges_gdf.copy()
+        edges["ci_type"] = "road"
+        nodes = nodes_gdf.copy()
+        nodes["ci_type"] = "healthcare"
+
+        with pytest.raises(ValueError, match="same single ci_type"):
+            nw_preps.simplified_network(Network(edges=edges, nodes=nodes))
+
+    def test_removes_isolated_nodes_with_warning(self, edges_gdf, nodes_gdf, caplog):
+        """Nodes of the same ci_type that touch no edge are removed and logged."""
+        edges = edges_gdf.copy()
+        edges["ci_type"] = "road"
+        isolated = gpd.GeoDataFrame(
+            {"id": [5], "geometry": [Point(10, 10)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            pd.concat([nodes_gdf, isolated], ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes["ci_type"] = "road"
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            result = nw_preps.simplified_network(Network(edges=edges, nodes=nodes))
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert not any(g.equals(Point(10, 10)) for g in result.nodes.geometry)
+        assert "Removed 1 of" in caplog.text
+
+    def test_nodes_only_network_keeps_all_nodes(self, nodes_only_network):
+        """A network without edges is returned unchanged, with all its nodes."""
+        result = nw_preps.simplified_network(nodes_only_network)
+
+        assert len(result.nodes) == len(nodes_only_network.nodes)
+        assert "degree" not in result.nodes.columns
+
+    def test_disconnected_multilinestring_split_into_edges(self):
+        """Unconnected parts of a MultiLineString become separate edges."""
+        mls = MultiLineString([[(0, 0), (1, 0)], [(5, 5), (6, 5)]])
+        edges = gpd.GeoDataFrame(
+            {"osm_id": [9], "ci_type": ["road"], "geometry": [mls]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges))
+
+        assert len(result.edges) == 2
+        assert (shapely.get_type_id(result.edges.geometry.to_numpy()) == 1).all()
+        assert result.edges["osm_id"].tolist() == [9, 9]
+
+    def test_duplicated_stretch_still_merged(self):
+        """Duplicates are removed before the topology, so the chain merges."""
+        points = [(0, 0), (1, 0), (2, 0)]
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road"] * 3,
+                "geometry": [
+                    LineString([points[0], points[1]]),
+                    LineString([points[0], points[1]]),  # duplicate
+                    LineString([points[1], points[2]]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges))
+
+        assert len(result.edges) == 1
+        assert result.edges.geometry.iloc[0].length == pytest.approx(2.0)
+
+    # ring of about 566 m circumference (UTM) with one road joining it
+    _UTM_RING = [
+        (500000, 5000100),
+        (500100, 5000200),
+        (500200, 5000100),
+        (500100, 5000000),
+        (500000, 5000100),
+    ]
+    _UTM_SPOKE = [(499800, 5000100), (500000, 5000100)]
+
+    def _ring_network(self):
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road", "road"],
+                "geometry": [LineString(self._UTM_RING), LineString(self._UTM_SPOKE)],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        return Network(edges=edges)
+
+    @staticmethod
+    def _has_ring(network):
+        return bool(shapely.is_ring(network.edges.geometry.to_numpy()).any())
+
+    def test_unknown_profile_raises(self, simple_network):
+        with pytest.raises(ValueError, match="Unknown profile"):
+            nw_preps.simplified_network(simple_network, profile="railway")
+
+    def test_road_profile_collapses_roundabouts_generic_does_not(self):
+        generic = nw_preps.simplified_network(self._ring_network())
+        road = nw_preps.simplified_network(self._ring_network(), profile="road")
+
+        assert self._has_ring(generic)
+        assert not self._has_ring(road)
+
+    def test_profile_setting_overridden(self):
+        """A keyword argument overrides the profile's setting."""
+        result = nw_preps.simplified_network(
+            self._ring_network(), profile="road", roundabouts=False
+        )
+
+        assert self._has_ring(result)
+
+    def test_roundabout_max_length_overridden(self):
+        """A smaller limit than the ring length keeps the ring."""
+        result = nw_preps.simplified_network(
+            self._ring_network(), profile="road", roundabout_max_length=100
+        )
+
+        assert self._has_ring(result)
+
+    def test_split_connects_crossing_edges(self):
+        """With split="anywhere", two crossing edges meet in a node of degree 4."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road", "road"],
+                "geometry": [
+                    LineString([(0, 0), (2, 0)]),
+                    LineString([(1, -1), (1, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        unsplit = nw_preps.simplified_network(Network(edges=edges.copy()))
+        split = nw_preps.simplified_network(
+            Network(edges=edges.copy()), split="anywhere"
+        )
+
+        assert (len(unsplit.edges), len(unsplit.nodes)) == (2, 4)
+        assert (len(split.edges), len(split.nodes)) == (4, 5)
+        assert max(nw_preps.calculate_degree(split)) == 4
+
+    def test_invalid_split_raises(self, simple_network):
+        with pytest.raises(ValueError, match="split must be"):
+            nw_preps.simplified_network(simple_network, split=True)
+
+    @pytest.mark.parametrize(
+        "profile, expected", [("generic", (2, 4)), ("road", (4, 5)), ("power_line", (4, 5))]
+    )
+    def test_profiles_split_crossing_edges(self, profile, expected):
+        """road and power_line connect crossing edges by default, generic does not."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["x", "x"],
+                "geometry": [
+                    LineString([(0, 0), (2, 0)]),
+                    LineString([(1, -1), (1, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges), profile=profile)
+
+        assert (len(result.edges), len(result.nodes)) == expected
+
+    def test_osm_ways_crossing_at_inner_vertex_connected(self):
+        """Ways sharing an inner vertex (usual OSM junction) end up connected."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road", "road"],
+                "geometry": [
+                    LineString([(0, 0), (1, 0), (2, 0)]),
+                    LineString([(1, -1), (1, 0), (1, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges), profile="road")
+        graph = result.to_graph(directed=False)
+
+        assert len(graph.connected_components()) == 1
+        assert max(nw_preps.calculate_degree(result)) == 4
+
+    def test_ci_type_argument_sets_type(self, simple_network):
+        result = nw_preps.simplified_network(simple_network, ci_type="road")
+
+        assert (result.edges["ci_type"] == "road").all()
+        assert (result.nodes["ci_type"] == "road").all()
+
+    def test_ci_type_argument_conflict_raises(self, simple_network):
+        simple_network.edges["ci_type"] = "power_line"
+
+        with pytest.raises(ValueError, match="was given"):
+            nw_preps.simplified_network(simple_network, ci_type="road")
+
+    def test_ci_type_argument_on_nodes_only_network(self, nodes_only_network):
+        result = nw_preps.simplified_network(nodes_only_network, ci_type="people")
+
+        assert (result.nodes["ci_type"] == "people").all()
+
+    def test_summary_logged(self, simple_network, caplog):
+        simple_network.edges["ci_type"] = "road"
+        logger = logging.getLogger("climada_petals")
+        level = logger.level
+        logger.setLevel(logging.INFO)
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.simplified_network(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+            logger.setLevel(level)
+
+        assert "simplified_network: 4 edges in, 1 out" in caplog.text
+
+    def test_missing_ci_type_warns(self, simple_network, caplog):
+        """A warning is logged when the edges have no ci_type."""
+        assert "ci_type" not in simple_network.edges.columns
+
+        # the climada_petals logger does not propagate to the root logger, so the
+        # capture handler has to be attached to it directly
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.simplified_network(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "Edges have no ci_type" in caplog.text
+
+    def test_single_ci_type_no_warning(self, simple_network, caplog):
+        """No ci_type warning when all edges share one ci_type."""
+        simple_network.edges["ci_type"] = "road"
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            nw_preps.simplified_network(simple_network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert "ci_type" not in caplog.text
