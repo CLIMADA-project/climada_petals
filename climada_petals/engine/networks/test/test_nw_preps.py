@@ -1668,6 +1668,153 @@ class TestSplitEdgesAtNodes:
 
 
 # ========================================================================
+# Tests: split_long_edges
+# ========================================================================
+
+
+class TestSplitLongEdges:
+    @staticmethod
+    def _network(line_coords, from_id=0, to_id=1, crs="EPSG:32632", **edge_cols):
+        """One edge between node 0 (line start) and node 1 (line end)."""
+        line = LineString(line_coords)
+        nodes = gpd.GeoDataFrame(
+            {
+                "id": [0, 1],
+                "ci_type": ["road", "road"],
+                "geometry": [Point(line_coords[0]), Point(line_coords[-1])],
+            },
+            geometry="geometry",
+            crs=crs,
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                "from_id": [from_id],
+                "to_id": [to_id],
+                "id": [0],
+                "ci_type": ["road"],
+                **edge_cols,
+                "geometry": [line],
+            },
+            geometry="geometry",
+            crs=crs,
+        )
+        return Network(edges=edges, nodes=nodes)
+
+    _STRAIGHT = [(500000, 5000000), (500250, 5000000)]  # 250 m
+
+    def test_short_edge_unchanged(self):
+        network = self._network(self._STRAIGHT)
+
+        result = nw_preps.split_long_edges(network, max_length=300)
+
+        assert len(result.edges) == 1
+        assert len(result.nodes) == 2
+
+    def test_long_edge_split_into_equal_pieces(self):
+        network = self._network(self._STRAIGHT, distance=[250.0], osm_id=[7])
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        # ceil(250 / 100) = 3 pieces of about 83.3 m
+        assert len(result.edges) == 3
+        np.testing.assert_allclose(result.edges["distance"], [250 / 3] * 3)
+        assert result.edges["osm_id"].tolist() == [7, 7, 7]
+        np.testing.assert_array_equal(result.edges["id"], [0, 1, 2])
+
+    def test_new_nodes_inherit_ci_type_and_continue_ids(self):
+        network = self._network(self._STRAIGHT)
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        new = result.nodes[result.nodes["id"] >= 2]
+        assert new["id"].tolist() == [2, 3]
+        assert (new["ci_type"] == "road").all()
+
+    def test_pieces_chain_from_start_to_end(self):
+        network = self._network(self._STRAIGHT)
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        pairs = list(zip(result.edges["from_id"], result.edges["to_id"]))
+        assert pairs == [(0, 2), (2, 3), (3, 1)]
+        node_geom = dict(zip(result.nodes["id"], result.nodes.geometry))
+        for edge in result.edges.itertuples():
+            assert node_geom[edge.from_id].distance(
+                shapely.get_point(edge.geometry, 0)
+            ) == pytest.approx(0, abs=1e-6)
+
+    def test_reversed_edge_pieces_start_at_their_from_node(self):
+        """An edge whose from_id is at the line's end is handled as well."""
+        network = self._network(self._STRAIGHT, from_id=1, to_id=0)
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        node_geom = dict(zip(result.nodes["id"], result.nodes.geometry))
+        for edge in result.edges.itertuples():
+            assert node_geom[edge.from_id].distance(
+                shapely.get_point(edge.geometry, 0)
+            ) == pytest.approx(0, abs=1e-6)
+            assert node_geom[edge.to_id].distance(
+                shapely.get_point(edge.geometry, -1)
+            ) == pytest.approx(0, abs=1e-6)
+
+    def test_curved_geometry_kept(self):
+        """Pieces follow the line, the corner vertex is not cut away."""
+        corner = [(500000, 5000000), (500300, 5000000), (500300, 5000100)]  # 400 m
+        network = self._network(corner)
+
+        result = nw_preps.split_long_edges(network, max_length=250)
+
+        assert len(result.edges) == 2
+        total = sum(g.length for g in result.edges.geometry)
+        assert total == pytest.approx(400.0)
+        second = shapely.get_coordinates(result.edges.geometry.iloc[1]).tolist()
+        assert [500300.0, 5000000.0] in second
+
+    def test_geographic_crs(self):
+        """Lengths are geodesic in a geographic CRS (1 degree ~ 111 km)."""
+        network = self._network([(0, 0), (1, 0)], crs="EPSG:4326", distance=[0.0])
+
+        result = nw_preps.split_long_edges(network, max_length=50_000)
+
+        assert len(result.edges) == 3
+        assert result.edges["distance"].sum() == pytest.approx(111_195, rel=0.01)
+
+    def test_multilinestring_unchanged(self):
+        network = self._network(self._STRAIGHT)
+        network.edges["geometry"] = gpd.GeoSeries(
+            [
+                MultiLineString(
+                    [
+                        [(500000, 5000000), (500100, 5000000)],
+                        [(500100, 5000000), (500250, 5000000)],
+                    ]
+                )
+            ],
+            crs="EPSG:32632",
+        )
+
+        result = nw_preps.split_long_edges(network, max_length=100)
+
+        assert len(result.edges) == 1
+
+    def test_without_topology_raises(self):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString(self._STRAIGHT)]},
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+
+        with pytest.raises(ValueError, match="from_id / to_id"):
+            nw_preps.split_long_edges(Network(edges=edges), max_length=100)
+
+    @pytest.mark.parametrize("max_length", [0, -5, None])
+    def test_invalid_max_length_raises(self, max_length):
+        with pytest.raises(ValueError, match="max_length"):
+            nw_preps.split_long_edges(self._network(self._STRAIGHT), max_length)
+
+
+# ========================================================================
 # Tests: clean_roundabouts
 # ========================================================================
 

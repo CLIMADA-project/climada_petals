@@ -1272,6 +1272,148 @@ def split_edges_at_nodes(network, mode="anywhere", tolerance=1e-9):
     return Network(edges, nodes)
 
 
+def split_long_edges(network, max_length, inherit_attrs=("ci_type",)):
+    """Split edges longer than ``max_length`` metres into pieces of equal length.
+
+    Every LineString edge longer than ``max_length`` is cut into
+    ``ceil(length / max_length)`` pieces of equal length along the line (the
+    geometry, including curves, is kept), with a new node at each cut point.
+    Use cases: more localised impacts (an edge fails as a whole, so shorter edges
+    make failures more local) and regular points along roads where other
+    infrastructure or people can be linked, instead of only the vertices of
+    the source data (e.g. OSM).
+
+    Works on a network with topology (``from_id`` / ``to_id``, e.g. the
+    output of :func:`simplified_network`) and keeps it consistent:
+
+    - new nodes get ids after the existing ones and copy the
+      ``inherit_attrs`` of their edge (e.g. ``ci_type``, so that selections by
+      type include them); other node columns are missing (a ``degree`` column
+      gets 2);
+    - each piece copies all attributes of its edge (e.g. ``osm_id`` for
+      provenance) and is connected to its neighbouring pieces; ``from_id`` of
+      a piece is the node at the start of its geometry;
+    - ``distance`` (if present) is recomputed per piece; edge ids are
+      renumbered ``0..n-1``.
+
+    Do not run :func:`merge_edges` or :func:`simplified_network` afterwards:
+    the cut points have degree 2 and would be merged again. Lengths are
+    geodesic for a geographic CRS; in that case the pieces are equal in
+    length along the line in CRS units, so in metres they are only
+    approximately equal. Non-LineString edges are left unchanged.
+
+    Parameters
+    ----------
+    network : Network
+        A network composed of nodes (points in space) and edges (lines), with
+        ``from_id`` / ``to_id``.
+    max_length : float
+        Maximum edge length in metres.
+    inherit_attrs : sequence of str, optional
+        Edge columns copied onto the new nodes. Columns not present in the
+        edges are ignored. Default: ``("ci_type",)``.
+
+    Returns
+    -------
+    Network
+        Network whose edges are at most about ``max_length`` metres long.
+
+    Raises
+    ------
+    ValueError
+        If ``max_length`` is not positive, the edges have no ``from_id`` /
+        ``to_id``, or no CRS.
+    """
+    if max_length is None or not max_length > 0:
+        raise ValueError(f"max_length must be positive, got {max_length!r}.")
+    edges = network.edges.copy()
+    nodes = network.nodes.copy()
+    if edges.empty:
+        return Network(edges, nodes)
+    if not _has_topology(edges):
+        raise ValueError(
+            "split_long_edges needs edges with from_id / to_id; run "
+            "simplified_network (or add_endpoints, add_ids, add_topology) first."
+        )
+
+    geoms = edges["geometry"].to_numpy()
+    is_line = shapely.get_type_id(geoms) == 1
+    lengths = np.asarray(_edge_lengths_metres(edges), dtype=float)
+    n_pieces = np.ones(len(edges), dtype=int)
+    too_long = is_line & (lengths > max_length)
+    n_pieces[too_long] = np.ceil(lengths[too_long] / max_length).astype(int)
+    if not too_long.any():
+        return Network(edges, nodes)
+
+    node_geom_by_id = pd.Series(nodes["geometry"].to_numpy(), index=nodes["id"])
+    from_ids = edges["from_id"].to_numpy()
+    to_ids = edges["to_id"].to_numpy()
+    next_id = int(nodes["id"].max()) + 1 if len(nodes) else 0
+    first_new_id = next_id
+
+    rows, piece_geoms, piece_from, piece_to = [], [], [], []
+    new_node_geoms, new_node_edge = [], []
+    for pos in range(len(edges)):
+        # edges that are not LineStrings or are short enough are kept unchanged
+        if n_pieces[pos] == 1:
+            rows.append(pos)
+            piece_geoms.append(geoms[pos])
+            piece_from.append(from_ids[pos])
+            piece_to.append(to_ids[pos])
+            continue
+        line = geoms[pos]
+        start = shapely.get_point(line, 0)
+        start_node, end_node = from_ids[pos], to_ids[pos]
+        if shapely.distance(node_geom_by_id[end_node], start) < shapely.distance(
+            node_geom_by_id[start_node], start
+        ):
+            start_node, end_node = end_node, start_node  # from_id at the line's end
+        fractions = np.linspace(0.0, 1.0, n_pieces[pos] + 1)
+        cut_ids = list(range(next_id, next_id + len(fractions) - 2))
+        next_id += len(cut_ids)
+        for fraction in fractions[1:-1]:
+            new_node_geoms.append(
+                shapely.line_interpolate_point(line, fraction, normalized=True)
+            )
+            new_node_edge.append(pos)
+        ends = [start_node, *cut_ids, end_node]
+        for a, b, u, v in zip(fractions[:-1], fractions[1:], ends[:-1], ends[1:]):
+            rows.append(pos)
+            piece_geoms.append(substring(line, a, b, normalized=True))
+            piece_from.append(u)
+            piece_to.append(v)
+
+    out = edges.iloc[rows].reset_index(drop=True)
+    out["geometry"] = gpd.GeoSeries(piece_geoms, index=out.index, crs=edges.crs)
+    out["from_id"] = piece_from
+    out["to_id"] = piece_to
+    out["id"] = np.arange(len(out))
+    if "distance" in out.columns:
+        out["distance"] = _edge_lengths_metres(out)
+
+    new_nodes = gpd.GeoDataFrame(
+        {"id": np.arange(first_new_id, next_id), "geometry": new_node_geoms},
+        geometry="geometry",
+        crs=nodes.crs if nodes.crs is not None else edges.crs,
+    )
+    for attr in inherit_attrs:
+        if attr in edges.columns:
+            new_nodes[attr] = edges[attr].to_numpy()[new_node_edge]
+    if "degree" in nodes.columns:
+        new_nodes["degree"] = 2
+    nodes = pd.concat([nodes, new_nodes], ignore_index=True)
+
+    LOGGER.info(
+        "split_long_edges: %d edges longer than %g m split into %d pieces; "
+        "%d nodes added.",
+        int(too_long.sum()),
+        max_length,
+        int(n_pieces[too_long].sum()),
+        len(new_nodes),
+    )
+    return Network(out, nodes)
+
+
 def _meeting_points(intersection):
     """Points where two lines meet, from the geometry of their intersection.
 
