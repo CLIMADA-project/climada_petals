@@ -24,8 +24,8 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 import logging
+import warnings
 import shapely
-from shapely.errors import GEOSException
 from shapely.ops import substring
 from tqdm import tqdm
 
@@ -85,6 +85,11 @@ PREPROCESSING_PROFILES = {
 
 def add_ids(network, id_col="id"):
     """Add or replace an id column with ascending ids.
+
+    Nodes and edges get ids ``0..n-1`` in row order and a reset index. Edge
+    references (``from_id`` / ``to_id``) are not updated: call this before
+    :func:`add_topology`, or use :func:`reset_ids` on a network that already
+    has topology.
 
     Parameters
     ----------
@@ -313,14 +318,66 @@ def get_endpoints(network, attrs=("ci_type",)):
     return gdf_endpoints
 
 
+def _resolve_endpoint_attrs(endpoints, attrs):
+    """Give all endpoints at one location the same inherited attribute values.
+
+    Per location and attribute: the shared value if the edges agree (missing
+    values ignored), otherwise missing, with one warning per attribute.
+
+    Parameters
+    ----------
+    endpoints : gpd.GeoDataFrame
+        Output of :func:`get_endpoints` (one row per edge end).
+    attrs : sequence of str
+        Inherited attribute columns; columns not present are ignored.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        ``endpoints`` with resolved attribute values.
+    """
+    cols = [col for col in attrs if col in endpoints.columns]
+    if not cols or endpoints.empty:
+        return endpoints
+    endpoints = endpoints.copy()
+    location = pd.Series(
+        shapely.to_wkb(endpoints.geometry.to_numpy()), index=endpoints.index
+    )
+    for col in cols:
+        by_location = endpoints[col].groupby(location)
+        n_values = by_location.transform("nunique")
+        shared = by_location.transform("first")  # first non-missing value
+        conflict = n_values > 1
+        endpoints[col] = shared.where(~conflict, np.nan)
+        if conflict.any():
+            LOGGER.warning(
+                "add_endpoints: %s differed between the edges meeting at %d "
+                "endpoints; left missing for those nodes.",
+                col,
+                location[conflict].nunique(),
+            )
+    return endpoints
+
+
 def add_endpoints(network, inherit_attrs=("ci_type",)):
     """Add nodes at line endpoints.
 
     New endpoint nodes inherit the attributes listed in ``inherit_attrs`` from
     the edge they belong to. Where an endpoint coincides with an existing node,
-    the existing node (and its attributes) is kept. Where several edges with
-    different attribute values share an endpoint, the value of the first edge
-    is used.
+    the existing node (and its attributes) is kept. Where several edges share
+    an endpoint:
+
+    - if they agree on an attribute (missing values ignored), the node gets
+      that value;
+    - if they have different values (e.g. a ``road`` and a ``power_line``
+      ending at the same point), the attribute is left missing for that node,
+      and one warning per attribute gives the number of such endpoints. No
+      value is picked arbitrarily; with ``ci_type`` missing, the node is not
+      part of any type selection. (:func:`simplified_network` requires a
+      single ``ci_type``, so this does not occur there.)
+
+    New nodes have no ``id`` (missing values) while existing nodes keep
+    theirs: call :func:`add_ids` afterwards, then :func:`add_topology`.
 
     Parameters
     ----------
@@ -337,6 +394,7 @@ def add_endpoints(network, inherit_attrs=("ci_type",)):
     """
 
     endpoints = get_endpoints(network, attrs=inherit_attrs)
+    endpoints = _resolve_endpoint_attrs(endpoints, inherit_attrs)
 
     nodes = network.nodes.copy()
     edges = network.edges.copy()
@@ -348,6 +406,10 @@ def add_endpoints(network, inherit_attrs=("ci_type",)):
 
 def merge_multilinestrings(network):
     """Merge all MultiLineString geometries into LineString geometries.
+
+    MultiLineStrings whose parts connect become LineStrings; the others stay
+    MultiLineStrings (split them with :func:`explode_multilinestrings`).
+    Topology columns are not updated: run this before :func:`add_endpoints`.
 
     Parameters
     ----------
@@ -443,28 +505,6 @@ def find_roundabouts(network):
         if shapely.predicates.is_ring(edge.geometry):
             roundabouts.append(edge)
     return roundabouts
-
-
-def _get_edge_id_column(edges):
-    """Return the preferred edge identifier column if present."""
-    for col in ["osm_id", "osmid", "edge_id", "id"]:
-        if col in edges.columns:
-            return col
-    return None
-
-
-def _ensure_edge_id_column(edges):
-    """Ensure edges have an identifier column, creating a temporary one if needed."""
-    edges = edges.copy()
-    edge_id_col = _get_edge_id_column(edges)
-    if edge_id_col is None:
-        edge_id_col = "__edge_uid"
-        edges[edge_id_col] = edges.index.to_numpy()
-    elif edges[edge_id_col].isna().any():
-        edges[edge_id_col] = edges[edge_id_col].fillna(
-            pd.Series(edges.index, index=edges.index)
-        )
-    return edges, edge_id_col
 
 
 def _has_topology(edges):
@@ -627,11 +667,16 @@ def calculate_degree(network):
     ValueError
         If the node ids are not ``0..n-1`` in row order, or if ``from_id`` /
         ``to_id`` are missing, not integers, or refer to node ids that do not
-        exist.
+        exist, or the edges have no ``from_id`` / ``to_id`` columns.
     """
     n_nodes = len(network.nodes)
     if network.edges.empty:
         return np.zeros(n_nodes, dtype=int)
+    if not {"from_id", "to_id"}.issubset(network.edges.columns):
+        raise ValueError(
+            "calculate_degree needs edges with from_id / to_id; run add_ids and "
+            "add_topology first."
+        )
     if not np.array_equal(network.nodes["id"].to_numpy(), np.arange(n_nodes)):
         raise ValueError(
             "calculate_degree requires node ids 0..n-1 in row order; "
@@ -687,6 +732,16 @@ def _edge_node_ids(edges, col, n_nodes):
 
 def add_degree(network):
     """Add a degree column to the node GeoDataFrame.
+
+    The degree is counted from the existing ``from_id`` / ``to_id`` (see
+    :func:`calculate_degree`), which requires:
+
+    - edges with ``from_id`` / ``to_id``: if they are missing, run
+      :func:`add_ids` and then :func:`add_topology`;
+    - node ids ``0..n-1`` in row order, referred to by ``from_id`` /
+      ``to_id``: if the network has topology but its ids have gaps (e.g.
+      after removing nodes or edges), run :func:`reset_ids`, which renumbers
+      the nodes and updates ``from_id`` / ``to_id``.
 
     Parameters
     ----------
@@ -1073,26 +1128,6 @@ def merge_edges(
     nodes = nodes.loc[~nodes["id"].isin(removed_nodes)].reset_index(drop=True)
 
     return Network(edges, nodes)
-
-
-def node_connectivity_degree(node, network):
-    """Get the degree of connectivity for a node.
-
-    Parameters
-    ----------
-    node : int
-        Node id to query.
-    network : Network
-        A network composed of nodes (points in space) and edges (lines).
-
-    Returns
-    -------
-    int
-        Number of edges connected to the node.
-    """
-    return len(
-        network.edges[(network.edges.from_id == node) | (network.edges.to_id == node)]
-    )
 
 
 def drop_duplicate_geometries(dataframe, keep="first"):
@@ -1510,104 +1545,30 @@ def _split_line(line, points, mode, tolerance):
     ]
 
 
-def _intersects(geom, dataframe, sindex, tolerance=1e-9):
-    """Find elements of a GeoSeries intersecting with a geometry.
-
-    Buffers the geometry by a tolerance before querying the spatial index.
+def intersects(geom, dataframe, sindex, tolerance=1e-9):
+    """Return the elements of a GeoSeries within ``tolerance`` of a geometry.
 
     Parameters
     ----------
     geom : shapely.Geometry
-        Geometry to test for intersection.
-    dataframe : gpd.GeoSeries
-        GeoSeries of geometries to search.
-    sindex : shapely.STRtree
-        Spatial index of the dataframe geometries.
-    tolerance : float, optional
-        Buffer distance for intersection test. Default: 1e-9.
-
-    Returns
-    -------
-    gpd.GeoSeries
-        Subset of ``dataframe`` that intersects with ``geom``.
-    """
-    buffer = shapely.buffer(geom, tolerance)
-    if shapely.is_empty(buffer):
-        # can have an empty buffer with too small a tolerance, fallback to original geom
-        buffer = geom
-    try:
-        return _intersects_dataframe(buffer, dataframe, sindex)
-    except GEOSException:
-        # can exceptionally buffer to an invalid geometry, so try re-buffering
-        buffer = shapely.buffer(geom, 0)
-        return _intersects_dataframe(buffer, dataframe, sindex)
-
-
-def _intersects_dataframe(geom, dataframe, sindex):
-    """Return elements of a GeoSeries that intersect with a geometry.
-
-    Parameters
-    ----------
-    geom : shapely.Geometry
-        Geometry to test for intersection.
-    dataframe : gpd.GeoSeries
-        GeoSeries of geometries to search.
+        Geometry to test.
+    dataframe : gpd.GeoSeries or gpd.GeoDataFrame
+        Geometries to search.
     sindex : shapely.STRtree
         Spatial index built from the ``dataframe`` geometries, in the same
         row order.
+    tolerance : float, optional
+        Maximum distance (CRS units). Default: 1e-9.
 
     Returns
     -------
-    gpd.GeoSeries
-        Subset of ``dataframe`` that intersects with ``geom``, with the
-        original index labels.
+    gpd.GeoSeries or gpd.GeoDataFrame
+        Subset of ``dataframe`` within ``tolerance`` of ``geom``, in row order
+        and with the original index labels.
     """
     # STRtree.query returns row positions, not index labels
-    return dataframe.iloc[sindex.query(geom, "intersects")]
-
-
-def intersects(geom, dataframe, sindex, tolerance=1e-9):
-    """Find the subset of a GeoSeries intersecting with a geometry.
-
-    Parameters
-    ----------
-    geom : shapely.Geometry
-        Geometry to test for intersection.
-    dataframe : gpd.GeoSeries
-        GeoSeries of geometries to search.
-    sindex : shapely.STRtree
-        Spatial index of the dataframe geometries.
-    tolerance : float, optional
-        Buffer distance for intersection test. Default: 1e-9.
-
-    Returns
-    -------
-    gpd.GeoSeries
-        Subset of ``dataframe`` that intersects with ``geom``.
-    """
-    return _intersects(geom, dataframe, sindex, tolerance)
-
-
-def nodes_intersecting(line, nodes, sindex, tolerance=1e-9):
-    """Find nodes intersecting with a line geometry.
-
-    Parameters
-    ----------
-    line : shapely.LineString
-        Line geometry to test for intersection.
-    nodes : gpd.GeoSeries
-        GeoSeries of node geometries.
-    sindex : shapely.STRtree
-        Spatial index of the node geometries.
-    tolerance : float, optional
-        Buffer distance for intersection test. Default: 1e-9.
-
-    Returns
-    -------
-    gpd.GeoSeries
-        Subset of ``nodes`` that intersects with ``line``.
-    """
-    return intersects(line, nodes, sindex, tolerance)
+    positions = sindex.query(geom, predicate="dwithin", distance=tolerance)
+    return dataframe.iloc[np.sort(positions)]
 
 
 def _edge_lengths_metres(edges):
@@ -1681,46 +1642,6 @@ def add_distances(network):
     edges["distance"] = _edge_lengths_metres(edges)
 
     return Network(edges, nodes)
-
-
-def _ecols_to_graphorder(edges):
-    """Order edge columns as igraph expects them for building a graph.
-
-    Moves 'from_id' and 'to_id' to the front of the DataFrame.
-
-    Parameters
-    ----------
-    edges : gpd.GeoDataFrame
-        Edge GeoDataFrame to reorder.
-
-    Returns
-    -------
-    gpd.GeoDataFrame
-        Reordered edge GeoDataFrame.
-    """
-    return edges.reindex(
-        ["from_id", "to_id"]
-        + [x for x in list(edges) if x not in ["from_id", "to_id"]],
-        axis=1,
-    )
-
-
-def _vcols_to_graphorder(nodes):
-    """Order node columns as igraph expects them for building a graph.
-
-    Moves 'id' to the front of the DataFrame.
-
-    Parameters
-    ----------
-    nodes : gpd.GeoDataFrame
-        Node GeoDataFrame to reorder.
-
-    Returns
-    -------
-    gpd.GeoDataFrame
-        Reordered node GeoDataFrame.
-    """
-    return nodes.reindex(["id"] + [x for x in list(nodes) if x not in ["id"]], axis=1)
 
 
 # =============================================================================
@@ -2005,7 +1926,9 @@ def simplified_network(
 def ordered_network(network):
     """Return a column-ordered network for igraph graph generation.
 
-    Reorders node and edge columns to the format expected by igraph.
+    .. deprecated::
+        Not needed: :meth:`Network.to_graph` orders the columns itself. Will
+        be removed.
 
     Parameters
     ----------
@@ -2015,38 +1938,51 @@ def ordered_network(network):
     Returns
     -------
     Network
-        Network with reordered columns ready for igraph graph construction.
+        Copy of the network with ``from_id`` / ``to_id`` as first edge columns
+        and ``id`` as first node column.
     """
-
+    warnings.warn(
+        "ordered_network is deprecated and will be removed: Network.to_graph "
+        "orders the columns itself.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     network_ord = Network(network.edges.copy(), network.nodes.copy())
-
-    network_ord.nodes = _vcols_to_graphorder(network_ord.nodes)
-    network_ord.edges = _ecols_to_graphorder(network_ord.edges)
+    network_ord.nodes = network_ord._vcols_to_graphorder(network_ord.nodes)
+    network_ord.edges = network_ord._ecols_to_graphorder(network_ord.edges)
     return network_ord
 
 
 def add_attributes(network, attrs, on="both"):
-    """
-    Add attributes to both edges and nodes of a network.
+    """Return a copy of the network with constant attributes added.
 
     Parameters
     ----------
     network : Network
-        The network to add attributes to.
+        The network to add attributes to. It is not modified.
     attrs : dict
-        A dictionary of attributes to add.
-    on : str, optional
-        The elements to add the attributes to. Can be "both", "edges", or "nodes".
-        Default is "both".
+        Column name -> value; each value is set on all rows. Existing columns
+        are overwritten.
+    on : {"both", "edges", "nodes"}, optional
+        Where to add the attributes. Default: "both".
 
     Returns
     -------
     Network
-        The network with the added attributes.
+        Copy of the network with the added attributes.
+
+    Raises
+    ------
+    ValueError
+        If ``on`` is not "both", "edges" or "nodes".
     """
+    if on not in ("both", "edges", "nodes"):
+        raise ValueError(f"on must be 'both', 'edges' or 'nodes', got {on!r}.")
+    edges = network.edges.copy()
+    nodes = network.nodes.copy()
     for key, value in attrs.items():
-        if on in ["both", "edges"]:
-            network.edges[key] = value
-        if on in ["both", "nodes"]:
-            network.nodes[key] = value
-    return network
+        if on in ("both", "edges"):
+            edges[key] = value
+        if on in ("both", "nodes"):
+            nodes[key] = value
+    return Network(edges, nodes)

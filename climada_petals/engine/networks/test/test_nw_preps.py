@@ -153,207 +153,11 @@ class TestAddIds:
 
 
 # ========================================================================
-# Tests: _get_edge_id_column / _ensure_edge_id_column
+# Tests: external ids are carried through as attributes
 # ========================================================================
 
 
-class TestGetEdgeIdColumn:
-    def test_prefers_osm_id(self, simple_network):
-        """osm_id is preferred over other id columns."""
-        edges = simple_network.edges.copy()
-        edges["edge_id"] = range(len(edges))
-        edges["id"] = range(100, 100 + len(edges))
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "osm_id"
-
-    def test_falls_back_to_osmid(self):
-        """Falls back to osmid when osm_id is missing."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osmid": [101, 102, 103],
-                "edge_id": [0, 1, 2],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "osmid"
-
-    def test_falls_back_to_edge_id(self):
-        """Falls back to edge_id when osm_id and osmid are missing."""
-        edges = gpd.GeoDataFrame(
-            {
-                "edge_id": [0, 1, 2],
-                "id": [100, 101, 102],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "edge_id"
-
-    def test_falls_back_to_id(self):
-        """Falls back to id when only id column exists."""
-        edges = gpd.GeoDataFrame(
-            {
-                "id": [0, 1, 2],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col == "id"
-
-    def test_returns_none_when_no_id_column(self):
-        """Returns None when no id column exists."""
-        edges = gpd.GeoDataFrame(
-            {
-                "name": ["edge1", "edge2"],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        col = nw_preps._get_edge_id_column(edges)
-
-        assert col is None
-
-
-class TestEnsureEdgeIdColumn:
-    def test_preserves_osm_id(self):
-        """osm_id is preserved when present."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osm_id": [10001, 10002, 10003],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
-
-        assert id_col == "osm_id"
-        np.testing.assert_array_equal(
-            result_edges["osm_id"].values, [10001, 10002, 10003]
-        )
-
-    def test_creates_temporary_column_when_missing(self):
-        """Creates __edge_uid temporary column when no id column exists."""
-        edges = gpd.GeoDataFrame(
-            {
-                "name": ["edge1", "edge2"],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
-
-        assert id_col == "__edge_uid"
-        assert "__edge_uid" in result_edges.columns
-        np.testing.assert_array_equal(result_edges["__edge_uid"].values, [0, 1])
-
-    def test_fills_nan_values_with_index(self):
-        """NaN values in id column are filled with index."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osm_id": [10001.0, np.nan, 10003.0],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                    LineString([(2, 2), (3, 3)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, id_col = nw_preps._ensure_edge_id_column(edges)
-
-        assert id_col == "osm_id"
-        # NaN values should be filled with corresponding index values
-        assert not result_edges["osm_id"].isna().any()
-        # Value at index 1 should be filled with index value 1
-        assert result_edges["osm_id"].iloc[1] == 1.0
-
-    def test_preserves_columns(self):
-        """All original columns are preserved."""
-        edges = gpd.GeoDataFrame(
-            {
-                "name": ["edge1", "edge2"],
-                "length": [100, 200],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-
-        result_edges, _ = nw_preps._ensure_edge_id_column(edges)
-
-        assert "name" in result_edges.columns
-        assert "length" in result_edges.columns
-        assert "geometry" in result_edges.columns
-
-    def test_original_dataframe_not_modified(self):
-        """Original dataframe is not modified."""
-        edges = gpd.GeoDataFrame(
-            {
-                "osm_id": [10001, 10002],
-                "geometry": [
-                    LineString([(0, 0), (1, 1)]),
-                    LineString([(1, 1), (2, 2)]),
-                ],
-            },
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-        original_columns = set(edges.columns)
-
-        result_edges, _ = nw_preps._ensure_edge_id_column(edges)
-
-        assert set(result_edges.columns) == original_columns
-
-
-class TestEdgeIdColumnIntegration:
+class TestExternalIdsCarriedThrough:
     def test_clean_roundabouts_with_osm_id(self, roundabout_network):
         """clean_roundabouts preserves osm_id column."""
         result = nw_preps.clean_roundabouts(roundabout_network)
@@ -362,8 +166,8 @@ class TestEdgeIdColumnIntegration:
         # osm_id values should still be present in some form
         assert len(result.edges) > 0
 
-    def test_clean_roundabouts_without_edge_id_creates_temporary(self):
-        """clean_roundabouts handles edges without id columns by creating temporary one."""
+    def test_clean_roundabouts_without_id_column(self):
+        """clean_roundabouts works on edges without any external id column."""
         # Create a roundabout network and remove osm_id
         ring = LineString([(0, 0), (1, 0), (1, 1), (0, 1), (0, 0)])
         line = LineString([(0, 0), (2, 2)])
@@ -387,7 +191,7 @@ class TestEdgeIdColumnIntegration:
         result = nw_preps.clean_roundabouts(network)
 
         assert result is not None
-        # Temporary __edge_uid column should not be in final output
+        # no helper id column is added
         assert "__edge_uid" not in result.edges.columns
 
     def test_split_edges_at_nodes_preserves_osm_id(self):
@@ -428,7 +232,7 @@ class TestEdgeIdColumnIntegration:
         assert result.edges["osm_id"].notna().all()
 
     def test_reset_ids_after_edge_id_operations(self):
-        """reset_ids works correctly after using ensure_edge_id_column."""
+        """reset_ids is not affected by an external id column (osm_id)."""
         # Network with osm_id but non-sequential node ids
         nodes = gpd.GeoDataFrame(
             {
@@ -761,6 +565,57 @@ class TestEndpoints:
             ci == "road" for coords, ci in ci_by_coords.items() if coords != (4.0, 4.0)
         )
 
+    @staticmethod
+    def _two_edges_meeting(types):
+        """Edges (0,0)-(1,0) and (1,0)-(2,0) with the given ci_types."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": types,
+                "geometry": [
+                    LineString([(0, 0), (1, 0)]),
+                    LineString([(1, 0), (2, 0)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        return Network(edges=edges)
+
+    @staticmethod
+    def _ci_type_at(network, x):
+        nodes = network.nodes
+        return nodes.loc[nodes.geometry.x == x, "ci_type"].iloc[0]
+
+    def test_add_endpoints_conflicting_values_left_missing(self, caplog):
+        """Different values at a shared endpoint are not picked arbitrarily."""
+        network = self._two_edges_meeting(["road", "power_line"])
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            result = nw_preps.add_endpoints(network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert pd.isna(self._ci_type_at(result, 1.0))
+        assert self._ci_type_at(result, 0.0) == "road"
+        assert self._ci_type_at(result, 2.0) == "power_line"
+        assert "ci_type differed between the edges meeting at 1 endpoints" in caplog.text
+
+    def test_add_endpoints_missing_value_does_not_conflict(self, caplog):
+        """A missing value on one edge does not hide the other edge's value."""
+        network = self._two_edges_meeting([None, "road"])
+
+        logger = logging.getLogger("climada_petals")
+        logger.addHandler(caplog.handler)
+        try:
+            result = nw_preps.add_endpoints(network)
+        finally:
+            logger.removeHandler(caplog.handler)
+
+        assert self._ci_type_at(result, 1.0) == "road"
+        assert "differed" not in caplog.text
+
     def test_add_endpoints_custom_inherit_attrs(self, simple_network):
         """inherit_attrs controls which edge columns are copied to new nodes."""
         edges = simple_network.edges.copy()
@@ -930,6 +785,21 @@ class TestDegree:
 
         np.testing.assert_array_equal(degree, [1, 2, 2, 2, 1])
 
+    def test_degree_without_topology_raises(self):
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString([(0, 0), (1, 0)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1], "geometry": [Point(0, 0), Point(1, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        with pytest.raises(ValueError, match="add_topology"):
+            nw_preps.add_degree(Network(edges=edges, nodes=nodes))
+
     def test_add_degree_column(self, simple_network):
         """add_degree adds a 'degree' column to nodes."""
         result = nw_preps.add_degree(simple_network)
@@ -1023,37 +893,6 @@ class TestDropDuplicateGeometries:
 
 
 # ========================================================================
-# Tests: node_connectivity_degree
-# ========================================================================
-
-
-class TestNodeConnectivityDegree:
-    def test_endpoint_degree(self, simple_network):
-        """Endpoint node has connectivity degree 1."""
-        deg = nw_preps.node_connectivity_degree(0, simple_network)
-
-        assert deg == 1
-
-    def test_inner_degree(self, simple_network):
-        """Inner node has connectivity degree 2."""
-        deg = nw_preps.node_connectivity_degree(2, simple_network)
-
-        assert deg == 2
-
-    def test_branch_degree(self, branching_network):
-        """Branch node has connectivity degree 4."""
-        deg = nw_preps.node_connectivity_degree(2, branching_network)
-
-        assert deg == 4
-
-    def test_isolated_node(self, simple_network):
-        """A node id not referenced in any edge has degree 0."""
-        deg = nw_preps.node_connectivity_degree(999, simple_network)
-
-        assert deg == 0
-
-
-# ========================================================================
 # Tests: reset_ids
 # ========================================================================
 
@@ -1106,45 +945,36 @@ class TestResetIds:
 
 
 # ========================================================================
-# Tests: _intersects / _intersects_dataframe / intersects /
-#        nodes_intersecting
+# Tests: intersects
 # ========================================================================
 
 
 class TestIntersects:
-    def test_intersects_dataframe(self):
-        """_intersects_dataframe returns geometries that intersect."""
+    def test_points_on_line(self):
+        """Geometries on the line are returned, others not."""
         geoms = gpd.GeoSeries([Point(0, 0), Point(1, 1), Point(5, 5)], crs="EPSG:4326")
         sindex = shapely.STRtree(geoms)
-        query_line = LineString([(0, 0), (2, 2)])
 
-        result = nw_preps._intersects_dataframe(query_line, geoms, sindex)
+        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
 
-        # Points (0,0) and (1,1) are on the line
-        assert len(result) == 2
-        coords = [(shapely.get_x(g), shapely.get_y(g)) for g in result.values]
-        assert (0.0, 0.0) in coords
-        assert (1.0, 1.0) in coords
+        assert list(result.index) == [0, 1]
 
-    def test_intersects_with_tolerance(self):
-        """_intersects finds geometries within buffer tolerance."""
+    def test_within_tolerance(self):
+        """Geometries within the tolerance are returned."""
         geoms = gpd.GeoSeries([Point(0, 0), Point(10, 10)], crs="EPSG:4326")
         sindex = shapely.STRtree(geoms)
-        query_point = Point(0.0000000001, 0)
 
-        result = nw_preps._intersects(query_point, geoms, sindex, tolerance=1e-9)
+        result = nw_preps.intersects(Point(1e-10, 0), geoms, sindex, tolerance=1e-9)
 
-        assert len(result) == 1
+        assert list(result.index) == [0]
 
-    def test_nodes_intersecting(self):
-        """nodes_intersecting finds nodes along a line."""
-        nodes = gpd.GeoSeries([Point(0, 0), Point(1, 1), Point(5, 5)], crs="EPSG:4326")
-        sindex = shapely.STRtree(nodes)
-        line = LineString([(0, 0), (2, 2)])
+    def test_beyond_tolerance_not_returned(self):
+        geoms = gpd.GeoSeries([Point(0, 0)], crs="EPSG:4326")
+        sindex = shapely.STRtree(geoms)
 
-        result = nw_preps.nodes_intersecting(line, nodes, sindex)
+        result = nw_preps.intersects(Point(1e-6, 0), geoms, sindex, tolerance=1e-9)
 
-        assert len(result) == 2
+        assert result.empty
 
 
 # ========================================================================
@@ -1259,44 +1089,6 @@ class TestAddDistances:
 
 
 # ========================================================================
-# Tests: _ecols_to_graphorder / _vcols_to_graphorder
-# ========================================================================
-
-
-class TestColumnOrdering:
-    def test_ecols_order(self, simple_network):
-        """from_id and to_id are the first two columns."""
-        result = nw_preps._ecols_to_graphorder(simple_network.edges)
-
-        assert list(result.columns[:2]) == ["from_id", "to_id"]
-
-    def test_vcols_order(self, simple_network):
-        """id is the first column."""
-        result = nw_preps._vcols_to_graphorder(simple_network.nodes)
-
-        assert result.columns[0] == "id"
-
-    def test_ecols_preserves_data(self, simple_network):
-        """Reordering preserves all column data."""
-        original = simple_network.edges
-        result = nw_preps._ecols_to_graphorder(original)
-
-        assert set(result.columns) == set(original.columns)
-        np.testing.assert_array_equal(
-            result["from_id"].values, original["from_id"].values
-        )
-        np.testing.assert_array_equal(result["to_id"].values, original["to_id"].values)
-
-    def test_vcols_preserves_data(self, simple_network):
-        """Reordering preserves all column data."""
-        original = simple_network.nodes
-        result = nw_preps._vcols_to_graphorder(original)
-
-        assert set(result.columns) == set(original.columns)
-        np.testing.assert_array_equal(result["id"].values, original["id"].values)
-
-
-# ========================================================================
 # Tests: merge_edges
 # ========================================================================
 
@@ -1341,14 +1133,16 @@ class TestMergeEdges:
 class TestOrderedNetwork:
     def test_column_order(self, simple_network):
         """ordered_network reorders columns."""
-        result = nw_preps.ordered_network(simple_network)
+        with pytest.warns(DeprecationWarning, match="ordered_network"):
+            result = nw_preps.ordered_network(simple_network)
 
         assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
         assert result.nodes.columns[0] == "id"
 
     def test_keeps_columns_and_values(self, simple_network):
         """Only the column order changes, not the columns or their values."""
-        result = nw_preps.ordered_network(simple_network)
+        with pytest.warns(DeprecationWarning, match="ordered_network"):
+            result = nw_preps.ordered_network(simple_network)
 
         assert set(result.edges.columns) == set(simple_network.edges.columns)
         assert set(result.nodes.columns) == set(simple_network.nodes.columns)
@@ -1363,7 +1157,8 @@ class TestOrderedNetwork:
         """Original network is not modified."""
         orig_edge_cols = list(simple_network.edges.columns)
         orig_node_cols = list(simple_network.nodes.columns)
-        result = nw_preps.ordered_network(simple_network)
+        with pytest.warns(DeprecationWarning, match="ordered_network"):
+            result = nw_preps.ordered_network(simple_network)
 
         assert list(result.edges.columns) == orig_edge_cols
         assert list(result.nodes.columns) == orig_node_cols
@@ -1419,18 +1214,23 @@ class TestAddAttributes:
         pd.testing.assert_frame_equal(result.edges, orig_edges)
         pd.testing.assert_frame_equal(result.nodes, orig_nodes)
 
-    def test_modifies_in_place(self, simple_network):
-        """add_attributes modifies and returns the input network."""
+    def test_returns_copy(self, simple_network):
+        """add_attributes returns a new network and leaves the input unchanged."""
         result = nw_preps.add_attributes(simple_network, {"ci_type": "road"})
 
-        assert result is simple_network
-        assert (simple_network.edges["ci_type"] == "road").all()
+        assert result is not simple_network
+        assert (result.edges["ci_type"] == "road").all()
+        assert "ci_type" not in simple_network.edges.columns
+
+    def test_invalid_on_raises(self, simple_network):
+        with pytest.raises(ValueError, match="on must be"):
+            nw_preps.add_attributes(simple_network, {"ci_type": "road"}, on="edge")
 
     def test_after_ordered_network_keeps_order(self, simple_network):
         """ordered_network followed by add_attributes keeps igraph column order."""
-        result = nw_preps.add_attributes(
-            nw_preps.ordered_network(simple_network), {"ci_type": "road"}
-        )
+        with pytest.warns(DeprecationWarning):
+            ordered = nw_preps.ordered_network(simple_network)
+        result = nw_preps.add_attributes(ordered, {"ci_type": "road"})
 
         assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
         assert result.nodes.columns[0] == "id"
@@ -2067,9 +1867,7 @@ class TestKnownBugsIndexRobustness:
         )
         sindex = shapely.STRtree(geoms)
 
-        result = nw_preps._intersects_dataframe(
-            LineString([(0, 0), (2, 2)]), geoms, sindex
-        )
+        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
 
         assert set(result.index) == {10, 30}
 
