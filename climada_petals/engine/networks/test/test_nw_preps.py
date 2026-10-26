@@ -1579,14 +1579,14 @@ class TestSplitEdgesAtNodes:
     def test_node_between_vertices_ignored_in_vertex_mode(self):
         network = self._network([[(0, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
 
-        result = nw_preps.split_edges_at_nodes(network, split_between_vertices=False)
+        result = nw_preps.split_edges_at_nodes(network, mode="vertices")
 
         assert self._lengths(result) == [2.0]
 
     def test_vertex_mode_splits_at_shared_vertex(self):
         network = self._network([[(0, 0), (1, 0), (2, 0)]], [(0, 0), (1, 0), (2, 0)])
 
-        result = nw_preps.split_edges_at_nodes(network, split_between_vertices=False)
+        result = nw_preps.split_edges_at_nodes(network, mode="vertices")
 
         assert self._lengths(result) == [1.0, 1.0]
 
@@ -1596,7 +1596,7 @@ class TestSplitEdgesAtNodes:
             [[(0, 0), (0, 3), (2, 3), (4, 0)]], [(0, 0), (2, 3), (4, 0)]
         )
 
-        result = nw_preps.split_edges_at_nodes(network, split_between_vertices=False)
+        result = nw_preps.split_edges_at_nodes(network, mode="vertices")
 
         assert len(result.edges) == 2
 
@@ -1607,7 +1607,7 @@ class TestSplitEdgesAtNodes:
 
         default = nw_preps.split_edges_at_nodes(self._network(lines, points))
         vertex_mode = nw_preps.split_edges_at_nodes(
-            self._network(lines, points), split_between_vertices=False
+            self._network(lines, points), mode="vertices"
         )
 
         assert self._lengths(default) == [1.0, 1.0, 1.0, 1.0]
@@ -1645,6 +1645,12 @@ class TestSplitEdgesAtNodes:
 
         # long_way: cut at (1,0) and (3,0) -> 1, 2, 1; short_way: not cut -> 2
         assert self._lengths(result) == [1.0, 1.0, 2.0, 2.0]
+
+    def test_invalid_mode_raises(self):
+        network = self._network([[(0, 0), (2, 0)]], [(0, 0), (2, 0)])
+
+        with pytest.raises(ValueError, match="mode must be"):
+            nw_preps.split_edges_at_nodes(network, mode="between")
 
     def test_multilinestring_unchanged(self):
         mls = MultiLineString([[(0, 0), (1, 0)], [(1, 0), (2, 0)]])
@@ -2554,7 +2560,7 @@ class TestKnownBugsSimplifiedNetwork:
         assert self._has_ring(result)
 
     def test_split_connects_crossing_edges(self):
-        """With split=True, two crossing edges meet in a node of degree 4."""
+        """With split="anywhere", two crossing edges meet in a node of degree 4."""
         edges = gpd.GeoDataFrame(
             {
                 "ci_type": ["road", "road"],
@@ -2568,11 +2574,17 @@ class TestKnownBugsSimplifiedNetwork:
         )
 
         unsplit = nw_preps.simplified_network(Network(edges=edges.copy()))
-        split = nw_preps.simplified_network(Network(edges=edges.copy()), split=True)
+        split = nw_preps.simplified_network(
+            Network(edges=edges.copy()), split="anywhere"
+        )
 
         assert (len(unsplit.edges), len(unsplit.nodes)) == (2, 4)
         assert (len(split.edges), len(split.nodes)) == (4, 5)
         assert max(nw_preps.calculate_degree(split)) == 4
+
+    def test_invalid_split_raises(self, simple_network):
+        with pytest.raises(ValueError, match="split must be"):
+            nw_preps.simplified_network(simple_network, split=True)
 
     def test_ci_type_argument_sets_type(self, simple_network):
         result = nw_preps.simplified_network(simple_network, ci_type="road")

@@ -53,26 +53,24 @@ DEFAULT_ID_COLS = ("osm_id", "osmid", "edge_id")
 #: - ``roundabout_max_length``: maximum ring length in metres for a
 #:   roundabout (None: no limit);
 #: - ``split``: split edges where they meet nodes or other edges
-#:   (:func:`split_edges_at_nodes`);
-#: - ``split_between_vertices``: also split between two vertices of an edge.
+#:   (:func:`split_edges_at_nodes`): ``False`` (no splitting), ``"anywhere"``
+#:   (at every meeting point, also between two vertices of an edge) or
+#:   ``"vertices"`` (only at the edge's own vertices).
 PREPROCESSING_PROFILES = {
     "generic": {
         "roundabouts": False,
         "roundabout_max_length": None,
         "split": False,
-        "split_between_vertices": True,
     },
     "road": {
         "roundabouts": True,
         "roundabout_max_length": 1000.0,
         "split": False,
-        "split_between_vertices": True,
     },
     "power_line": {
         "roundabouts": False,
         "roundabout_max_length": None,
         "split": False,
-        "split_between_vertices": True,
     },
 }
 
@@ -1171,7 +1169,7 @@ def reset_ids(network):
     return Network(edges, nodes)
 
 
-def split_edges_at_nodes(network, split_between_vertices=True, tolerance=1e-9):
+def split_edges_at_nodes(network, mode="anywhere", tolerance=1e-9):
     """Split edges where they meet nodes or other edges.
 
     The split points of an edge are
@@ -1182,12 +1180,12 @@ def split_edges_at_nodes(network, split_between_vertices=True, tolerance=1e-9):
       vertices of a shared stretch are not split points, so e.g. an identical
       duplicate edge does not cut the edge at all).
 
-    With ``split_between_vertices=True`` (default) the edge is cut at every
-    split point, also between two of its vertices (the cut point becomes a new
-    vertex). With ``split_between_vertices=False`` it is only cut at its own
-    vertices that lie within ``tolerance`` of a split point; split points
-    between two vertices are ignored, so e.g. a side road ending in the middle
-    of a segment of a main road, without a shared vertex, stays unconnected.
+    With ``mode="anywhere"`` (default) the edge is cut at every split point,
+    also between two of its vertices (the cut point becomes a new vertex).
+    With ``mode="vertices"`` it is only cut at its own vertices that lie
+    within ``tolerance`` of a split point; split points between two vertices
+    are ignored, so e.g. a side road ending in the middle of a segment of a
+    main road, without a shared vertex, stays unconnected.
 
     Both ends of every edge are kept, so no geometry is lost. Each piece
     copies all attributes of its edge, including ``id``, ``from_id``,
@@ -1200,9 +1198,8 @@ def split_edges_at_nodes(network, split_between_vertices=True, tolerance=1e-9):
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
-    split_between_vertices : bool, optional
-        Whether split points between two vertices of an edge also split it.
-        Default: True.
+    mode : {"anywhere", "vertices"}, optional
+        Where edges are cut, see above. Default: "anywhere".
     tolerance : float, optional
         Distance (CRS units) within which a node counts as lying on an edge,
         a vertex as coinciding with a split point, and below which pieces are
@@ -1212,7 +1209,14 @@ def split_edges_at_nodes(network, split_between_vertices=True, tolerance=1e-9):
     -------
     Network
         Network with edges split at the split points.
+
+    Raises
+    ------
+    ValueError
+        If ``mode`` is not ``"anywhere"`` or ``"vertices"``.
     """
+    if mode not in ("anywhere", "vertices"):
+        raise ValueError(f"mode must be 'anywhere' or 'vertices', got {mode!r}.")
     edges = network.edges.copy()
     nodes = network.nodes.copy()
     if edges.empty:
@@ -1256,9 +1260,7 @@ def split_edges_at_nodes(network, split_between_vertices=True, tolerance=1e-9):
             rows.append(pos)
             pieces.append(geoms[pos])
             continue
-        for piece in _split_line(
-            geoms[pos], hits[pos], split_between_vertices, tolerance
-        ):
+        for piece in _split_line(geoms[pos], hits[pos], mode, tolerance):
             rows.append(pos)
             pieces.append(piece)
 
@@ -1299,7 +1301,7 @@ def _meeting_points(intersection):
     return points
 
 
-def _split_line(line, points, split_between_vertices, tolerance):
+def _split_line(line, points, mode, tolerance):
     """Cut a LineString at the given points.
 
     Parameters
@@ -1308,9 +1310,9 @@ def _split_line(line, points, split_between_vertices, tolerance):
         Line to cut.
     points : list of array_like
         ``(x, y)`` split points on or near the line.
-    split_between_vertices : bool
-        Cut at any point along the line (True), or only at the line's own
-        vertices within ``tolerance`` of a split point (False).
+    mode : {"anywhere", "vertices"}
+        Cut at any point along the line, or only at the line's own vertices
+        within ``tolerance`` of a split point.
     tolerance : float
         See :func:`split_edges_at_nodes`.
 
@@ -1324,7 +1326,7 @@ def _split_line(line, points, split_between_vertices, tolerance):
         return [line]
     points = np.unique(np.asarray(points, dtype=float).reshape(-1, 2), axis=0)
 
-    if split_between_vertices:
+    if mode == "anywhere":
         distances = shapely.line_locate_point(line, shapely.points(points))
         # sorted candidate cuts as distances along the line, incl. start and end
         cuts = np.unique(np.concatenate(([0.0], distances, [line.length])))
@@ -1683,7 +1685,6 @@ def simplified_network(
     roundabouts=None,
     roundabout_max_length=None,
     split=None,
-    split_between_vertices=None,
 ):
     """Return a simplified network of a single infrastructure type.
 
@@ -1743,11 +1744,10 @@ def simplified_network(
         Maximum ring length (metres) for a roundabout. Default: from the
         profile. To remove the profile's limit, override the profile entry
         or call :func:`clean_roundabouts` directly.
-    split : bool, optional
-        Split edges where they meet nodes or other edges. Default: from the
-        profile.
-    split_between_vertices : bool, optional
-        See :func:`split_edges_at_nodes`. Default: from the profile.
+    split : {False, "anywhere", "vertices"}, optional
+        Split edges where they meet nodes or other edges: not at all, at
+        every meeting point, or only at the edges' own vertices (see
+        :func:`split_edges_at_nodes`). Default: from the profile.
 
     Returns
     -------
@@ -1757,8 +1757,9 @@ def simplified_network(
     Raises
     ------
     ValueError
-        If ``profile`` is unknown, ``ci_type`` conflicts with the data, edges
-        and nodes do not share a single ``ci_type``, or the edges have no CRS.
+        If ``profile`` or ``split`` is invalid, ``ci_type`` conflicts with the
+        data, edges and nodes do not share a single ``ci_type``, or the edges
+        have no CRS.
     """
     if profile not in PREPROCESSING_PROFILES:
         raise ValueError(
@@ -1770,9 +1771,13 @@ def simplified_network(
         "roundabouts": roundabouts,
         "roundabout_max_length": roundabout_max_length,
         "split": split,
-        "split_between_vertices": split_between_vertices,
     }
     settings.update({key: val for key, val in overrides.items() if val is not None})
+    if settings["split"] not in (False, "anywhere", "vertices"):
+        raise ValueError(
+            "split must be False, 'anywhere' or 'vertices', "
+            f"got {settings['split']!r}."
+        )
 
     edges, nodes = network.edges, network.nodes
     if ci_type is not None:
@@ -1812,9 +1817,7 @@ def simplified_network(
     network_simp = add_endpoints(network_simp)
     n_before = len(network_simp.edges)
     if settings["split"]:
-        network_simp = split_edges_at_nodes(
-            network_simp, split_between_vertices=settings["split_between_vertices"]
-        )
+        network_simp = split_edges_at_nodes(network_simp, mode=settings["split"])
         network_simp = add_endpoints(network_simp)
     counts["split_added"] = len(network_simp.edges) - n_before
 
