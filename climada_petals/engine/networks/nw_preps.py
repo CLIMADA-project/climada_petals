@@ -65,12 +65,12 @@ PREPROCESSING_PROFILES = {
     "road": {
         "roundabouts": True,
         "roundabout_max_length": 1000.0,
-        "split": False,
+        "split": "anywhere",
     },
     "power_line": {
         "roundabouts": False,
         "roundabout_max_length": None,
-        "split": False,
+        "split": "anywhere",
     },
 }
 
@@ -469,10 +469,9 @@ def _ensure_edge_id_column(edges):
 
 def _has_topology(edges):
     """Whether the edges have (non-missing) ``from_id`` / ``to_id`` values."""
-    return (
-        {"from_id", "to_id"}.issubset(edges.columns)
-        and edges[["from_id", "to_id"]].notna().any().any()
-    )
+    return {"from_id", "to_id"}.issubset(edges.columns) and edges[
+        ["from_id", "to_id"]
+    ].notna().any().any()
 
 
 def clean_roundabouts(network, max_length=None, tolerance=1e-9):
@@ -557,8 +556,12 @@ def clean_roundabouts(network, max_length=None, tolerance=1e-9):
             if row in remove or is_ring[row] or not is_line[row]:
                 continue
             coords = shapely.get_coordinates(geoms[row])
-            start_on_ring = shapely.distance(shapely.points(coords[0]), ring) <= tolerance
-            end_on_ring = shapely.distance(shapely.points(coords[-1]), ring) <= tolerance
+            start_on_ring = (
+                shapely.distance(shapely.points(coords[0]), ring) <= tolerance
+            )
+            end_on_ring = (
+                shapely.distance(shapely.points(coords[-1]), ring) <= tolerance
+            )
             if start_on_ring and end_on_ring:
                 remove.add(row)
                 n_inner += 1
@@ -1690,7 +1693,9 @@ def simplified_network(
 
     The steps depend on ``profile`` (see :data:`PREPROCESSING_PROFILES`):
     ``"generic"`` (topological simplification only), ``"road"`` (also
-    collapses roundabouts up to 1000 m) or ``"power_line"``. Every setting of
+    collapses roundabouts up to 1000 m and splits edges wherever they meet,
+    so that e.g. OSM ways crossing at an inner vertex are connected) or
+    ``"power_line"`` (splits edges wherever they meet). Every setting of
     the profile can be overridden by the keyword argument of the same name;
     ``None`` keeps the profile's value.
 

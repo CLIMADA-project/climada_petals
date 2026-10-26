@@ -2586,6 +2586,47 @@ class TestKnownBugsSimplifiedNetwork:
         with pytest.raises(ValueError, match="split must be"):
             nw_preps.simplified_network(simple_network, split=True)
 
+    @pytest.mark.parametrize(
+        "profile, expected", [("generic", (2, 4)), ("road", (4, 5)), ("power_line", (4, 5))]
+    )
+    def test_profiles_split_crossing_edges(self, profile, expected):
+        """road and power_line connect crossing edges by default, generic does not."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["x", "x"],
+                "geometry": [
+                    LineString([(0, 0), (2, 0)]),
+                    LineString([(1, -1), (1, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges), profile=profile)
+
+        assert (len(result.edges), len(result.nodes)) == expected
+
+    def test_osm_ways_crossing_at_inner_vertex_connected(self):
+        """Ways sharing an inner vertex (usual OSM junction) end up connected."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road", "road"],
+                "geometry": [
+                    LineString([(0, 0), (1, 0), (2, 0)]),
+                    LineString([(1, -1), (1, 0), (1, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.simplified_network(Network(edges=edges), profile="road")
+        graph = result.to_graph(directed=False)
+
+        assert len(graph.connected_components()) == 1
+        assert max(nw_preps.calculate_degree(result)) == 4
+
     def test_ci_type_argument_sets_type(self, simple_network):
         result = nw_preps.simplified_network(simple_network, ci_type="road")
 
