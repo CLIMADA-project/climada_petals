@@ -34,12 +34,47 @@ from climada_petals.engine.networks.nw_base import Network
 
 LOGGER = logging.getLogger(__name__)
 
+# =============================================================================
+# Default settings
+# =============================================================================
+
 #: Edge columns treated as external (source-data) ids by default, e.g. OSM
 #: way ids. They are carried along for provenance only and never used to
 #: identify edges internally. When edges are merged, the merged edge takes the
 #: value of the longest edge instead of a majority. Override with the
 #: ``id_cols`` argument of :func:`merge_edges` / :func:`simplified_network`.
 DEFAULT_ID_COLS = ("osm_id", "osmid", "edge_id")
+
+#: Preprocessing profiles for :func:`simplified_network`: the default settings
+#: per infrastructure type. Every setting can be overridden by the keyword
+#: argument of the same name.
+#:
+#: - ``roundabouts``: collapse roundabouts (:func:`clean_roundabouts`);
+#: - ``roundabout_max_length``: maximum ring length in metres for a
+#:   roundabout (None: no limit);
+#: - ``split``: split edges where they meet nodes or other edges
+#:   (:func:`split_edges_at_nodes`);
+#: - ``split_between_vertices``: also split between two vertices of an edge.
+PREPROCESSING_PROFILES = {
+    "generic": {
+        "roundabouts": False,
+        "roundabout_max_length": None,
+        "split": False,
+        "split_between_vertices": True,
+    },
+    "road": {
+        "roundabouts": True,
+        "roundabout_max_length": 1000.0,
+        "split": False,
+        "split_between_vertices": True,
+    },
+    "power_line": {
+        "roundabouts": False,
+        "roundabout_max_length": None,
+        "split": False,
+        "split_between_vertices": True,
+    },
+}
 
 
 # =============================================================================
@@ -1623,8 +1658,40 @@ def _drop_isolated_nodes(network):
     return Network(edges, nodes.loc[~isolated].reset_index(drop=True))
 
 
-def simplified_network(network, id_cols=DEFAULT_ID_COLS):
-    """Return a simplified network.
+def _set_ci_type(gdf, ci_type, name):
+    """Copy of ``gdf`` with ``ci_type`` set; raise if it already has another one."""
+    gdf = gdf.copy()
+    if gdf.empty:
+        return gdf
+    if "ci_type" in gdf.columns:
+        existing = set(gdf["ci_type"].dropna()) - {ci_type}
+        if existing:
+            raise ValueError(
+                f"ci_type={ci_type!r} was given, but the {name} already have "
+                f"ci_type {sorted(str(ci) for ci in existing)}."
+            )
+    gdf["ci_type"] = ci_type
+    return gdf
+
+
+def simplified_network(
+    network,
+    profile="generic",
+    *,
+    ci_type=None,
+    id_cols=DEFAULT_ID_COLS,
+    roundabouts=None,
+    roundabout_max_length=None,
+    split=None,
+    split_between_vertices=None,
+):
+    """Return a simplified network of a single infrastructure type.
+
+    The steps depend on ``profile`` (see :data:`PREPROCESSING_PROFILES`):
+    ``"generic"`` (topological simplification only), ``"road"`` (also
+    collapses roundabouts up to 1000 m) or ``"power_line"``. Every setting of
+    the profile can be overridden by the keyword argument of the same name;
+    ``None`` keeps the profile's value.
 
     For a network with edges, applies in this order:
 
@@ -1635,32 +1702,52 @@ def simplified_network(network, id_cols=DEFAULT_ID_COLS):
        lost;
     3. :func:`drop_duplicate_geometries`: identical edges are removed (before
        the topology is built, so they do not distort node degrees);
-    4. :func:`clean_roundabouts`: roundabouts collapse into their centroids;
-       nodes on them are removed;
-    5. :func:`add_endpoints`, :func:`add_ids`, :func:`add_topology`: nodes at
-       edge ends and ``from_id`` / ``to_id``;
-    6. :func:`merge_edges`: chains of degree-2 nodes merge into one edge;
-    7. nodes connected to no edge are removed (e.g. endpoints of edges
+    4. if ``roundabouts``: :func:`clean_roundabouts` (rings up to
+       ``roundabout_max_length`` metres collapse into their centroids; nodes
+       on them are removed);
+    5. :func:`add_endpoints`; if ``split``: :func:`split_edges_at_nodes` and
+       :func:`add_endpoints` again (nodes at the new cut points);
+    6. :func:`add_ids`, :func:`add_topology`: ``from_id`` / ``to_id``;
+    7. :func:`merge_edges`: chains of degree-2 nodes merge into one edge;
+    8. nodes connected to no edge are removed (e.g. endpoints of edges
        dropped by :func:`add_topology`), with a warning giving their number;
-    8. :func:`reset_ids` and :func:`add_distances`.
+    9. :func:`reset_ids` and :func:`add_distances`.
 
-    A summary of the changes is logged (INFO). A network without edges is
-    returned unchanged, with all its nodes.
+    The settings used and a summary of the changes are logged (INFO). A
+    network without edges is returned unchanged, with all its nodes (and
+    ``ci_type`` set if given).
 
     Edges and nodes must all have the same ``ci_type``: simplify each
     infrastructure type separately and combine the results with
     :meth:`Network.from_networks`. Nodes created at edge endpoints inherit
-    the ``ci_type`` of their edge (see :func:`add_endpoints`), so set
-    ``ci_type`` on the edges before calling this function; a warning is
-    logged if it is missing.
+    the ``ci_type`` of their edge (see :func:`add_endpoints`): pass
+    ``ci_type`` or set it on the edges beforehand; a warning is logged if it
+    is missing.
 
     Parameters
     ----------
     network : Network
         A network composed of nodes (points in space) and edges (lines).
+    profile : str, optional
+        Name of the preprocessing profile, a key of
+        :data:`PREPROCESSING_PROFILES`. Default: "generic".
+    ci_type : str, optional
+        If given, set as ``ci_type`` of all edges and nodes. Raises if they
+        already have a different one. Default: None (use the data's own).
     id_cols : sequence of str, optional
         Edge columns holding external (source-data) ids, kept for provenance;
         see :func:`merge_edges`. Default: :data:`DEFAULT_ID_COLS`.
+    roundabouts : bool, optional
+        Collapse roundabouts. Default: from the profile.
+    roundabout_max_length : float, optional
+        Maximum ring length (metres) for a roundabout. Default: from the
+        profile. To remove the profile's limit, override the profile entry
+        or call :func:`clean_roundabouts` directly.
+    split : bool, optional
+        Split edges where they meet nodes or other edges. Default: from the
+        profile.
+    split_between_vertices : bool, optional
+        See :func:`split_edges_at_nodes`. Default: from the profile.
 
     Returns
     -------
@@ -1670,14 +1757,32 @@ def simplified_network(network, id_cols=DEFAULT_ID_COLS):
     Raises
     ------
     ValueError
-        If edges and nodes do not share a single ``ci_type``, or the edges
-        have no CRS.
+        If ``profile`` is unknown, ``ci_type`` conflicts with the data, edges
+        and nodes do not share a single ``ci_type``, or the edges have no CRS.
     """
-    _check_single_ci_type(network)
+    if profile not in PREPROCESSING_PROFILES:
+        raise ValueError(
+            f"Unknown profile {profile!r}; choose one of "
+            f"{sorted(PREPROCESSING_PROFILES)}."
+        )
+    settings = dict(PREPROCESSING_PROFILES[profile])
+    overrides = {
+        "roundabouts": roundabouts,
+        "roundabout_max_length": roundabout_max_length,
+        "split": split,
+        "split_between_vertices": split_between_vertices,
+    }
+    settings.update({key: val for key, val in overrides.items() if val is not None})
 
-    network_simp = Network(network.edges.copy(), network.nodes.copy())
+    edges, nodes = network.edges, network.nodes
+    if ci_type is not None:
+        edges = _set_ci_type(edges, ci_type, "edges")
+        nodes = _set_ci_type(nodes, ci_type, "nodes")
+    network_simp = Network(edges.copy(), nodes.copy())
+    _check_single_ci_type(network_simp)
     if network_simp.edges.empty:
         return network_simp
+    LOGGER.info("simplified_network: profile %r with settings %s", profile, settings)
 
     counts = {"edges_in": len(network_simp.edges)}
     n_multi = int(
@@ -1698,12 +1803,21 @@ def simplified_network(network, id_cols=DEFAULT_ID_COLS):
     counts["duplicates"] = n_before - len(network_simp.edges)
 
     n_before = len(network_simp.edges)
-    network_simp = clean_roundabouts(network_simp)
+    if settings["roundabouts"]:
+        network_simp = clean_roundabouts(
+            network_simp, max_length=settings["roundabout_max_length"]
+        )
     counts["roundabouts"] = n_before - len(network_simp.edges)
 
     network_simp = add_endpoints(network_simp)
-    # network = split_edges_at_nodes(network) leave for now - takes too long
-    # network = add_endpoints(network)
+    n_before = len(network_simp.edges)
+    if settings["split"]:
+        network_simp = split_edges_at_nodes(
+            network_simp, split_between_vertices=settings["split_between_vertices"]
+        )
+        network_simp = add_endpoints(network_simp)
+    counts["split_added"] = len(network_simp.edges) - n_before
+
     network_simp = add_ids(network_simp)
     n_before = len(network_simp.edges)
     network_simp = add_topology(network_simp)
@@ -1721,14 +1835,16 @@ def simplified_network(network, id_cols=DEFAULT_ID_COLS):
     LOGGER.info(
         "simplified_network: %d edges in, %d out; %d MultiLineStrings merged, "
         "%d edges added by splitting MultiLineStrings into parts, %d duplicate "
-        "edges removed, %d edges removed with roundabouts, %d edges dropped by "
-        "add_topology, %d edges merged into longer ones; %d nodes out.",
+        "edges removed, %d edges removed with roundabouts, %d edges added by "
+        "splitting at nodes, %d edges dropped by add_topology, %d edges merged "
+        "into longer ones; %d nodes out.",
         counts["edges_in"],
         len(network_simp.edges),
         counts["multi_merged"],
         counts["multi_split_added"],
         counts["duplicates"],
         counts["roundabouts"],
+        counts["split_added"],
         counts["topology_dropped"],
         counts["merged_away"],
         len(network_simp.nodes),

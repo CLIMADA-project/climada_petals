@@ -2501,6 +2501,96 @@ class TestKnownBugsSimplifiedNetwork:
         assert len(result.edges) == 1
         assert result.edges.geometry.iloc[0].length == pytest.approx(2.0)
 
+    # ring of about 566 m circumference (UTM) with one road joining it
+    _UTM_RING = [
+        (500000, 5000100),
+        (500100, 5000200),
+        (500200, 5000100),
+        (500100, 5000000),
+        (500000, 5000100),
+    ]
+    _UTM_SPOKE = [(499800, 5000100), (500000, 5000100)]
+
+    def _ring_network(self):
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road", "road"],
+                "geometry": [LineString(self._UTM_RING), LineString(self._UTM_SPOKE)],
+            },
+            geometry="geometry",
+            crs="EPSG:32632",
+        )
+        return Network(edges=edges)
+
+    @staticmethod
+    def _has_ring(network):
+        return bool(shapely.is_ring(network.edges.geometry.to_numpy()).any())
+
+    def test_unknown_profile_raises(self, simple_network):
+        with pytest.raises(ValueError, match="Unknown profile"):
+            nw_preps.simplified_network(simple_network, profile="railway")
+
+    def test_road_profile_collapses_roundabouts_generic_does_not(self):
+        generic = nw_preps.simplified_network(self._ring_network())
+        road = nw_preps.simplified_network(self._ring_network(), profile="road")
+
+        assert self._has_ring(generic)
+        assert not self._has_ring(road)
+
+    def test_profile_setting_overridden(self):
+        """A keyword argument overrides the profile's setting."""
+        result = nw_preps.simplified_network(
+            self._ring_network(), profile="road", roundabouts=False
+        )
+
+        assert self._has_ring(result)
+
+    def test_roundabout_max_length_overridden(self):
+        """A smaller limit than the ring length keeps the ring."""
+        result = nw_preps.simplified_network(
+            self._ring_network(), profile="road", roundabout_max_length=100
+        )
+
+        assert self._has_ring(result)
+
+    def test_split_connects_crossing_edges(self):
+        """With split=True, two crossing edges meet in a node of degree 4."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road", "road"],
+                "geometry": [
+                    LineString([(0, 0), (2, 0)]),
+                    LineString([(1, -1), (1, 1)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        unsplit = nw_preps.simplified_network(Network(edges=edges.copy()))
+        split = nw_preps.simplified_network(Network(edges=edges.copy()), split=True)
+
+        assert (len(unsplit.edges), len(unsplit.nodes)) == (2, 4)
+        assert (len(split.edges), len(split.nodes)) == (4, 5)
+        assert max(nw_preps.calculate_degree(split)) == 4
+
+    def test_ci_type_argument_sets_type(self, simple_network):
+        result = nw_preps.simplified_network(simple_network, ci_type="road")
+
+        assert (result.edges["ci_type"] == "road").all()
+        assert (result.nodes["ci_type"] == "road").all()
+
+    def test_ci_type_argument_conflict_raises(self, simple_network):
+        simple_network.edges["ci_type"] = "power_line"
+
+        with pytest.raises(ValueError, match="was given"):
+            nw_preps.simplified_network(simple_network, ci_type="road")
+
+    def test_ci_type_argument_on_nodes_only_network(self, nodes_only_network):
+        result = nw_preps.simplified_network(nodes_only_network, ci_type="people")
+
+        assert (result.nodes["ci_type"] == "people").all()
+
     def test_summary_logged(self, simple_network, caplog):
         simple_network.edges["ci_type"] = "road"
         logger = logging.getLogger("climada_petals")
