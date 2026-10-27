@@ -33,6 +33,7 @@ from climada_petals.engine.networks.nw_utils import (
     ACCESS_NO_BASE,
     ACCESS_UNDISRUPTED,
     ADDED_COL,
+    DEF_END_USER,
     _ckdnearest,
     _dependency_name,
     make_edge_geometries,
@@ -1269,7 +1270,7 @@ class GraphCalcs:
             self.powercap_from_clusters(
                 p_source=p_source,
                 p_sink=p_sink,
-                demand_ci="people",
+                demand_ci=DEF_END_USER,
                 source_var=source_var,
                 demand_var=demand_var,
             )

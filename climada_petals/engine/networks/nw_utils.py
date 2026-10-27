@@ -50,7 +50,8 @@ from climada_petals.util.constants import DICT_SPEEDS
 #: the edges, impacts are aggregated back onto the edges, plots draw them as lines.
 LINE_EXPOSURES = ["road", "rail", "power_line"]
 
-DEF_END_USER = "people"  # default end-user type for access checks and statistics
+#: default end-user ci_type for access checks, statistics and plots
+DEF_END_USER = "people"
 
 # Access states of end users, in the ``access_state_{source}_{target}`` node
 # columns: set by ``Network.initialize_supply``, updated by the cascade.
@@ -135,7 +136,7 @@ def _dependency_name(source, target):
 # Plots
 # =============================================================================
 def enduser_plot(
-    self, enduser="people", axes=None, projection=ccrs.PlateCarree(), **kwargs
+    self, enduser=DEF_END_USER, axes=None, projection=ccrs.PlateCarree(), **kwargs
 ):
     """Plot population nodes as a scatter plot.
 
@@ -144,7 +145,7 @@ def enduser_plot(
     self : Network
         Network instance containing nodes with ci_type enduser.
     enduser : str, optional
-        The enduser type to plot. Default: 'people'.
+        The enduser type to plot. Default: :data:`DEF_END_USER`.
     axes : cartopy.mpl.geoaxes.GeoAxes, optional
         Axes to plot on. If None, a new figure and axes are created.
     projection : cartopy.crs.Projection, optional
@@ -181,7 +182,7 @@ def infra_plot(
     self,
     ci_types=None,
     plot_col="ci_type",
-    enduser="people",
+    enduser=DEF_END_USER,
     mask_func_ci=True,
     road_mask=True,
     axes=None,
@@ -209,7 +210,7 @@ def infra_plot(
     plot_col : str, optional
         Column to use for coloring. Default: 'ci_type'.
     enduser : str, optional
-        Enduser type to plot as background. Default: 'people'.
+        Enduser type to plot as background. Default: :data:`DEF_END_USER`.
     axes : cartopy.mpl.geoaxes.GeoAxes, optional
         Axes to plot on. If None, a new figure and axes are created.
     projection : cartopy.crs.Projection, optional
@@ -426,7 +427,7 @@ def dep_plot(self, ci_types=None, axes=None, projection=ccrs.PlateCarree(), **kw
 def access_plot(
     self,
     ci_type,
-    enduser="people",
+    enduser=DEF_END_USER,
     access_states=None,
     axes=None,
     projection=ccrs.PlateCarree(),
@@ -441,12 +442,13 @@ def access_plot(
     Parameters
     ----------
     self : Network
-        Network instance containing nodes with ci_type 'people' and
-        access state columns.
+        Network instance containing end-user nodes and access state
+        columns.
     ci_type : str
         The CI type to assess access for (e.g. 'healthcare', 'power').
     enduser : str, optional
-        The type of end user to plot access for. Default is 'people'.
+        The type of end user to plot access for. Default:
+        :data:`DEF_END_USER`.
     access_states : list of str, optional
         Subset of access states to plot. If None, all states are plotted.
         Possible values: the keys of :data:`STATUS_MAP`.
@@ -603,7 +605,7 @@ def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
 # =============================================================================
 
 
-def get_tot_pop(network, enduser="people", pop_col=POP_COL):
+def get_tot_pop(network, enduser=DEF_END_USER, pop_col=POP_COL):
     """Total population of the end-user nodes.
 
     Parameters
@@ -611,7 +613,7 @@ def get_tot_pop(network, enduser="people", pop_col=POP_COL):
     network : Network
         Network with end-user nodes.
     enduser : str, optional
-        ``ci_type`` of the end users. Default: 'people'.
+        ``ci_type`` of the end users. Default: :data:`DEF_END_USER`.
     pop_col : str, optional
         Node column holding the population. Default: :data:`POP_COL`.
 
@@ -627,22 +629,22 @@ def _access_col(ci_type, enduser):
     return f"access_state_{ci_type}_{enduser}"
 
 
-def _get_access_loss_mask(network, ci_type, enduser="people"):
+def _get_access_loss_mask(network, ci_type, enduser=DEF_END_USER):
     """Boolean mask of the nodes that lost access to ``ci_type``."""
     return network.nodes[_access_col(ci_type, enduser)].isin(ACCESS_LOSS_STATES)
 
 
-def _get_no_base_access_mask(network, ci_type, enduser="people"):
+def _get_no_base_access_mask(network, ci_type, enduser=DEF_END_USER):
     """Boolean mask of the nodes without base access to ``ci_type``."""
     return network.nodes[_access_col(ci_type, enduser)] == ACCESS_NO_BASE
 
 
-def _get_access_undisrupted_mask(network, ci_type, enduser="people"):
+def _get_access_undisrupted_mask(network, ci_type, enduser=DEF_END_USER):
     """Boolean mask of the nodes with undisrupted access to ``ci_type``."""
     return network.nodes[_access_col(ci_type, enduser)] == ACCESS_UNDISRUPTED
 
 
-def _get_dir_affected_mask(network, enduser="people"):
+def _get_dir_affected_mask(network, enduser=DEF_END_USER):
     """Boolean mask of the end-user nodes with direct impacts."""
     nodes = network.nodes
     return (nodes["ci_type"] == enduser) & (nodes["imp_dir"] > 0)
@@ -688,7 +690,7 @@ def make_network_stat(
     threshold_func=1,
     edge_col="distance",
     node_col=None,
-    enduser="people",
+    enduser=DEF_END_USER,
     pop_col=POP_COL,
 ):
     """
@@ -711,7 +713,7 @@ def make_network_stat(
         Node column summed for impacted point infrastructure. If None, the
         number of nodes is counted.
     enduser : str, optional
-        ``ci_type`` of the end users. Default is 'people'.
+        ``ci_type`` of the end users. Default: :data:`DEF_END_USER`.
     pop_col : str, optional
         Node column holding the population of the end users. Default:
         :data:`POP_COL`.
