@@ -151,13 +151,45 @@ def test_infra_plot_does_not_modify_kwargs(impact_network):
 
 def test_enduser_plot_style_override(impact_network):
     """Keyword arguments override the default style (no duplicate keyword)."""
-    fig, axes = impact_network.plot_enduser(color="red", alpha=1)
+    fig, axes = impact_network.plot_enduser(color="red", alpha=1, s=20)
 
     assert fig is axes.get_figure()
 
 
+def test_enduser_plot_marker_scale(impact_network):
+    """marker_scale enlarges all markers, which stay proportional to the population."""
+    _, axes = impact_network.plot_enduser(marker_scale=2)
+
+    # people: 100, 50, 20 -> areas 100, 50, 20 at scale 1
+    assert list(axes.collections[0].get_sizes()) == pytest.approx([200, 100, 40])
+
+
+def test_infra_plot_marker_scale_and_ci_kwargs(impact_network):
+    """marker_scale enlarges all markers; ci_kwargs override defaults (no duplicate keyword)."""
+    fig, axes = impact_network.plot_infra(
+        mask_func_ci=False,
+        marker_scale=2,
+        ci_kwargs={"zorder": 5},
+    )
+
+    assert fig is axes.get_figure()
+    # people are plotted first (first ci_type of the nodes): scaled as well
+    assert list(axes.collections[0].get_sizes()) == pytest.approx([200, 100, 40])
+
+
 def test_access_plot(impact_network):
     fig, axes = impact_network.plot_access("healthcare")
+
+    assert fig is axes.get_figure()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"marker_scale": 2}, {"plot_kwargs": {"s": 150}}, {"plot_kwargs": {"cmap": "jet"}}],
+)
+def test_access_plot_marker_size_and_style(impact_network, kwargs):
+    """Fixed or scaled marker sizes and a colormap can be passed (no duplicate keyword)."""
+    fig, axes = impact_network.plot_access("healthcare", **kwargs)
 
     assert fig is axes.get_figure()
 
