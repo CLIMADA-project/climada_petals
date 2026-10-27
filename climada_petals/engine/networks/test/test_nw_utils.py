@@ -454,7 +454,6 @@ def test_make_network_stat(impact_network):
     assert stats == pytest.approx(expected)
 
 
-@_xfail("U3", "the population is read from 'value' instead of 'counts'")
 def test_make_network_stat_counts_column(impact_network):
     impact_network.nodes = impact_network.nodes.drop(columns="value")
 
@@ -463,8 +462,8 @@ def test_make_network_stat_counts_column(impact_network):
     assert stats["total_population"] == 170
 
 
-@_xfail("U3", "CI types without a dependency to people raise KeyError")
 def test_make_network_stat_ci_type_without_enduser_dependency(impact_network):
+    """A type without access column gets infrastructure statistics only."""
     plant = gpd.GeoDataFrame(
         {"ci_type": ["power_plant"], "func_tot": [1], "geometry": [Point(5, 5)]},
         geometry="geometry",
@@ -475,6 +474,32 @@ def test_make_network_stat_ci_type_without_enduser_dependency(impact_network):
     stats = nwu.make_network_stat(impact_network)
 
     assert stats["total_population"] == 170
+    assert stats["power_plant_infra_impact"] == 0
+    assert stats["power_plant_infra_total"] == 1
+    assert "power_plant_access_loss" not in stats
+    assert stats["indirectly_affected"] == 70  # unchanged
+
+
+def test_make_network_stat_custom_pop_col(impact_network):
+    """pop_col selects another population column."""
+    impact_network.nodes["value"] = impact_network.nodes["counts"] * 2
+
+    stats = nwu.make_network_stat(impact_network, pop_col="value")
+
+    assert stats["total_population"] == 340
+    assert stats["healthcare_access_loss"] == 100
+
+
+def test_make_network_stat_without_access_loss(impact_network):
+    """Nobody losing access: indirectly affected 0, total = directly affected."""
+    nodes = impact_network.nodes
+    for col in ["access_state_healthcare_people", "access_state_road_people"]:
+        nodes.loc[nodes["ci_type"] == "people", col] = "access undisrupted"
+
+    stats = nwu.make_network_stat(impact_network)
+
+    assert stats["indirectly_affected"] == 0
+    assert stats["total_affected"] == 50
 
 
 # ========================================================================

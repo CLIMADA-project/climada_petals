@@ -66,6 +66,9 @@ ACCESS_DISRUPTED = "access disrupted"
 #: states counted as a loss of access (plots and statistics)
 ACCESS_LOSS_STATES = (ACCESS_DISRUPTED_VIA, ACCESS_DISRUPTED_SOURCE, ACCESS_DISRUPTED)
 
+#: node column holding the population of end-user nodes (e.g. people cells)
+POP_COL = "counts"
+
 # Energy conversion factors
 TJ_TO_GWH = 0.277778
 HRS_PER_YEAR = 8760
@@ -700,65 +703,88 @@ def load_resampled_raster(
 # =============================================================================
 
 
-def get_tot_pop(network):
-    """Get total population in network"""
-    pop_nodes = network.nodes[network.nodes["ci_type"] == "people"]
-    tot_pop = pop_nodes["value"].sum()
-    return tot_pop
+def get_tot_pop(network, enduser="people", pop_col=POP_COL):
+    """Total population of the end-user nodes.
+
+    Parameters
+    ----------
+    network : Network
+        Network with end-user nodes.
+    enduser : str, optional
+        ``ci_type`` of the end users. Default: 'people'.
+    pop_col : str, optional
+        Node column holding the population. Default: :data:`POP_COL`.
+
+    Returns
+    -------
+    float
+    """
+    nodes = network.nodes
+    return nodes.loc[nodes["ci_type"] == enduser, pop_col].sum()
 
 
-def _get_access_loss_mask(network, ci_type):
-    """Return boolean mask of people who lost access to a CI type"""
-    access_col = f"access_state_{ci_type}_people"
-    # Return boolean mask, NOT a count
-    access_loss = network.nodes[access_col].isin(ACCESS_LOSS_STATES)
-    return access_loss
+def _access_col(ci_type, enduser):
+    return f"access_state_{ci_type}_{enduser}"
 
 
-def _get_no_base_access_mask(network, ci_type):
-    """Return boolean mask of people with no base access to a CI type"""
-    access_col = f"access_state_{ci_type}_people"
-    no_base_access = network.nodes[access_col] == ACCESS_NO_BASE
-    return no_base_access
+def _get_access_loss_mask(network, ci_type, enduser="people"):
+    """Boolean mask of the nodes that lost access to ``ci_type``."""
+    return network.nodes[_access_col(ci_type, enduser)].isin(ACCESS_LOSS_STATES)
 
 
-def _get_access_undisrupted_mask(network, ci_type):
-    """Return boolean mask of people with undisrupted access to a CI type"""
-    access_col = f"access_state_{ci_type}_people"
-    access_undisrupted = network.nodes[access_col] == ACCESS_UNDISRUPTED
-    return access_undisrupted
+def _get_no_base_access_mask(network, ci_type, enduser="people"):
+    """Boolean mask of the nodes without base access to ``ci_type``."""
+    return network.nodes[_access_col(ci_type, enduser)] == ACCESS_NO_BASE
 
 
-def _get_dir_affected_mask(network):
-    """Return boolean mask of people directly affected by direct impacts"""
-    dir_affected_mask = (network.nodes["ci_type"] == "people") & (
-        network.nodes["imp_dir"] > 0
-    )
-    return dir_affected_mask
+def _get_access_undisrupted_mask(network, ci_type, enduser="people"):
+    """Boolean mask of the nodes with undisrupted access to ``ci_type``."""
+    return network.nodes[_access_col(ci_type, enduser)] == ACCESS_UNDISRUPTED
+
+
+def _get_dir_affected_mask(network, enduser="people"):
+    """Boolean mask of the end-user nodes with direct impacts."""
+    nodes = network.nodes
+    return (nodes["ci_type"] == enduser) & (nodes["imp_dir"] > 0)
 
 
 def _get_imp_infra(network, ci_type, threshold=1, edge_col="distance", node_col=None):
-    """Return boolean mask of infrastructure nodes with direct impacts"""
+    """Amount of infrastructure of ``ci_type`` with ``func_tot < threshold``.
+
+    Line infrastructure (``ci_type`` present in the edges): sum of ``edge_col``
+    over the edges. Point infrastructure: number of nodes, or sum of
+    ``node_col`` if given. ``threshold=np.inf`` gives the total amount.
+
+    Returns
+    -------
+    float or int
+
+    Raises
+    ------
+    ValueError
+        If ``ci_type`` is neither in the edges nor in the nodes.
+    """
     if ci_type in network.edges["ci_type"].unique():
-        infra_mask = (network.edges["ci_type"] == ci_type) & (
-            network.edges["func_tot"] < threshold
-        )
-        imp_infra = network.edges.loc[infra_mask, edge_col].sum()
-    elif ci_type in network.nodes["ci_type"].unique():
-        infra_mask = (network.nodes["ci_type"] == ci_type) & (
-            network.nodes["func_tot"] < threshold
-        )
+        edges = network.edges
+        infra_mask = (edges["ci_type"] == ci_type) & (edges["func_tot"] < threshold)
+        return edges.loc[infra_mask, edge_col].sum()
+    if ci_type in network.nodes["ci_type"].unique():
+        nodes = network.nodes
+        infra_mask = (nodes["ci_type"] == ci_type) & (nodes["func_tot"] < threshold)
         if not node_col:
-            imp_infra = len(network.nodes.loc[infra_mask])
-        else:
-            imp_infra = network.nodes.loc[infra_mask, node_col].sum()
-    else:
-        raise ValueError(f"CI type '{ci_type}' not found in network nodes or edges.")
-    return imp_infra
+            return int(infra_mask.sum())
+        return nodes.loc[infra_mask, node_col].sum()
+    raise ValueError(f"CI type '{ci_type}' not found in network nodes or edges.")
 
 
 def make_network_stat(
-    network, ci_types=None, threshold_func=1, edge_col="distance", node_col=None
+    network,
+    ci_types=None,
+    threshold_func=1,
+    edge_col="distance",
+    node_col=None,
+    enduser="people",
+    pop_col=POP_COL,
 ):
     """
     Compute network impact statistics.
@@ -766,108 +792,85 @@ def make_network_stat(
     Parameters
     ----------
     network : Network
-        Network object with nodes and edges
+        Network object with nodes and edges, after the cascade.
     ci_types : list, optional
-        List of CI types to analyze (excludes 'people'). If None, auto-detected.
+        CI types to analyse. If None: all node ``ci_type`` values except
+        ``enduser``.
     threshold_func : float, optional
-        Threshold for functional status to consider infrastructure as impacted.
-        Default is 1 (fully functional).
+        Infrastructure with ``func_tot`` below this value counts as impacted.
+        Default is 1 (anything not fully functional).
     edge_col : str, optional
-        Column name in edges to sum for impacted infrastructure. Default is 'length'.
+        Edge column summed for impacted line infrastructure. Default is
+        'distance' (metres).
     node_col : str, optional
-        Column name in nodes to sum for impacted infrastructure. If None, counts number of nodes.
+        Node column summed for impacted point infrastructure. If None, the
+        number of nodes is counted.
+    enduser : str, optional
+        ``ci_type`` of the end users. Default is 'people'.
+    pop_col : str, optional
+        Node column holding the population of the end users. Default:
+        :data:`POP_COL`.
 
     Returns
     -------
     dict
         Dictionary with keys:
-            - 'total_population': total pop in network
+            - 'total_population': total population of the end users
             - 'directly_affected': population directly impacted (imp_dir > 0)
-            - 'indirectly_affected': population losing access to any CI
-            - 'total_affected': directly + indirectly affected
+            - 'indirectly_affected': population losing access to any CI type
+            - 'total_affected': directly or indirectly affected (counted once)
             - For each ci_type:
-                - f'{ci_type}_access_loss': pop losing access
-                - f'{ci_type}_no_base_access': pop with no base access initially
-                - f'{ci_type}_access_undisrupted': pop maintaining access
+                - f'{ci_type}_infra_impact': impacted infrastructure (sum of
+                  ``edge_col`` for lines, number of nodes or sum of
+                  ``node_col`` for points)
+                - f'{ci_type}_infra_total': the same for all infrastructure
+            - For each ci_type with an end-user dependency (a column
+              ``access_state_{ci_type}_{enduser}``); other types, e.g. power
+              plants, have no access statistics:
+                - f'{ci_type}_access_loss': population losing access
+                  (states in :data:`ACCESS_LOSS_STATES`)
+                - f'{ci_type}_no_base_access': population without access in
+                  the base state
+                - f'{ci_type}_access_undisrupted': population keeping access
     """
+    nodes = network.nodes
     if ci_types is None:
-        ci_types = [ct for ct in network.nodes["ci_type"].unique() if ct != "people"]
+        ci_types = [ct for ct in nodes["ci_type"].unique() if ct != enduser]
 
-    pop_mask = network.nodes["ci_type"] == "people"
-    tot_pop = get_tot_pop(network)
-
-    # Directly affected: people with direct impacts
-    dir_affected_mask = _get_dir_affected_mask(network)
-    directly_affected_pop = network.nodes.loc[dir_affected_mask, "value"].sum()
-
-    # Build stats for each CI type
+    pop_mask = nodes["ci_type"] == enduser
+    dir_affected_mask = _get_dir_affected_mask(network, enduser)
     stats = {
-        "total_population": tot_pop,
-        "directly_affected": directly_affected_pop,
+        "total_population": get_tot_pop(network, enduser, pop_col),
+        "directly_affected": nodes.loc[dir_affected_mask, pop_col].sum(),
     }
 
-    # Combine all access loss masks to identify indirectly affected
-    # Indirectly affected = people losing access to ANY ci_type
-    all_access_loss_masks = []
+    def pop(mask):
+        return nodes.loc[pop_mask & mask, pop_col].sum()
 
+    indir_affected_mask = pd.Series(False, index=nodes.index)
     for ci_type in ci_types:
-        # Get boolean masks
-        access_loss_mask = _get_access_loss_mask(network, ci_type)
-        no_base_access_mask = _get_no_base_access_mask(network, ci_type)
-        access_undisrupted_mask = _get_access_undisrupted_mask(network, ci_type)
+        if _access_col(ci_type, enduser) in nodes.columns:
+            access_loss_mask = _get_access_loss_mask(network, ci_type, enduser)
+            stats[f"{ci_type}_access_loss"] = pop(access_loss_mask)
+            stats[f"{ci_type}_no_base_access"] = pop(
+                _get_no_base_access_mask(network, ci_type, enduser)
+            )
+            stats[f"{ci_type}_access_undisrupted"] = pop(
+                _get_access_undisrupted_mask(network, ci_type, enduser)
+            )
+            # indirectly affected: losing access to ANY ci_type
+            indir_affected_mask |= access_loss_mask
 
-        # Compute populations for this CI type
-        stats[f"{ci_type}_access_loss"] = network.nodes.loc[
-            pop_mask & access_loss_mask, "value"
-        ].sum()
-        stats[f"{ci_type}_no_base_access"] = network.nodes.loc[
-            pop_mask & no_base_access_mask, "value"
-        ].sum()
-        stats[f"{ci_type}_access_undisrupted"] = network.nodes.loc[
-            pop_mask & access_undisrupted_mask, "value"
-        ].sum()
-
-        # Accumulate masks for indirect impact calculation
-        all_access_loss_masks.append(access_loss_mask)
-
-        # get infrastructure impact for this CI type
         stats[f"{ci_type}_infra_impact"] = _get_imp_infra(
-            network,
-            ci_type,
-            threshold=threshold_func,
-            edge_col=edge_col,
-            node_col=node_col,
+            network, ci_type, threshold_func, edge_col, node_col
         )
-
-        # get total infrastructure for this CI type (for context)
         stats[f"{ci_type}_infra_total"] = _get_imp_infra(
-            network,
-            ci_type,
-            threshold=2,  # 2 gives all infrastructure regardless of functional status
-            edge_col=edge_col,
-            node_col=node_col,
+            network, ci_type, np.inf, edge_col, node_col
         )
 
-    # Indirectly affected: people losing access to ANY CI type
-    # Combine all access loss masks with OR logic
-    if all_access_loss_masks:
-        indir_affected_mask = all_access_loss_masks[0].copy()
-        for mask in all_access_loss_masks[1:]:
-            indir_affected_mask = indir_affected_mask | mask
-        indirectly_affected_pop = network.nodes.loc[
-            pop_mask & indir_affected_mask, "value"
-        ].sum()
-    else:
-        indir_affected_mask = pd.Series(False, index=network.nodes.index)
-        indirectly_affected_pop = 0
-
-    # Get total affected people combining direct and indirect impacts without double counting
-    tot_affected_pop = network.nodes.loc[
-        pop_mask & (indir_affected_mask | dir_affected_mask), "value"
-    ].sum()
-
-    stats["indirectly_affected"] = indirectly_affected_pop
-    stats["total_affected"] = tot_affected_pop
+    stats["indirectly_affected"] = pop(indir_affected_mask)
+    # counted once when directly and indirectly affected
+    stats["total_affected"] = pop(indir_affected_mask | dir_affected_mask)
 
     return stats
 
