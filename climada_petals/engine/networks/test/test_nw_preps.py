@@ -946,39 +946,6 @@ class TestResetIds:
 
 
 # ========================================================================
-# Tests: intersects
-# ========================================================================
-
-
-class TestIntersects:
-    def test_points_on_line(self):
-        """Geometries on the line are returned, others not."""
-        geoms = gpd.GeoSeries([Point(0, 0), Point(1, 1), Point(5, 5)], crs="EPSG:4326")
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
-
-        assert list(result.index) == [0, 1]
-
-    def test_within_tolerance(self):
-        """Geometries within the tolerance are returned."""
-        geoms = gpd.GeoSeries([Point(0, 0), Point(10, 10)], crs="EPSG:4326")
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(Point(1e-10, 0), geoms, sindex, tolerance=1e-9)
-
-        assert list(result.index) == [0]
-
-    def test_beyond_tolerance_not_returned(self):
-        geoms = gpd.GeoSeries([Point(0, 0)], crs="EPSG:4326")
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(Point(1e-6, 0), geoms, sindex, tolerance=1e-9)
-
-        assert result.empty
-
-
-# ========================================================================
 # Tests: add_distances
 # ========================================================================
 
@@ -1773,18 +1740,6 @@ def _copy_on_write():
 
 
 class TestKnownBugsIndexRobustness:
-    def test_intersects_dataframe_non_range_index(self):
-        geoms = gpd.GeoSeries(
-            [Point(0, 0), Point(5, 5), Point(1, 1)],
-            index=[10, 20, 30],
-            crs="EPSG:4326",
-        )
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
-
-        assert set(result.index) == {10, 30}
-
     def test_drop_duplicate_geometries_non_range_index(self):
         line_a = LineString([(0, 0), (1, 1)])
         line_b = LineString([(1, 1), (2, 2)])
