@@ -1085,27 +1085,17 @@ class TestAddDistances:
         np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
 
     def test_no_crs_raises(self):
-        """Edges without CRS raise instead of being silently treated as degrees."""
+        """Edges without CRS raise instead of being silently treated as degrees.
+
+        Tested on the helper directly: ``Network`` itself no longer accepts
+        non-empty edges without CRS, so the helper's check is a second guard.
+        """
         edges = gpd.GeoDataFrame(
-            {
-                "from_id": [0],
-                "to_id": [1],
-                "id": [0],
-                "geometry": [LineString([(0, 0), (1, 0)])],
-            },
-            geometry="geometry",
+            {"geometry": [LineString([(0, 0), (1, 0)])]}, geometry="geometry"
         )
-        nodes = gpd.GeoDataFrame(
-            {
-                "id": [0, 1],
-                "geometry": [Point(0, 0), Point(1, 0)],
-            },
-            geometry="geometry",
-        )
-        network = Network(edges=edges, nodes=nodes)
 
         with pytest.raises(ValueError, match="no CRS"):
-            nw_preps.add_distances(network)
+            nw_preps._edge_lengths_metres(edges)
 
 
 # ========================================================================
@@ -1795,14 +1785,6 @@ class TestCleanRoundabouts:
             logger.removeHandler(caplog.handler)
 
         assert "outdated" not in caplog.text
-
-    def test_max_length_without_crs_raises(self):
-        edges = gpd.GeoDataFrame(
-            {"geometry": [LineString(self._RING_A)]}, geometry="geometry"
-        )
-
-        with pytest.raises(ValueError, match="no CRS"):
-            nw_preps.clean_roundabouts(Network(edges=edges), max_length=100)
 
 
 # ========================================================================
