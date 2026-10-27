@@ -208,17 +208,6 @@ class TestAddTopology:
         )
         return Network(edges=edges, nodes=nodes)
 
-    @staticmethod
-    def _run_capturing_logs(caplog, func, *args, **kwargs):
-        # the climada_petals logger does not propagate to the root logger, so the
-        # capture handler has to be attached to it directly
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            return func(*args, **kwargs)
-        finally:
-            logger.removeHandler(caplog.handler)
-
     def test_end_within_tolerance_attached(self):
         """An edge end off its node by a floating-point difference is attached."""
         network = self._two_node_network(LineString([(0, 0), (1 + 1e-12, 0)]))
@@ -229,14 +218,14 @@ class TestAddTopology:
         assert result.edges["from_id"].iloc[0] == 0
         assert result.edges["to_id"].iloc[0] == 1
 
-    def test_end_beyond_tolerance_dropped_with_warning(self, caplog):
+    def test_end_beyond_tolerance_dropped_with_warning(self, nw_caplog):
         """An edge whose end has no node within tolerance is dropped and logged."""
         network = self._two_node_network(LineString([(0, 0), (1.5, 0)]))
 
-        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+        result = nw_preps.add_topology(network)
 
         assert result.edges.empty
-        assert "add_topology dropped 1 of 1 edges" in caplog.text
+        assert "add_topology dropped 1 of 1 edges" in nw_caplog.text
 
     def test_larger_tolerance_attaches(self):
         """A larger tolerance attaches ends that are further away."""
@@ -246,16 +235,16 @@ class TestAddTopology:
 
         assert result.edges["to_id"].iloc[0] == 1
 
-    def test_multilinestring_dropped_with_warning(self, caplog):
+    def test_multilinestring_dropped_with_warning(self, nw_caplog):
         """Edges without a LineString geometry cannot be attached and are logged."""
         network = self._two_node_network(
             MultiLineString([[(0, 0), (0.5, 0)], [(0.5, 0), (1, 0)]])
         )
 
-        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+        result = nw_preps.add_topology(network)
 
         assert result.edges.empty
-        assert "add_topology dropped 1 of 1 edges" in caplog.text
+        assert "add_topology dropped 1 of 1 edges" in nw_caplog.text
 
     def test_custom_id_col(self, simple_network):
         """from_id / to_id take the values of the given node column."""
@@ -267,7 +256,7 @@ class TestAddTopology:
         np.testing.assert_array_equal(result.edges["from_id"].values, [10, 11, 12, 13])
         np.testing.assert_array_equal(result.edges["to_id"].values, [11, 12, 13, 14])
 
-    def test_unmatched_edge_between_matched_edges(self, caplog):
+    def test_unmatched_edge_between_matched_edges(self, nw_caplog):
         """Dropping an edge in the middle keeps the right ids on the others."""
         nodes = gpd.GeoDataFrame(
             {"id": [0, 1, 2], "geometry": [Point(0, 0), Point(1, 0), Point(2, 0)]},
@@ -288,13 +277,13 @@ class TestAddTopology:
         )
         network = Network(edges=edges, nodes=nodes)
 
-        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+        result = nw_preps.add_topology(network)
 
         assert list(result.edges["name_ref"]) == ["a", "c"]
         np.testing.assert_array_equal(result.edges["from_id"].values, [0, 2])
         np.testing.assert_array_equal(result.edges["to_id"].values, [1, 1])
         assert result.edges["from_id"].dtype == nodes["id"].dtype
-        assert "add_topology dropped 1 of 3 edges" in caplog.text
+        assert "add_topology dropped 1 of 3 edges" in nw_caplog.text
 
     def test_tie_takes_first_node_in_row_order(self):
         """With two nodes at the same location, the edge end gets the first one."""
@@ -313,16 +302,16 @@ class TestAddTopology:
 
         assert result.edges["to_id"].iloc[0] == 1
 
-    def test_missing_geometry_dropped_with_warning(self, caplog):
+    def test_missing_geometry_dropped_with_warning(self, nw_caplog):
         """An edge without geometry cannot be attached and is logged."""
         network = self._two_node_network(None)
 
-        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+        result = nw_preps.add_topology(network)
 
         assert result.edges.empty
-        assert "add_topology dropped 1 of 1 edges" in caplog.text
+        assert "add_topology dropped 1 of 1 edges" in nw_caplog.text
 
-    def test_no_nodes_drops_all_edges(self, caplog):
+    def test_no_nodes_drops_all_edges(self, nw_caplog):
         """Without nodes, every edge is dropped (no error)."""
         edges = gpd.GeoDataFrame(
             {"geometry": [LineString([(0, 0), (1, 0)])]},
@@ -331,10 +320,10 @@ class TestAddTopology:
         )
         network = nw_preps.add_ids(Network(edges=edges))
 
-        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+        result = nw_preps.add_topology(network)
 
         assert result.edges.empty
-        assert "add_topology dropped 1 of 1 edges" in caplog.text
+        assert "add_topology dropped 1 of 1 edges" in nw_caplog.text
 
 
 # ========================================================================
@@ -606,35 +595,27 @@ class TestEndpoints:
         nodes = network.nodes
         return nodes.loc[nodes.geometry.x == x, "ci_type"].iloc[0]
 
-    def test_add_endpoints_conflicting_values_left_missing(self, caplog):
+    def test_add_endpoints_conflicting_values_left_missing(self, nw_caplog):
         """Different values at a shared endpoint are not picked arbitrarily."""
         network = self._two_edges_meeting(["road", "power_line"])
 
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            result = nw_preps.add_endpoints(network)
-        finally:
-            logger.removeHandler(caplog.handler)
+        result = nw_preps.add_endpoints(network)
 
         assert pd.isna(self._ci_type_at(result, 1.0))
         assert self._ci_type_at(result, 0.0) == "road"
         assert self._ci_type_at(result, 2.0) == "power_line"
-        assert "ci_type differed between the edges meeting at 1 endpoints" in caplog.text
+        assert (
+            "ci_type differed between the edges meeting at 1 endpoints" in nw_caplog.text
+        )
 
-    def test_add_endpoints_missing_value_does_not_conflict(self, caplog):
+    def test_add_endpoints_missing_value_does_not_conflict(self, nw_caplog):
         """A missing value on one edge does not hide the other edge's value."""
         network = self._two_edges_meeting([None, "road"])
 
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            result = nw_preps.add_endpoints(network)
-        finally:
-            logger.removeHandler(caplog.handler)
+        result = nw_preps.add_endpoints(network)
 
         assert self._ci_type_at(result, 1.0) == "road"
-        assert "differed" not in caplog.text
+        assert "differed" not in nw_caplog.text
 
     def test_add_endpoints_custom_inherit_attrs(self, simple_network):
         """inherit_attrs controls which edge columns are copied to new nodes."""
@@ -965,39 +946,6 @@ class TestResetIds:
 
 
 # ========================================================================
-# Tests: intersects
-# ========================================================================
-
-
-class TestIntersects:
-    def test_points_on_line(self):
-        """Geometries on the line are returned, others not."""
-        geoms = gpd.GeoSeries([Point(0, 0), Point(1, 1), Point(5, 5)], crs="EPSG:4326")
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
-
-        assert list(result.index) == [0, 1]
-
-    def test_within_tolerance(self):
-        """Geometries within the tolerance are returned."""
-        geoms = gpd.GeoSeries([Point(0, 0), Point(10, 10)], crs="EPSG:4326")
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(Point(1e-10, 0), geoms, sindex, tolerance=1e-9)
-
-        assert list(result.index) == [0]
-
-    def test_beyond_tolerance_not_returned(self):
-        geoms = gpd.GeoSeries([Point(0, 0)], crs="EPSG:4326")
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(Point(1e-6, 0), geoms, sindex, tolerance=1e-9)
-
-        assert result.empty
-
-
-# ========================================================================
 # Tests: add_distances
 # ========================================================================
 
@@ -1085,27 +1033,17 @@ class TestAddDistances:
         np.testing.assert_allclose(result.edges["distance"].values, [111195], rtol=0.01)
 
     def test_no_crs_raises(self):
-        """Edges without CRS raise instead of being silently treated as degrees."""
+        """Edges without CRS raise instead of being silently treated as degrees.
+
+        Tested on the helper directly: ``Network`` itself no longer accepts
+        non-empty edges without CRS, so the helper's check is a second guard.
+        """
         edges = gpd.GeoDataFrame(
-            {
-                "from_id": [0],
-                "to_id": [1],
-                "id": [0],
-                "geometry": [LineString([(0, 0), (1, 0)])],
-            },
-            geometry="geometry",
+            {"geometry": [LineString([(0, 0), (1, 0)])]}, geometry="geometry"
         )
-        nodes = gpd.GeoDataFrame(
-            {
-                "id": [0, 1],
-                "geometry": [Point(0, 0), Point(1, 0)],
-            },
-            geometry="geometry",
-        )
-        network = Network(edges=edges, nodes=nodes)
 
         with pytest.raises(ValueError, match="no CRS"):
-            nw_preps.add_distances(network)
+            nw_preps._edge_lengths_metres(edges)
 
 
 # ========================================================================
@@ -1761,7 +1699,7 @@ class TestCleanRoundabouts:
         coords = {(g.x, g.y) for g in result.nodes.geometry}
         assert coords == {(0.0, 1.0), (10.0, 10.0)}
 
-    def test_warns_when_topology_becomes_outdated(self, caplog):
+    def test_warns_when_topology_becomes_outdated(self, nw_caplog):
         """Existing from_id / to_id trigger a warning when a ring is collapsed."""
         edges = gpd.GeoDataFrame(
             {
@@ -1777,48 +1715,21 @@ class TestCleanRoundabouts:
         )
         network = Network(edges=edges)
 
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            nw_preps.clean_roundabouts(network)
-        finally:
-            logger.removeHandler(caplog.handler)
+        nw_preps.clean_roundabouts(network)
 
-        assert "from_id / to_id are outdated" in caplog.text
+        assert "from_id / to_id are outdated" in nw_caplog.text
 
-    def test_no_topology_warning_without_roundabouts(self, simple_network, caplog):
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            nw_preps.clean_roundabouts(simple_network)
-        finally:
-            logger.removeHandler(caplog.handler)
+    def test_no_topology_warning_without_roundabouts(self, simple_network, nw_caplog):
+        nw_preps.clean_roundabouts(simple_network)
 
-        assert "outdated" not in caplog.text
-
-    def test_max_length_without_crs_raises(self):
-        edges = gpd.GeoDataFrame(
-            {"geometry": [LineString(self._RING_A)]}, geometry="geometry"
-        )
-
-        with pytest.raises(ValueError, match="no CRS"):
-            nw_preps.clean_roundabouts(Network(edges=edges), max_length=100)
+        assert "outdated" not in nw_caplog.text
 
 
 # ========================================================================
-# Known bugs: regression tests (Step 0 of claude/nw-preps-update-plan.md)
+# Regression tests for fixed bugs
 # ========================================================================
-# Each test below documents a confirmed bug and is marked
-# xfail(strict=True): it fails today, and the plan step that fixes the bug
-# must remove the marker. A fix that forgets to remove it makes the suite
-# fail (strict XPASS), so no fixed bug stays silently marked.
-
-
-def _xfail(step, reason):
-    """xfail marker for a known bug fixed in the given step of the update plan."""
-    return pytest.mark.xfail(
-        strict=True, reason=f"Known bug, fixed in plan step {step}: {reason}"
-    )
+# Each test below reproduces a bug found in the review and fixed in
+# a later step; it guards against the bug coming back.
 
 
 def _copy_on_write():
@@ -1829,18 +1740,6 @@ def _copy_on_write():
 
 
 class TestKnownBugsIndexRobustness:
-    def test_intersects_dataframe_non_range_index(self):
-        geoms = gpd.GeoSeries(
-            [Point(0, 0), Point(5, 5), Point(1, 1)],
-            index=[10, 20, 30],
-            crs="EPSG:4326",
-        )
-        sindex = shapely.STRtree(geoms)
-
-        result = nw_preps.intersects(LineString([(0, 0), (2, 2)]), geoms, sindex)
-
-        assert set(result.index) == {10, 30}
-
     def test_drop_duplicate_geometries_non_range_index(self):
         line_a = LineString([(0, 0), (1, 1)])
         line_b = LineString([(1, 1), (2, 2)])
@@ -1995,22 +1894,11 @@ class TestKnownBugsMergeEdges:
 
         assert result == (0, [], [])
 
-    @staticmethod
-    def _merge_capturing_logs(caplog, network, **kwargs):
-        # the climada_petals logger does not propagate to the root logger, so the
-        # capture handler has to be attached to it directly
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            return nw_preps.merge_edges(network, **kwargs)
-        finally:
-            logger.removeHandler(caplog.handler)
-
     # chain 0 -(length 1)- 1 -(length 3)- 2
     _CHAIN_POINTS = [(0, 0), (1, 0), (4, 0)]
     _CHAIN_PAIRS = [(0, 1), (1, 2)]
 
-    def test_merge_attrs_equal_values_kept_without_warning(self, caplog):
+    def test_merge_attrs_equal_values_kept_without_warning(self, nw_caplog):
         network = self._network(
             self._CHAIN_POINTS,
             self._CHAIN_PAIRS,
@@ -2018,13 +1906,13 @@ class TestKnownBugsMergeEdges:
             highway=["primary", "primary"],
         )
 
-        result = self._merge_capturing_logs(caplog, network)
+        result = nw_preps.merge_edges(network)
 
         assert len(result.edges) == 1
         assert result.edges["highway"].iloc[0] == "primary"
-        assert "attribute values differed" not in caplog.text
+        assert "attribute values differed" not in nw_caplog.text
 
-    def test_merge_attrs_length_weighted_majority(self, caplog):
+    def test_merge_attrs_length_weighted_majority(self, nw_caplog):
         """The value covering most of the length wins, not the alphabetical one."""
         network = self._network(
             self._CHAIN_POINTS,
@@ -2033,12 +1921,12 @@ class TestKnownBugsMergeEdges:
             highway=["primary", "secondary"],
         )
 
-        result = self._merge_capturing_logs(caplog, network)
+        result = nw_preps.merge_edges(network)
 
         assert result.edges["highway"].iloc[0] == "secondary"
-        assert "highway (1 edges)" in caplog.text
+        assert "highway (1 edges)" in nw_caplog.text
 
-    def test_merge_attrs_nan_on_conflict(self, caplog):
+    def test_merge_attrs_nan_on_conflict(self, nw_caplog):
         network = self._network(
             self._CHAIN_POINTS,
             self._CHAIN_PAIRS,
@@ -2046,39 +1934,39 @@ class TestKnownBugsMergeEdges:
             highway=["primary", "secondary"],
         )
 
-        result = self._merge_capturing_logs(caplog, network, attr_conflict="nan")
+        result = nw_preps.merge_edges(network, attr_conflict="nan")
 
         assert pd.isna(result.edges["highway"].iloc[0])
         assert result.edges["ci_type"].iloc[0] == "road"
-        assert "highway (1 edges)" in caplog.text
+        assert "highway (1 edges)" in nw_caplog.text
 
-    def test_merge_attrs_external_id_of_longest_edge(self, caplog):
+    def test_merge_attrs_external_id_of_longest_edge(self, nw_caplog):
         network = self._network(self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20])
 
-        result = self._merge_capturing_logs(caplog, network)
+        result = nw_preps.merge_edges(network)
 
         assert result.edges["osm_id"].iloc[0] == 20
-        assert "attribute values differed" not in caplog.text
+        assert "attribute values differed" not in nw_caplog.text
 
-    def test_merge_attrs_custom_id_cols(self, caplog):
+    def test_merge_attrs_custom_id_cols(self, nw_caplog):
         """A column passed in id_cols is treated as an external id."""
         network = self._network(
             self._CHAIN_POINTS, self._CHAIN_PAIRS, source_id=["a", "b"]
         )
 
-        result = self._merge_capturing_logs(caplog, network, id_cols=("source_id",))
+        result = nw_preps.merge_edges(network, id_cols=("source_id",))
 
         assert result.edges["source_id"].iloc[0] == "b"
-        assert "attribute values differed" not in caplog.text
+        assert "attribute values differed" not in nw_caplog.text
 
-    def test_merge_attrs_osm_id_as_attribute_without_id_cols(self, caplog):
+    def test_merge_attrs_osm_id_as_attribute_without_id_cols(self, nw_caplog):
         """With id_cols=(), osm_id is resolved like any other attribute."""
         network = self._network(self._CHAIN_POINTS, self._CHAIN_PAIRS, osm_id=[10, 20])
 
-        result = self._merge_capturing_logs(caplog, network, id_cols=())
+        result = nw_preps.merge_edges(network, id_cols=())
 
         assert result.edges["osm_id"].iloc[0] == 20  # longer edge = majority
-        assert "osm_id (1 edges)" in caplog.text
+        assert "osm_id (1 edges)" in nw_caplog.text
 
     def test_merge_attrs_distance_summed(self):
         network = self._network(
@@ -2328,7 +2216,7 @@ class TestKnownBugsSimplifiedNetwork:
         with pytest.raises(ValueError, match="same single ci_type"):
             nw_preps.simplified_network(Network(edges=edges, nodes=nodes))
 
-    def test_removes_isolated_nodes_with_warning(self, edges_gdf, nodes_gdf, caplog):
+    def test_removes_isolated_nodes_with_warning(self, edges_gdf, nodes_gdf, nw_caplog):
         """Nodes of the same ci_type that touch no edge are removed and logged."""
         edges = edges_gdf.copy()
         edges["ci_type"] = "road"
@@ -2344,15 +2232,10 @@ class TestKnownBugsSimplifiedNetwork:
         )
         nodes["ci_type"] = "road"
 
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            result = nw_preps.simplified_network(Network(edges=edges, nodes=nodes))
-        finally:
-            logger.removeHandler(caplog.handler)
+        result = nw_preps.simplified_network(Network(edges=edges, nodes=nodes))
 
         assert not any(g.equals(Point(10, 10)) for g in result.nodes.geometry)
-        assert "Removed 1 of" in caplog.text
+        assert "Removed 1 of" in nw_caplog.text
 
     def test_nodes_only_network_keeps_all_nodes(self, nodes_only_network):
         """A network without edges is returned unchanged, with all its nodes."""
@@ -2477,7 +2360,8 @@ class TestKnownBugsSimplifiedNetwork:
             nw_preps.simplified_network(simple_network, split=True)
 
     @pytest.mark.parametrize(
-        "profile, expected", [("generic", (2, 4)), ("road", (4, 5)), ("power_line", (4, 5))]
+        "profile, expected",
+        [("generic", (2, 4)), ("road", (4, 5)), ("power_line", (4, 5))],
     )
     def test_profiles_split_crossing_edges(self, profile, expected):
         """road and power_line connect crossing edges by default, generic does not."""
@@ -2534,44 +2418,25 @@ class TestKnownBugsSimplifiedNetwork:
 
         assert (result.nodes["ci_type"] == "people").all()
 
-    def test_summary_logged(self, simple_network, caplog):
+    def test_summary_logged(self, simple_network, nw_caplog):
         simple_network.edges["ci_type"] = "road"
-        logger = logging.getLogger("climada_petals")
-        level = logger.level
-        logger.setLevel(logging.INFO)
-        logger.addHandler(caplog.handler)
-        try:
-            nw_preps.simplified_network(simple_network)
-        finally:
-            logger.removeHandler(caplog.handler)
-            logger.setLevel(level)
+        nw_caplog.set_level(logging.INFO, logger="climada_petals")
+        nw_preps.simplified_network(simple_network)
 
-        assert "simplified_network: 4 edges in, 1 out" in caplog.text
+        assert "simplified_network: 4 edges in, 1 out" in nw_caplog.text
 
-    def test_missing_ci_type_warns(self, simple_network, caplog):
+    def test_missing_ci_type_warns(self, simple_network, nw_caplog):
         """A warning is logged when the edges have no ci_type."""
         assert "ci_type" not in simple_network.edges.columns
 
-        # the climada_petals logger does not propagate to the root logger, so the
-        # capture handler has to be attached to it directly
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            nw_preps.simplified_network(simple_network)
-        finally:
-            logger.removeHandler(caplog.handler)
+        nw_preps.simplified_network(simple_network)
 
-        assert "Edges have no ci_type" in caplog.text
+        assert "Edges have no ci_type" in nw_caplog.text
 
-    def test_single_ci_type_no_warning(self, simple_network, caplog):
+    def test_single_ci_type_no_warning(self, simple_network, nw_caplog):
         """No ci_type warning when all edges share one ci_type."""
         simple_network.edges["ci_type"] = "road"
 
-        logger = logging.getLogger("climada_petals")
-        logger.addHandler(caplog.handler)
-        try:
-            nw_preps.simplified_network(simple_network)
-        finally:
-            logger.removeHandler(caplog.handler)
+        nw_preps.simplified_network(simple_network)
 
-        assert "ci_type" not in caplog.text
+        assert "ci_type" not in nw_caplog.text

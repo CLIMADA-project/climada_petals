@@ -29,12 +29,13 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import io
 from pathlib import Path
 from climada.util.coordinates import equal_crs
-from climada_petals.engine.networks.nw_utils import (
-    infra_plot,
-    enduser_plot,
-    dep_plot,
+from climada_petals.engine.networks.nw_plots import (
     access_plot,
+    dep_plot,
+    enduser_plot,
+    infra_plot,
 )
+from climada_petals.engine.networks.nw_utils import ACCESS_NO_BASE, ACCESS_UNDEFINED
 
 LOGGER = logging.getLogger(__name__)
 
@@ -131,6 +132,9 @@ class Network:
     - ``distance`` (``edges``): length in meters, used as routing weight. It
       is computed for new links only if absent, so an existing column must
       be in meters as well.
+    - ``added`` (``edges``): True on the edges added by the module (cluster
+      links, physical links, dependency edges), missing on the input edges.
+      Added edges are not counted as infrastructure in the statistics.
     - ``func_internal``, ``func_tot``, ``imp_dir``: functional states and
       direct impacts, set by ``initialize_funcstates`` and updated by the
       impact calculation and the cascade.
@@ -745,10 +749,10 @@ class Network:
         initialize_funcstates : Initialize functional state attributes
         """
         for __, row in dep_table.loc[dep_table["type_I"] == "enduser"].iterrows():
-            self.nodes[f'access_state_{row["source"]}_{row["target"]}'] = "undefined"
+            self.nodes[f'access_state_{row["source"]}_{row["target"]}'] = ACCESS_UNDEFINED
             self.nodes[f'actual_supply_{row["source"]}_{row["target"]}'] = 0.0
             # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row["source"]}_people'] = 1
             self.nodes.loc[
                 self.nodes["ci_type"] == row["target"],
                 f'access_state_{row["source"]}_{row["target"]}',
-            ] = "no base access"
+            ] = ACCESS_NO_BASE

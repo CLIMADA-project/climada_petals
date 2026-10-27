@@ -1463,32 +1463,6 @@ def _split_line(line, points, mode, tolerance):
     ]
 
 
-def intersects(geom, dataframe, sindex, tolerance=1e-9):
-    """Return the elements of a GeoSeries within ``tolerance`` of a geometry.
-
-    Parameters
-    ----------
-    geom : shapely.Geometry
-        Geometry to test.
-    dataframe : gpd.GeoSeries or gpd.GeoDataFrame
-        Geometries to search.
-    sindex : shapely.STRtree
-        Spatial index built from the ``dataframe`` geometries, in the same
-        row order.
-    tolerance : float, optional
-        Maximum distance (CRS units). Default: 1e-9.
-
-    Returns
-    -------
-    gpd.GeoSeries or gpd.GeoDataFrame
-        Subset of ``dataframe`` within ``tolerance`` of ``geom``, in row order
-        and with the original index labels.
-    """
-    # STRtree.query returns row positions, not index labels
-    positions = sindex.query(geom, predicate="dwithin", distance=tolerance)
-    return dataframe.iloc[np.sort(positions)]
-
-
 def _edge_lengths_metres(edges):
     """Compute edge lengths in metres for any CRS.
 

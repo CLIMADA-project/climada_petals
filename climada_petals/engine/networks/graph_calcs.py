@@ -25,7 +25,19 @@ import pyproj
 import scipy
 from scipy.spatial.distance import cdist
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
+from climada_petals.engine.networks.nw_utils import (
+    ACCESS_DISRUPTED,
+    ACCESS_DISRUPTED_SOURCE,
+    ACCESS_DISRUPTED_VIA,
+    ACCESS_NEW_SOURCE,
+    ACCESS_NO_BASE,
+    ACCESS_UNDISRUPTED,
+    ADDED_COL,
+    DEF_END_USER,
+    _ckdnearest,
+    _dependency_name,
+    make_edge_geometries,
+)
 
 from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
@@ -34,27 +46,6 @@ from climada.util import lines_polys_handler as u_lp
 from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
-
-
-def _dependency_name(source, target):
-    """Edge ``ci_type`` of the dependency edges from ``source`` to ``target``
-
-    This is the only name under which the cascade (capacity propagation,
-    access checks, rerouting) looks up dependency edges.
-
-    Parameters
-    ----------
-    source : str
-        ``ci_type`` of the providing vertices.
-    target : str
-        ``ci_type`` of the dependent vertices.
-
-    Returns
-    -------
-    str
-        ``"dependency_{source}_{target}"``
-    """
-    return f"dependency_{source}_{target}"
 
 
 class GraphCalcs:
@@ -746,7 +737,8 @@ class GraphCalcs:
     def _edges_from_vlists(self, v_ids_source, v_ids_target, link_attrs=None):
         """Create edges between source and target vertex lists
 
-        Adds edge geometries and distances if missing in ``link_attrs``.
+        Adds edge geometries and distances if missing in ``link_attrs``, and
+        marks the new edges with ``ADDED_COL = True`` (see ``nw_utils``).
 
         Parameters
         ----------
@@ -766,6 +758,8 @@ class GraphCalcs:
 
         # work on a copy: the dict of the caller is not modified
         link_attrs = dict(link_attrs) if link_attrs else {}
+        # mark them: e.g. added road links do not count as road length
+        link_attrs[ADDED_COL] = True
         link_attrs["geometry"] = make_edge_geometries(
             self.graph.vs[v_ids_source]["geometry"],
             self.graph.vs[v_ids_target]["geometry"],
@@ -1198,10 +1192,8 @@ class GraphCalcs:
             # - insufficient now, never had supply -> 'no base access'
             access_states = np.where(
                 target_capa_suff >= 1,
-                "access undisrupted",
-                np.where(
-                    prev_supply >= thresh_func, "access disrupted", "no base access"
-                ),
+                ACCESS_UNDISRUPTED,
+                np.where(prev_supply >= thresh_func, ACCESS_DISRUPTED, ACCESS_NO_BASE),
             )
             self.graph.vs[target_graph_ids][access_attr] = access_states.tolist()
         else:
@@ -1278,7 +1270,7 @@ class GraphCalcs:
             self.powercap_from_clusters(
                 p_source=p_source,
                 p_sink=p_sink,
-                demand_ci="people",
+                demand_ci=DEF_END_USER,
                 source_var=source_var,
                 demand_var=demand_var,
             )
@@ -1623,7 +1615,7 @@ class GraphCalcs:
         if ppl_access_new_source:
             self.graph.vs[ppl_access_new_source][
                 f"access_state_{row.source}_{row.target}"
-            ] = "access new source"
+            ] = ACCESS_NEW_SOURCE
 
         # If people have access only when no functional via is required, then access is disrupted via
         ppl_access_broken_via = [
@@ -1634,7 +1626,7 @@ class GraphCalcs:
         if ppl_access_broken_via:
             self.graph.vs[ppl_access_broken_via][
                 f"access_state_{row.source}_{row.target}"
-            ] = "access disrupted via"
+            ] = ACCESS_DISRUPTED_VIA
 
         # If endusers do not have access due to via constraints, then the access is disrupted at source
         ppl_access_broken_via_set = set(ppl_access_broken_via)
@@ -1649,7 +1641,7 @@ class GraphCalcs:
         if ppl_no_reaccess:
             self.graph.vs[ppl_no_reaccess][
                 f"access_state_{row.source}_{row.target}"
-            ] = "access disrupted source"
+            ] = ACCESS_DISRUPTED_SOURCE
 
         # Remaining accesses are undisrupted
         ppl_access_undisrupted = [
@@ -1660,7 +1652,7 @@ class GraphCalcs:
         if ppl_access_undisrupted:
             self.graph.vs[ppl_access_undisrupted][
                 f"access_state_{row.source}_{row.target}"
-            ] = "access undisrupted"
+            ] = ACCESS_UNDISRUPTED
 
         # Add boolean array of actual supply
         # Endusers with access get supply=1 (includes undisrupted, all_via, and new_source)
