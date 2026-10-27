@@ -103,6 +103,7 @@ def enduser_plot(
     axes=None,
     projection=ccrs.PlateCarree(),
     pop_col=POP_COL,
+    marker_scale=1.0,
     **kwargs,
 ):
     """Plot end-user nodes as a scatter plot, sized by population.
@@ -119,9 +120,14 @@ def enduser_plot(
         Map projection of new axes. Default: PlateCarree.
     pop_col : str, optional
         Node column with the population (marker size). Default: :data:`POP_COL`.
+    marker_scale : float, optional
+        Factor applied to all marker sizes, e.g. 2 for markers twice as
+        large. Marker sizes stay proportional to the population: the most
+        populated node has an area of ``100 * marker_scale`` points^2.
+        Default: 1.
     **kwargs
         Passed to ``axes.scatter``; they override the defaults (grey,
-        ``alpha=0.5``).
+        ``alpha=0.5``). ``s`` replaces the population-based sizes.
 
     Returns
     -------
@@ -133,7 +139,10 @@ def enduser_plot(
     plot_df = network.nodes[network.nodes.ci_type == enduser]
     fig, axes = _new_axes(axes, projection)
     style = dict(
-        s=_marker_sizes(plot_df[pop_col]), label=enduser, alpha=0.5, color="grey"
+        s=_marker_sizes(plot_df[pop_col], 100 * marker_scale),
+        label=enduser,
+        alpha=0.5,
+        color="grey",
     )
     style.update(kwargs)
     axes.scatter(
@@ -156,6 +165,7 @@ def infra_plot(
     pop_kwargs=None,
     ci_kwargs=None,
     cbar_kwargs=None,
+    marker_scale=1.0,
 ):
     """Plot critical infrastructure network elements.
 
@@ -194,10 +204,17 @@ def infra_plot(
     pop_kwargs : dict, optional
         Keyword arguments for :func:`enduser_plot`.
     ci_kwargs : dict, optional
-        Keyword arguments for the CI element plots; ``colors`` sets the colour
-        cycle of the CI types. Default colours: ``tab20``.
+        Keyword arguments for the CI element plots (lines and point discs);
+        they override the defaults. ``colors`` sets the colour cycle of the CI
+        types. Default colours: ``tab20``.
     cbar_kwargs : dict, optional
         Keyword arguments for the colorbar.
+    marker_scale : float, optional
+        Factor applied to all marker sizes, e.g. 2 for markers twice as
+        large: the discs of point infrastructure (with their letter) and the
+        end-user markers, which stay proportional to the population.
+        ``pop_kwargs={"marker_scale": ...}`` sets the end users separately.
+        Default: 1.
 
     Returns
     -------
@@ -215,6 +232,7 @@ def infra_plot(
     fig, axes = _new_axes(axes, projection)
     transform = _data_crs(network)
     colors = ci_kwargs.pop("colors", mpl.cm.tab20.colors)
+    pop_kwargs.setdefault("marker_scale", marker_scale)
 
     # Define colormap based on plot_col
     if plot_col == "ci_type":
@@ -254,9 +272,7 @@ def infra_plot(
             if road_mask and ci_type == "road":
                 plot_df = plot_df[~_added_mask(plot_df)]
 
-            plot_df.plot(
-                plot_col,
-                ax=axes,
+            line_kw = dict(
                 cmap=cmap,
                 vmin=vmin,
                 vmax=vmax,
@@ -264,8 +280,9 @@ def infra_plot(
                 label=ci_type,
                 linestyle=line_style,
                 zorder=1,
-                **ci_kwargs,
             )
+            line_kw.update(ci_kwargs)
+            plot_df.plot(plot_col, ax=axes, **line_kw)
         else:
             plot_df = network.nodes[network.nodes.ci_type == ci_type]
             if mask_func_ci and "func_tot" in plot_df.columns:
@@ -274,7 +291,7 @@ def infra_plot(
 
             # Background coloured disc for visibility
             bg_kw = dict(
-                s=350,
+                s=350 * marker_scale,
                 marker="o",
                 transform=transform,
                 zorder=i + 1,
@@ -290,17 +307,13 @@ def infra_plot(
                     vmin=vmin,
                     vmax=vmax,
                 )
-            axes.scatter(
-                plot_df.geometry.x,
-                plot_df.geometry.y,
-                **bg_kw,
-                **ci_kwargs,
-            )
+            bg_kw.update(ci_kwargs)
+            axes.scatter(plot_df.geometry.x, plot_df.geometry.y, **bg_kw)
             # White letter marker on top
             axes.scatter(
                 plot_df.geometry.x,
                 plot_df.geometry.y,
-                s=100,
+                s=100 * marker_scale,
                 color="white",
                 marker=marker_letter,
                 transform=transform,
@@ -412,6 +425,7 @@ def access_plot(
     plot_kwargs=None,
     cbar_kwargs=None,
     pop_col=POP_COL,
+    marker_scale=1.0,
 ):
     """Plot the access state of end users to a CI type.
 
@@ -438,13 +452,19 @@ def access_plot(
     projection : cartopy.crs.Projection, optional
         Map projection of new axes. Default: PlateCarree.
     plot_kwargs : dict, optional
-        Additional keyword arguments for ``axes.scatter``; ``cmap`` replaces
-        the colours of the 5 classes.
+        Additional keyword arguments for ``axes.scatter``; they override the
+        defaults. ``cmap`` replaces the colours of the 5 classes, ``s`` the
+        population-based sizes.
     cbar_kwargs : dict, optional
         Additional keyword arguments for the colorbar.
     pop_col : str, optional
         Node column with the population (marker size and the numbers in the
         text box). Default: :data:`POP_COL`.
+    marker_scale : float, optional
+        Factor applied to all marker sizes, e.g. 2 for markers twice as
+        large. Marker sizes stay proportional to the population: the most
+        populated node has an area of ``100 * marker_scale`` points^2.
+        Default: 1.
 
     Returns
     -------
@@ -458,9 +478,6 @@ def access_plot(
     cbar_kwargs = dict(cbar_kwargs or {})
     fig, axes = _new_axes(axes, projection)
 
-    cmap = plot_kwargs.pop(
-        "cmap", ListedColormap(["#046582", "#158204", "grey", "#CF8018", "#BB8082"])
-    )
     gdf_enduser = network.nodes[network.nodes.ci_type == enduser]
 
     service = f"access_state_{ci_type}_{enduser}"
@@ -480,17 +497,16 @@ def access_plot(
             ACCESS_NO_BASE,
         )
     cvals = states.map(STATUS_MAP).fillna(STATUS_MAP[ACCESS_NO_BASE])
-    scatter = axes.scatter(
-        gdf_enduser.geometry.x,
-        gdf_enduser.geometry.y,
+    style = dict(
         c=cvals,
-        s=_marker_sizes(gdf_enduser[pop_col]),
+        s=_marker_sizes(gdf_enduser[pop_col], 100 * marker_scale),
         transform=_data_crs(network),
-        cmap=cmap,
+        cmap=ListedColormap(["#046582", "#158204", "grey", "#CF8018", "#BB8082"]),
         vmin=-2,
         vmax=2,
-        **plot_kwargs,
     )
+    style.update(plot_kwargs)
+    scatter = axes.scatter(gdf_enduser.geometry.x, gdf_enduser.geometry.y, **style)
     n_ppl_access_loss = gdf_enduser.loc[
         gdf_enduser[service].isin(ACCESS_LOSS_STATES), pop_col
     ].sum()

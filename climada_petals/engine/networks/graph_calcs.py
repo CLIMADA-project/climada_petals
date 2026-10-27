@@ -20,10 +20,9 @@ import logging
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-import pyproj
 
 import scipy
-from scipy.spatial.distance import cdist
+from scipy.spatial import cKDTree
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import (
     ACCESS_DISRUPTED,
@@ -36,6 +35,8 @@ from climada_petals.engine.networks.nw_utils import (
     DEF_END_USER,
     _ckdnearest,
     _dependency_name,
+    _edge_lengths_metres,
+    _search_coords_and_radius,
     make_edge_geometries,
 )
 
@@ -43,7 +44,6 @@ from climada.entity.exposures.base import Exposures
 from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
 from climada.engine import ImpactCalc
 from climada.util import lines_polys_handler as u_lp
-from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
 
@@ -220,13 +220,13 @@ class GraphCalcs:
         link_attrs : dict, optional
             Edge attributes to set for newly created links.
         dist_auto_convert : bool, optional
-            If ``True`` and the network is in a geographic CRS, automatically convert
-            the distance threshold from meters to degrees. Default is ``True``.
-
-        Notes
-        -----
-        Distances are approximated by converting meters to degrees using
-        :data:`~climada.util.constants.ONE_LAT_KM`.
+            If ``True`` (default), ``dist_thresh`` is in metres; for
+            longitude/latitude coordinates (e.g. EPSG:4326), distances are
+            measured along the Earth's surface, so the threshold is the same in
+            every direction and at every latitude. If ``False``,
+            ``dist_thresh`` is in the units of the coordinates (degrees for
+            longitude/latitude, where an east-west degree is shorter than a
+            north-south degree away from the equator).
         """
 
         gdf_vs = self.graph.get_vertex_dataframe()
@@ -237,12 +237,7 @@ class GraphCalcs:
         v_ids_source = []
         v_ids_target = []
 
-        if self.network.crs.is_geographic and dist_auto_convert:
-            dist_thresh /= ONE_LAT_KM * 1000
-            LOGGER.info(
-                "Network is in geographic CRS; automatically converting distance threshold to degrees: %f",
-                dist_thresh,
-            )
+        crs = self.network.crs if dist_auto_convert else None
 
         members = np.unique(gdf_vs["membership"])
         if len(members) <= 1:
@@ -254,7 +249,9 @@ class GraphCalcs:
             if gdf_a.empty or gdf_b.empty:
                 continue
             try:
-                dists, ix_match = _ckdnearest(gdf_a, gdf_b, dist_thresh=dist_thresh)
+                dists, ix_match = _ckdnearest(
+                    gdf_a, gdf_b, dist_thresh=dist_thresh, crs=crs
+                )
                 min_dist = min(dists)
                 source = gdf_a.iloc[np.where(dists == min_dist)[0]].index[0]
                 target = gdf_b.loc[ix_match[np.where(dists == min_dist)[0]]].index[0]
@@ -400,8 +397,11 @@ class GraphCalcs:
         if self.auto_sync:
             self.sync()
 
-    def _prefilter_geo(self, df_vs_source, df_vs_target, dist_thresh):
-        """Prefilter target vertices by geographic distance to sources
+    def _prefilter_geo(self, df_vs_source, df_vs_target, dist_thresh, crs=None):
+        """Prefilter target vertices by straight-line distance to the sources
+
+        A target can only be within ``dist_thresh`` of a source along the
+        network if it is within ``dist_thresh`` in a straight line.
 
         Parameters
         ----------
@@ -410,65 +410,44 @@ class GraphCalcs:
         df_vs_target : pd.DataFrame
             Target vertex dataframe with a ``geometry`` column.
         dist_thresh : float
-            Maximum straight-line distance, in the units of the coordinates
-            (degrees for a geographic CRS).
+            Maximum straight-line distance. If ``crs`` is given: in metres,
+            measured along the Earth's surface for longitude/latitude
+            coordinates. Otherwise: in the units of the coordinates.
+        crs : pyproj.CRS, optional
+            CRS of the coordinates. Default: None.
 
         Returns
         -------
         source_indices : np.ndarray
-            Indices of all sources (not filtered).
+            Indices of all sources (not filtered); empty if no target is kept.
         target_indices : np.ndarray
             Indices of the targets within ``dist_thresh`` of at least one source.
-        geo_dists : np.ndarray
-            Pairwise distances (sources x kept targets), for later filtering.
-
-        Notes
-        -----
-        All three arrays are empty if no target is within the threshold.
         """
-        # Extract coordinates (in degrees for geographic CRS)
-        source_geoms = df_vs_source.geometry.values
-        target_geoms = df_vs_target.geometry.values
-        source_coords = np.array([[g.x, g.y] for g in source_geoms])
-        target_coords = np.array([[g.x, g.y] for g in target_geoms])
-
-        # Compute pairwise geographic distances (fast, no network computation)
-        # Shape: (# sources, # targets)
-        geo_dists = cdist(source_coords, target_coords, metric="euclidean")
-
-        # Keep only targets that are within threshold of at least one source
-        # axis=0 means "for each target (column), check if ANY source (row) is close"
-        target_valid_mask = np.any(geo_dists <= dist_thresh, axis=0)
-        valid_target_indices = np.where(target_valid_mask)[0]
-
-        if len(valid_target_indices) > 0:
-            # Reduce target set based on geographic filter
-            # Important: target_indices must be in the same order as the filtered targets
-            target_indices = df_vs_target.index.values[valid_target_indices]
+        source_coords, radius, _ = _search_coords_and_radius(
+            df_vs_source.geometry.values, crs, dist_thresh
+        )
+        target_coords, _, _ = _search_coords_and_radius(
+            df_vs_target.geometry.values, crs, dist_thresh
+        )
+        # number of sources within the radius of each target, without a
+        # sources x targets distance matrix
+        n_close = cKDTree(source_coords).query_ball_point(
+            target_coords, r=radius, return_length=True
+        )
+        keep = np.asarray(n_close) > 0
+        target_indices = df_vs_target.index.values[keep]
+        if keep.any():
             source_indices = df_vs_source.index.values
-
-            # Return filtered geo_dists: only columns for valid targets
-            geo_dists_filtered = geo_dists[:, valid_target_indices]
-
-            LOGGER.info(
-                "Geographic pre-filter: %d/%d targets within %.0fm threshold of sources",
-                len(valid_target_indices),
-                len(df_vs_target),
-                dist_thresh,
-            )
         else:
-            # No targets within threshold, skip this dependency
             source_indices = np.array([], dtype=int)
-            target_indices = np.array([], dtype=int)
-            geo_dists_filtered = np.array([])
-
-            LOGGER.info(
-                "Geographic pre-filter: 0/%d targets within %.0fm threshold of sources",
-                len(df_vs_target),
-                dist_thresh,
-            )
-
-        return source_indices, target_indices, geo_dists_filtered
+        LOGGER.info(
+            "Geographic pre-filter: %d/%d targets within %g %s of a source",
+            keep.sum(),
+            len(df_vs_target),
+            dist_thresh,
+            "m" if crs is not None else "(coordinate units)",
+        )
+        return source_indices, target_indices
 
     def link_vertices_shortest_paths(
         self,
@@ -507,7 +486,10 @@ class GraphCalcs:
         bidir : bool, optional
             If ``True``, add reverse links as well. Default is ``False``.
         prefilter_geo : bool, optional
-            If ``True``, apply geographic pre-filtering to reduce computation time. Default is ``True``.
+            If ``True``, drop the targets farther than ``dist_thresh`` (straight
+            line) from every source before computing the paths, to reduce
+            computation time. Only applied with ``criterion="distance"``.
+            Default is ``True``.
         """
 
         # subgraph containing only "allowed" elements
@@ -534,27 +516,19 @@ class GraphCalcs:
         df_vs_target = GraphCalcs._filter_vertices(df_vs, target_attrs)
         df_vs_source = GraphCalcs._filter_vertices(df_vs, source_attrs)
 
-        if self.network.crs.is_geographic:
-            dist_thresh_geo = dist_thresh / (ONE_LAT_KM * 1000)
-            LOGGER.info(
-                "Network is in geographic CRS; automatically converting distance threshold to degrees: %f",
-                dist_thresh_geo,
-            )
-        else:
-            dist_thresh_geo = dist_thresh
-
-        # Geographic pre-filtering: if geometries exist, filter sources by bounding box
-        # to reduce distance matrix size before expensive igraph computation
+        # Geographic pre-filtering: drop the targets farther than dist_thresh
+        # (straight line, in metres) from every source before the expensive
+        # igraph computation; only valid if the path weights are distances
         if (
             "geometry" in df_vs.columns
             and not df_vs_target.empty
             and not df_vs_source.empty
             and dist_thresh < np.inf
             and prefilter_geo
+            and criterion == "distance"
         ):
-
-            source_indices, target_indices, geo_dists_filtered = self._prefilter_geo(
-                df_vs_source, df_vs_target, dist_thresh_geo
+            source_indices, target_indices = self._prefilter_geo(
+                df_vs_source, df_vs_target, dist_thresh, crs=self.network.crs
             )
         else:
             source_indices = df_vs_source.index.values
@@ -767,15 +741,13 @@ class GraphCalcs:
 
         if "distance" not in link_attrs.keys():
             LOGGER.info("Adding edge distances for new links.")
-            if self.network.crs is None or self.network.crs.is_geographic:
-                geod = pyproj.Geod(ellps="WGS84")
-                distances = [
-                    geod.geometry_length(edge_geom)
-                    for edge_geom in link_attrs["geometry"]
-                ]
-            else:
-                distances = [edge_geom.length for edge_geom in link_attrs["geometry"]]
-            link_attrs["distance"] = distances
+            link_attrs["distance"] = list(
+                _edge_lengths_metres(
+                    gpd.GeoDataFrame(
+                        geometry=link_attrs["geometry"], crs=self.network.crs
+                    )
+                )
+            )
 
         self.graph.add_edges(pairs, attributes=link_attrs)
 
@@ -806,25 +778,26 @@ class GraphCalcs:
         bidir : bool, optional
             If ``True``, append reverse links. Default is ``False``.
         dist_auto_convert : bool, optional
-            If ``True`` and the network is in a geographic CRS, automatically convert
-            the distance threshold from meters to degrees. Default is ``True``.
+            If ``True`` (default), ``dist_thresh`` is in metres and the closest
+            sources are chosen by their distance in metres; for
+            longitude/latitude coordinates (e.g. EPSG:4326), distances are
+            measured along the Earth's surface. If ``False``, both use the
+            units of the coordinates (degrees for longitude/latitude, where an
+            east-west degree is shorter than a north-south degree away from the
+            equator).
 
         Returns
         -------
         list, list
             Source and target vertex indices for links.
         """
-
-        if crs.is_geographic and dist_auto_convert:
-            dist_thresh /= ONE_LAT_KM * 1000
-            LOGGER.info(
-                "Network is in geographic CRS; automatically converting distance threshold to degrees: %f",
-                dist_thresh,
-            )
-
         # index matches, in format (#target vs, k). nans for those without matches
         __, ix_matches = _ckdnearest(
-            gdf_vs_target, gdf_vs_source, k=k, dist_thresh=dist_thresh
+            gdf_vs_target,
+            gdf_vs_source,
+            k=k,
+            dist_thresh=dist_thresh,
+            crs=crs if dist_auto_convert else None,
         )
         # broadcast target indices to same format
         ix_matches = ix_matches.flatten()

@@ -20,6 +20,7 @@ import geopandas as gpd
 import pandas as pd
 import shapely
 import numpy as np
+import pyproj
 from scipy.spatial import cKDTree
 import rasterio
 from rasterio.enums import Resampling
@@ -35,6 +36,8 @@ import requests
 import time
 
 from climada.util import coordinates as u_coords
+from climada.util.constants import EARTH_RADIUS_KM
+from climada.util.coordinates import compute_geodesic_lengths
 from climada_petals.util.constants import DICT_SPEEDS
 
 # =============================================================================
@@ -110,6 +113,129 @@ def _dependency_name(source, target):
 
 
 # =============================================================================
+# Distances in metres
+# =============================================================================
+# Longitude/latitude coordinates (e.g. EPSG:4326) are never compared in
+# degrees: away from the equator, a degree of longitude (east-west) is shorter
+# than a degree of latitude (north-south), by a factor cos(latitude).
+# Distances in metres are measured along the Earth's surface. For the
+# nearest-neighbour searches, the points are placed on a sphere: the straight
+# line through the sphere between two points is shorter than the distance along
+# its surface, but ranks points in the same order and converts exactly to and
+# from it (_metres_to_chord, _chord_to_metres).
+
+#: radius (m) of the sphere used for the nearest-neighbour searches
+EARTH_RADIUS_M = EARTH_RADIUS_KM * 1000
+
+
+def _metre_factor(crs):
+    """Metres per unit of a projected CRS (1 for metres)."""
+    return crs.axis_info[0].unit_conversion_factor
+
+
+def _edge_lengths_metres(edges):
+    """Compute edge lengths in metres for any CRS.
+
+    For geographic CRS (coordinates in degrees), geodesic distances are
+    computed via :func:`climada.util.coordinates.compute_geodesic_lengths`.
+    For projected CRS, ``shapely.length`` is converted to metres with the unit
+    of the CRS.
+
+    Parameters
+    ----------
+    edges : gpd.GeoDataFrame
+        Edge GeoDataFrame with a geometry column and a CRS set.
+
+    Returns
+    -------
+    np.ndarray
+        Edge lengths in metres.
+
+    Raises
+    ------
+    ValueError
+        If the edges have no CRS: the coordinate units are then unknown, and
+        assuming degrees would silently give wrong lengths for projected data.
+    """
+    if edges.crs is None:
+        raise ValueError(
+            "Edges have no CRS, so edge lengths cannot be computed in metres. "
+            "Set it explicitly, e.g. edges.set_crs('EPSG:4326')."
+        )
+    if not edges.crs.is_geographic:
+        return shapely.length(edges.geometry) * _metre_factor(edges.crs)
+
+    # Geographic CRS – use geodesic distances.
+    return compute_geodesic_lengths(edges).values
+
+
+def _metric_coords(points, crs):
+    """Coordinates for nearest-neighbour searches with distances in metres.
+
+    Parameters
+    ----------
+    points : sequence of shapely.Point
+        Points (e.g. a geometry column).
+    crs : pyproj.CRS or str
+        CRS of the points.
+
+    Returns
+    -------
+    np.ndarray
+        Projected CRS: ``(n, 2)`` x, y in metres. Longitude/latitude
+        coordinates: ``(n, 3)`` positions on a sphere of radius
+        :data:`EARTH_RADIUS_M`. The straight-line distance between two such
+        positions (through the sphere, the chord) converts to and from the
+        distance along the surface with :func:`_metres_to_chord` /
+        :func:`_chord_to_metres`.
+    """
+    crs = pyproj.CRS(crs)
+    points = np.asarray(points, dtype=object)
+    x, y = shapely.get_x(points), shapely.get_y(points)
+    if not crs.is_geographic:
+        return np.column_stack([x, y]) * _metre_factor(crs)
+    lon, lat = np.radians(x), np.radians(y)
+    return EARTH_RADIUS_M * np.column_stack(
+        [np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)]
+    )
+
+
+def _metres_to_chord(dist_m):
+    """Straight-line distance through the sphere (chord) between two points
+    that are ``dist_m`` metres apart along its surface."""
+    arc = np.minimum(np.asarray(dist_m, dtype=float), np.pi * EARTH_RADIUS_M)
+    return 2 * EARTH_RADIUS_M * np.sin(arc / (2 * EARTH_RADIUS_M))
+
+
+def _chord_to_metres(chord):
+    """Distance along the surface of the sphere (m) between two points whose
+    straight-line distance through the sphere (chord) is ``chord``."""
+    ratio = np.clip(np.asarray(chord, dtype=float) / (2 * EARTH_RADIUS_M), 0, 1)
+    return 2 * EARTH_RADIUS_M * np.arcsin(ratio)
+
+
+def _search_coords_and_radius(points, crs, dist_thresh):
+    """Search coordinates and radius for a distance threshold.
+
+    With ``crs`` None, the raw coordinates and ``dist_thresh`` in coordinate
+    units are used; otherwise ``dist_thresh`` is in metres (see
+    :func:`_metric_coords`). Returns the coordinates, the search radius and
+    whether the coordinates are positions on the sphere, whose distances are
+    then chords (see :func:`_chord_to_metres`).
+    """
+    if crs is None:
+        points = np.asarray(points, dtype=object)
+        coords = np.column_stack([shapely.get_x(points), shapely.get_y(points)])
+        return coords, dist_thresh, False
+    on_sphere = pyproj.CRS(crs).is_geographic
+    coords = _metric_coords(points, crs)
+    radius = dist_thresh
+    if on_sphere and np.isfinite(dist_thresh):
+        radius = _metres_to_chord(dist_thresh)
+    return coords, radius, on_sphere
+
+
+# =============================================================================
 # Spatial analysis util functions
 # =============================================================================
 
@@ -135,44 +261,52 @@ def make_edge_geometries(vs_geoms_from, vs_geoms_to):
     ]
 
 
-def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
-    """Find the k nearest neighbours using a cKDTree.
-
-    See https://gis.stackexchange.com/a/301935.
+def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf, crs=None):
+    """Find the k nearest base points of each point to assign (cKDTree).
 
     Parameters
     ----------
-    vs_assign : gpd.GeoDataFrame or pandas.Series
-        GeoDataFrame or single row with point geometries to assign.
-    gdf_base : gpd.GeoDataFrame
-        GeoDataFrame of candidate destination points.
+    vs_assign : gpd.GeoDataFrame, pd.DataFrame or pandas.Series
+        Points to assign (a ``geometry`` column), or a single row.
+    gdf_base : gpd.GeoDataFrame or pd.DataFrame
+        Candidate points (a ``geometry`` column).
     k : int, optional
         Number of nearest neighbours to find. Default: 1.
     dist_thresh : float, optional
         Maximum distance for valid matches. Default: np.inf.
+    crs : pyproj.CRS or str, optional
+        CRS of the points. If given, ``dist_thresh`` and the returned
+        distances are in metres; for longitude/latitude coordinates they are
+        measured along the Earth's surface. If None, both are in the units of
+        the coordinates (degrees for longitude/latitude, where an east-west
+        degree is shorter than a north-south degree away from the equator).
+        Default: None.
 
     Returns
     -------
     dist : np.ndarray
-        Distances to the k nearest neighbours.
-    vld_ind_formatted : np.ndarray
-        Indices into ``gdf_base`` of valid nearest neighbours. Invalid
-        matches (beyond ``dist_thresh``) are set to NaN.
+        Distances to the k nearest neighbours (``inf`` beyond ``dist_thresh``).
+    labels : np.ndarray
+        Index labels of ``gdf_base`` of the nearest neighbours (float); NaN
+        beyond ``dist_thresh``.
     """
-    # TODO: this mixed input options (1 vertex vs gdf) is not nicely solved
     if isinstance(vs_assign, (gpd.GeoDataFrame, pd.DataFrame)):
-        n_assign = np.array(list(vs_assign.geometry.apply(lambda x: (x.x, x.y))))
-    else:
-        n_assign = np.array([(vs_assign.geometry.x, vs_assign.geometry.y)])
-    n_base = np.array(list(gdf_base.geometry.apply(lambda x: (x.x, x.y))))
-    btree = cKDTree(n_base)
-    dist, idx = btree.query(n_assign, k=k, distance_upper_bound=dist_thresh)
-
-    vld_ind = gdf_base.iloc[idx[dist < np.inf]].index.values
-    vld_ind_formatted = np.empty(dist.shape)
-    vld_ind_formatted[:] = np.nan
-    vld_ind_formatted[np.where(dist < np.inf)] = vld_ind
-    return dist, vld_ind_formatted
+        assign_points = vs_assign.geometry.values
+    else:  # a single row
+        assign_points = [vs_assign.geometry]
+    base_coords, radius, on_sphere = _search_coords_and_radius(
+        gdf_base.geometry.values, crs, dist_thresh
+    )
+    assign_coords, _, _ = _search_coords_and_radius(assign_points, crs, dist_thresh)
+    dist, idx = cKDTree(base_coords).query(
+        assign_coords, k=k, distance_upper_bound=radius
+    )
+    found = dist < np.inf
+    if on_sphere:
+        dist = np.where(found, _chord_to_metres(dist), np.inf)
+    labels = np.full(dist.shape, np.nan)
+    labels[found] = gdf_base.index.values[idx[found]]
+    return dist, labels
 
 
 # =============================================================================
