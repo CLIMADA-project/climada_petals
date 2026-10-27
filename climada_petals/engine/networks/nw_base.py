@@ -20,6 +20,7 @@ Make network base classes and Graph base class (data containers)
 """
 
 import logging
+import warnings
 import geopandas as gpd
 import igraph as ig
 import pandas as pd
@@ -36,6 +37,51 @@ from climada_petals.engine.networks.nw_utils import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+# reserved column names: (gdf, column) -> what happens to an existing column
+_RESERVED_COLUMNS = {
+    ("nodes", "name"): (
+        "igraph uses it for vertex names, so it is dropped when the network is "
+        "converted to a graph; rename it (e.g. to 'label') to keep it"
+    ),
+    ("nodes", "_orig_id"): "used internally by graph calculations, overwritten",
+    ("edges", "_orig_id"): "used internally by graph calculations, overwritten",
+    ("edges", "source"): (
+        "igraph uses it for the edge's first vertex, so it collides with the "
+        "vertex index when the network is rebuilt from a graph"
+    ),
+    ("edges", "target"): (
+        "igraph uses it for the edge's second vertex, so it collides with the "
+        "vertex index when the network is rebuilt from a graph"
+    ),
+}
+
+
+def _warn_reserved_columns(edges, nodes):
+    """Warn about reserved column names in the edges or nodes (see Network)."""
+    gdfs = {"edges": edges, "nodes": nodes}
+    found = [
+        f"'{col}' in {where} ({reason})"
+        for (where, col), reason in _RESERVED_COLUMNS.items()
+        if col in gdfs[where].columns
+    ]
+    if found:
+        warnings.warn(
+            "Reserved column names: " + "; ".join(found) + ".",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
+def _set_missing_crs(gdf, crs):
+    """Set ``crs`` on an empty GeoDataFrame without CRS (copy)."""
+    if gdf.crs is not None:
+        return gdf
+    try:
+        return gdf.set_crs(crs)
+    except (AttributeError, ValueError):
+        # empty frame without a geometry column: nothing to set the CRS on
+        return gdf
 
 
 class Network:
@@ -70,6 +116,9 @@ class Network:
       vertex indices of an edge. Existing columns collide with these when
       the network is rebuilt from the graph.
 
+    A ``UserWarning`` is issued when a network is created with any of these
+    columns.
+
     The following columns are created or overwritten by the module. They can
     be read, but own values are not preserved:
 
@@ -103,22 +152,30 @@ class Network:
         Creates a Network instance with optional edges (line features) and nodes (point features).
         If empty GeoDataFrames are provided, default structures with required columns are created.
         The method automatically adds 'id' columns if they don't exist.
+        The input GeoDataFrames are not modified. An empty GeoDataFrame
+        without CRS gets the CRS of the other one (EPSG:4326 if neither has
+        one). A ``UserWarning`` is issued for reserved column names (see the
+        class notes).
 
         Parameters
         ----------
         edges : gpd.GeoDataFrame, optional
             GeoDataFrame containing network edges (e.g., roads, power lines).
-            Must have columns 'from_id', 'to_id', and 'geometry'.
+            Must have columns 'from_id', 'to_id', and 'geometry', and a CRS
+            unless it is empty.
             Defaults to an empty GeoDataFrame with EPSG:4326 CRS or the CRS of the other GeoDataFrame.
         nodes : gpd.GeoDataFrame, optional
             GeoDataFrame containing network nodes (e.g., infrastructure facilities, people).
-            Must have columns 'id' and 'geometry'.
+            Must have columns 'id' and 'geometry', and a CRS unless it is
+            empty.
             Defaults to an empty GeoDataFrame with EPSG:4326 CRS or the CRS of the other GeoDataFrame.
 
         Raises
         ------
         ValueError
-            If edges and nodes have different coordinate reference systems.
+            If edges or nodes are not empty and have no CRS (the units of the
+            coordinates, and so all distances, would be unknown), or if edges
+            and nodes have different coordinate reference systems.
 
         Examples
         --------
@@ -130,6 +187,12 @@ class Network:
         >>> nodes_gdf = gpd.GeoDataFrame(...)
         >>> network = Network(edges=edges_gdf, nodes=nodes_gdf)
         """
+        for label, gdf in (("edges", edges), ("nodes", nodes)):
+            if gdf is not None and not gdf.empty and gdf.crs is None:
+                raise ValueError(
+                    f"{label} have no CRS. Set it explicitly, e.g. "
+                    "gdf.set_crs('EPSG:4326')."
+                )
         crs_edges = edges.crs if edges is not None else None
         crs_nodes = nodes.crs if nodes is not None else None
         if crs_edges and not crs_nodes:
@@ -150,17 +213,23 @@ class Network:
                 geometry="geometry",
                 crs=crs_edges,
             )
+        else:
+            edges = _set_missing_crs(edges, crs_edges)
         if nodes is None:
             nodes = gpd.GeoDataFrame(
                 columns=["id", "geometry"],
                 geometry="geometry",
                 crs=crs_nodes,
             )
+        else:
+            nodes = _set_missing_crs(nodes, crs_nodes)
 
+        # assign returns a copy: the caller's GeoDataFrames are not modified
         if "id" not in edges.columns:
-            edges["id"] = range(len(edges))
+            edges = edges.assign(id=range(len(edges)))
         if "id" not in nodes.columns:
-            nodes["id"] = range(len(nodes))
+            nodes = nodes.assign(id=range(len(nodes)))
+        _warn_reserved_columns(edges, nodes)
 
         self.edges = edges
         self.nodes = nodes

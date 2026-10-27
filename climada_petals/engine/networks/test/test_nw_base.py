@@ -20,6 +20,7 @@ Tests for the Network data container (nw_base)
 """
 
 import copy as cp
+import warnings
 
 import geopandas as gpd
 import igraph as ig
@@ -104,6 +105,102 @@ def test_init_crs_mismatch_raises(edges_gdf, nodes_gdf):
     """Edges and nodes with different CRS raise a ValueError."""
     with pytest.raises(ValueError, match="same CRS"):
         Network(edges=edges_gdf.to_crs("EPSG:3857"), nodes=nodes_gdf)
+
+
+def _without_crs(gdf):
+    """Same data, geometry without CRS."""
+    return gpd.GeoDataFrame(
+        gdf.drop(columns="geometry"), geometry=list(gdf.geometry), crs=None
+    )
+
+
+@pytest.mark.parametrize("missing", ["edges", "nodes"])
+def test_init_without_crs_raises(edges_gdf, nodes_gdf, missing):
+    """Non-empty edges or nodes without CRS raise: distances would be unknown."""
+    gdfs = {"edges": edges_gdf, "nodes": nodes_gdf}
+    gdfs[missing] = _without_crs(gdfs[missing])
+    assert gdfs[missing].crs is None
+
+    with pytest.raises(ValueError, match=f"{missing} have no CRS"):
+        Network(**gdfs)
+
+
+def test_init_without_crs_raises_without_other_gdf(nodes_gdf):
+    """No CRS raises also when only one GeoDataFrame is given."""
+    nodes = _without_crs(nodes_gdf)
+
+    with pytest.raises(ValueError, match="nodes have no CRS"):
+        Network(nodes=nodes)
+
+
+def test_init_empty_gdf_without_crs_takes_other_crs(nodes_projected_gdf):
+    """An empty GeoDataFrame without CRS gets the CRS of the other one."""
+    edges = gpd.GeoDataFrame(
+        columns=["from_id", "to_id", "geometry"], geometry="geometry"
+    )
+
+    network = Network(edges=edges, nodes=nodes_projected_gdf)
+
+    assert network.edges.crs.to_string() == "EPSG:32632"
+    assert network.crs.to_string() == "EPSG:32632"
+
+
+def test_init_empty_gdfs_without_crs_default_crs():
+    """Empty edges and nodes without CRS get EPSG:4326, as Network()."""
+    edges = gpd.GeoDataFrame(
+        columns=["from_id", "to_id", "geometry"], geometry="geometry"
+    )
+    nodes = gpd.GeoDataFrame(columns=["geometry"], geometry="geometry")
+
+    network = Network(edges=edges, nodes=nodes)
+
+    assert network.edges.crs.to_string() == "EPSG:4326"
+    assert network.nodes.crs.to_string() == "EPSG:4326"
+
+
+def test_init_does_not_modify_input():
+    """Adding missing 'id' columns does not change the caller's GeoDataFrames."""
+    edges = gpd.GeoDataFrame(
+        {"from_id": [0], "to_id": [1], "geometry": [LineString([(0, 0), (1, 1)])]},
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nodes = gpd.GeoDataFrame(
+        {"geometry": [Point(0, 0), Point(1, 1)]}, geometry="geometry", crs="EPSG:4326"
+    )
+
+    network = Network(edges=edges, nodes=nodes)
+
+    assert "id" in network.edges.columns
+    assert "id" in network.nodes.columns
+    assert "id" not in edges.columns
+    assert "id" not in nodes.columns
+
+
+@pytest.mark.parametrize(
+    "where, column",
+    [
+        ("nodes", "name"),
+        ("nodes", "_orig_id"),
+        ("edges", "_orig_id"),
+        ("edges", "source"),
+        ("edges", "target"),
+    ],
+)
+def test_init_reserved_column_warns(edges_gdf, nodes_gdf, where, column):
+    """Reserved column names give a UserWarning naming the column."""
+    gdfs = {"edges": edges_gdf, "nodes": nodes_gdf}
+    gdfs[where][column] = 1
+
+    with pytest.warns(UserWarning, match=f"'{column}' in {where}"):
+        Network(**gdfs)
+
+
+def test_init_no_warning_without_reserved_columns(edges_gdf, nodes_gdf):
+    """A network without reserved columns is created without warning."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        Network(edges=edges_gdf, nodes=nodes_gdf)
 
 
 # ========================================================================
@@ -230,13 +327,56 @@ def test_to_graph_nodes_only(nodes_gdf):
 def test_to_graph_drops_name_column(edges_gdf, nodes_gdf):
     """A 'name' column (reserved by igraph) is not passed to the graph."""
     nodes_gdf["name"] = ["a", "b", "c", "d", "e"]
-    network = Network(edges=edges_gdf, nodes=nodes_gdf)
+    with pytest.warns(UserWarning, match="'name' in nodes"):
+        network = Network(edges=edges_gdf, nodes=nodes_gdf)
 
     graph = network.to_graph()
 
     assert "name" not in graph.vs.attributes()
     # the network itself keeps the column
     assert "name" in network.nodes.columns
+
+
+def test_ecols_to_graphorder(edges_gdf):
+    """from_id and to_id become the first two columns; nothing else changes."""
+    edges = edges_gdf[["geometry", "osm_id", "to_id", "id", "from_id", "distance"]]
+    network = Network(edges=edges_gdf)
+
+    result = network._ecols_to_graphorder(edges)
+
+    assert list(result.columns[:2]) == ["from_id", "to_id"]
+    assert set(result.columns) == set(edges.columns)
+    pd.testing.assert_frame_equal(result[edges.columns], edges)
+
+
+def test_vcols_to_graphorder(nodes_gdf):
+    """id becomes the first column; nothing else changes."""
+    nodes = nodes_gdf.assign(ci_type="people")[["geometry", "ci_type", "id"]]
+    network = Network(nodes=nodes_gdf)
+
+    result = network._vcols_to_graphorder(nodes)
+
+    assert result.columns[0] == "id"
+    assert set(result.columns) == set(nodes.columns)
+    pd.testing.assert_frame_equal(result[nodes.columns], nodes)
+
+
+def test_to_graph_with_columns_in_any_order(edges_gdf, nodes_gdf):
+    """to_graph connects the right vertices whatever the column order."""
+    edges = edges_gdf.assign(ci_type="road")[
+        ["geometry", "ci_type", "osm_id", "to_id", "id", "from_id", "distance"]
+    ]
+    nodes = nodes_gdf.assign(ci_type="road")[["geometry", "ci_type", "id"]]
+    network = Network(edges=edges, nodes=nodes)
+
+    graph = network.to_graph()
+
+    assert [(e.source, e.target) for e in graph.es] == [(0, 1), (1, 2), (2, 3), (3, 4)]
+    assert graph.es["osm_id"] == [100, 101, 102, 103]
+    assert graph.vs["id"] == [0, 1, 2, 3, 4]
+    assert graph.vs["ci_type"] == ["road"] * 5
+    # the network keeps its own column order
+    assert list(network.edges.columns) == list(edges.columns)
 
 
 def test_from_graphs_roundtrip(network_with_ci_types):

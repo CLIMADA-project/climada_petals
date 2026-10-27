@@ -33,90 +33,6 @@ from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks import nw_preps
 
 # ========================================================================
-# Tests: line_endpoints
-# ========================================================================
-
-
-class TestLineEndpoints:
-    def test_returns_start_and_end(self):
-        """Start and end points of a simple line."""
-        line = LineString([(0, 0), (1, 1), (2, 2)])
-        start, end = nw_preps.line_endpoints(line)
-
-        assert shapely.get_x(start) == 0.0
-        assert shapely.get_y(start) == 0.0
-        assert shapely.get_x(end) == 2.0
-        assert shapely.get_y(end) == 2.0
-
-    def test_two_point_line(self):
-        """Line with only two vertices."""
-        line = LineString([(5, 10), (15, 20)])
-        start, end = nw_preps.line_endpoints(line)
-
-        assert shapely.get_x(start) == 5.0
-        assert shapely.get_y(start) == 10.0
-        assert shapely.get_x(end) == 15.0
-        assert shapely.get_y(end) == 20.0
-
-    def test_closed_ring(self):
-        """Ring line returns same start and end coordinates."""
-        line = LineString([(0, 0), (1, 0), (1, 1), (0, 0)])
-        start, end = nw_preps.line_endpoints(line)
-
-        assert shapely.equals(start, end)
-
-
-# ========================================================================
-# Tests: nearest / nearest_node
-# ========================================================================
-
-
-class TestNearest:
-    def test_nearest_finds_closest(self):
-        """Nearest returns the closest row from the dataframe."""
-        # Use short LineStrings so STRtree bbox intersections succeed
-        gdf = gpd.GeoDataFrame(
-            {
-                "id": [0, 1, 2],
-                "geometry": [
-                    LineString([(0, 0), (0.1, 0.1)]),
-                    LineString([(5, 5), (5.1, 5.1)]),
-                    LineString([(10, 10), (10.1, 10.1)]),
-                ],
-            },
-            geometry="geometry",
-        )
-        sindex = shapely.STRtree(gdf.geometry)
-        # Query with a small buffer so the bbox intersects
-        query_geom = Point(4, 4).buffer(2)
-
-        result = nw_preps.nearest(query_geom, gdf, sindex)
-
-        assert result["id"] == 1
-
-    def test_nearest_node_delegates(self):
-        """nearest_node returns the same result as nearest."""
-        # Use LineStrings as geometry so STRtree bbox intersections succeed
-        nodes = gpd.GeoDataFrame(
-            {
-                "id": [0, 1, 2],
-                "geometry": [
-                    LineString([(0, 0), (0.1, 0.1)]),
-                    LineString([(5, 5), (5.1, 5.1)]),
-                    LineString([(10, 10), (10.1, 10.1)]),
-                ],
-            },
-            geometry="geometry",
-        )
-        sindex = shapely.STRtree(nodes.geometry)
-        query_point = Point(4, 4).buffer(2)
-
-        result = nw_preps.nearest_node(query_point, nodes, sindex)
-
-        assert result["id"] == 1
-
-
-# ========================================================================
 # Tests: add_ids
 # ========================================================================
 
@@ -351,6 +267,75 @@ class TestAddTopology:
         np.testing.assert_array_equal(result.edges["from_id"].values, [10, 11, 12, 13])
         np.testing.assert_array_equal(result.edges["to_id"].values, [11, 12, 13, 14])
 
+    def test_unmatched_edge_between_matched_edges(self, caplog):
+        """Dropping an edge in the middle keeps the right ids on the others."""
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1, 2], "geometry": [Point(0, 0), Point(1, 0), Point(2, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {
+                "name_ref": ["a", "b", "c"],
+                "geometry": [
+                    LineString([(0, 0), (1, 0)]),
+                    LineString([(1, 0), (5, 5)]),  # no node at (5, 5)
+                    LineString([(2, 0), (1, 0)]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges, nodes=nodes)
+
+        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+
+        assert list(result.edges["name_ref"]) == ["a", "c"]
+        np.testing.assert_array_equal(result.edges["from_id"].values, [0, 2])
+        np.testing.assert_array_equal(result.edges["to_id"].values, [1, 1])
+        assert result.edges["from_id"].dtype == nodes["id"].dtype
+        assert "add_topology dropped 1 of 3 edges" in caplog.text
+
+    def test_tie_takes_first_node_in_row_order(self):
+        """With two nodes at the same location, the edge end gets the first one."""
+        nodes = gpd.GeoDataFrame(
+            {"id": [0, 1, 2], "geometry": [Point(0, 0), Point(1, 0), Point(1, 0)]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString([(0, 0), (1, 0)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+
+        result = nw_preps.add_topology(Network(edges=edges, nodes=nodes))
+
+        assert result.edges["to_id"].iloc[0] == 1
+
+    def test_missing_geometry_dropped_with_warning(self, caplog):
+        """An edge without geometry cannot be attached and is logged."""
+        network = self._two_node_network(None)
+
+        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+
+        assert result.edges.empty
+        assert "add_topology dropped 1 of 1 edges" in caplog.text
+
+    def test_no_nodes_drops_all_edges(self, caplog):
+        """Without nodes, every edge is dropped (no error)."""
+        edges = gpd.GeoDataFrame(
+            {"geometry": [LineString([(0, 0), (1, 0)])]},
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = nw_preps.add_ids(Network(edges=edges))
+
+        result = self._run_capturing_logs(caplog, nw_preps.add_topology, network)
+
+        assert result.edges.empty
+        assert "add_topology dropped 1 of 1 edges" in caplog.text
+
 
 # ========================================================================
 # Tests: get_endpoints / add_endpoints
@@ -526,6 +511,41 @@ class TestEndpoints:
 
         assert len(endpoints) == 4
         assert (endpoints["ci_type"] == "road").all()
+
+    def test_get_endpoints_order_and_attrs_with_skipped_edge(self):
+        """Endpoints in edge row order, start before end; attributes stay aligned
+        when an edge without geometry is skipped."""
+        edges = gpd.GeoDataFrame(
+            {
+                "ci_type": ["road", "skipped", "rail"],
+                "geometry": [
+                    LineString([(0, 0), (1, 0)]),
+                    None,
+                    MultiLineString([[(2, 0), (3, 0)], [(4, 0), (5, 0)]]),
+                ],
+            },
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+        network = Network(edges=edges)
+
+        endpoints = nw_preps.get_endpoints(network)
+
+        assert [(p.x, p.y) for p in endpoints.geometry] == [
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (3, 0),
+            (4, 0),
+            (5, 0),
+        ]
+        assert list(endpoints["ci_type"]) == ["road"] * 2 + ["rail"] * 4
+
+    def test_get_endpoints_empty_edges(self, nodes_only_network):
+        """A network without edges has no endpoints."""
+        endpoints = nw_preps.get_endpoints(nodes_only_network)
+
+        assert endpoints.empty
 
     def test_add_endpoints_nodes_inherit_ci_type(self, simple_network):
         """Nodes created from edge endpoints carry the edge ci_type."""
@@ -1126,45 +1146,6 @@ class TestMergeEdges:
 
 
 # ========================================================================
-# Tests: ordered_network
-# ========================================================================
-
-
-class TestOrderedNetwork:
-    def test_column_order(self, simple_network):
-        """ordered_network reorders columns."""
-        with pytest.warns(DeprecationWarning, match="ordered_network"):
-            result = nw_preps.ordered_network(simple_network)
-
-        assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
-        assert result.nodes.columns[0] == "id"
-
-    def test_keeps_columns_and_values(self, simple_network):
-        """Only the column order changes, not the columns or their values."""
-        with pytest.warns(DeprecationWarning, match="ordered_network"):
-            result = nw_preps.ordered_network(simple_network)
-
-        assert set(result.edges.columns) == set(simple_network.edges.columns)
-        assert set(result.nodes.columns) == set(simple_network.nodes.columns)
-        pd.testing.assert_frame_equal(
-            result.edges[simple_network.edges.columns], simple_network.edges
-        )
-        pd.testing.assert_frame_equal(
-            result.nodes[simple_network.nodes.columns], simple_network.nodes
-        )
-
-    def test_does_not_modify_original(self, simple_network):
-        """Original network is not modified."""
-        orig_edge_cols = list(simple_network.edges.columns)
-        orig_node_cols = list(simple_network.nodes.columns)
-        with pytest.warns(DeprecationWarning, match="ordered_network"):
-            result = nw_preps.ordered_network(simple_network)
-
-        assert list(result.edges.columns) == orig_edge_cols
-        assert list(result.nodes.columns) == orig_node_cols
-
-
-# ========================================================================
 # Tests: add_attributes
 # ========================================================================
 
@@ -1225,17 +1206,6 @@ class TestAddAttributes:
     def test_invalid_on_raises(self, simple_network):
         with pytest.raises(ValueError, match="on must be"):
             nw_preps.add_attributes(simple_network, {"ci_type": "road"}, on="edge")
-
-    def test_after_ordered_network_keeps_order(self, simple_network):
-        """ordered_network followed by add_attributes keeps igraph column order."""
-        with pytest.warns(DeprecationWarning):
-            ordered = nw_preps.ordered_network(simple_network)
-        result = nw_preps.add_attributes(ordered, {"ci_type": "road"})
-
-        assert list(result.edges.columns[:2]) == ["from_id", "to_id"]
-        assert result.nodes.columns[0] == "id"
-        assert result.edges.columns[-1] == "ci_type"
-        assert result.nodes.columns[-1] == "ci_type"
 
 
 # ========================================================================
@@ -1924,31 +1894,6 @@ class TestKnownBugsIds:
 
         with pytest.raises(ValueError, match="from_id"):
             nw_preps.reset_ids(network)
-
-
-class TestKnownBugsTopology:
-    def test_nearest_finds_nearest_point(self):
-        nodes = gpd.GeoDataFrame(
-            {"id": [0, 1], "geometry": [Point(0, 0), Point(5, 5)]},
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-        sindex = shapely.STRtree(nodes.geometry)
-
-        result = nw_preps.nearest(Point(4, 4), nodes, sindex)
-
-        assert result["id"] == 1
-
-    def test_nearest_max_distance_raises(self):
-        nodes = gpd.GeoDataFrame(
-            {"id": [0, 1], "geometry": [Point(0, 0), Point(5, 5)]},
-            geometry="geometry",
-            crs="EPSG:4326",
-        )
-        sindex = shapely.STRtree(nodes.geometry)
-
-        with pytest.raises(ValueError, match="max_distance"):
-            nw_preps.nearest(Point(4, 4), nodes, sindex, max_distance=0.5)
 
 
 class TestKnownBugsMergeEdges:

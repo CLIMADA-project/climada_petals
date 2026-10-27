@@ -24,10 +24,8 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 import logging
-import warnings
 import shapely
 from shapely.ops import substring
-from tqdm import tqdm
 
 from climada.util.coordinates import compute_geodesic_lengths
 from climada_petals.engine.networks.nw_base import Network
@@ -121,7 +119,8 @@ def add_ids(network, id_col="id"):
 def add_topology(network, id_col="id", tolerance=1e-9):
     """Add or replace from_id, to_id columns to edges.
 
-    Each edge end is attached to the nearest node within ``tolerance``. Edges
+    Each edge end is attached to the nearest node within ``tolerance`` (with
+    several nodes at the same distance, the first in row order). Edges
     with an end that has no node within ``tolerance`` (and edges without a
     LineString geometry, e.g. MultiLineStrings) are dropped, and a warning
     with their number is logged. Run :func:`add_endpoints` first so that every
@@ -146,31 +145,32 @@ def add_topology(network, id_col="id", tolerance=1e-9):
     nodes = network.nodes.copy()
     edges = network.edges.copy()
 
-    from_ids = []
-    to_ids = []
-    unmatched = []  # row positions of edges that cannot be attached
+    geoms = edges.geometry.to_numpy()
+    # first and last point of every edge; None for missing geometries and
+    # non-lines (e.g. MultiLineStrings), which then find no node
+    ends = {
+        "from_id": shapely.get_point(geoms, 0),
+        "to_id": shapely.get_point(geoms, -1),
+    }
+    sindex = shapely.STRtree(nodes.geometry.to_numpy())
+    node_ids = nodes[id_col].to_numpy()
+    no_node = len(nodes)  # "no node found": larger than any node position
+    matched = np.ones(len(edges), dtype=bool)
+    for col, points in ends.items():
+        # pairs (end position, node position) of the nearest nodes within
+        # tolerance; missing points are left out of the result
+        end_pos, node_pos = sindex.query_nearest(points, max_distance=tolerance)
+        # several nodes at the same distance: the first one in row order
+        nearest_pos = np.full(len(edges), no_node)
+        np.minimum.at(nearest_pos, end_pos, node_pos)
+        has_node = nearest_pos < no_node
+        matched &= has_node
+        values = np.full(len(edges), -1, dtype=object)
+        values[has_node] = node_ids[nearest_pos[has_node]]
+        edges[col] = values
+    unmatched = np.flatnonzero(~matched)  # row positions of unattached edges
 
-    sindex = shapely.STRtree(nodes.geometry)
-    for pos, edge in enumerate(
-        tqdm(edges.itertuples(), desc="topology", total=len(edges))
-    ):
-        node_ids = []
-        for point in line_endpoints(edge.geometry):
-            try:
-                node_ids.append(
-                    nearest_node(point, nodes, sindex, max_distance=tolerance)[id_col]
-                )
-            except ValueError:
-                node_ids.append(None)
-        if None in node_ids:
-            unmatched.append(pos)
-            node_ids = [-1, -1]
-        from_ids.append(node_ids[0])
-        to_ids.append(node_ids[1])
-
-    edges["from_id"] = from_ids
-    edges["to_id"] = to_ids
-    if unmatched:
+    if len(unmatched):
         LOGGER.warning(
             "add_topology dropped %d of %d edges: an edge end has no node within "
             "%g (CRS units), or the geometry is not a LineString.",
@@ -180,91 +180,11 @@ def add_topology(network, id_col="id", tolerance=1e-9):
         )
         edges = edges.drop(index=edges.index[unmatched])
     edges = edges.reset_index(drop=True)
+    # same dtype as the node ids (the -1 placeholders are dropped)
+    for col in ends:
+        edges[col] = edges[col].astype(node_ids.dtype)
 
     return Network(edges, nodes)
-
-
-def line_endpoints(line):
-    """Return points at first and last vertex of a line.
-
-    Parameters
-    ----------
-    line : shapely.LineString
-        A line geometry.
-
-    Returns
-    -------
-    start : shapely.Point
-        Point at the start of the line.
-    end : shapely.Point
-        Point at the end of the line.
-    """
-    start = shapely.get_point(line, 0)
-    end = shapely.get_point(line, -1)
-    return start, end
-
-
-def nearest(geom, dataframe, sindex, max_distance=None):
-    """Find the element of a GeoDataFrame nearest a geometry.
-
-    Parameters
-    ----------
-    geom : shapely.Geometry
-        Reference geometry to find the nearest element to.
-    dataframe : gpd.GeoDataFrame
-        GeoDataFrame with geometries to search.
-    sindex : shapely.STRtree
-        Spatial index built from the ``dataframe`` geometries, in the same
-        row order.
-    max_distance : float, optional
-        Only consider elements within this distance (CRS units). Default:
-        None (no limit).
-
-    Returns
-    -------
-    pandas.Series
-        Row from the dataframe nearest to ``geom``. With several elements at
-        the same distance, the first one in row order.
-
-    Raises
-    ------
-    ValueError
-        If ``geom`` is missing or empty, or no element lies within
-        ``max_distance``.
-    """
-    if geom is None or shapely.is_empty(geom):
-        raise ValueError("Cannot search the nearest element of a missing geometry.")
-    matches_idx = sindex.query_nearest(geom, max_distance=max_distance)
-    if len(matches_idx) == 0:
-        raise ValueError(f"No element found within max_distance={max_distance}.")
-    return dataframe.iloc[int(np.min(matches_idx))]
-
-
-def nearest_node(point, nodes, sindex, max_distance=None):
-    """Find the nearest node to a point.
-
-    Parameters
-    ----------
-    point : shapely.Point
-        Reference point geometry.
-    nodes : gpd.GeoDataFrame
-        GeoDataFrame of network nodes.
-    sindex : shapely.STRtree
-        Spatial index of the node geometries.
-    max_distance : float, optional
-        Only consider nodes within this distance (CRS units). Default: None.
-
-    Returns
-    -------
-    pandas.Series
-        Row from nodes nearest to ``point``.
-
-    Raises
-    ------
-    ValueError
-        See :func:`nearest`.
-    """
-    return nearest(point, nodes, sindex, max_distance=max_distance)
 
 
 def get_endpoints(network, attrs=("ci_type",)):
@@ -275,6 +195,10 @@ def get_endpoints(network, attrs=("ci_type",)):
     networks keep e.g. their infrastructure type. Only attributes that are
     meaningful for points should be propagated (edge properties such as
     distances, ids or topology columns are not).
+
+    Endpoints come in edge row order, start before end; a MultiLineString
+    gets the endpoints of each of its parts. Edges with a missing or empty
+    geometry get none.
 
     Parameters
     ----------
@@ -290,22 +214,16 @@ def get_endpoints(network, attrs=("ci_type",)):
         GeoDataFrame with point geometries at each edge endpoint and the
         inherited attribute columns.
     """
-    endpoints = []
-    edge_pos = []  # positional index of the edge each endpoint comes from
-    for pos, edge in enumerate(
-        tqdm(network.edges.itertuples(), desc="endpoints", total=len(network.edges))
-    ):
-        if edge.geometry is None:
-            continue
-        # 5 is MULTILINESTRING
-        if shapely.get_type_id(edge.geometry) == 5:
-            lines = edge.geometry.geoms
-        else:
-            lines = [edge.geometry]
-        for line in lines:
-            start, end = line_endpoints(line)
-            endpoints += [start, end]
-            edge_pos += [pos, pos]
+    geoms = network.edges.geometry.to_numpy()
+    valid_pos = np.flatnonzero(~shapely.is_missing(geoms) & ~shapely.is_empty(geoms))
+    # one line per LineString and per part of a MultiLineString, in row order
+    lines, part_of = shapely.get_parts(geoms[valid_pos], return_index=True)
+    line_pos = valid_pos[part_of]  # row position of the edge of each line
+    # start and end point of each line, interleaved: s0, e0, s1, e1, ...
+    endpoints = np.empty(2 * len(lines), dtype=object)
+    endpoints[0::2] = shapely.get_point(lines, 0)
+    endpoints[1::2] = shapely.get_point(lines, -1)
+    edge_pos = np.repeat(line_pos, 2)  # row position of the edge of each endpoint
 
     # create dataframe to match the nodes geometry column name
     gdf_endpoints = gpd.GeoDataFrame(geometry=endpoints, crs=network.edges.crs)
@@ -1921,36 +1839,6 @@ def simplified_network(
         len(network_simp.nodes),
     )
     return network_simp
-
-
-def ordered_network(network):
-    """Return a column-ordered network for igraph graph generation.
-
-    .. deprecated::
-        Not needed: :meth:`Network.to_graph` orders the columns itself. Will
-        be removed.
-
-    Parameters
-    ----------
-    network : Network
-        A network composed of nodes (points in space) and edges (lines).
-
-    Returns
-    -------
-    Network
-        Copy of the network with ``from_id`` / ``to_id`` as first edge columns
-        and ``id`` as first node column.
-    """
-    warnings.warn(
-        "ordered_network is deprecated and will be removed: Network.to_graph "
-        "orders the columns itself.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    network_ord = Network(network.edges.copy(), network.nodes.copy())
-    network_ord.nodes = network_ord._vcols_to_graphorder(network_ord.nodes)
-    network_ord.edges = network_ord._ecols_to_graphorder(network_ord.edges)
-    return network_ord
 
 
 def add_attributes(network, attrs, on="both"):
