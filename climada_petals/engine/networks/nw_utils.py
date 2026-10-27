@@ -23,11 +23,13 @@ import numpy as np
 from scipy.spatial import cKDTree
 import rasterio
 from rasterio.enums import Resampling
-from rasterio.windows import from_bounds
+from rasterio.warp import reproject
+from rasterio.windows import Window
 import logging
 from pathlib import Path
 import urllib.request
-# requests, time, TJ_TO_GWH, HRS_PER_YEAR: used by PowerFunctionalData on
+
+# requests, time, u_coords, TJ_TO_GWH, HRS_PER_YEAR: used by PowerFunctionalData on
 # feature/nw_update (moves to its own module with the power PR)
 import requests
 import time
@@ -47,6 +49,8 @@ from climada_petals.util.constants import DICT_SPEEDS
 #: ci_types whose components are lines (edges): their exposures are built from
 #: the edges, impacts are aggregated back onto the edges, plots draw them as lines.
 LINE_EXPOSURES = ["road", "rail", "power_line"]
+
+DEF_END_USER = "people"  # default end-user type for access checks and statistics
 
 # Access states of end users, in the ``access_state_{source}_{target}`` node
 # columns: set by ``Network.initialize_supply``, updated by the cascade.
@@ -594,122 +598,6 @@ def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
     return dist, vld_ind_formatted
 
 
-def _resample_res(filepath, upscale_factor, nodata, extent=None):
-    """Resample a raster file to a different resolution.
-
-    Reads a raster, optionally crops to an extent, and resamples by the
-    given upscale factor using average resampling.
-
-    Parameters
-    ----------
-    filepath : str or pathlib.Path
-        Path to the raster file.
-    upscale_factor : float
-        Factor by which to upscale the resolution. Values > 1 increase
-        the number of pixels (finer resolution).
-    nodata : float
-        Nodata value to replace with 0.
-    extent : polygon or multipolygon, optional
-        Geographic extent to crop to before resampling. If None, the full
-        raster is used. Default: None.
-
-    Returns
-    -------
-    arr : np.ndarray
-        Resampled raster array with nodata replaced by 0.
-    transform : rasterio.Affine
-        Affine transform of the resampled raster.
-    """
-
-    with rasterio.open(filepath) as dataset:
-        # Get the initial transform and metadata
-        transform = dataset.transform
-        meta = dataset.meta.copy()
-
-        if extent:
-            # Create a rasterio window from the extent
-            bounds = extent.bounds
-            window = from_bounds(*bounds, transform=transform)
-        else:
-            # If no extent is provided, use the full dataset
-            window = rasterio.windows.Window(0, 0, dataset.width, dataset.height)
-
-        # Get the windowed transform and dimensions
-        window_transform = dataset.window_transform(window)
-        window_width = int(window.width * upscale_factor)
-        window_height = int(window.height * upscale_factor)
-
-        # Read and resample the data within the window
-        arr = dataset.read(
-            out_shape=(dataset.count, window_height, window_width),
-            resampling=Resampling.average,
-            window=window,
-        )
-        # Update metadata for the cropped and resampled array
-        meta.update(
-            height=window_height, width=window_width, transform=window_transform
-        )
-
-        # Adjust the transform for the scaling
-        transform = window_transform * rasterio.Affine.scale(
-            1 / upscale_factor, 1 / upscale_factor
-        )
-
-    # Replace nodata values with 0 and adjust array values
-    arr = np.where(arr == nodata, 0, arr)
-    arr = arr * (1 / upscale_factor) ** 2
-
-    return arr, transform
-
-
-def load_resampled_raster(
-    filepath, upscale_factor=1.0, nodata=-99999.0, extent=None, crs="EPSG:4326"
-):
-    """Load a raster file, resample it, and return as a GeoDataFrame.
-
-    Resamples the raster by the given factor and converts non-zero cells
-    to point geometries with population counts. Applies a correction factor
-    to account for aggregation over/under-estimation.
-
-    Parameters
-    ----------
-    filepath : str or pathlib.Path
-        Path to the raster file.
-    upscale_factor : float, optional
-        Factor by which to upscale the resolution. Default: 1.0 (no resampling).
-    nodata : float, optional
-        Nodata value in the raster. Default: -99999.0.
-    extent : tuple of float, optional
-        Geographic extent as (xmin, ymin, xmax, ymax). Default: None.
-    crs : str, optional
-        Coordinate reference system for the output GeoDataFrame. Default: "EPSG:4326".
-
-    Returns
-    -------
-    gpd.GeoDataFrame
-        GeoDataFrame with 'counts' and 'geometry' columns for non-zero
-        raster cells.
-    """
-
-    arr, transform = _resample_res(filepath, upscale_factor, nodata, extent)
-
-    grid = u_coords.raster_to_meshgrid(transform, arr.shape[-1], arr.shape[-2])
-    gdf = gpd.GeoDataFrame(
-        {
-            "counts": arr.squeeze().flatten(),
-            "geometry": gpd.points_from_xy(grid[0].flatten(), grid[1].flatten()),
-        }
-    )
-    gdf = gdf[gdf.counts != 0].reset_index(drop=True)
-    gdf.crs = crs
-    # manual correction for over-estimate after aggregation:
-    arr_orig, __ = _resample_res(filepath, 1, nodata, extent)
-    corr_factor = arr_orig.squeeze().flatten().sum() / arr.squeeze().flatten().sum()
-    gdf["counts"] = gdf.counts * corr_factor
-
-    return gdf
-
-
 # =============================================================================
 # Network statistics
 # =============================================================================
@@ -893,95 +781,258 @@ def make_network_stat(
 
 
 # =============================================================================
-# Worldpop Data
+# Population data (WorldPop)
 # =============================================================================
-def get_worldpop_data(save_path, iso3=None, year=2024, res=1000):
-    """Download WorldPop population raster data for a country.
 
-    Downloads UN-adjusted population data for 2020 from WorldPop at the
-    specified resolution. Skips download if the file already exists.
+
+def get_worldpop_data(save_path, iso3=None, year=2024, res=1000):
+    """Download a WorldPop population raster (release R2025A, constrained).
+
+    The file is only downloaded if it is not in ``save_path`` yet.
 
     Parameters
     ----------
-    iso3 : str
-        ISO 3166-1 alpha-3 country code.
     save_path : str or pathlib.Path
-        Directory path to save the downloaded file.
+        Directory to save the file in (created if missing).
+    iso3 : str, optional
+        ISO 3166-1 alpha-3 country code. If None, the global 1 km mosaic is
+        downloaded (large file). Required for 100 m data.
+    year : int, optional
+        Year of the population estimate. Default: 2024.
     res : int, optional
-        Resolution in metres: 100 or 1000. Default: 100.
+        Resolution in metres: 1000 (UN-adjusted counts) or 100. Default: 1000.
+
+    Returns
+    -------
+    pathlib.Path
+        Path of the raster file.
+
+    Raises
+    ------
+    ValueError
+        If ``res`` is not 100 or 1000, or if ``res`` is 100 without ``iso3``.
     """
+    if res not in (100, 1000):
+        raise ValueError(f"res must be 100 or 1000 (metres), got {res!r}.")
+    base_url = (
+        f"https://data.worldpop.org/GIS/Population/Global_2015_2030/R2025A/{year}/"
+    )
     if iso3 is None:
         if res == 100:
             raise ValueError("ISO3 code must be provided for 100m resolution data.")
         download_url = (
-            "https://data.worldpop.org/GIS/Population/"
-            + f"Global_2015_2030/R2025A/{year}/0_Mosaicked/"
-            + f"v1/1km_ua/constrained/global_pop_{year}_CN_1km_R2025A_UA_v1.tif"
+            base_url + "0_Mosaicked/v1/1km_ua/constrained/"
+            f"global_pop_{year}_CN_1km_R2025A_UA_v1.tif"
+        )
+    elif res == 1000:
+        download_url = (
+            base_url + f"{iso3}/v1/1km_ua/constrained/"
+            f"{iso3.lower()}_pop_{year}_CN_1km_R2025A_UA_v1.tif"
         )
     else:
-        if res == 1000:
-            download_url = (
-                "https://data.worldpop.org/GIS/Population/"
-                + f"Global_2015_2030/R2025A/{year}/{iso3}/v1/"
-                + f"1km_ua/constrained/{iso3.lower()}_pop_{year}_CN_1km_R2025A_UA_v1.tif"
-            )
-            # download_url = (
-            #    "https://data.worldpop.org/GIS/Population/"
-            #    + f"Global_2000_2020_1km_UNadj/2020/{iso3}/"
-            #    + f"{iso3.lower()}_ppp_2020_1km_Aggregated_UNadj.tif"
-            # )
-        elif res == 100:
-            download_url = (
-                "https://data.worldpop.org/GIS/Population/"
-                + f"Global_2015_2030/R2025A/{year}/{iso3}/v1/"
-                + f"100m/constrained/{iso3.lower()}_pop_{year}_CN_100m_R2025A_v1.tif"
-            )
-            # download_url = (
-            #    "https://data.worldpop.org/GIS/Population/"
-            #    + f"Global_2000_2020/2020/{iso3}/{iso3.lower()}_ppp_2020_UNadj.tif"
-            # )
+        download_url = (
+            base_url + f"{iso3}/v1/100m/constrained/"
+            f"{iso3.lower()}_pop_{year}_CN_100m_R2025A_v1.tif"
+        )
 
-    local_filepath = Path(save_path, download_url.split("/")[-1])
-
-    if not Path(local_filepath).is_file():
-        LOGGER.info(f"Downloading file as {local_filepath}")
-        urllib.request.urlretrieve(download_url, local_filepath)
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+    local_filepath = save_path / download_url.split("/")[-1]
+    if local_filepath.is_file():
+        LOGGER.info("File already exists: %s", local_filepath)
     else:
-        LOGGER.info(f"file already exists as {local_filepath}")
+        LOGGER.info("Downloading %s to %s", download_url, local_filepath)
+        urllib.request.urlretrieve(download_url, local_filepath)
+    return local_filepath
 
 
-def get_pop_cutoff(gdf_people, cutoff):
-    """Find population count cutoff for filtering low-density grid points.
+def _extent_window(dataset, extent):
+    """Window of whole raster cells overlapping ``extent`` (all cells if None).
 
-    Determines the maximum population value per grid point that cumulatively
-    accounts for less than a specified fraction of the total population.
+    ``extent`` is a shapely geometry or ``(xmin, ymin, xmax, ymax)``; the
+    window is rounded outwards to whole cells, so that its transform lies on
+    the raster grid.
+    """
+    if extent is None:
+        return Window(0, 0, dataset.width, dataset.height)
+    xmin, ymin, xmax, ymax = (
+        extent if isinstance(extent, (tuple, list)) else extent.bounds
+    )
+    col0, row0 = ~dataset.transform * (xmin, ymax)
+    col1, row1 = ~dataset.transform * (xmax, ymin)
+    eps = 1e-9  # do not add a cell for a floating-point difference
+    col0, row0 = max(int(np.floor(col0 + eps)), 0), max(int(np.floor(row0 + eps)), 0)
+    col1 = min(int(np.ceil(col1 - eps)), dataset.width)
+    row1 = min(int(np.ceil(row1 - eps)), dataset.height)
+    if col1 <= col0 or row1 <= row0:
+        raise ValueError(f"The extent {extent} does not overlap the raster.")
+    return Window(col0, row0, col1 - col0, row1 - row0)
+
+
+def _resample_res(filepath, upscale_factor, nodata=None, extent=None):
+    """Read a population raster, optionally cropped and resampled.
+
+    Nodata cells (e.g. water in WorldPop) count as 0 people, also when
+    aggregating. Resampling uses the average of the overlapping cells times
+    the number of original cells per new cell, and the result is rescaled so
+    that the total equals the total of the original cells in the extent.
+
+    Parameters
+    ----------
+    filepath : str or pathlib.Path
+        Path to the raster file (band 1 is read).
+    upscale_factor : float
+        Factor by which to change the resolution: > 1 finer cells, < 1
+        coarser cells (e.g. 0.5 aggregates 2 x 2 cells into one).
+    nodata : float, optional
+        Nodata value. Default: the raster's nodata value.
+    extent : shapely geometry or tuple, optional
+        Extent to crop to: a geometry (its bounds are used) or
+        ``(xmin, ymin, xmax, ymax)``. Default: the whole raster.
+
+    Returns
+    -------
+    arr : np.ndarray
+        2D array of population counts.
+    transform : rasterio.Affine
+        Affine transform of ``arr``.
+    crs : rasterio.crs.CRS or None
+        CRS of the raster.
+    """
+    if not upscale_factor > 0:
+        raise ValueError(f"upscale_factor must be positive, got {upscale_factor!r}.")
+    with rasterio.open(filepath) as dataset:
+        window = _extent_window(dataset, extent)
+        src_transform = dataset.window_transform(window)
+        crs = dataset.crs
+        nodata = dataset.nodata if nodata is None else nodata
+        arr = dataset.read(1, window=window).astype(float)
+
+    # before any resampling, so that nodata cannot leak into the averages
+    if nodata is not None:
+        arr[arr == nodata] = 0.0
+    arr[np.isnan(arr)] = 0.0
+    if upscale_factor == 1:
+        return arr, src_transform, crs
+
+    height = int(arr.shape[0] * upscale_factor)
+    width = int(arr.shape[1] * upscale_factor)
+    if height < 1 or width < 1:
+        raise ValueError("upscale_factor is too small for the extent: no cell left.")
+    transform = src_transform * rasterio.Affine.scale(1 / upscale_factor)
+    resampled = np.zeros((height, width))
+    work_crs = crs if crs is not None else "EPSG:4326"  # same CRS: no reprojection
+    reproject(
+        arr,
+        resampled,
+        src_transform=src_transform,
+        src_crs=work_crs,
+        dst_transform=transform,
+        dst_crs=work_crs,
+        resampling=Resampling.average,
+    )
+    resampled *= (1 / upscale_factor) ** 2
+    # rows / columns cut off by the integer number of new cells
+    if resampled.sum() > 0:
+        resampled *= arr.sum() / resampled.sum()
+    return resampled, transform, crs
+
+
+def load_resampled_raster(
+    filepath, upscale_factor=1.0, nodata=None, extent=None, crs=None
+):
+    """Load a population raster as points, optionally cropped and resampled.
+
+    Each non-zero cell becomes a point at the cell centre, with its
+    population in the :data:`POP_COL` column. See :func:`_resample_res` for
+    the handling of nodata and resampling.
+
+    Parameters
+    ----------
+    filepath : str or pathlib.Path
+        Path to the raster file.
+    upscale_factor : float, optional
+        Factor by which to change the resolution (> 1 finer, < 1 coarser).
+        Default: 1.0 (no resampling).
+    nodata : float, optional
+        Nodata value. Default: the raster's nodata value.
+    extent : shapely geometry or tuple, optional
+        Extent to crop to: a geometry (its bounds are used) or
+        ``(xmin, ymin, xmax, ymax)``; cells overlapping it are kept.
+        Default: the whole raster.
+    crs : str or pyproj.CRS, optional
+        CRS of the output. Default: the raster's CRS.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Columns :data:`POP_COL` and 'geometry', one row per non-zero cell.
+
+    Raises
+    ------
+    ValueError
+        If the raster has no CRS and ``crs`` is not given.
+    """
+    arr, transform, raster_crs = _resample_res(filepath, upscale_factor, nodata, extent)
+    crs = crs if crs is not None else raster_crs
+    if crs is None:
+        raise ValueError(f"{filepath} has no CRS: pass it as crs=...")
+
+    # cell centres
+    xs = transform.c + (np.arange(arr.shape[1]) + 0.5) * transform.a
+    ys = transform.f + (np.arange(arr.shape[0]) + 0.5) * transform.e
+    grid_x, grid_y = np.meshgrid(xs, ys)
+    gdf = gpd.GeoDataFrame(
+        {
+            POP_COL: arr.ravel(),
+            "geometry": gpd.points_from_xy(grid_x.ravel(), grid_y.ravel()),
+        },
+        crs=crs,
+    )
+    return gdf[gdf[POP_COL] != 0].reset_index(drop=True)
+
+
+def get_pop_cutoff(gdf_people, cutoff, pop_col=POP_COL):
+    """Population threshold below which cells hold less than ``cutoff`` of the people.
+
+    Cells are grouped in bins of 10 people ((0, 10], (10, 20], ...); the
+    result is the left edge of the first bin at which the cumulative share of
+    the total population reaches ``cutoff``. Cells with a population at or
+    below the result hold less than ``cutoff`` of the total, so they can be
+    dropped (e.g. ``gdf[gdf[pop_col] >= result]``).
 
     Parameters
     ----------
     gdf_people : gpd.GeoDataFrame
-        GeoDataFrame with a 'counts' column representing population per
-        grid point.
+        Population grid points.
     cutoff : float
-        Cumulative population fraction threshold (0 to 1).
+        Share of the total population (0 to 1).
+    pop_col : str, optional
+        Column holding the population. Default: :data:`POP_COL`.
 
     Returns
     -------
     float
-        Left boundary of the bin interval at which the cumulative
-        population fraction first exceeds ``cutoff``.
+        Population threshold (a multiple of 10); 0 if nothing can be dropped.
+
+    Raises
+    ------
+    ValueError
+        If ``cutoff`` is not between 0 and 1.
     """
-    # redefine bins as high res data might have less than 100 max count values
-    bins = list(np.arange(start=0, stop=gdf_people["counts"].max(), step=10))
-    # bins = [0, 10, 20, 35, 50, 75]
-    # bins.extend(
-    #    list(np.linspace(start=100, stop=gdf_people["counts"].max(), num=30)))
-    df_cum = (
-        gdf_people.groupby(pd.cut(gdf_people["counts"], bins)).sum(numeric_only=True)
-        / gdf_people["counts"].sum()
-    )
-    cutoff_bool = (df_cum.cumsum() >= cutoff).counts.values
-    cutoff_interval = df_cum.index.categories[cutoff_bool][0]
-    return cutoff_interval.left
+    if not 0 <= cutoff <= 1:
+        raise ValueError(f"cutoff must be between 0 and 1, got {cutoff!r}.")
+    counts = gdf_people[pop_col]
+    total = counts.sum()
+    if total <= 0:
+        return 0.0
+    # the last edge reaches the largest cell, at least one bin
+    bin_edges = np.arange(0, max(counts.max(), 0) + 10, 10)
+    if len(bin_edges) < 2:
+        bin_edges = np.array([0, 10])
+    shares = counts.groupby(pd.cut(counts, bin_edges), observed=False).sum() / total
+    reached = shares.cumsum().to_numpy() >= cutoff - 1e-12  # rounding of the sum
+    return float(shares.index[np.argmax(reached)].left)
 
 
 # =============================================================================
@@ -989,12 +1040,15 @@ def get_pop_cutoff(gdf_people, cutoff):
 # =============================================================================
 
 
-def set_travel_distance_threshs(df_dependencies, iso3, hrs_max=1):
+def set_travel_distance_threshs(
+    df_dependencies, iso3, sources, target=DEF_END_USER, hrs_max=1
+):
     """Set road travel distance thresholds based on country-specific speeds.
 
-    Sets the distance threshold (in metres) for health and education
-    dependencies to people, based on the average road speed in the
-    given country and a maximum travel time.
+    Sets the distance threshold (in metres) of the dependencies from
+    ``sources`` to ``target`` to the distance travelled in ``hrs_max`` hours
+    at the average road speed of the country: ``speed (km/h) x 1000 x
+    hrs_max``. Other rows are unchanged.
 
     Data taken from *Road Quality and Mean Speed Score*,
     Author/Editor: Marian Moszoro; Mauricio Soto,
@@ -1006,26 +1060,31 @@ def set_travel_distance_threshs(df_dependencies, iso3, hrs_max=1):
         Dependencies DataFrame with 'source', 'target', and 'thresh_dist'
         columns.
     iso3 : str
-        ISO 3166-1 alpha-3 country code.
+        ISO 3166-1 alpha-3 country code. Countries without a speed in
+        ``DICT_SPEEDS`` get the speed of "other".
+    sources : str or list of str
+        ``source`` ci_types of the dependencies to set, e.g.
+        ``["healthcare", "education"]``.
+    target : str, optional
+        ``target`` ci_type of the dependencies to set. Default:
+        :data:`DEF_END_USER`.
     hrs_max : float, optional
         Maximum travel time in hours. Default: 1.
 
     Returns
     -------
     pd.DataFrame
-        Updated dependencies DataFrame with 'thresh_dist' set for
-        health/education-to-people dependencies.
+        Copy of the dependencies DataFrame with 'thresh_dist' set for the
+        rows with a source in ``sources`` and target ``target``.
     """
-    try:
-        thresh_dist = int(DICT_SPEEDS[iso3] * 1000 * hrs_max)
-    except KeyError:
-        thresh_dist = int(DICT_SPEEDS["other"] * 1000 * hrs_max)
+    speed_kmh = DICT_SPEEDS.get(iso3, DICT_SPEEDS["other"])
+    thresh_dist = int(speed_kmh * 1000 * hrs_max)
 
-    df_dependencies.loc[
-        (df_dependencies.source == "health")
-        | (df_dependencies.source == "education")
-        & (df_dependencies.target == "people"),
-        "thresh_dist",
-    ] = thresh_dist
-
+    if isinstance(sources, str):
+        sources = [sources]
+    df_dependencies = df_dependencies.copy()
+    rows = df_dependencies["source"].isin(sources) & (
+        df_dependencies["target"] == target
+    )
+    df_dependencies.loc[rows, "thresh_dist"] = thresh_dist
     return df_dependencies

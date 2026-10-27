@@ -17,10 +17,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 ---
 
 Tests for the network utilities (nw_utils)
-
-Tests marked with ``_xfail(step, ...)`` document known bugs; they are fixed in
-the given step of the project doc ``claude/nw-utils-review.md`` (strict: the
-step must remove the marker).
 """
 
 import geopandas as gpd
@@ -34,13 +30,6 @@ from shapely.geometry import LineString, Point, box
 
 from climada_petals.engine.networks import nw_utils as nwu
 from climada_petals.engine.networks.nw_base import Network
-
-
-def _xfail(step, reason):
-    """xfail marker for a known bug fixed in the given step of the review doc."""
-    return pytest.mark.xfail(
-        strict=True, reason=f"Known bug, fixed in step {step}: {reason}"
-    )
 
 
 # ========================================================================
@@ -262,7 +251,6 @@ def test_load_resampled_raster_aggregation_keeps_block_sums(raster_path):
     )
 
 
-@_xfail("U4", "nodata cells are not handled before the average resampling")
 def test_load_resampled_raster_aggregation_with_nodata(tmp_path):
     """Nodata cells count as 0 when aggregating, other blocks are unchanged."""
     values = RASTER_VALUES.copy()
@@ -276,7 +264,6 @@ def test_load_resampled_raster_aggregation_with_nodata(tmp_path):
     )
 
 
-@_xfail("U4", "the CRS defaults to EPSG:4326 instead of the raster's CRS")
 def test_load_resampled_raster_uses_raster_crs(tmp_path):
     path = _write_raster(tmp_path / "pop_utm.tif", RASTER_VALUES, crs="EPSG:32632")
 
@@ -285,11 +272,53 @@ def test_load_resampled_raster_uses_raster_crs(tmp_path):
     assert gdf.crs.to_string() == "EPSG:32632"
 
 
-@_xfail("U4", "the docstring allows an (xmin, ymin, xmax, ymax) tuple, which raises")
 def test_load_resampled_raster_extent_as_bounds(raster_path):
     gdf = nwu.load_resampled_raster(raster_path, extent=(1, 1, 3, 3))
 
     assert len(gdf) == 4
+
+
+def test_load_resampled_raster_extent_rounded_to_cells(raster_path):
+    """Cells overlapping the extent are kept, and stay on the raster grid."""
+    gdf = nwu.load_resampled_raster(raster_path, extent=box(1.2, 1.2, 2.8, 2.8))
+
+    assert _counts_by_xy(gdf) == pytest.approx(
+        {(1.5, 2.5): 6, (2.5, 2.5): 7, (1.5, 1.5): 10, (2.5, 1.5): 11}
+    )
+
+
+def test_load_resampled_raster_extent_outside_raises(raster_path):
+    with pytest.raises(ValueError, match="does not overlap"):
+        nwu.load_resampled_raster(raster_path, extent=box(10, 10, 12, 12))
+
+
+def test_load_resampled_raster_finer_cells(raster_path):
+    """upscale_factor=2: each cell is split into 4 cells with a quarter each."""
+    gdf = nwu.load_resampled_raster(raster_path, upscale_factor=2)
+
+    counts = _counts_by_xy(gdf)
+    assert len(gdf) == 60  # the 4 parts of the zero cell are dropped
+    assert counts[(0.25, 3.75)] == pytest.approx(0.25)
+    assert counts[(3.75, 0.25)] == pytest.approx(4)
+    assert gdf["counts"].sum() == pytest.approx(RASTER_VALUES.sum())
+
+
+def test_load_resampled_raster_invalid_factor_raises(raster_path):
+    with pytest.raises(ValueError, match="upscale_factor"):
+        nwu.load_resampled_raster(raster_path, upscale_factor=0)
+
+
+def test_load_resampled_raster_crs_override(raster_path):
+    gdf = nwu.load_resampled_raster(raster_path, crs="EPSG:3857")
+
+    assert gdf.crs.to_string() == "EPSG:3857"
+
+
+def test_load_resampled_raster_without_crs_raises(tmp_path):
+    path = _write_raster(tmp_path / "pop_no_crs.tif", RASTER_VALUES, crs=None)
+
+    with pytest.raises(ValueError, match="no CRS"):
+        nwu.load_resampled_raster(path)
 
 
 # ========================================================================
@@ -305,18 +334,30 @@ def test_get_pop_cutoff():
     assert nwu.get_pop_cutoff(gdf, 0.2) == 20
 
 
-@_xfail("U4", "the largest cells lie above the last bin edge and are left out")
 def test_get_pop_cutoff_includes_largest_cell():
     gdf = gpd.GeoDataFrame({"counts": [5.0, 5.0, 90.0]})
 
     assert nwu.get_pop_cutoff(gdf, 0.5) == 80
 
 
-@_xfail("U4", "a maximum below 10 gives a single bin edge and raises")
 def test_get_pop_cutoff_small_counts():
     gdf = gpd.GeoDataFrame({"counts": [1.0, 2.0, 3.0]})
 
     assert nwu.get_pop_cutoff(gdf, 0.5) == 0
+
+
+def test_get_pop_cutoff_zero_population():
+    gdf = gpd.GeoDataFrame({"counts": [0.0, 0.0]})
+
+    assert nwu.get_pop_cutoff(gdf, 0.5) == 0
+
+
+@pytest.mark.parametrize("cutoff", [-0.1, 1.5])
+def test_get_pop_cutoff_invalid_cutoff_raises(cutoff):
+    gdf = gpd.GeoDataFrame({"counts": [5.0, 15.0]})
+
+    with pytest.raises(ValueError, match="cutoff"):
+        nwu.get_pop_cutoff(gdf, cutoff)
 
 
 # ========================================================================
@@ -346,6 +387,13 @@ def test_get_worldpop_data_country_1km(tmp_path, fake_urlretrieve):
     assert path.name == "sdn_pop_2024_CN_1km_R2025A_UA_v1.tif"
 
 
+def test_get_worldpop_data_creates_directory(tmp_path, fake_urlretrieve):
+    path = nwu.get_worldpop_data(tmp_path / "new", iso3="SDN", res=1000)
+
+    assert path.is_file()
+    assert path.parent == tmp_path / "new"
+
+
 def test_get_worldpop_data_skips_existing_file(tmp_path, fake_urlretrieve):
     (tmp_path / "sdn_pop_2024_CN_1km_R2025A_UA_v1.tif").touch()
 
@@ -359,14 +407,12 @@ def test_get_worldpop_data_100m_needs_iso3(tmp_path, fake_urlretrieve):
         nwu.get_worldpop_data(tmp_path, res=100)
 
 
-@_xfail("U4", "the function returns nothing; callers need the file path")
 def test_get_worldpop_data_returns_path(tmp_path, fake_urlretrieve):
     path = nwu.get_worldpop_data(tmp_path, iso3="SDN", year=2024, res=1000)
 
     assert path == tmp_path / "sdn_pop_2024_CN_1km_R2025A_UA_v1.tif"
 
 
-@_xfail("U4", "other resolutions fail with UnboundLocalError")
 def test_get_worldpop_data_unsupported_res_raises(tmp_path, fake_urlretrieve):
     with pytest.raises(ValueError, match="res"):
         nwu.get_worldpop_data(tmp_path, iso3="SDN", res=500)
@@ -387,16 +433,15 @@ def _dependency_table():
     )
 
 
-def test_set_travel_distance_threshs_education():
-    """education -> people: speed (km/h) x 1000 x hours; other rows unchanged.
-
-    Row 0 (healthcare -> people) is checked in the xfail test below: it is not
-    set yet, so asserting it here would make this test fail once it is fixed.
-    """
-    result = nwu.set_travel_distance_threshs(_dependency_table(), "SDN", hrs_max=2)
+def test_set_travel_distance_threshs():
+    """sources -> people: speed (km/h) x 1000 x hours; other rows unchanged."""
+    result = nwu.set_travel_distance_threshs(
+        _dependency_table(), "SDN", sources=["healthcare", "education"], hrs_max=2
+    )
 
     # DICT_SPEEDS["SDN"] = 72 km/h -> 72 x 1000 x 2 h = 144 000 m
-    assert result["thresh_dist"].tolist()[1:] == [
+    assert result["thresh_dist"].tolist() == [
+        144000,  # healthcare -> people: set
         144000,  # education -> people: set
         1.0,  # education -> road: other target, unchanged
         1.0,  # road -> people: other source, unchanged
@@ -404,25 +449,38 @@ def test_set_travel_distance_threshs_education():
     ]
 
 
+def test_set_travel_distance_threshs_other_source_single_str():
+    """Any source type can be set; a single source can be given as a string."""
+    result = nwu.set_travel_distance_threshs(
+        _dependency_table(), "SDN", sources="road", hrs_max=1
+    )
+
+    assert result["thresh_dist"].tolist() == [1.0, 1.0, 1.0, 72000, 1.0]
+
+
+def test_set_travel_distance_threshs_other_target():
+    """target selects the end-user type (default: DEF_END_USER)."""
+    result = nwu.set_travel_distance_threshs(
+        _dependency_table(), "SDN", sources=["education"], target="road"
+    )
+
+    assert result["thresh_dist"].tolist() == [1.0, 1.0, 72000, 1.0, 1.0]
+    assert nwu.DEF_END_USER == "people"
+
+
 def test_set_travel_distance_threshs_unknown_country():
-    result = nwu.set_travel_distance_threshs(_dependency_table(), "XXX", hrs_max=1)
+    result = nwu.set_travel_distance_threshs(
+        _dependency_table(), "XXX", sources=["education"], hrs_max=1
+    )
 
     # DICT_SPEEDS["other"] = 73 km/h
     assert result["thresh_dist"].iloc[1] == 73000
 
 
-@_xfail("U4", "matches 'health', but the type is called 'healthcare'")
-def test_set_travel_distance_threshs_healthcare():
-    result = nwu.set_travel_distance_threshs(_dependency_table(), "SDN", hrs_max=1)
-
-    assert result["thresh_dist"].iloc[0] == 72000
-
-
-@_xfail("U4", "the input dependency table is modified in place")
 def test_set_travel_distance_threshs_does_not_modify_input():
     table = _dependency_table()
 
-    nwu.set_travel_distance_threshs(table, "SDN")
+    nwu.set_travel_distance_threshs(table, "SDN", sources=["healthcare", "education"])
 
     assert table["thresh_dist"].tolist() == [1.0] * 5
 
