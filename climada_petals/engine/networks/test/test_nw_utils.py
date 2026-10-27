@@ -17,6 +17,8 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 ---
 
 Tests for the network utilities (nw_utils)
+
+``impact_network`` comes from ``conftest.py``.
 """
 
 import geopandas as gpd
@@ -24,12 +26,10 @@ import numpy as np
 import pandas as pd
 import pytest
 import rasterio
-from matplotlib import pyplot as plt
 from rasterio.transform import from_origin
 from shapely.geometry import LineString, Point, box
 
 from climada_petals.engine.networks import nw_utils as nwu
-from climada_petals.engine.networks.nw_base import Network
 
 
 # ========================================================================
@@ -78,75 +78,6 @@ def _counts_by_xy(gdf):
     }
 
 
-@pytest.fixture
-def impact_network():
-    """Toy network after a cascade: 3 people cells, 1 hospital, 2 road nodes.
-
-    - people 0 (100): access to healthcare and road undisrupted
-    - people 1 (50): directly affected, lost healthcare access (via)
-    - people 2 (20): no base healthcare access, lost road access (source)
-    - hospital 3: failed; road edge 0 (1000 m) failed, edge 1 (500 m) works
-    """
-    nodes = gpd.GeoDataFrame(
-        {
-            "ci_type": ["people", "people", "people", "healthcare", "road", "road"],
-            "counts": [100.0, 50.0, 20.0, np.nan, np.nan, np.nan],
-            "value": [100.0, 50.0, 20.0, np.nan, np.nan, np.nan],
-            "imp_dir": [0, 1, 0, 0, 0, 0],
-            "func_tot": [1, 1, 1, 0, 1, 1],
-            "access_state_healthcare_people": [
-                "access undisrupted",
-                "access disrupted via",
-                "no base access",
-                None,
-                None,
-                None,
-            ],
-            "access_state_road_people": [
-                "access undisrupted",
-                "access undisrupted",
-                "access disrupted source",
-                None,
-                None,
-                None,
-            ],
-            "geometry": [
-                Point(0, 0),
-                Point(1, 0),
-                Point(2, 0),
-                Point(3, 0),
-                Point(0, 1),
-                Point(1, 1),
-            ],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    edges = gpd.GeoDataFrame(
-        {
-            "from_id": [4, 5, 3],
-            "to_id": [5, 4, 0],
-            "ci_type": ["road", "road", "dependency_healthcare_people"],
-            "distance": [1000.0, 500.0, 300.0],
-            "func_tot": [0, 1, 1],
-            "geometry": [
-                LineString([(0, 1), (1, 1)]),
-                LineString([(1, 1), (0, 1)]),
-                LineString([(3, 0), (0, 0)]),
-            ],
-        },
-        geometry="geometry",
-        crs="EPSG:4326",
-    )
-    return Network(edges=edges, nodes=nodes)
-
-
-@pytest.fixture
-def close_figures():
-    yield
-    plt.close("all")
-
-
 # ========================================================================
 # Constants
 # ========================================================================
@@ -154,18 +85,6 @@ def close_figures():
 
 def test_line_exposures_include_power_line():
     assert "power_line" in nwu.LINE_EXPOSURES
-
-
-def test_status_map_knows_all_cascade_states():
-    states_written_by_cascade = {
-        "access undisrupted",
-        "access new source",
-        "no base access",
-        "access disrupted via",
-        "access disrupted source",
-        "access disrupted",  # GraphCalcs._propagate_check_fail
-    }
-    assert states_written_by_cascade <= set(nwu.STATUS_MAP)
 
 
 def test_dependency_name():
@@ -581,51 +500,3 @@ def test_make_network_stat_without_access_loss(impact_network):
 
     assert stats["indirectly_affected"] == 0
     assert stats["total_affected"] == 50
-
-
-# ========================================================================
-# Plots (smoke tests: run without error and return figure and axes)
-# ========================================================================
-
-
-@pytest.mark.usefixtures("close_figures")
-def test_infra_plot(impact_network):
-    fig, axes = impact_network.plot_infra(mask_func_ci=False)
-
-    assert fig is axes.get_figure()
-
-
-@pytest.mark.usefixtures("close_figures")
-def test_infra_plot_functional_states(impact_network):
-    fig, axes = impact_network.plot_infra(plot_col="func_tot", mask_func_ci=False)
-
-    assert fig is axes.get_figure()
-
-
-@pytest.mark.usefixtures("close_figures")
-def test_access_plot(impact_network):
-    fig, axes = impact_network.plot_access("healthcare")
-
-    assert fig is axes.get_figure()
-
-
-@pytest.mark.usefixtures("close_figures")
-def test_access_plot_counts_all_loss_states(impact_network):
-    """'access disrupted' counts as a loss of access, as in make_network_stat."""
-    nodes = impact_network.nodes
-    nodes.loc[1, "access_state_healthcare_people"] = "access disrupted"
-
-    _, axes = impact_network.plot_access("healthcare")
-
-    no_base_line, loss_line = axes.texts[0].get_text().splitlines()
-    assert no_base_line.startswith("20.00 ")
-    assert loss_line.startswith("50.00 ")
-    stats = nwu.make_network_stat(impact_network)
-    assert stats["healthcare_access_loss"] == 50
-
-
-@pytest.mark.usefixtures("close_figures")
-def test_dep_plot(impact_network):
-    fig, axes = impact_network.plot_dep(ci_types=["healthcare"])
-
-    assert fig is axes.figure

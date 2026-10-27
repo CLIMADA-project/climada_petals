@@ -491,3 +491,66 @@ def network_projected_disconnected(edges_projected_gdf, nodes_projected_gdf):
 def graph_calcs_projected_disconnected(network_projected_disconnected):
     """GraphCalcs instance for a disconnected projected-CRS network."""
     return GraphCalcs(network=network_projected_disconnected, directed=True)
+
+
+@pytest.fixture
+def impact_network():
+    """Toy network after a cascade: 3 people cells, 1 hospital, 2 road nodes.
+
+    - people 0 (100): access to healthcare and road undisrupted
+    - people 1 (50): directly affected, lost healthcare access (via)
+    - people 2 (20): no base healthcare access, lost road access (source)
+    - hospital 3: failed; road edge 0 (1000 m) failed, edge 1 (500 m) works
+    """
+    nodes = gpd.GeoDataFrame(
+        {
+            "ci_type": ["people", "people", "people", "healthcare", "road", "road"],
+            "counts": [100.0, 50.0, 20.0, np.nan, np.nan, np.nan],
+            "value": [100.0, 50.0, 20.0, np.nan, np.nan, np.nan],
+            "imp_dir": [0, 1, 0, 0, 0, 0],
+            "func_tot": [1, 1, 1, 0, 1, 1],
+            "access_state_healthcare_people": [
+                "access undisrupted",
+                "access disrupted via",
+                "no base access",
+                None,
+                None,
+                None,
+            ],
+            "access_state_road_people": [
+                "access undisrupted",
+                "access undisrupted",
+                "access disrupted source",
+                None,
+                None,
+                None,
+            ],
+            "geometry": [
+                Point(0, 0),
+                Point(1, 0),
+                Point(2, 0),
+                Point(3, 0),
+                Point(0, 1),
+                Point(1, 1),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    edges = gpd.GeoDataFrame(
+        {
+            "from_id": [4, 5, 3],
+            "to_id": [5, 4, 0],
+            "ci_type": ["road", "road", "dependency_healthcare_people"],
+            "distance": [1000.0, 500.0, 300.0],
+            "func_tot": [0, 1, 1],
+            "geometry": [
+                LineString([(0, 1), (1, 1)]),
+                LineString([(1, 1), (0, 1)]),
+                LineString([(3, 0), (0, 0)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)

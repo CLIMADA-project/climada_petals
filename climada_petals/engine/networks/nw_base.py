@@ -29,14 +29,13 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import io
 from pathlib import Path
 from climada.util.coordinates import equal_crs
-from climada_petals.engine.networks.nw_utils import (
-    ACCESS_NO_BASE,
-    ACCESS_UNDEFINED,
-    infra_plot,
-    enduser_plot,
-    dep_plot,
+from climada_petals.engine.networks.nw_plots import (
     access_plot,
+    dep_plot,
+    enduser_plot,
+    infra_plot,
 )
+from climada_petals.engine.networks.nw_utils import ACCESS_NO_BASE, ACCESS_UNDEFINED
 
 LOGGER = logging.getLogger(__name__)
 
