@@ -17,26 +17,11 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
-import numpy as np
-import pandas as pd
-import geopandas as gpd
-import pyproj
-
-
-import scipy
 
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
-from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
-
-from climada.entity.exposures.base import Exposures
-from climada.entity.impact_funcs import ImpactFunc, ImpactFuncSet
-from climada.engine import ImpactCalc
-from climada.util import lines_polys_handler as u_lp
-from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel("INFO")
 
 
 class NetworkCalcs:

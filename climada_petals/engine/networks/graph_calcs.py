@@ -34,7 +34,6 @@ from climada.util import lines_polys_handler as u_lp
 from climada.util.constants import ONE_LAT_KM
 
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel("INFO")
 
 
 def _dependency_name(source, target):
