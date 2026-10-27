@@ -968,18 +968,50 @@ def test_prefilter_geo_filters_far_targets(graph_calcs_with_remote_node):
     df_vs_source = GraphCalcs._filter_vertices(df_vs, {"ci_type": "road"})
     df_vs_target = GraphCalcs._filter_vertices(df_vs, {"ci_type": "healthcare"})
 
-    # 1e6 m ~= 9 degrees. Near healthcare node (id=4) should be kept,
-    # remote healthcare node (id=5) should be filtered out.
-    source_indices, target_indices, geo_dists_filtered = (
-        graph_calcs_with_remote_node._prefilter_geo(
-            df_vs_source, df_vs_target, dist_thresh=9
-        )
+    # without crs: threshold in degrees. Near healthcare node (id=4) should be
+    # kept, remote healthcare node (id=5, ~46 degrees away) filtered out.
+    source_indices, target_indices = graph_calcs_with_remote_node._prefilter_geo(
+        df_vs_source, df_vs_target, dist_thresh=9
     )
 
     np.testing.assert_array_equal(np.sort(source_indices), np.array([1, 2, 3]))
     np.testing.assert_array_equal(target_indices, np.array([4]))
-    assert 5 not in target_indices
-    assert geo_dists_filtered.shape == (len(df_vs_source), 1)
+
+
+def test_prefilter_geo_metres(graph_calcs_with_remote_node):
+    """With the CRS, the threshold is in metres along the Earth's surface."""
+    graph_calcs_with_remote_node.build_graph()
+    df_vs = graph_calcs_with_remote_node.graph.get_vertex_dataframe()
+    df_vs_source = GraphCalcs._filter_vertices(df_vs, {"ci_type": "road"})
+    df_vs_target = GraphCalcs._filter_vertices(df_vs, {"ci_type": "healthcare"})
+
+    # node 4 is ~157 km from road node 3, the remote node 5 ~5000 km away
+    source_indices, target_indices = graph_calcs_with_remote_node._prefilter_geo(
+        df_vs_source,
+        df_vs_target,
+        dist_thresh=1e6,
+        crs=graph_calcs_with_remote_node.network.crs,
+    )
+
+    np.testing.assert_array_equal(np.sort(source_indices), np.array([1, 2, 3]))
+    np.testing.assert_array_equal(target_indices, np.array([4]))
+
+
+def test_prefilter_geo_metres_high_latitude(graph_calcs):
+    """At 60 N, a target 1.5 km east of a source is within 2 km.
+
+    With the former metre -> degree conversion (2000 m / 111 km = 0.018 degree)
+    it was dropped: 1.5 km east is 0.027 degree of longitude at 60 N.
+    """
+    df_vs_source = pd.DataFrame({"geometry": [Point(0.027, 60)]}, index=[7])
+    df_vs_target = pd.DataFrame({"geometry": [Point(0, 60)]}, index=[8])
+
+    source_indices, target_indices = graph_calcs._prefilter_geo(
+        df_vs_source, df_vs_target, dist_thresh=2000, crs="EPSG:4326"
+    )
+
+    np.testing.assert_array_equal(source_indices, [7])
+    np.testing.assert_array_equal(target_indices, [8])
 
 
 def test_link_vertices_shortest_paths_with_prefilter_geo_enabled(

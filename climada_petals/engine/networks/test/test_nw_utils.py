@@ -124,6 +124,72 @@ def test_ckdnearest_labels_and_threshold():
     assert np.isnan(labels[2])
 
 
+# at 60 N: A is 1.5 km east of the target (0.027 degree of longitude), B 1.6 km
+# north (0.0144 degree of latitude). In degrees, B looks closer.
+_TARGET_60N = Point(0, 60)
+_EAST_1500M = Point(0.027, 60)
+_NORTH_1600M = Point(0, 60.0144)
+
+
+def test_ckdnearest_metres_high_latitude():
+    """With a CRS, the nearest point is chosen by distance in metres."""
+    gdf_base = gpd.GeoDataFrame(geometry=[_EAST_1500M, _NORTH_1600M])
+    gdf_assign = gpd.GeoDataFrame(geometry=[_TARGET_60N])
+
+    dist_m, labels = nwu._ckdnearest(gdf_assign, gdf_base, crs="EPSG:4326")
+    _, labels_deg = nwu._ckdnearest(gdf_assign, gdf_base)
+
+    assert labels[0] == 0  # A, 1.5 km
+    assert dist_m[0] == pytest.approx(1503, rel=0.01)
+    assert labels_deg[0] == 1  # in degrees: B
+
+
+@pytest.mark.parametrize("dist_thresh, found", [(1400, False), (2000, True)])
+def test_ckdnearest_threshold_metres(dist_thresh, found):
+    gdf_base = gpd.GeoDataFrame(geometry=[_EAST_1500M])
+    gdf_assign = gpd.GeoDataFrame(geometry=[_TARGET_60N])
+
+    _, labels = nwu._ckdnearest(
+        gdf_assign, gdf_base, dist_thresh=dist_thresh, crs="EPSG:4326"
+    )
+
+    assert (labels[0] == 0) == found
+
+
+def test_ckdnearest_projected_metres():
+    """Projected CRS: coordinates in metres, unchanged."""
+    gdf_base = gpd.GeoDataFrame(geometry=[Point(500100, 5000000), Point(501000, 5000000)])
+    gdf_assign = gpd.GeoDataFrame(geometry=[Point(500000, 5000000)])
+
+    dist, labels = nwu._ckdnearest(gdf_assign, gdf_base, crs="EPSG:32632")
+
+    assert labels[0] == 0
+    assert dist[0] == pytest.approx(100)
+
+
+def test_chord_metres_roundtrip():
+    dist = np.array([0.0, 1000.0, 1e6, 1e7])
+
+    np.testing.assert_allclose(nwu._chord_to_metres(nwu._metres_to_chord(dist)), dist)
+    # short distances: through the sphere slightly shorter than along the
+    # surface, by about d**3 / (24 R**2), i.e. 1 micrometre for 1 km
+    chord_1km = nwu._metres_to_chord(1000.0)
+    assert 0 < 1000.0 - chord_1km < 1e-5
+    assert chord_1km == pytest.approx(
+        1000.0 - 1000.0**3 / (24 * nwu.EARTH_RADIUS_M**2), rel=1e-12
+    )
+
+
+def test_edge_lengths_metres_projected_and_geographic():
+    line = LineString([(0, 0), (1, 0)])
+    projected = gpd.GeoDataFrame(geometry=[line], crs="EPSG:32632")
+    geographic = gpd.GeoDataFrame(geometry=[line], crs="EPSG:4326")
+
+    assert nwu._edge_lengths_metres(projected)[0] == pytest.approx(1)
+    # one degree of longitude at the equator
+    assert nwu._edge_lengths_metres(geographic)[0] == pytest.approx(111319, rel=1e-3)
+
+
 def test_ckdnearest_single_row():
     """A single row (Series) can be assigned as well."""
     gdf_base = gpd.GeoDataFrame(geometry=[Point(0, 0), Point(5, 0)])

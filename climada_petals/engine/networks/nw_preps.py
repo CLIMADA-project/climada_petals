@@ -27,8 +27,8 @@ import logging
 import shapely
 from shapely.ops import substring
 
-from climada.util.coordinates import compute_geodesic_lengths
 from climada_petals.engine.networks.nw_base import Network
+from climada_petals.engine.networks.nw_utils import _edge_lengths_metres
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1461,49 +1461,6 @@ def _split_line(line, points, mode, tolerance):
         shapely.linestrings(coords[a : b + 1])
         for a, b in zip(cut_idx[:-1], cut_idx[1:])
     ]
-
-
-def _edge_lengths_metres(edges):
-    """Compute edge lengths in metres for any CRS.
-
-    For geographic CRS (coordinates in degrees), geodesic distances are
-    computed via :func:`climada.util.coordinates.compute_geodesic_lengths`.
-    For projected CRS (coordinates already in linear units such as metres),
-    ``shapely.length`` is used directly.
-
-    Parameters
-    ----------
-    edges : gpd.GeoDataFrame
-        Edge GeoDataFrame with a geometry column and a CRS set.
-
-    Returns
-    -------
-    np.ndarray
-        Edge lengths in metres.
-
-    Raises
-    ------
-    ValueError
-        If the edges have no CRS: the coordinate units are then unknown, and
-        assuming degrees would silently give wrong lengths for projected data.
-    """
-    if edges.crs is None:
-        raise ValueError(
-            "Edges have no CRS, so edge lengths cannot be computed in metres. "
-            "Set it explicitly, e.g. edges.set_crs('EPSG:4326')."
-        )
-    if not edges.crs.is_geographic:
-        # Projected CRS – shapely.length gives distances in CRS linear units.
-        # Convert to metres if the CRS unit is not already metres.
-        unit = edges.crs.axis_info[0].unit_name
-        lengths = shapely.length(edges.geometry)
-        if unit != "metre":
-            factor = edges.crs.axis_info[0].unit_conversion_factor
-            lengths = lengths * factor
-        return lengths
-
-    # Geographic CRS – use geodesic distances.
-    return compute_geodesic_lengths(edges).values
 
 
 def add_distances(network):
