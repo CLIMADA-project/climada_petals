@@ -26,7 +26,6 @@ optionally extended by a remote healthcare node 5 at (4, 50).
 """
 
 import copy as cp
-import logging
 
 import geopandas as gpd
 import igraph as ig
@@ -36,7 +35,7 @@ import pytest
 from shapely.geometry import Point
 
 from climada.util.constants import ONE_LAT_KM
-from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
+from climada_petals.engine.networks.graph_calcs import GraphCalcs
 
 
 def make_enduser_dependencies(graph_calcs, dep_table):
@@ -969,18 +968,50 @@ def test_prefilter_geo_filters_far_targets(graph_calcs_with_remote_node):
     df_vs_source = GraphCalcs._filter_vertices(df_vs, {"ci_type": "road"})
     df_vs_target = GraphCalcs._filter_vertices(df_vs, {"ci_type": "healthcare"})
 
-    # 1e6 m ~= 9 degrees. Near healthcare node (id=4) should be kept,
-    # remote healthcare node (id=5) should be filtered out.
-    source_indices, target_indices, geo_dists_filtered = (
-        graph_calcs_with_remote_node._prefilter_geo(
-            df_vs_source, df_vs_target, dist_thresh=9
-        )
+    # without crs: threshold in degrees. Near healthcare node (id=4) should be
+    # kept, remote healthcare node (id=5, ~46 degrees away) filtered out.
+    source_indices, target_indices = graph_calcs_with_remote_node._prefilter_geo(
+        df_vs_source, df_vs_target, dist_thresh=9
     )
 
     np.testing.assert_array_equal(np.sort(source_indices), np.array([1, 2, 3]))
     np.testing.assert_array_equal(target_indices, np.array([4]))
-    assert 5 not in target_indices
-    assert geo_dists_filtered.shape == (len(df_vs_source), 1)
+
+
+def test_prefilter_geo_metres(graph_calcs_with_remote_node):
+    """With the CRS, the threshold is in metres along the Earth's surface."""
+    graph_calcs_with_remote_node.build_graph()
+    df_vs = graph_calcs_with_remote_node.graph.get_vertex_dataframe()
+    df_vs_source = GraphCalcs._filter_vertices(df_vs, {"ci_type": "road"})
+    df_vs_target = GraphCalcs._filter_vertices(df_vs, {"ci_type": "healthcare"})
+
+    # node 4 is ~157 km from road node 3, the remote node 5 ~5000 km away
+    source_indices, target_indices = graph_calcs_with_remote_node._prefilter_geo(
+        df_vs_source,
+        df_vs_target,
+        dist_thresh=1e6,
+        crs=graph_calcs_with_remote_node.network.crs,
+    )
+
+    np.testing.assert_array_equal(np.sort(source_indices), np.array([1, 2, 3]))
+    np.testing.assert_array_equal(target_indices, np.array([4]))
+
+
+def test_prefilter_geo_metres_high_latitude(graph_calcs):
+    """At 60 N, a target 1.5 km east of a source is within 2 km.
+
+    With the former metre -> degree conversion (2000 m / 111 km = 0.018 degree)
+    it was dropped: 1.5 km east is 0.027 degree of longitude at 60 N.
+    """
+    df_vs_source = pd.DataFrame({"geometry": [Point(0.027, 60)]}, index=[7])
+    df_vs_target = pd.DataFrame({"geometry": [Point(0, 60)]}, index=[8])
+
+    source_indices, target_indices = graph_calcs._prefilter_geo(
+        df_vs_source, df_vs_target, dist_thresh=2000, crs="EPSG:4326"
+    )
+
+    np.testing.assert_array_equal(source_indices, [7])
+    np.testing.assert_array_equal(target_indices, [8])
 
 
 def test_link_vertices_shortest_paths_with_prefilter_geo_enabled(
@@ -1332,38 +1363,26 @@ def test_calc_dependencies_edgecond(graph_calcs):
         ({"ci_type": "edge_cond_link"}, True),
     ],
 )
-def test_calc_dependencies_link_name(graph_calcs, caplog, link_attrs, expect_warning):
+def test_calc_dependencies_link_name(graph_calcs, nw_caplog, link_attrs, expect_warning):
     """The cascade only recognises ``dependency_{source}_{target}`` edges:
     this is the default name, and any other name triggers a warning"""
     graph_calcs.build_graph()
     expected_name = link_attrs.get("ci_type", "dependency_road_people")
 
-    # the climada_petals logger does not propagate to the root logger, so the
-    # capture handler has to be attached to it directly
-    logger = logging.getLogger("climada_petals")
-    logger.addHandler(caplog.handler)
-    try:
-        graph_calcs.calc_dependencies(
-            source_attrs={"ci_type": "road"},
-            target_attrs={"ci_type": "people"},
-            via_attrs={},
-            link_attrs=link_attrs,
-            link_condition="edgecond",
-            dist_thresh=None,
-            dur_thresh=np.inf,
-            k=1,
-            bidir_link=False,
-        )
-    finally:
-        logger.removeHandler(caplog.handler)
+    graph_calcs.calc_dependencies(
+        source_attrs={"ci_type": "road"},
+        target_attrs={"ci_type": "people"},
+        via_attrs={},
+        link_attrs=link_attrs,
+        link_condition="edgecond",
+        dist_thresh=None,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
 
     assert expected_name in graph_calcs.graph.es["ci_type"]
-    assert ("will be ignored in the cascade" in caplog.text) == expect_warning
-
-
-def test_dependency_name():
-    """Test the naming convention of dependency edges"""
-    assert _dependency_name("road", "people") == "dependency_road_people"
+    assert ("will be ignored in the cascade" in nw_caplog.text) == expect_warning
 
 
 def test_calc_dependencies_distance_via_fail(graph_calcs_with_edge_ci_fail):
@@ -2067,7 +2086,7 @@ def _init_road_healthcare_capacity(graph):
     graph.vs.select(ci_type="healthcare")["capacity_road_healthcare"] = -1
 
 
-def test_propagate_check_fail_needs_dependency_edges(graph_calcs, caplog):
+def test_propagate_check_fail_needs_dependency_edges(graph_calcs, nw_caplog):
     """Without dependency edges, physical edges alone carry no capacity.
 
     The hospital (4) is connected to road node 3 by a road edge, but no
@@ -2076,19 +2095,12 @@ def test_propagate_check_fail_needs_dependency_edges(graph_calcs, caplog):
     graph_calcs.build_graph()
     _init_road_healthcare_capacity(graph_calcs.graph)
 
-    # the climada_petals logger does not propagate to the root logger, so the
-    # capture handler has to be attached to it directly
-    logger = logging.getLogger("climada_petals")
-    logger.addHandler(caplog.handler)
-    try:
-        graph_calcs._propagate_check_fail(
-            source="road", target="healthcare", type_I="functional", thresh_func=1
-        )
-    finally:
-        logger.removeHandler(caplog.handler)
+    graph_calcs._propagate_check_fail(
+        source="road", target="healthcare", type_I="functional", thresh_func=1
+    )
 
     assert graph_calcs.graph.vs[4]["func_tot"] == 0
-    assert "No dependency_road_healthcare edges found" in caplog.text
+    assert "No dependency_road_healthcare edges found" in nw_caplog.text
 
 
 @pytest.mark.parametrize("physical_edge", [(2, 4), (4, 2)])

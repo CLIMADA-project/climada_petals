@@ -36,6 +36,7 @@ connected by 4 directed edges 0->1->2->3->4.
 """
 
 import copy as cp
+import logging
 import shutil
 import tempfile
 
@@ -48,6 +49,21 @@ from shapely.geometry import LineString, MultiLineString, Point
 from climada_petals.engine.networks.graph_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_calcs import NetworkCalcs
+
+
+@pytest.fixture
+def nw_caplog(caplog):
+    """``caplog`` that also captures the records of the ``climada_petals`` loggers.
+
+    The ``climada_petals`` logger does not propagate to the root logger, where
+    ``caplog`` listens, so its capture handler is attached to it directly for
+    the duration of the test. To capture INFO records, use
+    ``nw_caplog.set_level(logging.INFO, logger="climada_petals")``.
+    """
+    logger = logging.getLogger("climada_petals")
+    logger.addHandler(caplog.handler)
+    yield caplog
+    logger.removeHandler(caplog.handler)
 
 
 @pytest.fixture
@@ -97,6 +113,133 @@ def edges_gdf():
         geometry="geometry",
         crs="EPSG:4326",
     )
+
+
+@pytest.fixture
+def simple_network(edges_gdf, nodes_gdf):
+    """A simple chain network with 5 nodes and 4 edges (no CI metadata)."""
+    return Network(edges=edges_gdf.copy(), nodes=nodes_gdf.copy())
+
+
+@pytest.fixture
+def branching_nodes():
+    """6 nodes with a Y-branch: 0-1-2-3 and 2-4 and 2-5."""
+    return gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2, 3, 4, 5],
+            "geometry": [
+                Point(0, 0),
+                Point(1, 0),
+                Point(2, 0),
+                Point(3, 0),
+                Point(2, 1),
+                Point(2, -1),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def branching_edges():
+    """5 edges forming a Y-branch."""
+    return gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1, 2, 2, 2],
+            "to_id": [1, 2, 3, 4, 5],
+            "id": [0, 1, 2, 3, 4],
+            "osm_id": [10, 11, 12, 13, 14],
+            "geometry": [
+                LineString([(0, 0), (1, 0)]),
+                LineString([(1, 0), (2, 0)]),
+                LineString([(2, 0), (3, 0)]),
+                LineString([(2, 0), (2, 1)]),
+                LineString([(2, 0), (2, -1)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def branching_network(branching_edges, branching_nodes):
+    """Network with a Y-branch at node 2."""
+    return Network(edges=branching_edges, nodes=branching_nodes)
+
+
+@pytest.fixture
+def roundabout_network():
+    """A small network with a ring edge (roundabout) and 2 connecting edges."""
+    ring = LineString([(0.5, 1), (1, 1.5), (1.5, 1), (1, 0.5), (0.5, 1)])
+    spoke_left = LineString([(0, 1), (0.5, 1)])
+    spoke_right = LineString([(1.5, 1), (2, 1)])
+
+    edges = gpd.GeoDataFrame(
+        {
+            "osm_id": [1, 2, 3],
+            "id": [0, 1, 2],
+            "geometry": [ring, spoke_left, spoke_right],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2],
+            "geometry": [Point(0, 1), Point(1, 1), Point(2, 1)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def multilinestring_network():
+    """Network with a MultiLineString edge."""
+    mls = MultiLineString([[(0, 0), (1, 0)], [(1, 0), (2, 0)]])
+    edges = gpd.GeoDataFrame(
+        {
+            "from_id": [0],
+            "to_id": [1],
+            "id": [0],
+            "osm_id": [50],
+            "geometry": [mls],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1],
+            "geometry": [Point(0, 0), Point(2, 0)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def empty_network():
+    """A network with no edges and no nodes."""
+    return Network()
+
+
+@pytest.fixture
+def nodes_only_network():
+    """Network with only nodes, no edges."""
+    nodes = gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2],
+            "geometry": [Point(0, 0), Point(1, 1), Point(2, 2)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(nodes=nodes)
 
 
 @pytest.fixture
@@ -348,3 +491,66 @@ def network_projected_disconnected(edges_projected_gdf, nodes_projected_gdf):
 def graph_calcs_projected_disconnected(network_projected_disconnected):
     """GraphCalcs instance for a disconnected projected-CRS network."""
     return GraphCalcs(network=network_projected_disconnected, directed=True)
+
+
+@pytest.fixture
+def impact_network():
+    """Toy network after a cascade: 3 people cells, 1 hospital, 2 road nodes.
+
+    - people 0 (100): access to healthcare and road undisrupted
+    - people 1 (50): directly affected, lost healthcare access (via)
+    - people 2 (20): no base healthcare access, lost road access (source)
+    - hospital 3: failed; road edge 0 (1000 m) failed, edge 1 (500 m) works
+    """
+    nodes = gpd.GeoDataFrame(
+        {
+            "ci_type": ["people", "people", "people", "healthcare", "road", "road"],
+            "counts": [100.0, 50.0, 20.0, np.nan, np.nan, np.nan],
+            "value": [100.0, 50.0, 20.0, np.nan, np.nan, np.nan],
+            "imp_dir": [0, 1, 0, 0, 0, 0],
+            "func_tot": [1, 1, 1, 0, 1, 1],
+            "access_state_healthcare_people": [
+                "access undisrupted",
+                "access disrupted via",
+                "no base access",
+                None,
+                None,
+                None,
+            ],
+            "access_state_road_people": [
+                "access undisrupted",
+                "access undisrupted",
+                "access disrupted source",
+                None,
+                None,
+                None,
+            ],
+            "geometry": [
+                Point(0, 0),
+                Point(1, 0),
+                Point(2, 0),
+                Point(3, 0),
+                Point(0, 1),
+                Point(1, 1),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    edges = gpd.GeoDataFrame(
+        {
+            "from_id": [4, 5, 3],
+            "to_id": [5, 4, 0],
+            "ci_type": ["road", "road", "dependency_healthcare_people"],
+            "distance": [1000.0, 500.0, 300.0],
+            "func_tot": [0, 1, 1],
+            "geometry": [
+                LineString([(0, 1), (1, 1)]),
+                LineString([(1, 1), (0, 1)]),
+                LineString([(3, 0), (0, 0)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return Network(edges=edges, nodes=nodes)
