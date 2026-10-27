@@ -133,6 +133,9 @@ class Network:
     - ``distance`` (``edges``): length in meters, used as routing weight. It
       is computed for new links only if absent, so an existing column must
       be in meters as well.
+    - ``added`` (``edges``): True on the edges added by the module (cluster
+      links, physical links, dependency edges), missing on the input edges.
+      Added edges are not counted as infrastructure in the statistics.
     - ``func_internal``, ``func_tot``, ``imp_dir``: functional states and
       direct impacts, set by ``initialize_funcstates`` and updated by the
       impact calculation and the cascade.

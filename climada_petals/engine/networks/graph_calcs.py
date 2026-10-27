@@ -32,6 +32,7 @@ from climada_petals.engine.networks.nw_utils import (
     ACCESS_NEW_SOURCE,
     ACCESS_NO_BASE,
     ACCESS_UNDISRUPTED,
+    ADDED_COL,
     _ckdnearest,
     _dependency_name,
     make_edge_geometries,
@@ -735,7 +736,8 @@ class GraphCalcs:
     def _edges_from_vlists(self, v_ids_source, v_ids_target, link_attrs=None):
         """Create edges between source and target vertex lists
 
-        Adds edge geometries and distances if missing in ``link_attrs``.
+        Adds edge geometries and distances if missing in ``link_attrs``, and
+        marks the new edges with ``ADDED_COL = True`` (see ``nw_utils``).
 
         Parameters
         ----------
@@ -755,6 +757,8 @@ class GraphCalcs:
 
         # work on a copy: the dict of the caller is not modified
         link_attrs = dict(link_attrs) if link_attrs else {}
+        # mark them: e.g. added road links do not count as road length
+        link_attrs[ADDED_COL] = True
         link_attrs["geometry"] = make_edge_geometries(
             self.graph.vs[v_ids_source]["geometry"],
             self.graph.vs[v_ids_target]["geometry"],

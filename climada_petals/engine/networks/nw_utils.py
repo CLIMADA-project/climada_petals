@@ -69,6 +69,10 @@ ACCESS_LOSS_STATES = (ACCESS_DISRUPTED_VIA, ACCESS_DISRUPTED_SOURCE, ACCESS_DISR
 #: node column holding the population of end-user nodes (e.g. people cells)
 POP_COL = "counts"
 
+#: edge column marking the edges added by the module (cluster links, physical
+#: links, dependency edges): True on them, missing on the input edges
+ADDED_COL = "added"
+
 # Energy conversion factors
 TJ_TO_GWH = 0.277778
 HRS_PER_YEAR = 8760
@@ -93,6 +97,13 @@ STATUS_MAP = {
     ACCESS_DISRUPTED: 2,  # also a failure at the source side
 }
 LOGGER = logging.getLogger(__name__)
+
+
+def _added_mask(edges):
+    """Boolean mask of the edges added by the module (see :data:`ADDED_COL`)."""
+    if ADDED_COL not in edges.columns:
+        return pd.Series(False, index=edges.index)
+    return edges[ADDED_COL].eq(True)
 
 
 def _dependency_name(source, target):
@@ -257,7 +268,8 @@ def infra_plot(
             if mask_func_ci:
                 plot_df = plot_df[plot_df["func_tot"] < 1]
             if road_mask & (ci_type == "road"):
-                plot_df = plot_df[~pd.isna(plot_df["id"])]
+                # roads added by the module (links to facilities, people)
+                plot_df = plot_df[~_added_mask(plot_df)]
 
             plot_df.plot(
                 plot_col,
@@ -752,7 +764,8 @@ def _get_imp_infra(network, ci_type, threshold=1, edge_col="distance", node_col=
     """Amount of infrastructure of ``ci_type`` with ``func_tot < threshold``.
 
     Line infrastructure (``ci_type`` present in the edges): sum of ``edge_col``
-    over the edges. Point infrastructure: number of nodes, or sum of
+    over the edges, without the edges added by the module (e.g. the road links
+    of :meth:`NetworkCalcs.add_physical_links`). Point infrastructure: number of nodes, or sum of
     ``node_col`` if given. ``threshold=np.inf`` gives the total amount.
 
     Returns
@@ -766,7 +779,11 @@ def _get_imp_infra(network, ci_type, threshold=1, edge_col="distance", node_col=
     """
     if ci_type in network.edges["ci_type"].unique():
         edges = network.edges
-        infra_mask = (edges["ci_type"] == ci_type) & (edges["func_tot"] < threshold)
+        infra_mask = (
+            (edges["ci_type"] == ci_type)
+            & (edges["func_tot"] < threshold)
+            & ~_added_mask(edges)
+        )
         return edges.loc[infra_mask, edge_col].sum()
     if ci_type in network.nodes["ci_type"].unique():
         nodes = network.nodes
@@ -821,8 +838,8 @@ def make_network_stat(
             - 'total_affected': directly or indirectly affected (counted once)
             - For each ci_type:
                 - f'{ci_type}_infra_impact': impacted infrastructure (sum of
-                  ``edge_col`` for lines, number of nodes or sum of
-                  ``node_col`` for points)
+                  ``edge_col`` for lines, without the edges added by the
+                  module; number of nodes or sum of ``node_col`` for points)
                 - f'{ci_type}_infra_total': the same for all infrastructure
             - For each ci_type with an end-user dependency (a column
               ``access_state_{ci_type}_{enduser}``); other types, e.g. power

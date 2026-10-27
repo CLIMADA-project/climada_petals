@@ -217,6 +217,9 @@ def test_add_physical_links(
     }
     assert pairs["road"] == expected_physical_links["road_pairs"]
     assert pairs["healthcare"] == expected_physical_links["healthcare_pairs"]
+    # added links are marked, the original edges are not
+    assert added_edges["added"].eq(True).all()
+    assert not network_calcs.network.edges.iloc[:n_edges]["added"].eq(True).any()
 
 
 @pytest.mark.parametrize("bidir_link", [True, None])

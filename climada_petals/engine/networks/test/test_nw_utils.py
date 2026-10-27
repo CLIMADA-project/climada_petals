@@ -490,6 +490,29 @@ def test_make_network_stat_custom_pop_col(impact_network):
     assert stats["healthcare_access_loss"] == 100
 
 
+def test_make_network_stat_ignores_added_links(impact_network):
+    """Road links added by the module are not counted as road length."""
+    link = gpd.GeoDataFrame(
+        {
+            "from_id": [4],
+            "to_id": [0],
+            "ci_type": ["road"],
+            "distance": [2000.0],
+            "func_tot": [0],
+            nwu.ADDED_COL: [True],
+            "geometry": [LineString([(0, 1), (0, 0)])],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    impact_network.edges = pd.concat([impact_network.edges, link], ignore_index=True)
+
+    stats = nwu.make_network_stat(impact_network)
+
+    assert stats["road_infra_impact"] == 1000
+    assert stats["road_infra_total"] == 1500
+
+
 def test_make_network_stat_without_access_loss(impact_network):
     """Nobody losing access: indirectly affected 0, total = directly affected."""
     nodes = impact_network.nodes
