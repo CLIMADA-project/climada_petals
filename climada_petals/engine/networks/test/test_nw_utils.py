@@ -163,12 +163,10 @@ def close_figures():
 # ========================================================================
 
 
-@_xfail("U2", "power lines are line infrastructure (edges)")
 def test_line_exposures_include_power_line():
     assert "power_line" in nwu.LINE_EXPOSURES
 
 
-@_xfail("U2", "graph_calcs writes 'access disrupted', which is not in STATUS_MAP")
 def test_status_map_knows_all_cascade_states():
     states_written_by_cascade = {
         "access undisrupted",
@@ -179,6 +177,11 @@ def test_status_map_knows_all_cascade_states():
         "access disrupted",  # GraphCalcs._propagate_check_fail
     }
     assert states_written_by_cascade <= set(nwu.STATUS_MAP)
+
+
+def test_dependency_name():
+    """Naming convention of dependency edges"""
+    assert nwu._dependency_name("road", "people") == "dependency_road_people"
 
 
 # ========================================================================
@@ -498,6 +501,21 @@ def test_access_plot(impact_network):
     fig, axes = impact_network.plot_access("healthcare")
 
     assert fig is axes.get_figure()
+
+
+@pytest.mark.usefixtures("close_figures")
+def test_access_plot_counts_all_loss_states(impact_network):
+    """'access disrupted' counts as a loss of access, as in make_network_stat."""
+    nodes = impact_network.nodes
+    nodes.loc[1, "access_state_healthcare_people"] = "access disrupted"
+
+    _, axes = impact_network.plot_access("healthcare")
+
+    no_base_line, loss_line = axes.texts[0].get_text().splitlines()
+    assert no_base_line.startswith("20.00 ")
+    assert loss_line.startswith("50.00 ")
+    stats = nwu.make_network_stat(impact_network)
+    assert stats["healthcare_access_loss"] == 50
 
 
 @pytest.mark.usefixtures("close_figures")

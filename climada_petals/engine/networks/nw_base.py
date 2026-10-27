@@ -30,6 +30,8 @@ import io
 from pathlib import Path
 from climada.util.coordinates import equal_crs
 from climada_petals.engine.networks.nw_utils import (
+    ACCESS_NO_BASE,
+    ACCESS_UNDEFINED,
     infra_plot,
     enduser_plot,
     dep_plot,
@@ -745,10 +747,10 @@ class Network:
         initialize_funcstates : Initialize functional state attributes
         """
         for __, row in dep_table.loc[dep_table["type_I"] == "enduser"].iterrows():
-            self.nodes[f'access_state_{row["source"]}_{row["target"]}'] = "undefined"
+            self.nodes[f'access_state_{row["source"]}_{row["target"]}'] = ACCESS_UNDEFINED
             self.nodes[f'actual_supply_{row["source"]}_{row["target"]}'] = 0.0
             # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row["source"]}_people'] = 1
             self.nodes.loc[
                 self.nodes["ci_type"] == row["target"],
                 f'access_state_{row["source"]}_{row["target"]}',
-            ] = "no base access"
+            ] = ACCESS_NO_BASE

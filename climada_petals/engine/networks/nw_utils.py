@@ -39,8 +39,32 @@ from matplotlib.colors import ListedColormap
 from climada.util import coordinates as u_coords
 from climada_petals.util.constants import DICT_SPEEDS
 
-# Critical infrastructure charactersitics constants
-LINE_EXPOSURES = ["road", "rail"]
+# =============================================================================
+# Shared names, used by all network modules (this module imports no other
+# network module, so all of them can import these without import cycles)
+# =============================================================================
+
+#: ci_types whose components are lines (edges): their exposures are built from
+#: the edges, impacts are aggregated back onto the edges, plots draw them as lines.
+LINE_EXPOSURES = ["road", "rail", "power_line"]
+
+# Access states of end users, in the ``access_state_{source}_{target}`` node
+# columns: set by ``Network.initialize_supply``, updated by the cascade.
+#: nodes that are not end users of the dependency
+ACCESS_UNDEFINED = "undefined"
+#: end users without access in the base state
+ACCESS_NO_BASE = "no base access"
+ACCESS_UNDISRUPTED = "access undisrupted"
+#: end users that lost their source but reach another one
+ACCESS_NEW_SOURCE = "access new source"
+#: end users that lost access because the path to the source is disrupted
+ACCESS_DISRUPTED_VIA = "access disrupted via"
+#: end users that lost access because their source failed
+ACCESS_DISRUPTED_SOURCE = "access disrupted source"
+#: end users of a capacity-based dependency whose sources no longer provide enough
+ACCESS_DISRUPTED = "access disrupted"
+#: states counted as a loss of access (plots and statistics)
+ACCESS_LOSS_STATES = (ACCESS_DISRUPTED_VIA, ACCESS_DISRUPTED_SOURCE, ACCESS_DISRUPTED)
 
 # Energy conversion factors
 TJ_TO_GWH = 0.277778
@@ -56,14 +80,37 @@ MPL_LINE_STYLES = [
     "dotted",
 ]
 
+#: colour class of each access state in :func:`access_plot` (-2 to 2)
 STATUS_MAP = {
-    "access undisrupted": -2,
-    "access new source": -1,
-    "no base access": 0,
-    "access disrupted via": 1,
-    "access disrupted source": 2,
+    ACCESS_UNDISRUPTED: -2,
+    ACCESS_NEW_SOURCE: -1,
+    ACCESS_NO_BASE: 0,
+    ACCESS_DISRUPTED_VIA: 1,
+    ACCESS_DISRUPTED_SOURCE: 2,
+    ACCESS_DISRUPTED: 2,  # also a failure at the source side
 }
 LOGGER = logging.getLogger(__name__)
+
+
+def _dependency_name(source, target):
+    """Edge ``ci_type`` of the dependency edges from ``source`` to ``target``
+
+    This is the only name under which the cascade (capacity propagation,
+    access checks, rerouting) looks up dependency edges.
+
+    Parameters
+    ----------
+    source : str
+        ``ci_type`` of the providing vertices.
+    target : str
+        ``ci_type`` of the dependent vertices.
+
+    Returns
+    -------
+    str
+        ``"dependency_{source}_{target}"``
+    """
+    return f"dependency_{source}_{target}"
 
 
 # =============================================================================
@@ -383,9 +430,7 @@ def access_plot(
         The type of end user to plot access for. Default is 'people'.
     access_states : list of str, optional
         Subset of access states to plot. If None, all states are plotted.
-         Possible values:
-         'access undisrupted', 'access disrupted via', 'access disrupted source',
-         and 'no base access'.
+        Possible values: the keys of :data:`STATUS_MAP`.
     axes : cartopy.mpl.geoaxes.GeoAxes, optional
         Axes to plot on. If None, a new figure and axes are created.
     projection : cartopy.crs.Projection, optional
@@ -432,10 +477,10 @@ def access_plot(
         **plot_kwargs,
     )
     n_ppl_access_loss = gdf_enduser[
-        gdf_enduser[service].isin(["access disrupted via", "access disrupted source"])
+        gdf_enduser[service].isin(ACCESS_LOSS_STATES)
     ].counts.sum()
     n_ppl_no_base_access = gdf_enduser[
-        gdf_enduser[service].isin(["no base access"])
+        gdf_enduser[service] == ACCESS_NO_BASE
     ].counts.sum()
 
     text = (
@@ -456,9 +501,14 @@ def access_plot(
         scatter, ax=axes, orientation=orientation, shrink=shrink, **cbar_kwargs
     )
     cbar.set_ticks([-8 / 5, -4 / 5, 0, 4 / 5, 8 / 5])
+    # one label per colour class; states sharing a class share the label
+    class_states = {}
+    for state, value in STATUS_MAP.items():
+        class_states.setdefault(value, []).append(state)
     cbar.set_ticklabels(
-        STATUS_MAP.keys(), rotation=30
-    )  # ,fontweight="bold"#fontsize=18
+        [" / ".join(class_states[value]) for value in sorted(class_states)],
+        rotation=30,
+    )
     cbar.set_label("Access to service")  # ,fontweight="bold" fontsize=24
     return fig, axes
 
@@ -661,23 +711,21 @@ def _get_access_loss_mask(network, ci_type):
     """Return boolean mask of people who lost access to a CI type"""
     access_col = f"access_state_{ci_type}_people"
     # Return boolean mask, NOT a count
-    access_loss = network.nodes[access_col].isin(
-        ["access disrupted", "access disrupted source", "access disrupted via"]
-    )
+    access_loss = network.nodes[access_col].isin(ACCESS_LOSS_STATES)
     return access_loss
 
 
 def _get_no_base_access_mask(network, ci_type):
     """Return boolean mask of people with no base access to a CI type"""
     access_col = f"access_state_{ci_type}_people"
-    no_base_access = network.nodes[access_col] == "no base access"
+    no_base_access = network.nodes[access_col] == ACCESS_NO_BASE
     return no_base_access
 
 
 def _get_access_undisrupted_mask(network, ci_type):
     """Return boolean mask of people with undisrupted access to a CI type"""
     access_col = f"access_state_{ci_type}_people"
-    access_undisrupted = network.nodes[access_col] == "access undisrupted"
+    access_undisrupted = network.nodes[access_col] == ACCESS_UNDISRUPTED
     return access_undisrupted
 
 

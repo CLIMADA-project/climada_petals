@@ -35,7 +35,7 @@ import pytest
 from shapely.geometry import Point
 
 from climada.util.constants import ONE_LAT_KM
-from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
+from climada_petals.engine.networks.graph_calcs import GraphCalcs
 
 
 def make_enduser_dependencies(graph_calcs, dep_table):
@@ -1351,11 +1351,6 @@ def test_calc_dependencies_link_name(graph_calcs, nw_caplog, link_attrs, expect_
 
     assert expected_name in graph_calcs.graph.es["ci_type"]
     assert ("will be ignored in the cascade" in nw_caplog.text) == expect_warning
-
-
-def test_dependency_name():
-    """Test the naming convention of dependency edges"""
-    assert _dependency_name("road", "people") == "dependency_road_people"
 
 
 def test_calc_dependencies_distance_via_fail(graph_calcs_with_edge_ci_fail):
