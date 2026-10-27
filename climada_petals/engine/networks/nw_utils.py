@@ -4,14 +4,14 @@ This file is part of CLIMADA.
 Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
 
 CLIMADA is free software: you can redistribute it and/or modify it under the
-terms of the GNU Lesser General Public License as published by the Free
+terms of the GNU General Public License as published by the Free
 Software Foundation, version 3.
 
 CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
-You should have received a copy of the GNU Lesser General Public License along
+You should have received a copy of the GNU General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 """
@@ -27,11 +27,11 @@ from rasterio.windows import from_bounds
 import logging
 from pathlib import Path
 import urllib.request
+# requests, time, TJ_TO_GWH, HRS_PER_YEAR: used by PowerFunctionalData on
+# feature/nw_update (moves to its own module with the power PR)
 import requests
 import time
-import copy as cp
 from matplotlib import pyplot as plt
-from matplotlib.lines import Line2D
 import matplotlib as mpl
 import cartopy.crs as ccrs
 from matplotlib.colors import ListedColormap
@@ -55,7 +55,6 @@ MPL_LINE_STYLES = [
     "dashdot",
     "dotted",
 ]
-# list(Line2D.markers.keys())
 
 STATUS_MAP = {
     "access undisrupted": -2,
@@ -490,37 +489,6 @@ def make_edge_geometries(vs_geoms_from, vs_geoms_to):
     ]
 
 
-def _preselect_destinations(vs_assign, vs_base, dist_thresh):
-    """Preselect candidate destination indices within a distance threshold.
-
-    Uses a cKDTree to find, for each point in ``vs_assign``, all points
-    in ``vs_base`` within ``dist_thresh``.
-
-    Parameters
-    ----------
-    vs_assign : gpd.GeoDataFrame
-        GeoDataFrame of points to assign.
-    vs_base : gpd.GeoDataFrame
-        GeoDataFrame of candidate destination points.
-    dist_thresh : float
-        Maximum distance threshold for candidate matching.
-
-    Returns
-    -------
-    list of list of int
-        For each point in ``vs_assign``, a list of indices into ``vs_base``
-        within ``dist_thresh``.
-    """
-    points_base = np.array([(x.x, x.y) for x in vs_base["geometry"]])
-    point_tree = cKDTree(points_base)
-
-    points_assign = np.array([(x.x, x.y) for x in vs_assign["geometry"]])
-    ix_matches = []
-    for assign_loc in points_assign:
-        ix_matches.append(point_tree.query_ball_point(assign_loc, dist_thresh))
-    return ix_matches
-
-
 def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
     """Find the k nearest neighbours using a cKDTree.
 
@@ -559,32 +527,6 @@ def _ckdnearest(vs_assign, gdf_base, k=1, dist_thresh=np.inf):
     vld_ind_formatted[:] = np.nan
     vld_ind_formatted[np.where(dist < np.inf)] = vld_ind
     return dist, vld_ind_formatted
-
-
-def window_from_extent(xmin, ymin, xmax, ymax, transform):
-    """Create a rasterio Window from geographic extent bounds.
-
-    Parameters
-    ----------
-    xmin : float
-        Minimum x coordinate (left).
-    ymin : float
-        Minimum y coordinate (bottom).
-    xmax : float
-        Maximum x coordinate (right).
-    ymax : float
-        Maximum y coordinate (top).
-    transform : rasterio.Affine
-        Affine transform of the raster.
-
-    Returns
-    -------
-    rasterio.windows.Window
-        Window corresponding to the given extent.
-    """
-    col_start, row_start = ~transform * (xmin, ymax)
-    col_stop, row_stop = ~transform * (xmax, ymin)
-    return Window.from_slices((row_start, row_stop), (col_start, col_stop))
 
 
 def _resample_res(filepath, upscale_factor, nodata, extent=None):
@@ -704,286 +646,8 @@ def load_resampled_raster(
 
 
 # =============================================================================
-# General results analysis util functions
+# Network statistics
 # =============================================================================
-
-
-def number_noservice(service, graph, enduser="people"):
-    """Calculate the population without access to a given service.
-
-    Parameters
-    ----------
-    service : str
-        Service name (e.g. 'power', 'healthcare').
-    graph : GraphCalcs
-        Graph calculation object with an igraph graph attribute.
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    float
-        Total population without access to the service.
-    """
-
-    no_service = 1 - np.array(
-        graph.graph.vs.select(ci_type=enduser)[f"actual_supply_{service}_{enduser}"]
-    )
-    pop = np.array(graph.graph.vs.select(ci_type=enduser)["counts"])
-    return (no_service * pop).sum()
-
-
-def number_noservices(graph, services, enduser="people"):
-    """Calculate the population without access for multiple services.
-
-    Parameters
-    ----------
-    graph : GraphCalcs
-            Graph calculation object with an igraph graph attribute.
-    services : list of str
-        Services to evaluate.
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    dict
-        Dictionary mapping each service name to the population count
-        without access.
-    """
-
-    servstats_dict = {}
-    for service in services:
-        servstats_dict[service] = number_noservice(service, graph, enduser)
-    return servstats_dict
-
-
-def number_noservice_df(service, df, enduser="people"):
-    """Calculate the population without access to a service from a DataFrame.
-
-    Counts population having 0 or negative values in the service state column.
-
-    Parameters
-    ----------
-    service : str
-        Service name to check availability for (e.g. 'power', 'healthcare').
-    df : gpd.GeoDataFrame or pd.DataFrame
-        DataFrame containing population clusters with columns 'ci_type',
-        'counts', and the service state columns.
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    float
-        Total population without access to the service.
-
-    See Also
-    --------
-    number_noservice : Same calculation performed on the igraph graph.
-    """
-    return df[
-        (df.ci_type == enduser) & (df[f"actual_supply_{service}_{enduser}"] <= 0)
-    ].counts.sum()
-
-
-def number_noservices_df(
-    df,
-    services,
-    enduser="people",
-):
-    """Calculate the population without access for multiple services from a DataFrame.
-
-    Parameters
-    ----------
-    df : gpd.GeoDataFrame or pd.DataFrame
-        DataFrame containing population clusters and service state columns.
-    services : list of str
-        Services to evaluate.
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    dict
-        Dictionary mapping each service name to the population count
-        without access.
-
-    See Also
-    --------
-    number_noservices : Same calculation performed on the igraph graph.
-    """
-    servstats_dict = {}
-    for service in services:
-        servstats_dict[service] = number_noservice_df(service, df, enduser)
-    return servstats_dict
-
-
-def disaster_impact_service_geoseries(service, pre_graph, post_graph, enduser="people"):
-    """Get geometries of population clusters that lost access to a service.
-
-    Parameters
-    ----------
-    service : str
-        Service name (e.g. 'power', 'healthcare').
-    pre_graph : GraphCalcs
-        Graph calculation object representing the pre-disaster state.
-    post_graph : GraphCalcs
-        Graph calculation object representing the post-disaster state.
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    gpd.GeoSeries
-        Geometries of population clusters that lost service access.
-    """
-
-    no_service_post = 1 - np.array(
-        post_graph.graph.vs.select(ci_type=enduser)[
-            f"actual_supply_{service}_{enduser}"
-        ]
-    )
-    no_service_pre = 1 - np.array(
-        pre_graph.graph.vs.select(ci_type=enduser)[f"actual_supply_{service}_{enduser}"]
-    )
-    geom = np.array(post_graph.graph.vs.select(ci_type=enduser)["geom_wkt"])
-    return gpd.GeoSeries.from_wkt(
-        geom[np.where((no_service_post - no_service_pre) > 0)]
-    )
-
-
-def disaster_impact_service(service, pre_graph, post_graph, enduser="people"):
-    """Calculate population losing access to a service due to a disaster.
-
-    Parameters
-    ----------
-    service : str
-        Service name (e.g. 'power', 'healthcare').
-    pre_graph : GraphCalcs
-        Graph calculation object representing the pre-disaster state.
-    post_graph : GraphCalcs
-        Graph calculation object representing the post-disaster state.
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    float
-        Total population that lost access to the service.
-    """
-
-    no_service_post = 1 - np.array(
-        post_graph.graph.vs.select(ci_type=enduser)[
-            f"actual_supply_{service}_{enduser}"
-        ]
-    )
-    no_service_pre = 1 - np.array(
-        pre_graph.graph.vs.select(ci_type=enduser)[f"actual_supply_{service}_{enduser}"]
-    )
-    pop = np.array(pre_graph.graph.vs.select(ci_type=enduser)["counts"])
-    return ((no_service_post - no_service_pre) * pop).sum()
-
-
-def disaster_impact_allservices(
-    pre_graph,
-    post_graph,
-    services,
-    enduser="people",
-):
-    """Calculate population losing access across all services due to a disaster.
-
-    Parameters
-    ----------
-    pre_graph : GraphCalcs
-        Graph calculation object representing the pre-disaster state.
-    post_graph : GraphCalcs
-        Graph calculation object representing the post-disaster state.
-    services : list of str
-        Services to evaluate
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    dict
-        Dictionary mapping each service to the change in population
-        without access (post minus pre).
-    """
-
-    dict_pre = number_noservices(pre_graph, services, enduser=enduser)
-    dict_post = number_noservices(post_graph, services, enduser=enduser)
-    dict_delta = {}
-    for key, value in dict_post.items():
-        dict_delta[key] = value - dict_pre[key]
-    return dict_delta
-
-
-def disaster_impact_allservices_df(
-    df_pre,
-    df_post,
-    services,
-    enduser="people",
-):
-    """Calculate population losing access across all services from DataFrames.
-
-    Parameters
-    ----------
-    df_pre : gpd.GeoDataFrame or pd.DataFrame
-        DataFrame representing the pre-disaster state.
-    df_post : gpd.GeoDataFrame or pd.DataFrame
-        DataFrame representing the post-disaster state.
-    services : list of str
-        Services to evaluate.
-    enduser : str, optional
-        The type of end user to calculate access for. Default is 'people'.
-
-    Returns
-    -------
-    dict
-        Dictionary mapping each service (with '_access' suffix) to the
-        change in population without access. If 'people' was in services,
-        also includes the directly impacted population count.
-
-    See Also
-    --------
-    disaster_impact_allservices : Same calculation on igraph graphs.
-    """
-    services = cp.deepcopy(services)
-    dict_delta = {}
-    if enduser in services:
-        services.remove(enduser)
-        # directly affected people
-        dict_delta[enduser] = sum(df_post[df_post.ci_type == enduser].imp_dir)
-    dict_pre = number_noservices_df(df_pre, services, enduser=enduser)
-    dict_post = number_noservices_df(df_post, services, enduser=enduser)
-    for key, value in dict_post.items():
-        dict_delta[key + "_access"] = value - dict_pre[key]
-    return dict_delta
-
-
-def get_graphstats(graph):
-    """Get summary statistics of a network graph.
-
-    Parameters
-    ----------
-    graph : GraphCalcs
-        Graph calculation object with an igraph graph attribute.
-
-    Returns
-    -------
-    dict
-        Dictionary with keys 'no_edges', 'no_nodes', 'edge_types',
-        and 'node_types' (Counter objects for type distributions).
-    """
-    from collections import Counter
-
-    stats_dict = {}
-    stats_dict["no_edges"] = len(graph.graph.es)
-    stats_dict["no_nodes"] = len(graph.graph.vs)
-    stats_dict["edge_types"] = Counter(graph.graph.es["ci_type"])
-    stats_dict["node_types"] = Counter(graph.graph.vs["ci_type"])
-    return stats_dict
 
 
 def get_tot_pop(network):
