@@ -1,0 +1,350 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Shared pytest fixtures for the network module tests.
+
+Pytest discovers the fixtures in this file automatically; test modules do not
+need to import them.
+
+Toy networks (EPSG:4326)
+------------------------
+``nodes_gdf`` / ``edges_gdf``: a chain of 5 nodes on the diagonal (0,0)-(4,4)
+connected by 4 directed edges 0->1->2->3->4.
+
+``network_with_ci_types``: the chain with ci_types
+    node 0: people, nodes 1-3: road, node 4: healthcare; all edges: road.
+``network_with_remote_node_missing_edge``: adds a second healthcare node 5
+    far away at (4, 50), not connected to the rest.
+``network_with_remote_node``: same, connected by a road edge 2->5.
+``network_with_edge_fail``: road edge 3->4 and road node 2 dysfunctional.
+``network_with_source_fail``: both healthcare nodes dysfunctional.
+"""
+
+import copy as cp
+import shutil
+import tempfile
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import pytest
+from shapely.geometry import LineString, MultiLineString, Point
+
+from climada_petals.engine.networks.graph_calcs import GraphCalcs
+from climada_petals.engine.networks.nw_base import Network
+from climada_petals.engine.networks.nw_calcs import NetworkCalcs
+
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory for file operations"""
+    temp_dir = tempfile.mkdtemp()
+    yield temp_dir
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def nodes_gdf():
+    """Create simple test nodes"""
+    return gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2, 3, 4],
+            "geometry": [
+                Point(0, 0),
+                Point(1, 1),
+                Point(2, 2),
+                Point(3, 3),
+                Point(4, 4),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def edges_gdf():
+    """Create simple test edges"""
+    return gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1, 2, 3],
+            "to_id": [1, 2, 3, 4],
+            "id": [0, 1, 2, 3],
+            "osm_id": [100, 101, 102, 103],
+            "distance": [157200, 157200, 157200, 157200],  # approx distances in meters
+            "geometry": [
+                LineString([(0, 0), (1, 1)]),  # roads need to go from ci to user
+                LineString([(1, 1), (2, 2)]),
+                LineString([(2, 2), (3, 3)]),
+                LineString([(3, 3), (4, 4)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+@pytest.fixture
+def network_with_ci_types(edges_gdf, nodes_gdf):
+    """Chain network with ci_types: people (0), road (1-3), healthcare (4)."""
+    nodes = cp.deepcopy(nodes_gdf)
+    nodes["ci_type"] = ["people", "road", "road", "road", "healthcare"]
+    edges = cp.deepcopy(edges_gdf)
+    edges["ci_type"] = "road"
+    nodes["func_tot"] = 1
+    edges["func_tot"] = 1
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def network_with_remote_node_missing_edge(network_with_ci_types):
+    """Chain network plus an unconnected, remote healthcare node 5 at (4, 50)."""
+    network = cp.deepcopy(network_with_ci_types)
+    # add far away hospital node
+    new_node = gpd.GeoDataFrame(
+        {
+            "id": [5],
+            "ci_type": ["healthcare"],
+            "func_tot": [1],
+            "geometry": [Point(4, 50)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    network.nodes = pd.concat([network.nodes, new_node], ignore_index=True)
+    return network
+
+
+@pytest.fixture
+def network_with_remote_node(network_with_remote_node_missing_edge):
+    """Chain network plus a remote healthcare node 5 connected by road edge 2->5."""
+    network = cp.deepcopy(network_with_remote_node_missing_edge)
+    # add edge from last road node to far away hospital node
+    new_edge = gpd.GeoDataFrame(
+        {
+            "from_id": [2],
+            "to_id": [5],
+            "id": [4],
+            "osm_id": [104],
+            "distance": [7000000],  # approx distances in meters
+            "ci_type": ["road"],
+            "func_tot": [1],
+            "geometry": [LineString([(2, 2), (4, 50)])],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    network.edges = pd.concat([network.edges, new_edge], ignore_index=True)
+    return network
+
+
+@pytest.fixture
+def network_with_edge_fail(network_with_remote_node):
+    """Remote-node network with road edge 3->4 and road node 2 dysfunctional."""
+    network = cp.deepcopy(network_with_remote_node)
+    network.edges.loc[3, "func_tot"] = 0  # road edge 3->4
+    network.nodes.loc[2, "func_tot"] = 0  # road node 2
+    return network
+
+
+@pytest.fixture
+def network_with_source_fail(network_with_remote_node):
+    """Remote-node network with both healthcare nodes (4 and 5) dysfunctional."""
+    network = cp.deepcopy(network_with_remote_node)
+    network.nodes.loc[network.nodes["ci_type"] == "healthcare", "func_tot"] = 0
+    return network
+
+
+# ========================================================================
+# Fixtures for GraphCalcs class
+# ========================================================================
+
+
+@pytest.fixture
+def graph_calcs(network_with_ci_types):
+    """Create GraphCalcs instance with test network"""
+    return GraphCalcs(network=network_with_ci_types, directed=True)
+
+
+@pytest.fixture
+def graph_calcs_with_source_fail(network_with_source_fail):
+    """Create GraphCalcs instance with test network containing CI failures"""
+    return GraphCalcs(network=network_with_source_fail, directed=True)
+
+
+@pytest.fixture
+def graph_calcs_with_edge_ci_fail(network_with_edge_fail):
+    """Create GraphCalcs instance with test network containing edge CI failures"""
+    return GraphCalcs(network=network_with_edge_fail, directed=True)
+
+
+@pytest.fixture
+def graph_calcs_with_remote_node_missing_edge(network_with_remote_node_missing_edge):
+    """Create GraphCalcs instance with test network containing missing edge"""
+    return GraphCalcs(network=network_with_remote_node_missing_edge, directed=True)
+
+
+@pytest.fixture
+def graph_calcs_with_remote_node(network_with_remote_node):
+    """Create GraphCalcs instance with test network containing remote node"""
+    return GraphCalcs(network=network_with_remote_node, directed=True)
+
+
+# ========================================================================
+# Fixtures for NetworkCalcs class
+# ========================================================================
+
+
+@pytest.fixture
+def dependency_table():
+    """Create a simple dependency table"""
+    return pd.DataFrame(
+        {
+            "source": ["road", "healthcare", "road"],
+            "target": ["people", "people", "healthcare"],
+            "type_I": ["enduser", "enduser", "functional"],
+            "type_II": ["logical", "logical", "logical"],
+            "via_link": ["none", "road", "none"],
+            "thresh_func": [1, 1, 1],
+            "link_condition": ["edgecond", "distance", "edgecond"],
+            "thresh_dist": [5e6, 10e6, 10e6],
+            "thresh_dur": [np.inf, np.inf, np.inf],
+            "bidir_link": [False, False, False],
+            "access_cnstr": [False, True, False],
+            "n_links": [1, 1, 1],
+        }
+    )
+
+
+@pytest.fixture
+def physical_dependencies():
+    """Create a simple dependency table with only physical dependencies"""
+    return pd.DataFrame(
+        {
+            "source": ["road", "healthcare"],
+            "target": ["people", "people"],
+            "link": ["road", "healthcare"],
+            "thresh_dist": [5e6, 10e6],
+            "bidir_link": [False, False],
+            "n_links": [1, 1],
+        }
+    )
+
+
+@pytest.fixture
+def expected_physical_links():
+    """Expected physical links added by ``add_physical_links``.
+
+    For the default toy network and ``n_links=1``:
+    - road -> people links connect road node 1 to people node 0
+    - healthcare -> people links connect healthcare node 4 to people node 0
+    With ``bidir_link=False`` (default), one link per pair is added.
+    """
+    return {
+        "added_edge_count": 2,
+        "road_pairs": {(1, 0)},
+        "healthcare_pairs": {(4, 0)},
+    }
+
+
+@pytest.fixture
+def network_calcs(network_with_ci_types, dependency_table):
+    """Create NetworkCalcs instance"""
+    return NetworkCalcs(network=network_with_ci_types, dep_table=dependency_table)
+
+
+@pytest.fixture
+def expected_dep_pairs():
+    """Expected dependency edges as ``{link type: ([sources], [targets])}``."""
+    return {
+        "dependency_road_people": ([1], [0]),
+        "dependency_healthcare_people": ([4], [0]),
+        "dependency_road_healthcare": ([3], [4]),
+    }
+
+
+# ========================================================================
+# Fixtures for projected CRS (EPSG:32632 — UTM zone 32N)
+# ========================================================================
+
+
+@pytest.fixture
+def nodes_projected_gdf():
+    """Create test nodes in projected CRS (UTM zone 32N).
+
+    Layout (x-axis, all at y=5 000 000):
+    Node 0 (people)      — 500 000
+    Node 1 (road)        — 500 100   (100 m from node 0)
+    Node 2 (road)        — 500 200   (200 m from node 0)
+    Node 3 (healthcare)  — 501 000   (1 000 m from node 0, 800 m from node 2)
+    """
+    return gpd.GeoDataFrame(
+        {
+            "id": [0, 1, 2, 3],
+            "geometry": [
+                Point(500000, 5000000),
+                Point(500100, 5000000),
+                Point(500200, 5000000),
+                Point(501000, 5000000),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+
+
+@pytest.fixture
+def edges_projected_gdf():
+    """Create test edges in projected CRS connecting nodes 0-1 and 1-2."""
+    return gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1],
+            "to_id": [1, 2],
+            "id": [0, 1],
+            "osm_id": [100, 101],
+            "distance": [100, 100],
+            "geometry": [
+                LineString([(500000, 5000000), (500100, 5000000)]),
+                LineString([(500100, 5000000), (500200, 5000000)]),
+            ],
+        },
+        geometry="geometry",
+        crs="EPSG:32632",
+    )
+
+
+@pytest.fixture
+def network_projected_disconnected(edges_projected_gdf, nodes_projected_gdf):
+    """Network in projected CRS with a disconnected node.
+
+    Nodes 0-2 form a connected cluster; node 3 is isolated.
+    Closest gap: node 2 → node 3 = 800 m.
+    """
+    nodes = cp.deepcopy(nodes_projected_gdf)
+    nodes["ci_type"] = ["people", "road", "road", "healthcare"]
+    edges = cp.deepcopy(edges_projected_gdf)
+    edges["ci_type"] = "road"
+    nodes["func_tot"] = 1
+    edges["func_tot"] = 1
+    return Network(edges=edges, nodes=nodes)
+
+
+@pytest.fixture
+def graph_calcs_projected_disconnected(network_projected_disconnected):
+    """GraphCalcs instance for a disconnected projected-CRS network."""
+    return GraphCalcs(network=network_projected_disconnected, directed=True)
