@@ -36,6 +36,7 @@ connected by 4 directed edges 0->1->2->3->4.
 """
 
 import copy as cp
+import logging
 import shutil
 import tempfile
 
@@ -48,6 +49,21 @@ from shapely.geometry import LineString, MultiLineString, Point
 from climada_petals.engine.networks.graph_calcs import GraphCalcs
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_calcs import NetworkCalcs
+
+
+@pytest.fixture
+def nw_caplog(caplog):
+    """``caplog`` that also captures the records of the ``climada_petals`` loggers.
+
+    The ``climada_petals`` logger does not propagate to the root logger, where
+    ``caplog`` listens, so its capture handler is attached to it directly for
+    the duration of the test. To capture INFO records, use
+    ``nw_caplog.set_level(logging.INFO, logger="climada_petals")``.
+    """
+    logger = logging.getLogger("climada_petals")
+    logger.addHandler(caplog.handler)
+    yield caplog
+    logger.removeHandler(caplog.handler)
 
 
 @pytest.fixture
