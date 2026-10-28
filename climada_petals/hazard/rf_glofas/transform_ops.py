@@ -320,13 +320,25 @@ def download_glofas_discharge(
         request_kwargs["area"] = list(bounds)
 
     # Request the data
-    return glofas_request(
+    files = glofas_request(
         product=product,
         num_proc=num_proc,
         output_dir=download_path,
         request_kw=request_kwargs,
         requests=requests,
     )
+
+    # Strip None values from failed requests
+    files = [f for f in files if f is not None]
+    if len(files) == 0:
+        raise RuntimeError("All requests failed. No files were downloaded.")
+    elif len(files) < len(requests):
+        LOGGER.warning(
+            "Some requests failed. %d of %d requests were successful",
+            len(files),
+            len(requests),
+        )
+    return files
 
 
 def open_glofas_discharge(
