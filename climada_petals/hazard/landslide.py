@@ -309,8 +309,7 @@ class Landslide(Hazard):
         # sample events from probabilities
         haz.intensity = sample_events(prob_matrix, n_years, dist)
         haz.fraction = haz.intensity.copy()
-        # the stored values are exactly the nonzeros, so no fancy-index needed
-        haz.fraction.data[:] = 1
+        haz.fraction[haz.intensity.nonzero()] = 1
         haz.frequency = np.ones(n_years) / n_years
 
         # meaningless, such that check() method passes:
