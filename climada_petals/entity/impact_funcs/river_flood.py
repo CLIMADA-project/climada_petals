@@ -52,7 +52,7 @@ VALID_REGIONS = "Africa, Asia, Europe, North America, Oceania, South America"
 LOGGER = logging.getLogger(__name__)
 
 class ImpfRiverFlood(ImpactFunc):
-    """Impact functions for tropical cyclones."""
+    """Impact functions for River Flood."""
 
     def __init__(self):
         ImpactFunc.__init__(self)
