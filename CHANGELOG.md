@@ -14,6 +14,7 @@ Code freeze date: YYYY-MM-DD
 - Module to compute Earthquakes in MMI scale from ISC-GEM catalogue. [#201](https://github.com/CLIMADA-project/climada_petals/pull/201)
 
 ### Changed
+- `Landslide.sample_events` sparsifies each sampled year instead of building the whole simulation densely, reducing its peak memory by 60x-400x. Output unchanged. [#204](https://github.com/CLIMADA-project/climada_petals/pull/204)
 
 ### Fixed
 - Fixed a wrong error message on required MRIOT name format in the supplychain module ("_" instead of "-") [#205](https://github.com/CLIMADA-project/climada_petals/pull/205)

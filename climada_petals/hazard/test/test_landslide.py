@@ -18,6 +18,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Unit test landslide module.
 """
+import tracemalloc
 import unittest
 import geopandas as gpd
 import numpy as np
@@ -238,6 +239,14 @@ class TestLandslideModule(unittest.TestCase):
                 break
         self.assertTrue(events[events.nonzero()].max() <= 1)  # fails for all-zero-events
         self.assertEqual(events.shape, (n_years, prob_matrix.shape[0]))
+
+        # peak memory tracks the result, not n_years x n_pixels
+        dense_bytes = n_years * prob_matrix.shape[0] * 8
+        tracemalloc.start()
+        sample_events(prob_matrix, n_years, dist='binom')
+        _current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        self.assertLess(peak, dense_bytes / 10)
 
 
 if __name__ == "__main__":
