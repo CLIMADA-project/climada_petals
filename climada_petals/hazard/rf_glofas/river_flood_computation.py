@@ -342,10 +342,14 @@ class RiverFloodInundation:
         ds_flood = xr.Dataset()
         if not apply_protection or apply_protection == "both":
             ds_flood["flood_depth"] = self.flood_depth(flood_maps=flood_maps)
+            if "fraction" in flood_maps:
+                ds_flood["flood_fraction"] = flood_maps["fraction"]
 
         # Compute flood depth with protection
         self.apply_protection()
         ds_flood["flood_depth_flopros"] = self.flood_depth(flood_maps=flood_maps)
+        if "fraction" in flood_maps:
+            ds_flood["flood_fraction_flopros"] = flood_maps["fraction"]
 
         # Return data
         return ds_flood
@@ -354,9 +358,9 @@ class RiverFloodInundation:
         self,
         reference: Optional[xr.DataArray] = None,
         coarsening: int | None = 7,
-        coarsen_agg=np.mean,
+        coarsen_agg: Callable = np.nanmean,
         overwrite_tiles: bool = False,
-    ) -> xr.DataArray:
+    ) -> xr.Dataset:
         """Load flood hazard maps for the area represented by the given reference
 
         Parameters
@@ -400,13 +404,30 @@ class RiverFloodInundation:
             download_flood_map_tiles(
                 output_dir=flood_maps_dir, tiles=tiles_select, overwrite=overwrite_tiles
             )
-            flood_maps = open_flood_map_tiles(
+            inundation = open_flood_map_tiles(
                 flood_maps_dir=flood_maps_dir, tiles=tiles_select
             )
+            flood_maps = xr.Dataset({"inundation": inundation})
             if coarsening is not None:
-                return flood_maps.coarsen(
-                    longitude=coarsening, latitude=coarsening, boundary="trim"
-                ).reduce(func=coarsen_agg)
+                if isinstance(coarsen_agg, str):
+                    funcs = {
+                        "mean": np.nanmean,
+                        "median": np.nanmedian,
+                        "max": np.nanmax,
+                    }
+                    coarsen_agg = funcs[coarsen_agg]
+                flood_maps_coarse = inundation.coarsen(
+                    longitude=coarsening, latitude=coarsening, boundary="pad"
+                )
+                flood_maps_coarsened = flood_maps_coarse.reduce(func=coarsen_agg)
+                flood_maps = xr.Dataset(
+                    {
+                        "inundation": flood_maps_coarsened.where(
+                            flood_maps_coarsened > 0.0
+                        ),
+                        "fraction": flood_maps_coarse.count() / (coarsening**2),
+                    }
+                )
 
             return flood_maps
 
@@ -627,7 +648,7 @@ class RiverFloodInundation:
     def regrid(
         self,
         r_period: Optional[xr.DataArray] = None,
-        flood_maps: Optional[xr.DataArray] = None,
+        flood_maps: Optional[xr.Dataset] = None,
         how: Literal["xesmf"] | Literal["xarray"] | None = None,
         method: str = "bilinear",
         reuse_regridder: bool = False,
@@ -779,7 +800,7 @@ class RiverFloodInundation:
     def flood_depth(
         self,
         return_period_regrid: Optional[xr.DataArray] = None,
-        flood_maps: Optional[xr.DataArray] = None,
+        flood_maps: Optional[xr.Dataset] = None,
     ):
         """Compute the flood depth from regridded return period data.
 

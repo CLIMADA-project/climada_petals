@@ -31,6 +31,7 @@ from typing import (
     Callable,
     Sequence,
     Literal,
+    TypeVar,
 )
 from collections import deque
 from copy import deepcopy
@@ -53,10 +54,14 @@ from .cds_glofas_downloader import (
     CDS_DOWNLOAD_DIR,
 )
 
+DatasetOrArray = TypeVar("DatasetOrArray", xr.Dataset, xr.DataArray)
+
 LOGGER = logging.getLogger(__name__)
 
 
-def sel_lon_lat_slice(target: xr.DataArray, source: xr.DataArray) -> xr.DataArray:
+def sel_lon_lat_slice(
+    target: DatasetOrArray, source: xr.Dataset | xr.DataArray
+) -> DatasetOrArray:
     """Select a lon/lat slice from 'target' using coordinates of 'source'"""
     return target.sel(
         {c: slice(*source[c][[0, -1]]) for c in ["longitude", "latitude"]}
@@ -742,7 +747,7 @@ def interpolate_na(
 
 def interpolate_space(
     return_period: xr.DataArray,
-    flood_maps: xr.DataArray,
+    flood_maps: xr.Dataset,
     method: str = "linear",
     mask_values: bool = True,
 ) -> xr.DataArray:
@@ -752,9 +757,9 @@ def interpolate_space(
 
     # Interpolate the return period
     return_period_regridded = return_period.interp(
-        coords=dict(longitude=flood_maps["longitude"], latitude=flood_maps["latitude"]),
+        coords={"longitude": flood_maps["longitude"], "latitude": flood_maps["latitude"]},
         method=method,
-        kwargs=dict(fill_value=None),  # Extrapolate
+        kwargs={"fill_value": None},  # Extrapolate
     )
     return_period_regridded.rio.write_crs(flood_maps.rio.crs, inplace=True)
     return_period_regridded = interpolate_na(return_period_regridded, nodata=np.nan)
@@ -762,7 +767,7 @@ def interpolate_space(
     # Set values that do not exist in the flood hazard maps to NaN
     if mask_values:
         return_period_regridded = return_period_regridded.where(
-            ~np.isnan(flood_maps.isel(return_period=-1, drop=True))
+            ~np.isnan(flood_maps["inundation"].isel(return_period=-1, drop=True))
         )
 
     return return_period_regridded
@@ -837,8 +842,8 @@ def apply_flopros(
 
 
 def flood_depth(
-    return_period: Union[xr.Dataset, xr.DataArray], flood_maps: xr.DataArray
-) -> Union[xr.Dataset, xr.DataArray]:
+    return_period: DatasetOrArray, flood_maps: xr.Dataset
+) -> DatasetOrArray:
     """Compute the flood depth from a return period and flood maps.
 
     At each lat/lon coordinate, take the return period(s) and use them to interpolate
@@ -928,7 +933,7 @@ def flood_depth(
     out = xr.apply_ufunc(
         interpolate,
         return_period,
-        flood_maps,
+        flood_maps["inundation"],
         flood_maps["return_period"],
         input_core_dims=[core_dims, ["return_period"], ["return_period"]],
         output_core_dims=[core_dims],
