@@ -19,24 +19,23 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 Test nw_impacts module
 """
 
-import pytest
-import numpy as np
-import geopandas as gpd
-import pandas as pd
-from scipy import sparse
-from shapely.geometry import Point, LineString
 from unittest.mock import MagicMock
 
-from climada.hazard import Hazard, Centroids
+import geopandas as gpd
+import numpy as np
+import pytest
+from scipy import sparse
+
+import climada.util.lines_polys_handler as u_lp
 from climada.entity import Exposures, ImpactFunc, ImpactFuncSet
+from climada.hazard import Centroids, Hazard
 
 from climada_petals.engine.networks.nw_impacts import (
-    gdf_from_network,
-    exposure_from_nodes,
-    exposure_from_edges,
     NetworkImpactCalc,
+    exposure_from_edges,
+    exposure_from_nodes,
+    gdf_from_network,
 )
-from climada_petals.engine.networks.test.fixtures_test_networks import *
 
 
 # ========================================================================
@@ -253,6 +252,24 @@ def test_exposure_from_edges_has_value(impact_network):
     assert all(exp.gdf["value"] > 0)
 
 
+def test_exposure_from_edges_value_from_column(impact_network):
+    """With disagg_val=None, values are taken from disagg_col and divided
+    over the points, so the total per edge is preserved."""
+    exp = exposure_from_edges(
+        impact_network,
+        "road",
+        res=10000,
+        disagg_val=None,
+        disagg_col="distance",
+        disagg_met=u_lp.DisaggMethod.DIV,
+    )
+
+    total = impact_network.edges.loc[
+        impact_network.edges["ci_type"] == "road", "distance"
+    ].sum()
+    assert exp.gdf["value"].sum() == pytest.approx(total)
+
+
 def test_exposure_from_edges_has_lat_lon(impact_network):
     """set_lat_lon adds latitude and longitude columns."""
     exp = exposure_from_edges(impact_network, "road", res=100)
@@ -448,9 +465,11 @@ def test_disrupt_network_node_exposure(impact_network, simple_hazard, healthcare
 
     network_disr, imp_dict = nic.disrupt_network()
 
-    # Healthcare node at (4,4) has intensity=50 ⟶ high impact
+    # Healthcare node at (4,4) has intensity=50 ⟶ impact 0.75 > 0.3
     hc = network_disr.nodes[network_disr.nodes["ci_type"] == "healthcare"]
+    assert hc["imp_dir"].iloc[0] == pytest.approx(0.75)
     assert hc["func_internal"].iloc[0] == 0  # above threshold
+    assert hc["func_tot"].iloc[0] == 0
     assert "healthcare" in imp_dict
     # Original network is not mutated
     assert all(impact_network.nodes["func_tot"] == 1)
@@ -471,8 +490,11 @@ def test_disrupt_network_edge_exposure(impact_network, simple_hazard, road_impf)
 
     network_disr, imp_dict = nic.disrupt_network()
 
-    assert "imp_dir" in network_disr.edges.columns
-    assert "func_internal" in network_disr.edges.columns
+    # Edge 0 lies between centroids with intensity 10 and 20, where the
+    # impact function is 0; all other edges reach intensities >= 30.
+    assert network_disr.edges["func_internal"].tolist() == [1, 0, 0, 0]
+    assert network_disr.edges["imp_dir"].iloc[0] == 0
+    assert (network_disr.edges["imp_dir"].iloc[1:] > 0).all()
     assert "road" in imp_dict
     # Original network is not mutated
     assert all(impact_network.edges["func_tot"] == 1)
