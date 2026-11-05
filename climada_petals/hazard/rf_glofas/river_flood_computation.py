@@ -155,7 +155,12 @@ class RiverFloodInundation:
     Attributes
     ----------
     store_intermediates : bool
-        If intermediate results are stored in the respective :py:attr:`cache_paths`
+        If intermediate results are stored in the respective :py:attr:`cache_paths`.
+
+        . note::
+
+                When using :py:meth:`compute`, this will be reset to True.
+
     cache_paths : RiverFloodCachePaths
         Paths pointing to potential intermediate results stored in a cache directory.
     flood_maps : xarray.DataArray
@@ -185,6 +190,11 @@ class RiverFloodInundation:
             directory. This is recommended especially for larger data. Only set this
             to ``False`` if the data operated on is very small (e.g., for a small
             country or region). Defaults to ``True``.
+
+            .. note::
+
+                When using :py:meth:`compute`, this will be reset to True.
+
         data_dir : Path or str, optional
             The directory where flood maps, Gumbel distribution parameters and the
             FLOPROS database are located. Defaults to
@@ -319,6 +329,13 @@ class RiverFloodInundation:
                 "No discharge data. Please download a discharge with this object "
                 "first or supply the data as argument to this function"
             )
+
+        if not self.store_intermediates:
+            LOGGER.warning(
+                "Setting store_intermediates=True for compute. If you don't want to "
+                "store intermediates, you need to manage each compute step yourself."
+            )
+            self.store_intermediates = True
 
         # Compute return period
         if resample_kws is None:
