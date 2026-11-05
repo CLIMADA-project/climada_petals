@@ -386,6 +386,7 @@ class TestRegrid(unittest.TestCase):
             },
         )
         self.da_coords.rio.write_crs("epsg:4326", inplace=True)
+        self.ds_coords = xr.Dataset({"inundation": self.da_coords})
 
         xx_diff, yy_diff, _, _ = np.meshgrid(x_diff, y_diff, a, b, indexing="xy")
         expected_values = xx_diff + yy_diff
@@ -406,7 +407,7 @@ class TestRegrid(unittest.TestCase):
     def test_interpolate_space(self):
         """Test 'interpolate_space' and 'regrid' operations"""
         # 'interpolate_space'
-        da_result = interpolate_space(self.da_values, self.da_coords)
+        da_result = interpolate_space(self.da_values, self.ds_coords)
         # print(da_result, self.da_expected)
         self.assert_result(da_result, self.da_expected)
 
@@ -414,13 +415,13 @@ class TestRegrid(unittest.TestCase):
         self.da_values[2:, 2:, ...] = np.nan
         self.da_expected[..., 1:, 2:] = [[4.2, 5.1], [1.7, 5.1], [0.9, 0.9]]
 
-        da_result = interpolate_space(self.da_values, self.da_coords)
+        da_result = interpolate_space(self.da_values, self.ds_coords)
         self.assert_result(da_result, self.da_expected)
 
     @unittest.skipIf(regrid is None, "xesmf is not installed")
     def test_regrid(self):
         # 'regrid'
-        da_result = regrid(self.da_values, self.da_coords)
+        da_result = regrid(self.da_values, self.ds_coords)
         self.assert_result(
             da_result,
             self.da_expected,
@@ -432,7 +433,7 @@ class TestRegrid(unittest.TestCase):
         self.da_expected[..., 1:, 2:] = [[4, 5], [2, 5], [1, 1]]
 
         # 'regrid'
-        da_result = regrid(self.da_values, self.da_coords)
+        da_result = regrid(self.da_values, self.ds_coords)
         self.assert_result(
             da_result,
             self.da_expected,
@@ -653,15 +654,16 @@ class TestTransformOps(unittest.TestCase):
         """Test 'flood_depth' operation"""
         # Create dummy datasets
         ones = np.ones((4, 3), dtype="float")
-        da_flood_maps = xr.DataArray(
+        inundation = xr.DataArray(
             data=[ones, ones * 10, ones * 100],
             dims=["return_period", "longitude", "latitude"],
-            coords=dict(
-                return_period=np.array([1, 10, 100], dtype=np.int64),
-                longitude=np.arange(4),
-                latitude=np.arange(3),
-            ),
+            coords={
+                "return_period": np.array([1, 10, 100], dtype=np.int64),
+                "longitude": np.arange(4),
+                "latitude": np.arange(3),
+            },
         )
+        ds_flood_maps = xr.Dataset({"inundation": inundation})
 
         x = np.arange(4)
         y = np.arange(3)
@@ -678,51 +680,84 @@ class TestTransformOps(unittest.TestCase):
         da_return_period = xr.DataArray(
             data=values,
             dims=["longitude", "latitude", "core_dim_1", "core_dim_2"],
-            coords=dict(
-                longitude=x, latitude=y, core_dim_1=core_dim_1, core_dim_2=core_dim_2
-            ),
+            coords={
+                "longitude": x,
+                "latitude": y,
+                "core_dim_1": core_dim_1,
+                "core_dim_2": core_dim_2,
+            },
         ).astype(np.float32)
 
-        da_result = flood_depth(da_return_period, da_flood_maps)
-        self.assertEqual(da_result.name, "Flood Depth")
+        ds_result = flood_depth(da_return_period, ds_flood_maps)
+        self.assertNotIn("fraction", ds_result.data_vars)
         # NOTE: Single point precision, so reduce the decimal accuracy
-        xrt.assert_allclose(da_result, da_return_period.clip(1, 100))
+        xrt.assert_allclose(ds_result["flood_depth"], da_return_period.clip(1, 100))
+
+        # Check fraction
+        fraction = xr.DataArray(
+            data=[ones * 0.1, ones * 0.1, ones],
+            dims=["return_period", "longitude", "latitude"],
+            coords={
+                "return_period": np.array([1, 10, 100], dtype=np.int64),
+                "longitude": np.arange(4),
+                "latitude": np.arange(3),
+            },
+        )
+        print(fraction.sel(return_period=1))
+        ds_flood_maps = xr.Dataset({"inundation": inundation, "fraction": fraction})
+        ds_result = flood_depth(da_return_period, ds_flood_maps)
+        xrt.assert_allclose(ds_result["flood_depth"], da_return_period.clip(1, 100))
+        xrt.assert_allclose(
+            ds_result["fraction"], (da_return_period * 0.01).clip(0.1, 1.0)
+        )
 
         # Check 2D array
         da_return_period_2d = xr.DataArray(
             data=values[..., 0, 0],
             dims=["longitude", "latitude"],
-            coords=dict(longitude=x, latitude=y),
+            coords={"longitude": x, "latitude": y},
         ).astype(np.float32)
-        da_result = flood_depth(da_return_period_2d, da_flood_maps)
-        xrt.assert_allclose(da_result, da_return_period_2d.clip(1, 100))
+        ds_result = flood_depth(da_return_period_2d, ds_flood_maps)
+        xrt.assert_allclose(ds_result["flood_depth"], da_return_period_2d.clip(1, 100))
 
         # Check NaN shortcut
-        da_flood_maps = xr.DataArray(
-            data=[np.full_like(ones, np.nan)] * 3,
-            dims=["return_period", "longitude", "latitude"],
-            coords=dict(
-                return_period=[1, 10, 100],
-                longitude=np.arange(4),
-                latitude=np.arange(3),
-            ),
+        ds_flood_maps_nan = xr.Dataset(
+            {
+                "inundation": xr.DataArray(
+                    data=[np.full_like(ones, np.nan)] * 3,
+                    dims=["return_period", "longitude", "latitude"],
+                    coords={
+                        "return_period": [1, 10, 100],
+                        "longitude": np.arange(4),
+                        "latitude": np.arange(3),
+                    },
+                ),
+                "fraction": xr.ones_like(inundation),
+            }
         )
-        da_result = flood_depth(da_return_period, da_flood_maps)
-        self.assertTrue(da_result.isnull().all())
+        ds_result = flood_depth(da_return_period, ds_flood_maps_nan)
+        self.assertTrue(ds_result["flood_depth"].isnull().all())
 
         # Check NaN sanitizer
-        da_flood_maps = xr.DataArray(
-            data=[np.full_like(ones, np.nan), ones * 9, ones * 99],
-            dims=["return_period", "longitude", "latitude"],
-            coords=dict(
-                return_period=[1, 10, 100],
-                longitude=np.arange(4),
-                latitude=np.arange(3),
-            ),
+        ds_flood_maps_nan_2 = xr.Dataset(
+            {
+                "inundation": xr.DataArray(
+                    data=[np.full_like(ones, np.nan), ones * 9, ones * 99],
+                    dims=["return_period", "longitude", "latitude"],
+                    coords={
+                        "return_period": [1, 10, 100],
+                        "longitude": np.arange(4),
+                        "latitude": np.arange(3),
+                    },
+                ),
+                "fraction": xr.ones_like(inundation),
+            }
         )
         da_return_period[...] = 1 + self.rng.uniform(-0.1, 0.1, size=shape)
-        da_result = flood_depth(da_return_period, da_flood_maps)
-        xrt.assert_allclose(da_result, (da_return_period - 1).clip(min=0))
+        ds_result = flood_depth(da_return_period, ds_flood_maps_nan_2)
+        xrt.assert_allclose(
+            ds_result["flood_depth"], (da_return_period - 1).clip(min=0)
+        )
 
         # Check that DataArrays have to be aligned
         x_diff = x + self.rng.uniform(-1e-3, 1e-3, size=x.shape)
@@ -730,15 +765,15 @@ class TestTransformOps(unittest.TestCase):
         da_return_period = xr.DataArray(
             data=values,
             dims=["longitude", "latitude", "core_dim_1", "core_dim_2"],
-            coords=dict(
-                longitude=x_diff,
-                latitude=y_diff,
-                core_dim_1=core_dim_1,
-                core_dim_2=core_dim_2,
-            ),
+            coords={
+                "longitude": x_diff,
+                "latitude": y_diff,
+                "core_dim_1": core_dim_1,
+                "core_dim_2": core_dim_2,
+            },
         )
         with self.assertRaises(ValueError) as cm:
-            flood_depth(da_return_period, da_flood_maps)
+            flood_depth(da_return_period, ds_flood_maps_nan_2)
         self.assertIn("cannot align objects", str(cm.exception))
 
     def test_reindex(self):

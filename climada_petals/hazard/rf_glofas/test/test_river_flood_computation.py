@@ -109,12 +109,28 @@ class TestRiverFloodInundation(unittest.TestCase):
         cls.tempdir = TemporaryDirectory()
         cls.temppath = Path(cls.tempdir.name)
 
-        cls.flood_maps = xr.DataArray(
-            [[[0]]],
-            coords={"return_period": [0], "longitude": [0], "latitude": [0]},
-            name="flood_maps",
+        cls.flood_maps = xr.Dataset(
+            {
+                "inundation": xr.DataArray(
+                    [[[0]]],
+                    coords={"return_period": [0], "longitude": [0], "latitude": [0]},
+                    name="flood_maps",
+                ),
+                "fraction": xr.DataArray(
+                    [[[0]]],
+                    coords={"return_period": [0], "longitude": [0], "latitude": [0]},
+                ),
+            }
         )
         cls.flood_maps.to_netcdf(cls.temppath / "flood-maps.nc")
+        cls.discharge = cls.flood_maps["inundation"].copy().rename("dis")
+        cls.return_period = cls.flood_maps["inundation"].copy().rename("rp")
+        cls.ds_flood_depth = xr.Dataset(
+            {
+                "flood_depth": cls.flood_maps["inundation"],
+                "fraction": cls.flood_maps["fraction"],
+            }
+        )
 
         arr = xr.DataArray([[0]], coords={"longitude": [0], "latitude": [0]})
         cls.gumbel_fits = xr.Dataset({"loc": arr, "scale": arr, "samples": arr})
@@ -194,18 +210,23 @@ class TestRiverFloodInundation(unittest.TestCase):
         result = func(*args, **kwargs)
         xrt.assert_identical(result, arr_compare)
         self.assertTrue(filename.is_file())
-        with xr.open_dataarray(filename) as arr:
+
+        open_func = xr.open_dataset
+        if isinstance(result, xr.DataArray):
+            open_func = xr.open_dataarray
+
+        with open_func(filename) as arr:
             xrt.assert_identical(arr, arr_compare)
 
     def test_download_forecast(self, get_glofas_discharge: MagicMock, **_):
         """Check if download_forecast passes parameters correctly"""
-        get_glofas_discharge.return_value = self.flood_maps
+        get_glofas_discharge.return_value = self.discharge
 
         preprocess = lambda x: x
         self._assert_store_intermediates(
             self.rf,
             "download_forecast",
-            self.flood_maps,
+            self.discharge,
             "discharge",
             "ABC",
             "2000-01-01",
@@ -225,12 +246,12 @@ class TestRiverFloodInundation(unittest.TestCase):
 
     def test_download_reanalysis(self, get_glofas_discharge: MagicMock, **_):
         """Check if download_reanalysis passes parameters correctly"""
-        get_glofas_discharge.return_value = self.flood_maps
+        get_glofas_discharge.return_value = self.discharge
         preprocess = lambda x: x
         self._assert_store_intermediates(
             self.rf,
             "download_reanalysis",
-            self.flood_maps,
+            self.discharge,
             "discharge",
             "ABC",
             2000,
@@ -255,32 +276,32 @@ class TestRiverFloodInundation(unittest.TestCase):
 
     def test_return_period(self, return_period, **_):
         """Check if return_period passes parameters correctly"""
-        return_period.return_value = self.flood_maps
+        return_period.return_value = self.return_period
         self._assert_store_intermediates(
             self.rf,
             "return_period",
-            self.flood_maps,
+            self.return_period,
             "return_period",
-            self.flood_maps,
+            self.return_period,
         )
         return_period.assert_called_with(
-            self.flood_maps, self.gumbel_fits["loc"], self.gumbel_fits["scale"]
+            self.return_period, self.gumbel_fits["loc"], self.gumbel_fits["scale"]
         )
 
     @patch("climada_petals.hazard.rf_glofas.river_flood_computation.dask_client")
     def test_return_period_resample(self, dask_client, return_period_resample, **_):
         """Check if return_period_resample passes parameters correctly"""
-        return_period_resample.return_value = self.flood_maps
+        return_period_resample.return_value = self.return_period
         self._assert_store_intermediates(
             self.rf,
             "return_period_resample",
-            self.flood_maps,
+            self.return_period,
             "return_period",
             10,
-            self.flood_maps,
+            self.return_period,
         )
         expected_kwargs = dict(
-            discharge=self.flood_maps,
+            discharge=self.return_period,
             gev_loc=self.gumbel_fits["loc"],
             gev_scale=self.gumbel_fits["scale"],
             gev_samples=self.gumbel_fits["samples"],
@@ -294,10 +315,10 @@ class TestRiverFloodInundation(unittest.TestCase):
         self._assert_store_intermediates(
             self.rf,
             "return_period_resample",
-            self.flood_maps,
+            self.return_period,
             "return_period",
             10,
-            self.flood_maps,
+            self.return_period,
             num_workers=4,
         )
         return_period_resample.assert_called_with(**expected_kwargs)
@@ -311,13 +332,13 @@ class TestRiverFloodInundation(unittest.TestCase):
     def test_load_flood_maps(self, download_flood_map_tiles, open_flood_map_tiles, **_):
         """Check if map tiles are selected correctly"""
         reference = xr.DataArray(
-            np.zeros((10, 10)),
+            np.ones((14, 14)),  # Default coarsening is 7
             coords={
-                "longitude": np.linspace(-169, -155, 10),
-                "latitude": np.linspace(69.999, 59.99, 10),
+                "longitude": np.linspace(-169, -155, 14),
+                "latitude": np.linspace(69.999, 59.99, 14),
             },
         )
-        reference[0, 0] = 1.0
+        reference[0, 0] = np.nan
         open_flood_map_tiles.return_value = reference
 
         # Check selection
@@ -340,12 +361,32 @@ class TestRiverFloodInundation(unittest.TestCase):
         )
 
         # Check coarsening
-        self.assertDictEqual(dict(maps.sizes), {"longitude": 1, "latitude": 1})
-        maps = self.rf.load_flood_maps(reference, coarsening=2, coarsen_agg=np.amax)
-        self.assertDictEqual(dict(maps.sizes), {"longitude": 5, "latitude": 5})
-        compare = np.zeros((5, 5))
-        compare[0, 0] = 1
-        np.testing.assert_array_equal(maps, compare)
+        self.assertIn("fraction", maps)
+        self.assertDictEqual(dict(maps.sizes), {"longitude": 2, "latitude": 2})
+        np.testing.assert_array_equal(maps["inundation"], np.ones((2, 2)))
+        np.testing.assert_array_equal(
+            maps["fraction"], np.array([[48 / 49, 1.0], [1.0, 1.0]])
+        )
+
+        # Check manual coarsening
+        maps = self.rf.load_flood_maps(reference, coarsening=5, coarsen_agg=np.mean)
+        self.assertDictEqual(dict(maps.sizes), {"longitude": 3, "latitude": 3})
+
+        # Check inundation (NaNs at the border due to NaN padding)
+        inundation = np.ones((3, 3))
+        inundation[0, 0] = np.nan
+        inundation[:, 2] = np.nan
+        inundation[2, :] = np.nan
+        inundation[2, 2] = np.nan
+        np.testing.assert_array_equal(maps["inundation"], inundation)
+
+        # Check fraction
+        fraction = np.ones((3, 3))
+        fraction[0, 0] = 24 / 25
+        fraction[:, 2] = 20 / 25
+        fraction[2, :] = 20 / 25
+        fraction[2, 2] = 16 / 25
+        np.testing.assert_array_equal(maps["fraction"], fraction)
 
     @unittest.skipIf(regrid is None, "xesmf is not installed")
     @patch("climada_petals.hazard.rf_glofas.regrid.regrid")
@@ -354,14 +395,14 @@ class TestRiverFloodInundation(unittest.TestCase):
         """Check if regrid passes parameters correctly"""
         flood_maps_mock = create_autospec(self.flood_maps)
         flood_maps_mock.chunk.return_value = self.flood_maps
-        regrid.return_value = self.flood_maps, "regridder"
+        regrid.return_value = self.return_period, "regridder"
         load_flood_maps.return_value = self.flood_maps
         self._assert_store_intermediates(
             self.rf,
             "regrid",
-            self.flood_maps,
+            self.return_period,
             "return_period_regrid",
-            self.flood_maps,
+            self.return_period,
             self.flood_maps,
             reuse_regridder=False,
         )
@@ -378,16 +419,16 @@ class TestRiverFloodInundation(unittest.TestCase):
         self._assert_store_intermediates(
             self.rf,
             "regrid",
-            self.flood_maps,
+            self.return_period,
             "return_period_regrid",
-            self.flood_maps,
+            self.return_period,
             how="xesmf",
             method="conservative",
             reuse_regridder=True,
         )
         load_flood_maps.assert_called_with(reference=self.flood_maps)
         regrid.assert_called_with(
-            return_period=self.flood_maps,
+            return_period=self.return_period,
             flood_maps=self.flood_maps,
             method="conservative",
             regridder="regridder",  # Reused
@@ -399,20 +440,20 @@ class TestRiverFloodInundation(unittest.TestCase):
         """Check if regrid passes parameters correctly"""
         flood_maps_mock = create_autospec(self.flood_maps)
         flood_maps_mock.chunk.return_value = self.flood_maps
-        interpolate_space.return_value = self.flood_maps
+        interpolate_space.return_value = self.return_period
         load_flood_maps.return_value = self.flood_maps
         self._assert_store_intermediates(
             self.rf,
             "regrid",
-            self.flood_maps,
+            self.return_period,
             "return_period_regrid",
-            self.flood_maps,
+            self.return_period,
             self.flood_maps,
             how="xarray",
             reuse_regridder=False,
         )
         interpolate_space.assert_called_with(
-            return_period=self.flood_maps,
+            return_period=self.return_period,
             flood_maps=self.flood_maps,
             method="linear",
         )
@@ -422,69 +463,69 @@ class TestRiverFloodInundation(unittest.TestCase):
         self._assert_store_intermediates(
             self.rf,
             "regrid",
-            self.flood_maps,
+            self.return_period,
             "return_period_regrid",
-            self.flood_maps,
+            self.return_period,
             how="xarray",
             method="nearest",
             reuse_regridder=True,
         )
         load_flood_maps.assert_called_with(reference=self.flood_maps)
         interpolate_space.assert_called_with(
-            return_period=self.flood_maps,
+            return_period=self.return_period,
             flood_maps=self.flood_maps,
             method="nearest",
         )
 
     def test_apply_protection(self, apply_flopros, **_):
         """Check if apply_protection passes parameters correctly"""
-        apply_flopros.return_value = self.flood_maps
+        apply_flopros.return_value = self.return_period
         self._assert_store_intermediates(
             self.rf,
             "apply_protection",
-            self.flood_maps,
+            self.return_period,
             "return_period_regrid_protect",
-            self.flood_maps,
+            self.return_period,
         )
 
         # Clumsy check because the dataframe does not support equal comparison
         call_args = apply_flopros.call_args.args
         pdt.assert_frame_equal(call_args[0], self.flopros)
-        xrt.assert_identical(call_args[1], self.flood_maps)
+        xrt.assert_identical(call_args[1], self.return_period)
 
     @patch.object(RiverFloodInundation, "load_flood_maps")
     def test_flood_depth(self, load_flood_maps, flood_depth, **_):
         """Check if flood_depth passes parameters correctly"""
-        flood_depth.return_value = self.flood_maps
+        flood_depth.return_value = self.ds_flood_depth
         load_flood_maps.return_value = self.flood_maps
 
         # Default, use argument
-        self.rf.flood_depth(self.flood_maps)
-        load_flood_maps.assert_called_once_with(reference=self.flood_maps)
+        self.rf.flood_depth(self.return_period)
+        load_flood_maps.assert_called_once_with(reference=self.return_period)
         flood_depth.assert_called_with(
-            self.flood_maps,
+            self.return_period,
             self.flood_maps,
         )
         load_flood_maps.reset_mock()
 
         # Store regrid, load automatically
-        self.flood_maps.to_netcdf(self.rf.cache_paths.return_period_regrid)
+        self.return_period.to_netcdf(self.rf.cache_paths.return_period_regrid)
         self.rf.flood_depth(None, flood_maps=self.flood_maps)
         flood_depth.assert_called_with(
-            self.flood_maps,
+            self.return_period,
             self.flood_maps,
         )
         load_flood_maps.assert_not_called()
         self.rf.cache_paths.return_period_regrid.unlink()
 
         # Store regrid protect, load automatically
-        xr.ones_like(self.flood_maps).to_netcdf(
+        xr.ones_like(self.return_period).to_netcdf(
             self.rf.cache_paths.return_period_regrid
         )
-        self.flood_maps.to_netcdf(self.rf.cache_paths.return_period_regrid_protect)
+        self.return_period.to_netcdf(self.rf.cache_paths.return_period_regrid_protect)
         self.rf.flood_depth(None)
         flood_depth.assert_called_with(
-            self.flood_maps,
+            self.return_period,
             self.flood_maps,
         )
 
@@ -505,14 +546,18 @@ class TestRiverFloodInundation(unittest.TestCase):
             self.rf.compute(None)
 
         # Default
-        ds_result = self.rf.compute(self.flood_maps, regrid_kws=regrid_kws)
+        ds_result = self.rf.compute(self.discharge, regrid_kws=regrid_kws)
         return_period.assert_called_once()
         return_period_resample.assert_not_called()
-        load_flood_maps.assert_called_once_with(reference=self.flood_maps)
+        load_flood_maps.assert_called_once_with(reference=self.discharge)
         regrid.assert_called_once_with(**regrid_check_1_kws)
         self.assertEqual(flood_depth.call_count, 2)
-        xrt.assert_equal(ds_result["flood_depth"], self.flood_maps)
-        xrt.assert_equal(ds_result["flood_depth_flopros"], self.flood_maps)
+        xrt.assert_equal(ds_result["flood_depth"], self.ds_flood_depth["flood_depth"])
+        xrt.assert_equal(ds_result["fraction"], self.ds_flood_depth["fraction"])
+        xrt.assert_equal(
+            ds_result["flood_depth_flopros"], self.ds_flood_depth["flood_depth"]
+        )
+        xrt.assert_equal(ds_result["fraction_flopros"], self.ds_flood_depth["fraction"])
 
         # Reset mocks
         for mock in (
@@ -526,19 +571,25 @@ class TestRiverFloodInundation(unittest.TestCase):
 
         # More arguments
         ds_result = self.rf.compute(
-            self.flood_maps,
+            self.discharge,
             apply_protection=True,
-            load_flood_maps_kws={"coarsening": 3},
+            load_flood_maps_kws={"coarsening": None},
             resample_kws=dict(num_bootstrap_samples=10),
             regrid_kws=regrid_kws | {"method": "nearest"},
         )
         return_period.assert_not_called()
         return_period_resample.assert_called_once()
-        load_flood_maps.assert_called_once_with(reference=self.flood_maps, coarsening=3)
+        load_flood_maps.assert_called_once_with(
+            reference=self.discharge, coarsening=None
+        )
         regrid.assert_called_once_with(**regrid_check_2_kws)
         flood_depth.assert_called_once()
         self.assertNotIn("flood_depth", ds_result.data_vars.keys())
-        xrt.assert_equal(ds_result["flood_depth_flopros"], self.flood_maps)
+        self.assertNotIn("fraction", ds_result.data_vars.keys())
+        xrt.assert_equal(
+            ds_result["flood_depth_flopros"], self.ds_flood_depth["flood_depth"]
+        )
+        xrt.assert_equal(ds_result["fraction_flopros"], self.ds_flood_depth["fraction"])
 
     @unittest.skipIf(regrid is None, "xesmf is not installed")
     @patch("climada_petals.hazard.rf_glofas.regrid.regrid")
@@ -553,10 +604,10 @@ class TestRiverFloodInundation(unittest.TestCase):
         **_,
     ):
         """Test compute algorithm with defaults"""
-        return_period.return_value = self.flood_maps
-        return_period_resample.return_value = self.flood_maps
-        regrid.return_value = self.flood_maps, "regridder"
-        flood_depth.return_value = self.flood_maps
+        return_period.return_value = self.return_period
+        return_period_resample.return_value = self.return_period
+        regrid.return_value = self.return_period, "regridder"
+        flood_depth.return_value = self.ds_flood_depth
         load_flood_maps.return_value = self.flood_maps
 
         self._test_compute_default(
@@ -566,14 +617,14 @@ class TestRiverFloodInundation(unittest.TestCase):
             regrid=regrid,
             flood_depth=flood_depth,
             regrid_check_1_kws={
-                "return_period": self.flood_maps,
+                "return_period": self.return_period,
                 "flood_maps": self.flood_maps,
                 "method": "bilinear",
                 "regridder": None,
                 "return_regridder": True,
             },
             regrid_check_2_kws={
-                "return_period": self.flood_maps,
+                "return_period": self.return_period,
                 "flood_maps": self.flood_maps,
                 "method": "nearest",
                 "regridder": None,
@@ -594,10 +645,10 @@ class TestRiverFloodInundation(unittest.TestCase):
         **_,
     ):
         """Test compute algorithm with defaults"""
-        return_period.return_value = self.flood_maps
-        return_period_resample.return_value = self.flood_maps
-        interpolate_space.return_value = self.flood_maps
-        flood_depth.return_value = self.flood_maps
+        return_period.return_value = self.return_period
+        return_period_resample.return_value = self.return_period
+        interpolate_space.return_value = self.return_period
+        flood_depth.return_value = self.ds_flood_depth
         load_flood_maps.return_value = self.flood_maps
 
         self._test_compute_default(
@@ -607,16 +658,16 @@ class TestRiverFloodInundation(unittest.TestCase):
             regrid=interpolate_space,
             flood_depth=flood_depth,
             regrid_check_1_kws={
-                "return_period": self.flood_maps,
+                "return_period": self.return_period,
                 "flood_maps": self.flood_maps,
                 "method": "linear",
             },
             regrid_check_2_kws={
-                "return_period": self.flood_maps,
+                "return_period": self.return_period,
                 "flood_maps": self.flood_maps,
                 "method": "nearest",
             },
-            regrid_kws={"how": "xarray"}
+            regrid_kws={"how": "xarray"},
         )
         self.assertEqual(self.rf.regridder, None)
 

@@ -117,7 +117,12 @@ The overall procedure is as follows:
         preprocess=lambda x: x.max(dim="step"),
     )
     ds_flood = rf.compute()
-    hazard = hazard_series_from_dataset(ds_flood, "flood_depth", "number")
+    hazard = hazard_series_from_dataset(
+        ds_flood,
+        intensity="flood_depth",
+        fraction="fraction",
+        event_dim="number",
+    )
 
 Step-By-Step Instructions
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -160,6 +165,11 @@ The single steps are as follows:
    This resolution is unfeasible for computations of larger-scale flood events on memory-limited hardware.
    Therefore, a default coarsening is applied, raising the resolution to 21 arc seconds (``coarsening=7``).
 
+   .. hint::
+
+        Coarsening will create an additional data array that encodes the flooded fraction of each coarsened pixel.
+        When creating a hazard object from the flood depth dataset, make sure you add the appropriate array name as ``fraction`` parameter to :py:func:`~climada_petals.hazard.rf_glofas.rf_glofas.hazard_series_from_dataset`.
+
 #. Regridding the return period onto the higher resolution grid of the flood hazard maps with :py:meth:`~climada_petals.hazard.rf_glofas.river_flood_computation.RiverFloodInundation.regrid`:
 
    .. code-block:: python
@@ -195,7 +205,7 @@ Likewise, ``regrid_kws`` will be passed as keyword arguments to :py:meth:`~clima
     import numpy as np
 
     ds_flood = rf.compute(
-        load_flood_maps_kws={"coarsening": 3, "coarsen_agg": np.max},
+        load_flood_maps_kws={"coarsening": 3, "coarsen_agg": np.nanmax},
         resample_kws={"num_bootstrap_samples": 20, "num_workers": 4},
         regrid_kws={"reuse_regridder": True},
     )
@@ -233,14 +243,14 @@ The dimension name which is to be considered the event dimension in a ``Hazard``
     ds_flood = rf.compute(discharge.max(dim="step"))
 
     # Single hazard return (no remaining dimensions)
-    hazard = hazard_series_from_dataset(ds_flood, "flood_depth", "number")
+    hazard = hazard_series_from_dataset(ds_flood, "flood_depth", "fraction", "number")
 
     # Compute flood for each lead time day *and* bootstrap sample
     ds_flood_multidim = rf.compute(discharge, resample_kws=dict(num_bootstrap_samples=20))
 
     # Series with MultiIndex: step, member
     # Each hazard with 20 events (samples)
-    hazard_series = hazard_series_from_dataset(ds_flood, "flood_depth", "sample")
+    hazard_series = hazard_series_from_dataset(ds_flood, "flood_depth", "fraction", "sample")
 
 
 Storing Data
