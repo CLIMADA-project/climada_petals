@@ -341,15 +341,14 @@ class RiverFloodInundation:
         # Compute flood depth
         ds_flood = xr.Dataset()
         if not apply_protection or apply_protection == "both":
-            ds_flood["flood_depth"] = self.flood_depth(flood_maps=flood_maps)
-            if "fraction" in flood_maps:
-                ds_flood["flood_fraction"] = flood_maps["fraction"]
+            ds_flood = self.flood_depth(flood_maps=flood_maps)
 
         # Compute flood depth with protection
         self.apply_protection()
-        ds_flood["flood_depth_flopros"] = self.flood_depth(flood_maps=flood_maps)
-        if "fraction" in flood_maps:
-            ds_flood["flood_fraction_flopros"] = flood_maps["fraction"]
+        ds_flood_flopros = self.flood_depth(flood_maps=flood_maps)
+        ds_flood["flood_depth_flopros"] = ds_flood_flopros["flood_depth"]
+        if "fraction" in ds_flood_flopros:
+            ds_flood["fraction_flopros"] = ds_flood_flopros["fraction"]
 
         # Return data
         return ds_flood
@@ -358,7 +357,7 @@ class RiverFloodInundation:
         self,
         reference: Optional[xr.DataArray] = None,
         coarsening: int | None = 7,
-        coarsen_agg: Callable = np.nanmean,
+        coarsen_agg: Callable | Literal["mean", "median", "max"] = np.nanmean,
         overwrite_tiles: bool = False,
     ) -> xr.Dataset:
         """Load flood hazard maps for the area represented by the given reference
@@ -376,8 +375,9 @@ class RiverFloodInundation:
             reduces accuracy. The original resolution is 3 arc seconds. Defaults to 7
             (coarse resolution of 21 arc seconds). If ``None``, does not apply
             coarsening.
-        coarsen_agg
-            Function used for coarsening pixels. Defaults to mean.
+        coarsen_agg : numpy ufunc or str
+            Function used for coarsening pixels. Choosing ``"mean"``, ``"median"``, or
+            ``"max"`` will use the respective NaN-ignoring function from numpy.
         overwrite_tiles : bool
             Overwrite already downloaded files. Defaults to ``False``.
 
@@ -408,7 +408,11 @@ class RiverFloodInundation:
                 flood_maps_dir=flood_maps_dir, tiles=tiles_select
             )
             flood_maps = xr.Dataset({"inundation": inundation})
+
+            # Coarsening
+            # TODO: Separate funcion?
             if coarsening is not None:
+                # Choose function
                 if isinstance(coarsen_agg, str):
                     funcs = {
                         "mean": np.nanmean,
@@ -416,6 +420,8 @@ class RiverFloodInundation:
                         "max": np.nanmax,
                     }
                     coarsen_agg = funcs[coarsen_agg]
+
+                # Coarsening
                 flood_maps_coarse = inundation.coarsen(
                     longitude=coarsening, latitude=coarsening, boundary="pad"
                 )
@@ -425,9 +431,17 @@ class RiverFloodInundation:
                         "inundation": flood_maps_coarsened.where(
                             flood_maps_coarsened > 0.0
                         ),
-                        "fraction": flood_maps_coarse.count() / (coarsening**2),
+                        "fraction": (
+                            flood_maps_coarse.count() / (coarsening**2)
+                        ).astype("float32"),
                     }
                 )
+
+                # NOTE: Custom "first" flood map is zero everywhere, therefore ignore
+                #       its fraction and take the one from the first actual map.
+                flood_maps["fraction"][{"return_period": 0}] = flood_maps[
+                    "fraction"
+                ].isel(return_period=1)
 
             return flood_maps
 
@@ -801,7 +815,7 @@ class RiverFloodInundation:
         self,
         return_period_regrid: Optional[xr.DataArray] = None,
         flood_maps: Optional[xr.Dataset] = None,
-    ):
+    ) -> xr.Dataset:
         """Compute the flood depth from regridded return period data.
 
         Interpolate the flood hazard maps stored in :py:attr`flood_maps` in the return
@@ -829,7 +843,7 @@ class RiverFloodInundation:
 
         Returns
         -------
-        inundation : xr.DataArray
+        inundation : xr.Dataset
             The flood inundation at every location of the flood hazard maps grid.
         """
         file_path = self.cache_paths.return_period_regrid

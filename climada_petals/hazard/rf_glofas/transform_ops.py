@@ -757,7 +757,10 @@ def interpolate_space(
 
     # Interpolate the return period
     return_period_regridded = return_period.interp(
-        coords={"longitude": flood_maps["longitude"], "latitude": flood_maps["latitude"]},
+        coords={
+            "longitude": flood_maps["longitude"],
+            "latitude": flood_maps["latitude"],
+        },
         method=method,
         kwargs={"fill_value": None},  # Extrapolate
     )
@@ -841,9 +844,7 @@ def apply_flopros(
     return return_period.where(return_period > flopros)
 
 
-def flood_depth(
-    return_period: DatasetOrArray, flood_maps: xr.Dataset
-) -> DatasetOrArray:
+def flood_depth(return_period: xr.DataArray, flood_maps: xr.Dataset) -> xr.Dataset:
     """Compute the flood depth from a return period and flood maps.
 
     At each lat/lon coordinate, take the return period(s) and use them to interpolate
@@ -929,8 +930,22 @@ def flood_depth(
         out_depth[:] = np.interp(return_period, return_periods, hazard)
         out_depth[:] = np.maximum(out_depth, 0.0)
 
+    @guvectorize(
+        f"(float32{arr_str}, float64[:], int64[:], float32{arr_str})",
+        f"{core_dims_str}, (j), (j) -> {core_dims_str}",
+        nopython=True,
+    )
+    def interpolate_fraction(return_period, fraction, return_periods, out_frac):
+        """Linearly interpolate the fraction to a given return period"""
+        # Shortcut for only zeros
+        if np.all(fraction == 0.0):
+            out_frac[:] = np.full_like(return_period, 0.0)
+            return
+
+        out_frac[:] = np.interp(return_period, return_periods, fraction)
+
     # Perform operation
-    out = xr.apply_ufunc(
+    inundation = xr.apply_ufunc(
         interpolate,
         return_period,
         flood_maps["inundation"],
@@ -941,8 +956,20 @@ def flood_depth(
         output_dtypes=[np.float32],
         dask_gufunc_kwargs=dict(allow_rechunk=True),
     )
-    if isinstance(out, xr.DataArray):
-        out = out.rename("Flood Depth")
+    out = xr.Dataset({"flood_depth": inundation})
+    if "fraction" in flood_maps:
+        fraction = xr.apply_ufunc(
+            interpolate,
+            return_period,
+            flood_maps["fraction"],
+            flood_maps["return_period"],
+            input_core_dims=[core_dims, ["return_period"], ["return_period"]],
+            output_core_dims=[core_dims],
+            dask="parallelized",
+            output_dtypes=[np.float32],
+            dask_gufunc_kwargs=dict(allow_rechunk=True),
+        )
+        out["fraction"] = fraction
     if needs_expand:
         out = out.squeeze(dim=expand_dim, drop=True)
     return out

@@ -125,7 +125,12 @@ class TestRiverFloodInundation(unittest.TestCase):
         cls.flood_maps.to_netcdf(cls.temppath / "flood-maps.nc")
         cls.discharge = cls.flood_maps["inundation"].copy().rename("dis")
         cls.return_period = cls.flood_maps["inundation"].copy().rename("rp")
-        cls.flood_depth = cls.flood_maps["inundation"].copy().rename("fd")
+        cls.ds_flood_depth = xr.Dataset(
+            {
+                "flood_depth": cls.flood_maps["inundation"],
+                "fraction": cls.flood_maps["fraction"],
+            }
+        )
 
         arr = xr.DataArray([[0]], coords={"longitude": [0], "latitude": [0]})
         cls.gumbel_fits = xr.Dataset({"loc": arr, "scale": arr, "samples": arr})
@@ -491,7 +496,7 @@ class TestRiverFloodInundation(unittest.TestCase):
     @patch.object(RiverFloodInundation, "load_flood_maps")
     def test_flood_depth(self, load_flood_maps, flood_depth, **_):
         """Check if flood_depth passes parameters correctly"""
-        flood_depth.return_value = self.flood_depth
+        flood_depth.return_value = self.ds_flood_depth
         load_flood_maps.return_value = self.flood_maps
 
         # Default, use argument
@@ -547,8 +552,12 @@ class TestRiverFloodInundation(unittest.TestCase):
         load_flood_maps.assert_called_once_with(reference=self.discharge)
         regrid.assert_called_once_with(**regrid_check_1_kws)
         self.assertEqual(flood_depth.call_count, 2)
-        xrt.assert_equal(ds_result["flood_depth"], self.flood_depth)
-        xrt.assert_equal(ds_result["flood_depth_flopros"], self.flood_depth)
+        xrt.assert_equal(ds_result["flood_depth"], self.ds_flood_depth["flood_depth"])
+        xrt.assert_equal(ds_result["fraction"], self.ds_flood_depth["fraction"])
+        xrt.assert_equal(
+            ds_result["flood_depth_flopros"], self.ds_flood_depth["flood_depth"]
+        )
+        xrt.assert_equal(ds_result["fraction_flopros"], self.ds_flood_depth["fraction"])
 
         # Reset mocks
         for mock in (
@@ -564,17 +573,23 @@ class TestRiverFloodInundation(unittest.TestCase):
         ds_result = self.rf.compute(
             self.discharge,
             apply_protection=True,
-            load_flood_maps_kws={"coarsening": 3},
+            load_flood_maps_kws={"coarsening": None},
             resample_kws=dict(num_bootstrap_samples=10),
             regrid_kws=regrid_kws | {"method": "nearest"},
         )
         return_period.assert_not_called()
         return_period_resample.assert_called_once()
-        load_flood_maps.assert_called_once_with(reference=self.discharge, coarsening=3)
+        load_flood_maps.assert_called_once_with(
+            reference=self.discharge, coarsening=None
+        )
         regrid.assert_called_once_with(**regrid_check_2_kws)
         flood_depth.assert_called_once()
         self.assertNotIn("flood_depth", ds_result.data_vars.keys())
-        xrt.assert_equal(ds_result["flood_depth_flopros"], self.flood_depth)
+        self.assertNotIn("fraction", ds_result.data_vars.keys())
+        xrt.assert_equal(
+            ds_result["flood_depth_flopros"], self.ds_flood_depth["flood_depth"]
+        )
+        xrt.assert_equal(ds_result["fraction_flopros"], self.ds_flood_depth["fraction"])
 
     @unittest.skipIf(regrid is None, "xesmf is not installed")
     @patch("climada_petals.hazard.rf_glofas.regrid.regrid")
@@ -592,7 +607,7 @@ class TestRiverFloodInundation(unittest.TestCase):
         return_period.return_value = self.return_period
         return_period_resample.return_value = self.return_period
         regrid.return_value = self.return_period, "regridder"
-        flood_depth.return_value = self.flood_depth
+        flood_depth.return_value = self.ds_flood_depth
         load_flood_maps.return_value = self.flood_maps
 
         self._test_compute_default(
@@ -633,7 +648,7 @@ class TestRiverFloodInundation(unittest.TestCase):
         return_period.return_value = self.return_period
         return_period_resample.return_value = self.return_period
         interpolate_space.return_value = self.return_period
-        flood_depth.return_value = self.flood_depth
+        flood_depth.return_value = self.ds_flood_depth
         load_flood_maps.return_value = self.flood_maps
 
         self._test_compute_default(
