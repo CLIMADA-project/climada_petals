@@ -158,6 +158,7 @@ class TestGlofasDownloadOps(unittest.TestCase):
             product="forecast",
             num_proc=42,
             output_dir=out_dir,
+            allow_failure=False,
             request_kw={"some_kwarg": "foo"},
             requests=[
                 {
@@ -357,6 +358,37 @@ class TestGlofasDownloadOps(unittest.TestCase):
             glofas_request_multiple.call_args.args[1][1]
             | {"year": ["2000"], "month": ["03"], "day": ["11"]},
         )
+
+    def test_handling_unsuccessful_downloads(self):
+        # With warning
+        self.glofas_request_mock.return_value = ["a", "b"]
+        with self.assertLogs(
+            "climada_petals.hazard.rf_glofas.transform_ops", "WARNING"
+        ) as cm:
+            # Three requests
+            files = download_glofas_discharge(
+                "forecast",
+                pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2001-03-11"]),
+                42,
+                self.tempdir.name,
+                split_request=True,
+            )
+        self.assertEqual(files, ["a", "b"])
+        self.assertIn(
+            "Some requests failed. 2 of 3 requests were successful", cm.output[0]
+        )
+
+        # With error
+        self.glofas_request_mock.return_value = []
+        with self.assertRaisesRegex(RuntimeError, "All requests failed."):
+            # Three requests
+            files = download_glofas_discharge(
+                "forecast",
+                pd.DatetimeIndex(["2000-01-10", "2000-02-10", "2001-03-11"]),
+                42,
+                self.tempdir.name,
+                split_request=True,
+            )
 
 
 class TestRegrid(unittest.TestCase):

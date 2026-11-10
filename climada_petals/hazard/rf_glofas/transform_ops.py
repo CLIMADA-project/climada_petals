@@ -330,11 +330,11 @@ def download_glofas_discharge(
         num_proc=num_proc,
         output_dir=download_path,
         request_kw=request_kwargs,
+        allow_failure=(product == "reforecast"),
         requests=requests,
     )
 
     # Strip None values from failed requests
-    files = [f for f in files if f is not None]
     if len(files) == 0:
         raise RuntimeError("All requests failed. No files were downloaded.")
     elif len(files) < len(requests):

@@ -23,11 +23,13 @@ Store (CDS).
 from pathlib import Path
 import multiprocessing as mp
 from copy import deepcopy
-from typing import Iterable, Mapping, Any, Optional, List, Union
+from collections.abc import Iterable, Mapping
+from typing import Any, Union, List, Optional
 import itertools as it
 from datetime import datetime
 import logging
 import hashlib
+import functools as ft
 
 from cdsapi import Client
 import requests
@@ -118,13 +120,20 @@ def cleanup_download_dir(
         LOGGER.debug("Dry run. No files removed")
 
 
+def purge_path_list(path_list: list[Path | None]) -> list[Path]:
+    """Purge any None entries from the list"""
+    return [item for item in path_list if item is not None]
+
+
 def glofas_request_single(
     product: str,
     request: Mapping[str, str | list[str]],
     outpath: Union[Path, str],
     use_cache: bool = True,
     client_kw: Optional[Mapping[str, Any]] = None,
-) -> Path:
+    *,
+    allow_failure: bool = False,
+) -> Path | None:
     """Perform a single request for data from the Copernicus data store
 
     This will skip the download if a file was found at the target location with the same
@@ -172,7 +181,9 @@ def glofas_request_single(
     try:
         client.retrieve(product, request, outfile)
     except requests.exceptions.HTTPError as e:
-        LOGGER.error("Error occurred while retrieving data: %s, returning None", e)
+        if not allow_failure:
+            raise
+        LOGGER.info("Error occurred while retrieving data:\n%s", e)
         return None
 
     # Dump request
@@ -189,12 +200,14 @@ def glofas_request_multiple(
     outdir: Union[Path, str],
     num_proc: int,
     use_cache: bool,
+    allow_failure: bool,
     client_kw: Optional[Mapping[str, Any]] = None,
-) -> List[Path]:
+) -> List[Path | None]:
     """Execute multiple requests to the Copernicus data store in parallel"""
+    func = ft.partial(glofas_request_single, allow_failure=allow_failure)
     with mp.Pool(num_proc) as pool:
         return pool.starmap(
-            glofas_request_single,
+            func,
             zip(
                 it.repeat(product),
                 requests,
@@ -211,6 +224,7 @@ def glofas_request(
     *,
     num_proc: int = 1,
     use_cache: bool = True,
+    allow_failure: bool = False,
     client_kw: Optional[Mapping[str, Any]] = None,
     request_kw: Optional[Mapping[str, str | list[str]]] = None,
     requests: Optional[List[Mapping[str, str | list[str]]]] = None,
@@ -236,6 +250,8 @@ def glofas_request(
 
         - ``historical``: Historical reanalysis discharge data.
         - ``forecast``: Ensemble forecast discharge data.
+        - ``reforecast``: Ensemble reforecast discharge data.
+
     output_dir : Path
         Output directory for the downloaded data
     num_proc : int
@@ -243,6 +259,10 @@ def glofas_request(
     use_cache : bool (optional)
         Skip downloading if the target file exists and the accompanying request file
         contains the same request
+    allow_failure : bool (optional)
+        Do not raise an exception for failed downloads but simply skip failed requests
+        in the returned list of downloaded files. Use this to skip missing reforecast
+        data.
     client_kw : dict (optional)
         Dictionary with keyword arguments for the ``cdsapi.Client`` used for downloading
     request_kw : dict(str: str), optional
@@ -286,15 +306,18 @@ def glofas_request(
 
     # Single request
     if requests is None:
-        return [
-            glofas_request_single(
-                glofas_product,
-                sanitize_request_lists(default_request),
-                output_dir,
-                use_cache,
-                client_kw,
-            )
-        ]
+        return purge_path_list(
+            [
+                glofas_request_single(
+                    glofas_product,
+                    sanitize_request_lists(default_request),
+                    output_dir,
+                    use_cache,
+                    client_kw,
+                    allow_failure=allow_failure,
+                )
+            ]
+        )
 
     # Request list
     requests = [
@@ -304,13 +327,28 @@ def glofas_request(
 
     # Single request
     if len(requests) == 1:
-        return [
+        path_list = [
             glofas_request_single(
-                glofas_product, requests[0], output_dir, use_cache, client_kw
+                glofas_product,
+                requests[0],
+                output_dir,
+                use_cache,
+                client_kw,
+                allow_failure=allow_failure,
             )
         ]
 
     # Execute request
-    return glofas_request_multiple(
-        glofas_product, requests, output_dir, num_proc, use_cache, client_kw
-    )
+    else:
+        path_list = glofas_request_multiple(
+            glofas_product,
+            requests,
+            output_dir,
+            num_proc,
+            use_cache,
+            allow_failure,
+            client_kw,
+        )
+
+    # Remove any None in the list (occurs when failure is allowed)
+    return purge_path_list(path_list)
