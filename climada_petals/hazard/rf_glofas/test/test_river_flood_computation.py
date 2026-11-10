@@ -332,13 +332,15 @@ class TestRiverFloodInundation(unittest.TestCase):
     def test_load_flood_maps(self, download_flood_map_tiles, open_flood_map_tiles, **_):
         """Check if map tiles are selected correctly"""
         reference = xr.DataArray(
-            np.ones((14, 14)),  # Default coarsening is 7
+            np.ones((3, 14, 14)),  # Default coarsening is 7
             coords={
+                "return_period": [1, 10, 20],
                 "longitude": np.linspace(-169, -155, 14),
                 "latitude": np.linspace(69.999, 59.99, 14),
             },
         )
-        reference[0, 0] = np.nan
+        reference[0, :, :] = np.zeros((14, 14))
+        reference[1, 0, 0] = np.nan
         open_flood_map_tiles.return_value = reference
 
         # Check selection
@@ -362,31 +364,62 @@ class TestRiverFloodInundation(unittest.TestCase):
 
         # Check coarsening
         self.assertIn("fraction", maps)
-        self.assertDictEqual(dict(maps.sizes), {"longitude": 2, "latitude": 2})
-        np.testing.assert_array_equal(maps["inundation"], np.ones((2, 2)))
+        self.assertDictEqual(
+            dict(maps.sizes), {"longitude": 2, "latitude": 2, "return_period": 3}
+        )
+        np.testing.assert_array_equal(maps["inundation"][1:, ...], np.ones((2, 2, 2)))
+
+        # Zero inundation is simplified to NaN
         np.testing.assert_array_equal(
-            maps["fraction"], np.array([[48 / 49, 1.0], [1.0, 1.0]])
+            maps["inundation"][0, ...], np.full((2, 2), np.nan)
+        )
+
+        # Fraction should be the same for first and second RP
+        for i in range(2):
+            with self.subTest(dim=i):
+                np.testing.assert_array_equal(
+                    maps["fraction"].isel(return_period=i),
+                    np.array([[48 / 49, 1.0], [1.0, 1.0]], dtype="float32"),
+                )
+        np.testing.assert_array_equal(
+            maps["fraction"].isel(return_period=2),
+            np.array([[1.0, 1.0], [1.0, 1.0]], dtype="float32"),
         )
 
         # Check manual coarsening
         maps = self.rf.load_flood_maps(reference, coarsening=5, coarsen_agg=np.mean)
-        self.assertDictEqual(dict(maps.sizes), {"longitude": 3, "latitude": 3})
+        self.assertDictEqual(
+            dict(maps.sizes), {"longitude": 3, "latitude": 3, "return_period": 3}
+        )
 
         # Check inundation (NaNs at the border due to NaN padding)
-        inundation = np.ones((3, 3))
+        np.testing.assert_array_equal(
+            maps["inundation"].isel(return_period=0), np.full((3, 3), np.nan)
+        )
+
+        inundation = np.ones((3, 3), dtype="float32")
         inundation[0, 0] = np.nan
         inundation[:, 2] = np.nan
         inundation[2, :] = np.nan
         inundation[2, 2] = np.nan
-        np.testing.assert_array_equal(maps["inundation"], inundation)
+        np.testing.assert_array_equal(
+            maps["inundation"].isel(return_period=1), inundation
+        )
+        inundation[0, 0] = 1.0
+        np.testing.assert_array_equal(
+            maps["inundation"].isel(return_period=2), inundation
+        )
 
         # Check fraction
-        fraction = np.ones((3, 3))
+        fraction = np.ones((3, 3), dtype="float32")
         fraction[0, 0] = 24 / 25
         fraction[:, 2] = 20 / 25
         fraction[2, :] = 20 / 25
         fraction[2, 2] = 16 / 25
-        np.testing.assert_array_equal(maps["fraction"], fraction)
+        np.testing.assert_array_equal(maps["fraction"].isel(return_period=0), fraction)
+        np.testing.assert_array_equal(maps["fraction"].isel(return_period=1), fraction)
+        fraction[0, 0] = 1.0
+        np.testing.assert_array_equal(maps["fraction"].isel(return_period=2), fraction)
 
     @unittest.skipIf(regrid is None, "xesmf is not installed")
     @patch("climada_petals.hazard.rf_glofas.regrid.regrid")
