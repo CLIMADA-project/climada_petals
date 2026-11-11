@@ -19,8 +19,10 @@ dependencies:
   - mccabe>=0.6
   - nb_conda_kernels
   - pandoc
+  - pooch>=1.9
   - pip
   - sphinx>=2.0,<9.0
+  - lxml
   - pip:
     - coverage>=4.5
     - descartes
