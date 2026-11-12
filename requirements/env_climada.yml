@@ -7,8 +7,8 @@ dependencies:
   - gfortran>=13.0
   - libgdal>=3.10
   - lxml>=6
-  - meson>=1.4,<1.5  # meson >=1.5 may break geoclaw setup (at least for python 3.11)
   - meson-python>=0.18
+  - meson>=1.4,<1.5  # meson >=1.5 may break geoclaw setup (at least for python 3.11)
   - osm-flex>=1.1
   - overpy>=0.7
   - pooch>=1.9
