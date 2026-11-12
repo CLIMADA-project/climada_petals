@@ -29,11 +29,16 @@ import copy as cp
 import logging
 
 import numpy as np
+import pandas as pd
 
 import climada.util.lines_polys_handler as u_lp
 from climada.engine.impact_calc import ImpactCalc
 from climada.entity import Exposures, ImpactFuncSet
-from climada_petals.engine.networks.nw_utils import LINE_EXPOSURES
+from climada_petals.engine.networks.nw_utils import (
+    ADDED_COL,
+    LINE_EXPOSURES,
+    _added_mask,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,11 +66,71 @@ def gdf_from_network(df_edges_or_nodes, ci_type):
     return df_edges_or_nodes[df_edges_or_nodes["ci_type"] == ci_type].copy()
 
 
-def exposure_from_nodes(network, ci_type, value=None, value_col=None, tag=None):
+def _row_mask(mask, gdf, kind):
+    """Check a ``mask`` argument and return it as a boolean Series on ``gdf``.
+
+    Parameters
+    ----------
+    mask : pd.Series or array-like of bool
+        A Series must have the same index as ``gdf``; an array the same length.
+    gdf : gpd.GeoDataFrame
+        Nodes or edges of the network.
+    kind : str
+        ``"nodes"`` or ``"edges"``, for the error messages.
+
+    Returns
+    -------
+    pd.Series
+        Boolean Series with the index of ``gdf``.
+    """
+    if isinstance(mask, pd.Series):
+        if not mask.index.equals(gdf.index):
+            raise ValueError(
+                f"mask must have the same index as the network {kind} "
+                f"(e.g. a condition on network.{kind})."
+            )
+        values = mask.to_numpy()
+    else:
+        values = np.asarray(mask)
+        if values.shape != (len(gdf),):
+            raise ValueError(
+                f"mask must have one value per row of the network {kind} "
+                f"({len(gdf)}), got shape {values.shape}."
+            )
+    if values.dtype != bool:
+        raise ValueError(f"mask must be boolean, got dtype {values.dtype}.")
+    return pd.Series(values, index=gdf.index)
+
+
+def _select_components(gdf, ci_type, kind, mask=None):
+    """Rows of ``gdf`` of type ``ci_type``, optionally restricted by ``mask``.
+
+    Raises a ``ValueError`` if no row is selected.
+    """
+    selected = gdf["ci_type"] == ci_type
+    if not selected.any():
+        raise ValueError(f"The network has no {kind} of ci_type '{ci_type}'.")
+    if mask is not None:
+        selected &= _row_mask(mask, gdf, kind)
+        if not selected.any():
+            raise ValueError(f"mask selects no {kind} of ci_type '{ci_type}'.")
+    return gdf[selected].copy()
+
+
+def _check_column(gdf, col, arg, kind):
+    """Raise if the column ``col`` given as argument ``arg`` is not in ``gdf``."""
+    if col not in gdf.columns:
+        raise ValueError(f"{arg}='{col}' is not a column of the network {kind}.")
+
+
+def exposure_from_nodes(
+    network, ci_type, value=None, value_col=None, tag=None, mask=None
+):
     """Prepare an Exposures object from the nodes of a network.
 
-    Each node of type ``ci_type`` becomes one exposure point. The exposure
-    keeps the node index and columns (including ``ci_type``).
+    Each node of type ``ci_type`` (optionally restricted by ``mask``) becomes
+    one exposure point. The exposure keeps the node index and columns
+    (including ``ci_type``).
 
     Parameters
     ----------
@@ -84,14 +149,28 @@ def exposure_from_nodes(network, ci_type, value=None, value_col=None, tag=None):
         Tag stored as ``Exposures.description``. ``disrupt_network`` uses it
         to select the impact function (``id``) and the functionality
         threshold. Default ``None`` uses ``ci_type``.
+    mask : pd.Series or array-like of bool, optional
+        Selects a subset of the nodes of type ``ci_type``, e.g. to give
+        hospitals and clinics (both ``"healthcare"``) different impact
+        functions: one exposure per subset, each with its own ``tag``. A
+        Series must have the index of ``network.nodes``, an array its length.
+        Default ``None`` selects all nodes of type ``ci_type``.
 
     Returns
     -------
     Exposures
         An Exposures object containing the nodes of the network as points
         with a value.
+
+    Raises
+    ------
+    ValueError
+        If no node is selected, if ``mask`` is invalid, or if ``value_col``
+        is not a column of the nodes.
     """
-    gdf = gdf_from_network(network.nodes, ci_type)
+    if value_col is not None:
+        _check_column(network.nodes, value_col, "value_col", "nodes")
+    gdf = _select_components(network.nodes, ci_type, "nodes", mask)
     exp_pnt = Exposures(gdf)
     if value is not None:
         exp_pnt.gdf["value"] = value
@@ -110,15 +189,18 @@ def exposure_from_edges(
     network,
     ci_type,
     res,
-    disagg_val=1,
+    disagg_val=None,
     disagg_met=u_lp.DisaggMethod.FIX,
     disagg_col=None,
     tag=None,
+    mask=None,
+    include_added=True,
 ):
     """Prepare an Exposures object from the edges of a network.
 
-    Each edge of type ``ci_type`` is disaggregated into points spaced about
-    ``res`` metres apart (at least one point per edge), with
+    Each edge of type ``ci_type`` (optionally restricted by ``mask``) is
+    disaggregated into points spaced about ``res`` metres apart (at least one
+    point per edge), with
     ``climada.util.lines_polys_handler.exp_geom_to_pnt``. The exposure has a
     two-level index: the edge index, then the point number along the edge.
 
@@ -131,8 +213,9 @@ def exposure_from_edges(
     res : float
         Distance between the points of the disaggregation, in metres.
     disagg_val : int or float, optional
-        Value assigned to each edge before disaggregation. Default is 1.
-        Set it to ``None`` to take the value from ``disagg_col``.
+        Value assigned to each edge before disaggregation. Takes precedence
+        over ``disagg_col`` when both are provided. If neither
+        ``disagg_val`` nor ``disagg_col`` is given, a value of ``1`` is used.
     disagg_met : DisaggMethod, optional
         How the edge value is assigned to its points: ``FIX`` (default)
         gives every point the edge value, ``DIV`` divides it equally over the
@@ -144,16 +227,66 @@ def exposure_from_edges(
         Tag stored as ``Exposures.description``. ``disrupt_network`` uses it
         to select the impact function (``id``) and the functionality
         threshold. Default ``None`` uses ``ci_type``.
+    mask : pd.Series or array-like of bool, optional
+        Selects a subset of the edges of type ``ci_type``. A Series must have
+        the index of ``network.edges``, an array its length. Default ``None``
+        selects all edges of type ``ci_type``.
+    include_added : bool, optional
+        Whether the edges added by the module (column ``nw_utils.ADDED_COL``:
+        links from ``add_physical_links``, ``merge_clusters`` /
+        ``link_clusters``) are exposed. Default ``True``: they stand for the
+        access between components and can fail like the other edges of
+        ``ci_type``. Their geometry is a straight line, not the real path, so
+        long links (e.g. built with an infinite ``thresh_dist``) may cross the
+        hazard where no road exists. With ``False`` they are left out and keep
+        their functional state. ``make_network_stat`` never counts them in
+        the infrastructure statistics.
 
     Returns
     -------
     Exposures
         An Exposures object containing the edges of the network as points
         with a value.
+
+    Raises
+    ------
+    ValueError
+        If no edge is selected, if ``mask`` is invalid, or if ``disagg_col``
+        is not a column of the edges.
+
+    Examples
+    --------
+    Main roads and tracks with different impact functions and thresholds,
+    using an OSM ``highway`` column:
+
+    >>> main = network.edges["highway"].isin(["motorway", "trunk", "primary"])
+    >>> exp_main = exposure_from_edges(
+    ...     network, "road", res=500, mask=main, tag="road_main"
+    ... )
+    >>> exp_track = exposure_from_edges(
+    ...     network, "road", res=500, mask=~main, tag="road_track"
+    ... )
+
+    The impact function set then needs impact functions with ids
+    ``"road_main"`` and ``"road_track"``, and the thresholds both keys.
     """
-    gdf = gdf_from_network(network.edges, ci_type)
+
+    if disagg_col is not None:
+        _check_column(network.edges, disagg_col, "disagg_col", "edges")
+    gdf = _select_components(network.edges, ci_type, "edges", mask)
+    if not include_added:
+        gdf = gdf[~_added_mask(gdf)].copy()
+        if gdf.empty:
+            raise ValueError(
+                f"All selected edges of ci_type '{ci_type}' were added by the "
+                f"module (column '{ADDED_COL}'). Use include_added=True to "
+                "expose them."
+            )
     if disagg_val is None:
-        gdf["value"] = gdf[disagg_col]
+        if disagg_col is None:
+            disagg_val = 1
+        else:
+            gdf["value"] = gdf[disagg_col]
 
     exp_line = Exposures(gdf)
     exp_pnt = u_lp.exp_geom_to_pnt(

@@ -138,6 +138,21 @@ def _ci_values(gdf, ci_type, col):
     return gdf.loc[gdf["ci_type"] == ci_type, col].tolist()
 
 
+def _with_added_link(network):
+    """Append a road edge 4 -> 0 marked as added by the module (``ADDED_COL``,
+    missing on the input edges, as after add_physical_links); return its label."""
+    edges = network.edges
+    added = edges.iloc[[0]].copy()
+    added["id"] = len(edges)
+    added["from_id"] = 4
+    added["to_id"] = 0
+    added["geometry"] = [LineString([(4, 4), (0, 0)])]
+    network.edges = pd.concat(
+        [edges, added.assign(**{ADDED_COL: True})], ignore_index=True
+    )
+    return len(network.edges) - 1
+
+
 # ========================================================================
 # Filtering network components
 # ========================================================================
@@ -241,10 +256,44 @@ def test_exposure_from_nodes_geometry_preserved(funcstate_network):
     assert exp.gdf.geometry.iloc[0].geom_type == "Point"
 
 
-@_xfail("I2", "an unknown ci_type returns an empty exposure")
 def test_exposure_from_nodes_unknown_ci_type_raises(funcstate_network):
     with pytest.raises(ValueError, match="(?i)no nodes"):
         exposure_from_nodes(funcstate_network, "school")
+
+
+def test_exposure_from_nodes_missing_value_col_raises(funcstate_network):
+    with pytest.raises(ValueError, match="value_col='counts'"):
+        exposure_from_nodes(funcstate_network, "people", value_col="counts")
+
+
+@pytest.mark.parametrize("as_array", [False, True])
+def test_exposure_from_nodes_mask(funcstate_network, as_array):
+    """mask selects a subset of the nodes of the ci_type (Series or array)."""
+    mask = funcstate_network.nodes["id"].isin([1, 3])
+    if as_array:
+        mask = mask.to_numpy()
+    exp = exposure_from_nodes(funcstate_network, "road", mask=mask, tag="road_13")
+    assert exp.gdf.index.tolist() == [1, 3]
+    assert exp.description == "road_13"
+
+
+@pytest.mark.parametrize(
+    "mask, match",
+    [
+        (np.array([True, False]), "one value per row"),
+        (np.array([0, 1, 1, 0, 0]), "boolean"),
+        (pd.Series([True] * 5, index=[10, 11, 12, 13, 14]), "same index"),
+    ],
+)
+def test_exposure_from_nodes_invalid_mask_raises(funcstate_network, mask, match):
+    with pytest.raises(ValueError, match=match):
+        exposure_from_nodes(funcstate_network, "road", mask=mask)
+
+
+def test_exposure_from_nodes_mask_selects_nothing_raises(funcstate_network):
+    mask = funcstate_network.nodes["ci_type"] == "people"  # no road node
+    with pytest.raises(ValueError, match="mask selects no nodes"):
+        exposure_from_nodes(funcstate_network, "road", mask=mask)
 
 
 # ========================================================================
@@ -281,10 +330,27 @@ def test_exposure_from_edges_points_per_edge(funcstate_network, res, n_pnts):
 
 
 def test_exposure_from_edges_has_value(funcstate_network):
-    """Each disaggregated point has a value column."""
+    """Without disagg_val and disagg_col, every point has the value 1."""
     exp = exposure_from_edges(funcstate_network, "road", res=10_000)
-    assert "value" in exp.gdf.columns
-    assert all(exp.gdf["value"] > 0)
+    assert (exp.gdf["value"] == 1).all()
+
+
+def test_exposure_from_edges_disagg_col_without_disagg_val(funcstate_network):
+    """disagg_col is used when disagg_val is not given (FIX: every point gets
+    the value of its edge)."""
+    exp = exposure_from_edges(
+        funcstate_network, "road", res=10_000, disagg_col="osm_id"
+    )
+    values = exp.gdf["value"].groupby(level=0, sort=False)
+    assert values.min().tolist() == [100, 101, 102, 103]
+    assert values.max().tolist() == [100, 101, 102, 103]
+
+
+def test_exposure_from_edges_disagg_val_overrides_disagg_col(funcstate_network):
+    exp = exposure_from_edges(
+        funcstate_network, "road", res=10_000, disagg_val=5, disagg_col="osm_id"
+    )
+    assert (exp.gdf["value"] == 5).all()
 
 
 def test_exposure_from_edges_value_from_column(funcstate_network):
@@ -313,36 +379,51 @@ def test_exposure_from_edges_lat_lon(funcstate_network):
     assert ((exp.latitude > 0) & (exp.latitude < 4)).all()
 
 
-@_xfail("I2", "disagg_val=None without disagg_col raises KeyError(None)")
-def test_exposure_from_edges_needs_value_source(funcstate_network):
-    """disagg_val=None without disagg_col -> clear ValueError."""
-    with pytest.raises(ValueError, match="disagg_col"):
-        exposure_from_edges(funcstate_network, "road", res=10_000, disagg_val=None)
+def test_exposure_from_edges_missing_disagg_col_raises(funcstate_network):
+    with pytest.raises(ValueError, match="disagg_col='width'"):
+        exposure_from_edges(funcstate_network, "road", res=10_000, disagg_col="width")
 
 
-@_xfail("I2", "an unknown ci_type returns an empty exposure")
 def test_exposure_from_edges_unknown_ci_type_raises(funcstate_network):
     with pytest.raises(ValueError, match="(?i)no edges"):
         exposure_from_edges(funcstate_network, "rail", res=10_000)
 
 
-@_xfail("I2", "links added by the module (ADDED_COL) are exposed (DI-3)")
-def test_exposure_from_edges_skips_added_links(funcstate_network):
-    """Straight links created by add_physical_links / link_clusters are not
-    infrastructure: they are not exposed (as in make_network_stat)."""
-    edges = funcstate_network.edges
-    added = edges.iloc[[0]].copy()
-    added["from_id"] = 4
-    added["to_id"] = 0
-    added["geometry"] = [LineString([(4, 4), (0, 0)])]
-    funcstate_network.edges = pd.concat(
-        [edges.assign(**{ADDED_COL: False}), added.assign(**{ADDED_COL: True})],
-        ignore_index=True,
-    )
+def test_exposure_from_edges_mask(funcstate_network):
+    """mask selects a subset of the edges of the ci_type."""
+    mask = funcstate_network.edges["osm_id"].isin([100, 102])
+    exp = exposure_from_edges(funcstate_network, "road", res=10_000, mask=mask)
+    assert exp.gdf.index.get_level_values(0).unique().tolist() == [0, 2]
+
+
+def test_exposure_from_edges_includes_added_links_by_default(funcstate_network):
+    """Links added by add_physical_links / link_clusters are exposed like the
+    other edges of the ci_type."""
+    label = _with_added_link(funcstate_network)
 
     exp = exposure_from_edges(funcstate_network, "road", res=10_000)
 
+    assert exp.gdf.index.get_level_values(0).unique().tolist() == [0, 1, 2, 3, label]
+
+
+def test_exposure_from_edges_skips_added_links(funcstate_network):
+    """With include_added=False, the added links are not exposed."""
+    _with_added_link(funcstate_network)
+
+    exp = exposure_from_edges(
+        funcstate_network, "road", res=10_000, include_added=False
+    )
+
     assert exp.gdf.index.get_level_values(0).unique().tolist() == [0, 1, 2, 3]
+
+
+def test_exposure_from_edges_only_added_links_raises(funcstate_network):
+    label = _with_added_link(funcstate_network)
+    mask = funcstate_network.edges.index == label
+    with pytest.raises(ValueError, match="include_added=True"):
+        exposure_from_edges(
+            funcstate_network, "road", res=10_000, mask=mask, include_added=False
+        )
 
 
 # ========================================================================
@@ -669,7 +750,11 @@ def test_disrupt_network_multi_event_raises(funcstate_network):
 
     with pytest.raises(ValueError, match="one event"):
         _run_disrupt(
-            funcstate_network, [exp], [_make_impf("healthcare")], {"healthcare": 0.3}, haz
+            funcstate_network,
+            [exp],
+            [_make_impf("healthcare")],
+            {"healthcare": 0.3},
+            haz,
         )
 
 
@@ -784,7 +869,11 @@ def test_disrupt_network_threshold_on_damage_ratio_nodes(funcstate_network):
     people_impf = _make_impf("people", intensity=(0, 5, 6, 100), mdd=(0, 0, 1, 1))
 
     network_disr, _ = _run_disrupt(
-        funcstate_network, [exp], [people_impf], {"people": 0.5}, _make_hazard(HAZ_DIAGONAL)
+        funcstate_network,
+        [exp],
+        [people_impf],
+        {"people": 0.5},
+        _make_hazard(HAZ_DIAGONAL),
     )
 
     assert _ci_values(network_disr.nodes, "people", "imp_dir") == pytest.approx([0.3])
