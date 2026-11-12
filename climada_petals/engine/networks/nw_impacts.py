@@ -4,32 +4,45 @@ This file is part of CLIMADA.
 Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
 
 CLIMADA is free software: you can redistribute it and/or modify it under the
-terms of the GNU Lesser General Public License as published by the Free
+terms of the GNU General Public License as published by the Free
 Software Foundation, version 3.
 
 CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
-You should have received a copy of the GNU Lesser General Public License along
+You should have received a copy of the GNU General Public License along
 with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
+---
+
+Direct impacts of a hazard on the components of a network
+
+Network components are turned into CLIMADA exposures (``exposure_from_nodes``,
+``exposure_from_edges``), their impacts are computed with CLIMADA's
+``ImpactCalc``, and the impacts are written back to the network as functional
+states (``NetworkImpactCalc.disrupt_network``). The disrupted network can then
+be used as the input of the cascade (``NetworkCalcs.cascade``).
 """
 
-import logging
-import numpy as np
-import pandas as pd
 import copy as cp
+import logging
+
+import numpy as np
+
 import climada.util.lines_polys_handler as u_lp
-from climada.entity import Exposures, ImpactFunc, ImpactFuncSet
 from climada.engine.impact_calc import ImpactCalc
+from climada.entity import Exposures, ImpactFuncSet
 from climada_petals.engine.networks.nw_utils import LINE_EXPOSURES
 
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel("INFO")
 
 
-## Exposures preparation
+# =============================================================================
+# Exposures from network components
+# =============================================================================
+
+
 def gdf_from_network(df_edges_or_nodes, ci_type):
     """Filter a nodes or edges GeoDataFrame by CI type.
 
@@ -49,7 +62,10 @@ def gdf_from_network(df_edges_or_nodes, ci_type):
 
 
 def exposure_from_nodes(network, ci_type, value=None, value_col=None, tag=None):
-    """Prepare an Exposures object from nodes of a network.
+    """Prepare an Exposures object from the nodes of a network.
+
+    Each node of type ``ci_type`` becomes one exposure point. The exposure
+    keeps the node index and columns (including ``ci_type``).
 
     Parameters
     ----------
@@ -59,14 +75,15 @@ def exposure_from_nodes(network, ci_type, value=None, value_col=None, tag=None):
         The type of the nodes to get.
     value : int or float, optional
         The value to assign to every exposure point. Takes precedence over
-        ``value_col`` when both are provided.  If neither ``value`` nor
+        ``value_col`` when both are provided. If neither ``value`` nor
         ``value_col`` is given, a default value of ``1`` is used.
     value_col : str, optional
-        Column name in the nodes dataframe to use as the exposure value.
-        Only used when ``value`` is ``None``.
+        Column name in the nodes dataframe to use as the exposure value
+        (e.g. ``"counts"`` for people). Only used when ``value`` is ``None``.
     tag : str, optional
-        A tag to assign to the exposure. Default ``None`` yields tag as
-        ``ci_type``.
+        Tag stored as ``Exposures.description``. ``disrupt_network`` uses it
+        to select the impact function (``id``) and the functionality
+        threshold. Default ``None`` uses ``ci_type``.
 
     Returns
     -------
@@ -85,7 +102,6 @@ def exposure_from_nodes(network, ci_type, value=None, value_col=None, tag=None):
     if tag is None:
         tag = ci_type
     exp_pnt.description = tag
-    exp_pnt.set_lat_lon()
     exp_pnt.check()
     return exp_pnt
 
@@ -98,10 +114,13 @@ def exposure_from_edges(
     disagg_met=u_lp.DisaggMethod.FIX,
     disagg_col=None,
     tag=None,
-    **disagg_kwargs,
 ):
-    """
-    Prepare an Exposures object from edges of a network.
+    """Prepare an Exposures object from the edges of a network.
+
+    Each edge of type ``ci_type`` is disaggregated into points spaced about
+    ``res`` metres apart (at least one point per edge), with
+    ``climada.util.lines_polys_handler.exp_geom_to_pnt``. The exposure has a
+    two-level index: the edge index, then the point number along the edge.
 
     Parameters
     ----------
@@ -109,24 +128,28 @@ def exposure_from_edges(
         The network to get the edges from.
     ci_type : str
         The type of the edges to get.
-    res : int
-        The resolution at which to disagregate the edges.
-    disagg_val : int, optional
-        The value to assign to each exposure points upon disaggregation. Default is 1.
+    res : float
+        Distance between the points of the disaggregation, in metres.
+    disagg_val : int or float, optional
+        Value assigned to each edge before disaggregation. Default is 1.
+        Set it to ``None`` to take the value from ``disagg_col``.
     disagg_met : DisaggMethod, optional
-        The value assignement method to use for disaggregation. Default is DisaggMethod.FIX.
+        How the edge value is assigned to its points: ``FIX`` (default)
+        gives every point the edge value, ``DIV`` divides it equally over the
+        points.
     disagg_col : str, optional
-        The column from the edges data frame to use for value assignement. Default None yields no "value" colum originally present to be used.
+        Column of the edges dataframe holding the edge values. Only used when
+        ``disagg_val`` is ``None``.
     tag : str, optional
-        A tag to assign to the exposure. Default None yields tag as ci_type.
-    **disagg_kwargs : dict
-        Additional keyword arguments to pass to the disaggregation function.
+        Tag stored as ``Exposures.description``. ``disrupt_network`` uses it
+        to select the impact function (``id``) and the functionality
+        threshold. Default ``None`` uses ``ci_type``.
 
     Returns
     -------
     Exposures
-        An Exposures object containing the edges of the network as points with a value.
-
+        An Exposures object containing the edges of the network as points
+        with a value.
     """
     gdf = gdf_from_network(network.edges, ci_type)
     if disagg_val is None:
@@ -139,25 +162,71 @@ def exposure_from_edges(
         disagg_val=disagg_val,
         disagg_met=disagg_met,
         to_meters=True,
-        **disagg_kwargs,
     )
     if tag is None:
         tag = ci_type
     exp_pnt.description = tag
-    exp_pnt.set_lat_lon()
     exp_pnt.check()
     return exp_pnt
 
 
+# =============================================================================
+# Impacts on the network
+# =============================================================================
+
+
 class NetworkImpactCalc:
+    """Compute direct hazard impacts on a network
+
+    Computes the impact of a hazard on exposures built from the network
+    (``exposure_from_nodes``, ``exposure_from_edges``) and writes it back to
+    the network as functional states, ready for a cascade (``NetworkCalcs.cascade``).
+    The network given is not modified: ``disrupt_network`` works on a copy.
+
+    Attributes
+    ----------
+    impf_set : ImpactFuncSet
+        Impact functions; one per exposure type. The impact functions' ``id``
+        must match the exposure tags in exp_list and the ``haz_type``
+        must match the hazard type from the hazard object.
+    impf_thresh_set : dict
+        Functionality threshold per exposure tag: components whose direct
+        impact is above the threshold become dysfunctional.
+    haz : Hazard
+        Hazard with a single event, in the CRS of the network.
+    network : Network
+        Network the exposures were built from, with functional states
+        (``func_internal``, ``func_tot``, ``imp_dir``), e.g. the network
+        after the base-state cascade.
+    exp_list : list of Exposures
+        Exposures built from ``network`` with ``exposure_from_nodes`` or
+        ``exposure_from_edges``.
+    """
+
     def __init__(self, impf_set, impf_thresh_set, haz, network, exp_list):
+        """Create a network impact calculator
+
+        Parameters
+        ----------
+        impf_set : ImpactFuncSet
+            Impact functions; one per exposure, with ``id`` equal to the
+            exposure tag (``Exposures.description``) and ``haz_type`` equal to
+            ``haz.haz_type``.
+        impf_thresh_set : dict
+            ``{tag: threshold}``: functionality threshold per exposure tag.
+        haz : Hazard
+            Hazard with a single event, in the CRS of the network.
+        network : Network
+            Network the exposures were built from.
+        exp_list : list of Exposures
+            Exposures built from ``network``.
+        """
         self.impf_set = impf_set
         self.impf_thresh_set = impf_thresh_set
         self.haz = haz
         self.network = network
         self.exp_list = exp_list
 
-    ## Impact calcs
     @staticmethod
     def calc_point_impacts(haz, exp, impf_set):
         """Impact calculation for a single point exposure.
@@ -193,7 +262,7 @@ class NetworkImpactCalc:
         exp_tag : str
             CI type tag identifying which rows to update.
         impf_thresh : float
-            Threshold on direct impact: values **above** this render
+            Threshold on direct impact: impact values above this render
             infrastructure dysfunctional.
 
         Returns
@@ -221,8 +290,30 @@ class NetworkImpactCalc:
         return gdf_nodes_or_edges
 
     def disrupt_network(self):
-        """wrapper to disrupt network based on hazard and exposure data."""
-        network_disr = cp.deepcopy(self.network)  # create new network object
+        """Compute the direct impacts and write them to a copy of the network
+
+        For each exposure of ``exp_list``: the impact is computed with the
+        impact function of its tag; for edge exposures, the point impacts are
+        summed per edge. The network rows of the exposure get
+
+        - ``imp_dir``: the direct impact,
+        - ``func_internal``: 1 if ``imp_dir`` is at most the threshold of the
+          tag, else 0,
+        - ``func_tot``: ``min(func_internal, func_tot)``, so a component that
+          already failed (e.g. in the base-state cascade) stays failed.
+
+        Run the cascade on the returned network to obtain the indirect
+        impacts (``NetworkCalcs(network_disr, dep_table).cascade()``).
+
+        Returns
+        -------
+        network_disr : Network
+            Deep copy of ``network`` with the updated functional states.
+        imp_dict : dict
+            ``{tag: Impact}``: the impact on each exposure (per edge for edge
+            exposures).
+        """
+        network_disr = cp.deepcopy(self.network)
         imp_dict = {}
         for exp in self.exp_list:
             impf = self.impf_set.get_func(
@@ -233,11 +324,9 @@ class NetworkImpactCalc:
             imp = NetworkImpactCalc.calc_point_impacts(
                 self.haz, exp, ImpactFuncSet([impf])
             )
-            # propagate impacts to network
             if exp.description in LINE_EXPOSURES:
-                imp = u_lp.impact_pnt_agg(
-                    imp, exp.gdf, u_lp.AggMethod.SUM
-                )  # reaggregate impacts if originally disaggregated
+                # re-aggregate the point impacts per edge
+                imp = u_lp.impact_pnt_agg(imp, exp.gdf, u_lp.AggMethod.SUM)
                 network_disr.edges = NetworkImpactCalc.impacts_to_network(
                     network_disr.edges, imp, exp.description, impf_thresh
                 )
@@ -246,6 +335,4 @@ class NetworkImpactCalc:
                     network_disr.nodes, imp, exp.description, impf_thresh
                 )
             imp_dict[exp.description] = imp
-        # gc.collect()
-        ## TODO eventually concat impact matrices and return them?
         return network_disr, imp_dict
