@@ -12,7 +12,7 @@ on:
       core_branch:
         description: Branch of CLIMADA Core to test against
         type: string
-        default: develop
+        default: add-uv-config  # TODO: Switch to 'develop'
         required: false
 
 
