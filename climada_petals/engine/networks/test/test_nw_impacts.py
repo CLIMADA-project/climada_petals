@@ -60,15 +60,20 @@ def funcstate_network(network_with_ci_types):
 HAZ_DIAGONAL = [[10.0, 20.0, 30.0, 40.0, 50.0]]
 
 
-def _make_hazard(intensity, haz_type="TC"):
+def _make_hazard(intensity, haz_type="TC", fraction=None):
     """Hazard on the 5 centroids (i, i), i = 0..4, of the toy network.
 
     Parameters
     ----------
     intensity : array-like
         Shape ``(n_events, 5)``; one row per event.
+    fraction : array-like, optional
+        Same shape as ``intensity``. Default: 1 everywhere.
     """
     intensity = np.atleast_2d(np.asarray(intensity, dtype=float))
+    if fraction is None:
+        fraction = np.ones_like(intensity)
+    fraction = np.atleast_2d(np.asarray(fraction, dtype=float))
     n_ev = intensity.shape[0]
     coords = np.arange(5, dtype=float)
     return Hazard(
@@ -79,7 +84,7 @@ def _make_hazard(intensity, haz_type="TC"):
         date=np.arange(1, n_ev + 1),
         frequency=np.ones(n_ev) / n_ev,
         intensity=sparse.csr_matrix(intensity),
-        fraction=sparse.csr_matrix(np.ones_like(intensity)),
+        fraction=sparse.csr_matrix(fraction),
     )
 
 
@@ -792,6 +797,38 @@ def test_disrupt_network_step_impact_function(
     assert _ci_values(network_disr.nodes, "healthcare", "func_internal") == [
         func_internal
     ]
+
+
+# The 4 toy edges are 156.8-156.9 km long: with a damage ratio of 0.3 at
+# every point, each edge has 47.0-47.1 km damaged
+@pytest.mark.parametrize(
+    "edge_rule, threshold, func_internal",
+    [
+        ("max_ratio", 0.5, [1, 1, 1, 1]),
+        ("max_ratio", 0.2, [0, 0, 0, 0]),
+        ("damaged_length", 47_000, [0, 0, 0, 0]),
+        ("damaged_length", 48_000, [1, 1, 1, 1]),
+    ],
+)
+def test_disrupt_network_damage_ratio_includes_fraction(
+    funcstate_network, edge_rule, threshold, func_internal
+):
+    """The hazard fraction enters the damage ratio: with a step function
+    (damage 1 at every point) and a fraction of 0.3 everywhere, the damage
+    ratio of every point is 0.3."""
+    exp = exposure_from_edges(funcstate_network, "road", res=10_000)
+    impf = ImpactFunc.from_step_impf((0, 50, 100), haz_type="TC", impf_id="road")
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp],
+        [impf],
+        {"road": threshold},
+        _make_hazard([[60.0] * 5], fraction=[[0.3] * 5]),
+        edge_rule=edge_rule,
+    )
+
+    assert _ci_values(network_disr.edges, "road", "func_internal") == func_internal
 
 
 def test_disrupt_network_does_not_modify_exposures(funcstate_network):

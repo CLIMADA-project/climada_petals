@@ -634,57 +634,31 @@ class NetworkImpactCalc:
     def disrupt_network(self):
         """Compute the direct impacts and write them to a copy of the network
 
-        For each exposure of ``exp_list``, the impact is computed with the
-        impact function of the exposure tag. The network rows the exposure was
-        built from (same row labels) get
+        Each exposure of ``exp_list`` gets the impact function and threshold
+        of its tag. The network rows the exposure was built from get:
 
-        - ``imp_dir``: the direct impact, in the units of the exposure value.
-          For a node, the impact at the node. For an edge (exposure from
-          ``exposure_from_edges``, two-level index), the sum of the impacts at
-          its points. With ``disagg_met=DIV`` (see ``exposure_from_edges``)
-          this sum is the damage to the edge value. With ``FIX`` (default)
-          every point carries the full edge value, so the sum is the edge value
-          times the sum of the damage ratios of the points; with value 1 it is
-          about the number of damaged points, and depends on ``res``.
-        - ``func_internal``: 0 if the component is above the threshold of the
-          tag, else 1. What is compared with the threshold is built from the
-          damage ratio of each point: the impact for an exposure value of 1,
-          i.e. the mean damage degree (MDD) times the percentage of affected
-          assets (PAA), both read from the impact function at the hazard
-          intensity of the point, times the hazard fraction at the point. The
-          damage ratio is between 0 and 1 and does not depend on the exposure
-          value.
+        - ``imp_dir``: the direct impact (for edges, summed over their points),
+        - ``func_internal``: 0 if the component is above its threshold, else 1,
+        - ``func_tot``: ``min(func_internal, func_tot)``, so components that
+          already failed (e.g. in the base-state cascade) stay failed.
 
-          - Node: its damage ratio.
-          - Edge with the edge rule ``"max_ratio"`` (default): the largest
-            damage ratio of its points. The edge fails if any part of it is
-            damaged above the threshold (a road flooded on part of its length
-            is cut). The threshold is a damage ratio.
-          - Edge with the edge rule ``"damaged_length"``: the damaged length
-            of the edge in metres, i.e. the sum over its points of the damage
-            ratio times the length the point stands for (edge length divided
-            by the number of points). The edge fails if more than the
-            threshold, in metres, is damaged, e.g. 1000 for "a road fails if
-            more than 1 km of it is damaged". With a damage curve that stays
-            below 1 (e.g. at most 30 % of a road blocked), 1 km at damage
-            ratio 0.3 counts as 300 m. A threshold of 0 makes the edge fail as
-            soon as any part of it is damaged.
+        The threshold is compared with the damage ratio of each point, i.e.
+        the impact for an exposure value of 1 (MDD x PAA at the hazard
+        intensity, times the hazard fraction), between 0 and 1:
 
-          Neither edge rule depends on ``res``, except that a finer ``res``
-          places points on smaller damaged parts of an edge.
-        - ``func_tot``: ``min(func_internal, func_tot)``, so a component that
-          already failed (e.g. in the base-state cascade) stays failed.
+        - node: its damage ratio;
+        - edge, ``edge_rule="max_ratio"`` (default): the largest damage ratio
+          of its points;
+        - edge, ``edge_rule="damaged_length"``: the damaged length in metres
+          (mean damage ratio of its points x edge length); the threshold is
+          then in metres.
 
-        The other rows are not changed, and the exposures of ``exp_list``
-        are not modified. Run the cascade on the returned network to obtain
-        the indirect impacts
-        (``NetworkCalcs(network_disr, dep_table).cascade()``).
+        With a step impact function (``ImpactFunc.from_step_impf``) and a
+        hazard without fraction, the damage ratio is 0 or 1. With a hazard
+        fraction (e.g. river floods), it is the affected share of the cell.
 
-        To make a component fail from a hazard intensity X on (e.g. a road
-        impassable from 0.3 m of water), use a step impact function, e.g.
-        ``ImpactFunc.from_step_impf((0, X, max_intensity), haz_type=...,
-        impf_id=tag)``: its damage ratio is 0 below X and 1 from X on
-        (included), so any threshold between 0 and 1 gives the same result.
+        Run the cascade on the returned network to obtain the indirect
+        impacts.
 
         Returns
         -------
@@ -697,31 +671,15 @@ class NetworkImpactCalc:
         Raises
         ------
         ValueError
-            Before any computation, if the hazard has more than one event, if
-            the network has no functional states (``initialize_funcstates``),
-            if two exposures have the same tag or contain the same node or
-            edge, if an exposure has rows that are not in the network (or have
-            another ``ci_type`` there), or if the impact function or the
-            threshold of a tag is missing.
+            Before any computation, if the inputs are inconsistent: hazard with
+            several events, network without functional states, duplicate tags,
+            a node or edge in two exposures, exposure rows not in the network,
+            missing impact function or threshold.
 
         Notes
         -----
-        Limitations of the functionality threshold:
-
-        - For nodes it is compared with a damage ratio, not with an absolute
-          impact. A rule such as "a power plant fails if more than 50 MW of
-          capacity are damaged" has to be converted into a ratio for each
-          component.
-        - For edges, two edge rules are implemented: the largest damage ratio
-          and the damaged length in metres. A rule based on the damaged share
-          of the edge length (e.g. "an edge fails if more than 20 % of its
-          length is damaged") is not implemented. A finer ``res`` detects
-          smaller damaged parts of an edge.
-        - ``func_internal`` is 0 or 1: partial functionality (e.g. reduced
-          capacity) is not modelled.
-        - The failure is deterministic. If the impact function is a fragility
-          curve (damage ratio = probability of failure), the threshold turns
-          that probability into a yes or no.
+        Node thresholds are damage ratios that accounts for hazard fraction,
+        not absolute impacts.
         """
 
         self._check_inputs()
