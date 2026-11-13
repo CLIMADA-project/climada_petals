@@ -35,7 +35,11 @@ from climada_petals.engine.networks.nw_plots import (
     enduser_plot,
     infra_plot,
 )
-from climada_petals.engine.networks.nw_utils import ACCESS_NO_BASE, ACCESS_UNDEFINED
+from climada_petals.engine.networks.nw_utils import (
+    ACCESS_NO_BASE,
+    ACCESS_UNDEFINED,
+    FUNCSTATE_COLS,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -663,10 +667,10 @@ class Network:
         >>> network.nodes['func_tot']  # All values are 1
         >>> network.edges['imp_dir']   # All values are 0
         """
-        self.edges[["func_internal", "func_tot"]] = 1.0
-        self.nodes[["func_internal", "func_tot"]] = 1.0
-        self.edges["imp_dir"] = 0.0
-        self.nodes["imp_dir"] = 0.0
+        func_internal, func_tot, imp_dir = FUNCSTATE_COLS
+        for gdf in (self.edges, self.nodes):
+            gdf[[func_internal, func_tot]] = 1.0
+            gdf[imp_dir] = 0.0
 
     def initialize_capacity(self, dep_table):
         """Initialize capacity attributes for dependency relationships
