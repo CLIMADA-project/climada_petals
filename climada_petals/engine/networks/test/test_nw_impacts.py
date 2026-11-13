@@ -742,7 +742,6 @@ def test_disrupt_network_keeps_existing_failures(funcstate_network):
     assert _ci_values(network_disr.nodes, "healthcare", "func_tot") == [0]
 
 
-@_xfail("I3", "multi-event hazards fail with an unrelated pandas error")
 def test_disrupt_network_multi_event_raises(funcstate_network):
     """A hazard with several events raises a clear error."""
     exp = exposure_from_nodes(funcstate_network, "healthcare", value=1)
@@ -795,7 +794,6 @@ def test_disrupt_network_edges_of_any_ci_type(funcstate_network):
     assert (network_disr.nodes["func_internal"] == 1).all()
 
 
-@_xfail("I3", "without func_internal, func_tot of all other rows becomes NaN")
 def test_disrupt_network_requires_funcstates(network_with_ci_types):
     """Without initialised functional states, disrupt_network raises instead
     of writing NaN to func_tot of every row it does not touch."""
@@ -811,7 +809,6 @@ def test_disrupt_network_requires_funcstates(network_with_ci_types):
         )
 
 
-@_xfail("I3", "AttributeError on the empty list returned by get_func")
 def test_disrupt_network_missing_impf_raises(funcstate_network):
     """No impact function for the exposure tag -> clear ValueError."""
     exp = exposure_from_nodes(funcstate_network, "healthcare", value=1)
@@ -826,7 +823,6 @@ def test_disrupt_network_missing_impf_raises(funcstate_network):
         )
 
 
-@_xfail("I3", "TypeError when comparing with None")
 def test_disrupt_network_missing_threshold_raises(funcstate_network):
     """No threshold for the exposure tag -> clear ValueError."""
     exp = exposure_from_nodes(funcstate_network, "healthcare", value=1)
@@ -839,6 +835,58 @@ def test_disrupt_network_missing_threshold_raises(funcstate_network):
             {"road": 0.3},
             _make_hazard(HAZ_DIAGONAL),
         )
+
+
+def test_disrupt_network_duplicate_tags_raises(funcstate_network):
+    """Two exposures with the same tag (here the default tag "road") raise."""
+    nodes = funcstate_network.nodes
+    exp_a = exposure_from_nodes(funcstate_network, "road", mask=nodes["id"] == 1)
+    exp_b = exposure_from_nodes(funcstate_network, "road", mask=nodes["id"] == 2)
+
+    with pytest.raises(ValueError, match="Several exposures have the tag"):
+        _run_disrupt(
+            funcstate_network,
+            [exp_a, exp_b],
+            [_make_impf("road")],
+            {"road": 0.3},
+            _make_hazard(HAZ_DIAGONAL),
+        )
+
+
+def test_disrupt_network_overlapping_exposures_raises(funcstate_network):
+    """A node in two exposures (overlapping masks) raises."""
+    nodes = funcstate_network.nodes
+    exp_all = exposure_from_nodes(funcstate_network, "road", tag="road_all")
+    exp_2 = exposure_from_nodes(
+        funcstate_network, "road", mask=nodes["id"] == 2, tag="road_2"
+    )
+
+    with pytest.raises(ValueError, match="'road_all' and 'road_2' both contain node 2"):
+        _run_disrupt(
+            funcstate_network,
+            [exp_all, exp_2],
+            [_make_impf("road_all"), _make_impf("road_2")],
+            {"road_all": 0.3, "road_2": 0.3},
+            _make_hazard(HAZ_DIAGONAL),
+        )
+
+
+def test_disrupt_network_same_label_in_nodes_and_edges(funcstate_network):
+    """Node 4 and edge 4 are different rows: no overlap between exposures."""
+    label = _with_added_link(funcstate_network)  # edge 4
+    exp_nodes = exposure_from_nodes(funcstate_network, "healthcare")  # node 4
+    exp_edges = exposure_from_edges(funcstate_network, "road", res=10_000)
+    assert label == 4
+
+    _, imp_dict = _run_disrupt(
+        funcstate_network,
+        [exp_nodes, exp_edges],
+        [_make_impf("healthcare"), _make_impf("road")],
+        {"healthcare": 0.3, "road": 0.3},
+        _make_hazard(HAZ_DIAGONAL),
+    )
+
+    assert set(imp_dict) == {"healthcare", "road"}
 
 
 @_xfail("I4", "impacts are matched to rows by position, not by label")

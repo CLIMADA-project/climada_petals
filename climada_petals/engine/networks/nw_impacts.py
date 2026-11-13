@@ -33,9 +33,10 @@ import pandas as pd
 
 import climada.util.lines_polys_handler as u_lp
 from climada.engine.impact_calc import ImpactCalc
-from climada.entity import Exposures, ImpactFuncSet
+from climada.entity import Exposures, ImpactFunc, ImpactFuncSet
 from climada_petals.engine.networks.nw_utils import (
     ADDED_COL,
+    FUNCSTATE_COLS,
     LINE_EXPOSURES,
     _added_mask,
 )
@@ -308,6 +309,27 @@ def exposure_from_edges(
 # =============================================================================
 
 
+def _exposure_rows(exp):
+    """Network rows an exposure was built from.
+
+    Parameters
+    ----------
+    exp : Exposures
+        Exposure from ``exposure_from_nodes`` or ``exposure_from_edges``.
+
+    Returns
+    -------
+    kind : str
+        ``"edges"`` for exposures from ``exposure_from_edges`` (two-level
+        index: edge label, point number), ``"nodes"`` otherwise.
+    labels : pd.Index
+        Labels of the network rows, in the order of the exposure.
+    """
+    if isinstance(exp.gdf.index, pd.MultiIndex):
+        return "edges", exp.gdf.index.get_level_values(0).unique()
+    return "nodes", exp.gdf.index
+
+
 class NetworkImpactCalc:
     """Compute direct hazard impacts on a network
 
@@ -422,6 +444,69 @@ class NetworkImpactCalc:
 
         return gdf_nodes_or_edges
 
+    def _check_inputs(self):
+        """Check the inputs of ``disrupt_network`` before any computation."""
+        if self.haz.size != 1:
+            raise ValueError(
+                f"disrupt_network needs a hazard with one event, got "
+                f"{self.haz.size}. Select one, e.g. haz.select(event_id=[...])."
+            )
+        for kind, gdf in (
+            ("nodes", self.network.nodes),
+            ("edges", self.network.edges),
+        ):
+            missing = [col for col in FUNCSTATE_COLS if col not in gdf.columns]
+            if missing:
+                raise ValueError(
+                    f"The network {kind} have no functional states "
+                    f"({', '.join(missing)}). Initialise them first with "
+                    "network.initialize_funcstates(), or run the base-state "
+                    "cascade."
+                )
+
+        tags = [exp.description for exp in self.exp_list]
+        duplicated = sorted({tag for tag in tags if tags.count(tag) > 1})
+        if duplicated:
+            raise ValueError(
+                f"Several exposures have the tag(s) {duplicated}: each exposure "
+                "needs its own tag (argument tag of exposure_from_nodes / "
+                "exposure_from_edges)."
+            )
+
+        haz_type = self.haz.haz_type
+        rows = {"nodes": [], "edges": []}
+        for exp in self.exp_list:
+            tag = exp.description
+            impf = self.impf_set.get_func(haz_type=haz_type, fun_id=tag)
+            if not isinstance(impf, ImpactFunc):
+                raise ValueError(
+                    f"impf_set has no impact function with id '{tag}' and "
+                    f"haz_type '{haz_type}' (exposure tag '{tag}')."
+                )
+            if tag not in self.impf_thresh_set:
+                raise ValueError(
+                    "impf_thresh_set has no functionality threshold for the "
+                    f"exposure tag '{tag}'."
+                )
+            kind, labels = _exposure_rows(exp)
+            rows[kind].append(pd.Series(tag, index=labels))
+
+        # each node and each edge can be in one exposure only
+        for kind, tag_series in rows.items():
+            if not tag_series:
+                continue
+            tag_by_row = pd.concat(tag_series)
+            shared = tag_by_row.index.duplicated(keep=False)
+            if shared.any():
+                label = tag_by_row.index[shared][0]
+                first, second = tag_by_row.loc[[label]].iloc[:2]
+                item = kind[:-1]  # "node" or "edge"
+                raise ValueError(
+                    f"The exposures '{first}' and '{second}' both contain {item} "
+                    f"{label} (row label in network.{kind}): each {item} can be "
+                    "in one exposure only (use complementary masks)."
+                )
+
     def disrupt_network(self):
         """Compute the direct impacts and write them to a copy of the network
 
@@ -445,7 +530,17 @@ class NetworkImpactCalc:
         imp_dict : dict
             ``{tag: Impact}``: the impact on each exposure (per edge for edge
             exposures).
+
+        Raises
+        ------
+        ValueError
+            Before any computation, if the hazard has more than one event, if
+            the network has no functional states (``initialize_funcstates``),
+            if two exposures have the same tag or contain the same node or
+            edge, or if the impact function or the threshold of a tag is
+            missing.
         """
+        self._check_inputs()
         network_disr = cp.deepcopy(self.network)
         imp_dict = {}
         for exp in self.exp_list:
