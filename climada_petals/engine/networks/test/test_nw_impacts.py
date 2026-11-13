@@ -38,6 +38,7 @@ from climada.hazard import Centroids, Hazard
 
 from climada_petals.engine.networks.nw_impacts import (
     NetworkImpactCalc,
+    _impacts_to_network,
     exposure_from_edges,
     exposure_from_nodes,
     gdf_from_network,
@@ -63,21 +64,6 @@ def funcstate_network(network_with_ci_types):
     """Network with CI types and initialised functional states."""
     network_with_ci_types.initialize_funcstates()
     return network_with_ci_types
-
-
-@pytest.fixture
-def mock_impact_mat():
-    """Create a mock Impact object with a given imp_mat.
-
-    Returns a factory function accepting a 2-D array.
-    """
-
-    def _factory(arr):
-        mock = MagicMock()
-        mock.imp_mat = sparse.csr_matrix(np.atleast_2d(arr))
-        return mock
-
-    return _factory
 
 
 # intensity at the 5 nodes (i, i): 10 at node 0 ... 50 at the hospital (node 4)
@@ -496,96 +482,60 @@ def test_calc_point_impacts_intensity_matters():
 # ========================================================================
 
 
-def test_impacts_to_network_below_thresh(funcstate_network, mock_impact_mat):
-    """Impact below threshold ⟶ func_internal=1, func_tot unchanged."""
+def test_impacts_to_network_writes_rows(funcstate_network):
+    """imp_dir and func_internal are written to the given rows; func_tot is
+    the minimum of func_internal and the previous func_tot."""
     nodes = funcstate_network.nodes.copy()
-    imp = mock_impact_mat([[0.1]])
 
-    result = NetworkImpactCalc.impacts_to_network(nodes, imp, "healthcare", 0.5)
+    _impacts_to_network(nodes, pd.Index([4]), [0.8], [0])
 
-    hc = result[result["ci_type"] == "healthcare"]
-    assert hc["func_internal"].iloc[0] == 1
-    assert hc["imp_dir"].iloc[0] == pytest.approx(0.1)
-    assert hc["func_tot"].iloc[0] == 1
+    assert nodes.loc[4, ["imp_dir", "func_internal", "func_tot"]].tolist() == [
+        0.8,
+        0,
+        0,
+    ]
 
 
-def test_impacts_to_network_above_thresh(funcstate_network, mock_impact_mat):
-    """Impact above threshold ⟶ func_internal=0, func_tot=0."""
+def test_impacts_to_network_other_rows_unchanged(funcstate_network):
     nodes = funcstate_network.nodes.copy()
-    imp = mock_impact_mat([[0.8]])
 
-    result = NetworkImpactCalc.impacts_to_network(nodes, imp, "healthcare", 0.5)
+    _impacts_to_network(nodes, pd.Index([4]), [0.8], [0])
 
-    hc = result[result["ci_type"] == "healthcare"]
-    assert hc["func_internal"].iloc[0] == 0
-    assert hc["func_tot"].iloc[0] == 0
+    others = nodes.drop(index=4)
+    assert (others["func_internal"] == 1).all()
+    assert (others["func_tot"] == 1).all()
+    assert (others["imp_dir"] == 0).all()
 
 
-def test_impacts_to_network_equal_thresh(funcstate_network, mock_impact_mat):
-    """Impact exactly at threshold ⟶ func_internal=1 (<= comparison)."""
+def test_impacts_to_network_func_tot_is_minimum(funcstate_network):
+    """A row that already failed stays failed, even if functional now."""
     nodes = funcstate_network.nodes.copy()
-    imp = mock_impact_mat([[0.5]])
+    nodes.loc[[1, 2, 3], "func_tot"] = [0, 1, 0]
 
-    result = NetworkImpactCalc.impacts_to_network(nodes, imp, "healthcare", 0.5)
+    _impacts_to_network(nodes, pd.Index([1, 2, 3]), [0.1, 0.2, 0.9], [1, 1, 0])
 
-    hc = result[result["ci_type"] == "healthcare"]
-    assert hc["func_internal"].iloc[0] == 1
+    assert nodes.loc[[1, 2, 3], "func_internal"].tolist() == [1, 1, 0]
+    assert nodes.loc[[1, 2, 3], "func_tot"].tolist() == [0, 1, 0]
 
 
-def test_impacts_to_network_func_tot_is_minimum(funcstate_network, mock_impact_mat):
-    """func_tot = min(func_internal, existing func_tot)."""
+def test_impacts_to_network_by_label_not_position(funcstate_network):
+    """Values follow the order of the labels, not the order of the rows."""
     nodes = funcstate_network.nodes.copy()
-    # Pre-set road func_tot to 0
-    nodes.loc[nodes["ci_type"] == "road", "func_tot"] = 0
 
-    # Road impacts all below threshold ⟶ func_internal=1
-    imp = mock_impact_mat([[0.1, 0.2, 0.3]])
+    _impacts_to_network(nodes, pd.Index([3, 1]), [0.9, 0.1], [0, 1])
 
-    result = NetworkImpactCalc.impacts_to_network(nodes, imp, "road", 0.5)
-
-    road = result[result["ci_type"] == "road"]
-    assert all(road["func_internal"] == 1)
-    # func_tot = min(1, 0) = 0 because pre-existing func_tot was 0
-    assert all(road["func_tot"] == 0)
+    assert nodes.loc[[1, 3], "imp_dir"].tolist() == [0.1, 0.9]
+    assert nodes.loc[[1, 3], "func_internal"].tolist() == [1, 0]
 
 
-def test_impacts_to_network_multiple_ci(funcstate_network, mock_impact_mat):
-    """Only rows matching exp_tag are updated; others remain unchanged."""
-    nodes = funcstate_network.nodes.copy()
-    imp = mock_impact_mat([[0.8]])
-
-    result = NetworkImpactCalc.impacts_to_network(nodes, imp, "healthcare", 0.5)
-
-    # Healthcare is disrupted
-    assert result[result["ci_type"] == "healthcare"]["func_internal"].iloc[0] == 0
-    # Road nodes are unaffected
-    assert all(result[result["ci_type"] == "road"]["func_internal"] == 1)
-    assert all(result[result["ci_type"] == "road"]["func_tot"] == 1)
-
-
-def test_impacts_to_network_records_imp_dir(funcstate_network, mock_impact_mat):
-    """imp_dir column stores the raw impact value."""
-    nodes = funcstate_network.nodes.copy()
-    imp = mock_impact_mat([[0.42]])
-
-    result = NetworkImpactCalc.impacts_to_network(nodes, imp, "healthcare", 0.5)
-
-    assert result[result["ci_type"] == "healthcare"]["imp_dir"].iloc[
-        0
-    ] == pytest.approx(0.42)
-
-
-def test_impacts_to_network_edges(funcstate_network, mock_impact_mat):
-    """impacts_to_network works on edges too."""
+def test_impacts_to_network_edges(funcstate_network):
     edges = funcstate_network.edges.copy()
-    imp = mock_impact_mat([[0.1, 0.2, 0.8, 0.9]])
 
-    result = NetworkImpactCalc.impacts_to_network(edges, imp, "road", 0.5)
+    _impacts_to_network(edges, edges.index, [0.1, 0.2, 0.8, 0.9], [1, 1, 0, 0])
 
-    assert result["func_internal"].iloc[0] == 1  # 0.1 <= 0.5
-    assert result["func_internal"].iloc[1] == 1  # 0.2 <= 0.5
-    assert result["func_internal"].iloc[2] == 0  # 0.8 > 0.5
-    assert result["func_internal"].iloc[3] == 0  # 0.9 > 0.5
+    assert edges["imp_dir"].tolist() == pytest.approx([0.1, 0.2, 0.8, 0.9])
+    assert edges["func_internal"].tolist() == [1, 1, 0, 0]
+    assert edges["func_tot"].tolist() == [1, 1, 0, 0]
 
 
 # ========================================================================
@@ -757,7 +707,6 @@ def test_disrupt_network_multi_event_raises(funcstate_network):
         )
 
 
-@_xfail("I4", "impacts are written to the rows with ci_type == tag")
 def test_disrupt_network_custom_tag(funcstate_network):
     """The tag selects the impact function and threshold; impacts are written
     to the nodes the exposure was built from."""
@@ -775,7 +724,88 @@ def test_disrupt_network_custom_tag(funcstate_network):
     assert "hospital" in imp_dict
 
 
-@_xfail("I4", "edges whose ci_type is not in LINE_EXPOSURES are handled as nodes")
+def test_disrupt_network_subsets_of_one_ci_type(funcstate_network):
+    """Two road exposures (complementary masks), each with its own impact
+    function and threshold, update only their own edges; ci_type stays road."""
+    main = funcstate_network.edges["osm_id"].isin([100, 101])  # edges 0, 1
+    exp_main = exposure_from_edges(
+        funcstate_network, "road", res=10_000, mask=main, tag="road_main"
+    )
+    exp_track = exposure_from_edges(
+        funcstate_network, "road", res=10_000, mask=~main, tag="road_track"
+    )
+    # step functions: main roads damaged from intensity 45, tracks from 25
+    impf_main = _make_impf(
+        "road_main", intensity=(0, 44.9, 45, 100), mdd=(0, 0, 1, 1)
+    )
+    impf_track = _make_impf(
+        "road_track", intensity=(0, 24.9, 25, 100), mdd=(0, 0, 1, 1)
+    )
+
+    network_disr, imp_dict = _run_disrupt(
+        funcstate_network,
+        [exp_main, exp_track],
+        [impf_main, impf_track],
+        {"road_main": 0.5, "road_track": 0.5},
+        _make_hazard(HAZ_DIAGONAL),
+    )
+
+    edges = network_disr.edges
+    # edge 1 reaches intensity 30: undamaged as a main road (a track would fail)
+    assert edges["func_internal"].tolist() == [1, 1, 0, 0]
+    assert edges["imp_dir"].iloc[:2].tolist() == [0, 0]
+    assert (edges["ci_type"] == "road").all()
+    assert imp_dict["road_main"].imp_mat.shape == (1, 2)
+    assert imp_dict["road_track"].imp_mat.shape == (1, 2)
+
+
+def test_disrupt_network_threshold_inclusive(funcstate_network):
+    """An impact equal to the threshold leaves the component functional."""
+    exp = exposure_from_nodes(funcstate_network, "healthcare", value=1)
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp],
+        [_make_impf("healthcare")],
+        {"healthcare": 0.75},  # impact at the hospital: 0.75
+        _make_hazard(HAZ_DIAGONAL),
+    )
+
+    assert _ci_values(network_disr.nodes, "healthcare", "func_internal") == [1]
+
+
+def test_disrupt_network_does_not_modify_exposures(funcstate_network):
+    """The exposures get no impf_* / centr_* columns."""
+    exp_nodes = exposure_from_nodes(funcstate_network, "healthcare", value=1)
+    exp_edges = exposure_from_edges(funcstate_network, "road", res=10_000)
+    columns = [exp.gdf.columns.tolist() for exp in (exp_nodes, exp_edges)]
+
+    _run_disrupt(
+        funcstate_network,
+        [exp_nodes, exp_edges],
+        [_make_impf("healthcare"), _make_impf("road")],
+        {"healthcare": 0.3, "road": 0.3},
+        _make_hazard(HAZ_DIAGONAL),
+    )
+
+    assert [exp.gdf.columns.tolist() for exp in (exp_nodes, exp_edges)] == columns
+
+
+def test_disrupt_network_exposure_ci_type_changed_raises(funcstate_network):
+    """A row whose ci_type differs between exposure and network raises."""
+    exp = exposure_from_nodes(funcstate_network, "healthcare", value=1)
+    funcstate_network.nodes.loc[4, "ci_type"] = "school"
+
+    with pytest.raises(ValueError, match="node 4 has ci_type 'school' in the network"):
+        _run_disrupt(
+            funcstate_network,
+            [exp],
+            [_make_impf("healthcare")],
+            {"healthcare": 0.3},
+            _make_hazard(HAZ_DIAGONAL),
+        )
+
+
 def test_disrupt_network_edges_of_any_ci_type(funcstate_network):
     """Line exposures are recognised from the exposure itself, not from the
     hard-coded LINE_EXPOSURES list."""
@@ -889,7 +919,6 @@ def test_disrupt_network_same_label_in_nodes_and_edges(funcstate_network):
     assert set(imp_dict) == {"healthcare", "road"}
 
 
-@_xfail("I4", "impacts are matched to rows by position, not by label")
 def test_disrupt_network_exposure_not_from_network_raises(
     funcstate_network, network_with_remote_node_missing_edge
 ):

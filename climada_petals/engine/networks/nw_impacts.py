@@ -37,7 +37,6 @@ from climada.entity import Exposures, ImpactFunc, ImpactFuncSet
 from climada_petals.engine.networks.nw_utils import (
     ADDED_COL,
     FUNCSTATE_COLS,
-    LINE_EXPOSURES,
     _added_mask,
 )
 
@@ -330,6 +329,74 @@ def _exposure_rows(exp):
     return "nodes", exp.gdf.index
 
 
+def _check_exposure_rows(exp, tag, kind, labels, gdf):
+    """Raise if the exposure was not built from rows of ``gdf``.
+
+    Every row label of the exposure must be a row of ``gdf`` (network nodes
+    or edges) with the same ``ci_type`` as in the exposure.
+
+    Parameters
+    ----------
+    exp : Exposures
+        Exposure from ``exposure_from_nodes`` or ``exposure_from_edges``.
+    tag : str
+        Tag of the exposure, for the error messages.
+    kind : str
+        ``"nodes"`` or ``"edges"``.
+    labels : pd.Index
+        Row labels of the exposure (see ``_exposure_rows``).
+    gdf : gpd.GeoDataFrame
+        Nodes or edges of the network.
+    """
+    missing = labels[~labels.isin(gdf.index)]
+    if len(missing) > 0:
+        raise ValueError(
+            f"Exposure '{tag}': {len(missing)} of its {kind} are not in the "
+            f"network (e.g. row label {missing[0]} of network.{kind}). Build the "
+            "exposures from the network given to NetworkImpactCalc."
+        )
+    if "ci_type" not in exp.gdf.columns:
+        raise ValueError(
+            f"Exposure '{tag}' has no ci_type column: build it with "
+            f"exposure_from_{kind}."
+        )
+    exp_ci_type = exp.gdf["ci_type"].groupby(level=0, sort=False).first()
+    nw_ci_type = gdf.loc[exp_ci_type.index, "ci_type"]
+    differs = nw_ci_type != exp_ci_type
+    if differs.any():
+        label = exp_ci_type.index[differs][0]
+        raise ValueError(
+            f"Exposure '{tag}': {kind[:-1]} {label} has ci_type "
+            f"'{nw_ci_type.loc[label]}' in the network but "
+            f"'{exp_ci_type.loc[label]}' in the exposure. Build the exposures "
+            "from the network given to NetworkImpactCalc."
+        )
+
+
+def _impacts_to_network(gdf, labels, imp_dir, func_internal):
+    """Write direct impacts and functional states to rows of ``gdf`` (in place).
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Nodes or edges of the network, with the columns ``FUNCSTATE_COLS``.
+    labels : pd.Index
+        Row labels to update; only these rows are changed.
+    imp_dir : array-like
+        Direct impact per row, in the order of ``labels``.
+    func_internal : array-like
+        Functional state per row (1 functional, 0 not), in the order of
+        ``labels``. ``func_tot`` becomes ``min(func_internal, func_tot)``.
+    """
+    col_func_internal, col_func_tot, col_imp_dir = FUNCSTATE_COLS
+    func_internal = np.asarray(func_internal)
+    gdf.loc[labels, col_imp_dir] = np.asarray(imp_dir)
+    gdf.loc[labels, col_func_internal] = func_internal
+    gdf.loc[labels, col_func_tot] = np.minimum(
+        gdf.loc[labels, col_func_tot].to_numpy(), func_internal
+    )
+
+
 class NetworkImpactCalc:
     """Compute direct hazard impacts on a network
 
@@ -341,9 +408,14 @@ class NetworkImpactCalc:
     Attributes
     ----------
     impf_set : ImpactFuncSet
-        Impact functions; one per exposure type. The impact functions' ``id``
-        must match the exposure tags in exp_list and the ``haz_type``
-        must match the hazard type from the hazard object.
+        Impact functions, one for each exposure of ``exp_list``. The impact
+        function of an exposure is the one whose ``id`` equals the tag of the
+        exposure (``Exposures.description``) and whose ``haz_type`` equals
+        ``haz.haz_type``. To use different impact functions for
+        components of the same ``ci_type`` (e.g. main roads and tracks),
+        build one exposure per group with the ``mask`` argument of
+        ``exposure_from_nodes`` / ``exposure_from_edges``, and give each
+        exposure its own ``tag``.
     impf_thresh_set : dict
         Functionality threshold per exposure tag: components whose direct
         impact is above the threshold become dysfunctional.
@@ -364,9 +436,10 @@ class NetworkImpactCalc:
         Parameters
         ----------
         impf_set : ImpactFuncSet
-            Impact functions; one per exposure, with ``id`` equal to the
-            exposure tag (``Exposures.description``) and ``haz_type`` equal to
-            ``haz.haz_type``.
+            Impact functions, one for each exposure of ``exp_list``. The
+            impact function of an exposure is the one whose ``id`` equals the
+            tag of the exposure (``Exposures.description``) and whose
+            ``haz_type`` equals ``haz.haz_type``.
         impf_thresh_set : dict
             ``{tag: threshold}``: functionality threshold per exposure tag.
         haz : Hazard
@@ -403,46 +476,6 @@ class NetworkImpactCalc:
         imp = ImpactCalc(exp, impf_set, haz)
         imp = imp.impact(save_mat=True)
         return imp
-
-    @staticmethod
-    def impacts_to_network(gdf_nodes_or_edges, imp, exp_tag, impf_thresh):
-        """Assign impacts to network.
-
-        Parameters
-        ----------
-        gdf_nodes_or_edges : gpd.GeoDataFrame
-            Nodes or edges dataframe to update.
-        imp : Impact
-            Impact result with ``imp_mat``.
-        exp_tag : str
-            CI type tag identifying which rows to update.
-        impf_thresh : float
-            Threshold on direct impact: impact values above this render
-            infrastructure dysfunctional.
-
-        Returns
-        -------
-        gpd.GeoDataFrame
-            Updated dataframe with ``func_internal``, ``imp_dir``, and
-            ``func_tot`` columns.
-        """
-        func_states = list(map(int, imp.imp_mat.toarray().flatten() <= impf_thresh))
-
-        gdf_nodes_or_edges.loc[
-            gdf_nodes_or_edges.ci_type == exp_tag, "func_internal"
-        ] = func_states
-        gdf_nodes_or_edges.loc[gdf_nodes_or_edges.ci_type == exp_tag, "imp_dir"] = (
-            imp.imp_mat.toarray().flatten()
-        )
-
-        gdf_nodes_or_edges["func_tot"] = [
-            np.min([func_internal, func_tot])
-            for func_internal, func_tot in zip(
-                gdf_nodes_or_edges.func_internal, gdf_nodes_or_edges.func_tot
-            )
-        ]
-
-        return gdf_nodes_or_edges
 
     def _check_inputs(self):
         """Check the inputs of ``disrupt_network`` before any computation."""
@@ -489,6 +522,7 @@ class NetworkImpactCalc:
                     f"exposure tag '{tag}'."
                 )
             kind, labels = _exposure_rows(exp)
+            _check_exposure_rows(exp, tag, kind, labels, getattr(self.network, kind))
             rows[kind].append(pd.Series(tag, index=labels))
 
         # each node and each edge can be in one exposure only
@@ -511,8 +545,9 @@ class NetworkImpactCalc:
         """Compute the direct impacts and write them to a copy of the network
 
         For each exposure of ``exp_list``: the impact is computed with the
-        impact function of its tag; for edge exposures, the point impacts are
-        summed per edge. The network rows of the exposure get
+        impact function of the exposure tag; for edge exposures (two-level index
+        from ``exposure_from_edges``), the point impacts are summed per edge. The
+        network rows the exposure was built from (same row labels) get
 
         - ``imp_dir``: the direct impact,
         - ``func_internal``: 1 if ``imp_dir`` is at most the threshold of the
@@ -520,8 +555,10 @@ class NetworkImpactCalc:
         - ``func_tot``: ``min(func_internal, func_tot)``, so a component that
           already failed (e.g. in the base-state cascade) stays failed.
 
-        Run the cascade on the returned network to obtain the indirect
-        impacts (``NetworkCalcs(network_disr, dep_table).cascade()``).
+        The other rows are not changed, and the exposures of ``exp_list``
+        are not modified. Run the cascade on the returned network to obtain
+        the indirect impacts
+        (``NetworkCalcs(network_disr, dep_table).cascade()``).
 
         Returns
         -------
@@ -537,30 +574,33 @@ class NetworkImpactCalc:
             Before any computation, if the hazard has more than one event, if
             the network has no functional states (``initialize_funcstates``),
             if two exposures have the same tag or contain the same node or
-            edge, or if the impact function or the threshold of a tag is
-            missing.
+            edge, if an exposure has rows that are not in the network (or have
+            another ``ci_type`` there), or if the impact function or the
+            threshold of a tag is missing.
         """
         self._check_inputs()
         network_disr = cp.deepcopy(self.network)
+        haz_type = self.haz.haz_type
         imp_dict = {}
         for exp in self.exp_list:
-            impf = self.impf_set.get_func(
-                haz_type=self.haz.haz_type, fun_id=exp.description
+            tag = exp.description
+            impf = self.impf_set.get_func(haz_type=haz_type, fun_id=tag)
+            # ImpactCalc adds the columns impf_<haz_type> and centr_<haz_type>
+            # to the exposure: work on a copy so that exp_list is not modified
+            exp_calc = exp.copy()
+            exp_calc.gdf[f"impf_{haz_type}"] = impf.id
+            imp = self.calc_point_impacts(self.haz, exp_calc, ImpactFuncSet([impf]))
+            kind, labels = _exposure_rows(exp)
+            if kind == "edges":
+                # sum the impacts of the points of each edge: the result has
+                # one column per edge, in the same order as labels
+                imp = u_lp.impact_pnt_agg(imp, exp_calc.gdf, u_lp.AggMethod.SUM)
+            # one value per network row (the hazard has a single event,
+            # checked in _check_inputs)
+            imp_dir = imp.imp_mat.toarray().ravel()
+            func_internal = (imp_dir <= self.impf_thresh_set[tag]).astype(int)
+            _impacts_to_network(
+                getattr(network_disr, kind), labels, imp_dir, func_internal
             )
-            impf_thresh = self.impf_thresh_set.get(exp.description)
-            exp.gdf[f"impf_{self.haz.haz_type}"] = impf.id
-            imp = NetworkImpactCalc.calc_point_impacts(
-                self.haz, exp, ImpactFuncSet([impf])
-            )
-            if exp.description in LINE_EXPOSURES:
-                # re-aggregate the point impacts per edge
-                imp = u_lp.impact_pnt_agg(imp, exp.gdf, u_lp.AggMethod.SUM)
-                network_disr.edges = NetworkImpactCalc.impacts_to_network(
-                    network_disr.edges, imp, exp.description, impf_thresh
-                )
-            else:
-                network_disr.nodes = NetworkImpactCalc.impacts_to_network(
-                    network_disr.nodes, imp, exp.description, impf_thresh
-                )
-            imp_dict[exp.description] = imp
+            imp_dict[tag] = imp
         return network_disr, imp_dict
