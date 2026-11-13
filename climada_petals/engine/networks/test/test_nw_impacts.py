@@ -17,10 +17,6 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 ---
 
 Tests for the network impacts (nw_impacts)
-
-Tests marked with ``_xfail(step, ...)`` document known bugs; they are fixed in
-the given step of the project doc ``claude/nw-impacts-review.md`` (strict: the
-step must remove the marker).
 """
 
 from unittest.mock import MagicMock
@@ -46,12 +42,6 @@ from climada_petals.engine.networks.nw_impacts import (
 from climada_petals.engine.networks.nw_calcs import NetworkCalcs
 from climada_petals.engine.networks.nw_utils import ADDED_COL
 
-
-def _xfail(step, reason):
-    """xfail marker for a known bug fixed in the given step of the review doc."""
-    return pytest.mark.xfail(
-        strict=True, reason=f"Known bug, fixed in step {step}: {reason}"
-    )
 
 
 # ========================================================================
@@ -107,7 +97,9 @@ def _make_impf(fun_id, intensity=(0, 20, 40, 60), mdd=(0, 0, 0.5, 1)):
     )
 
 
-def _run_disrupt(network, exp_list, impfs, thresholds, hazard):
+def _run_disrupt(
+    network, exp_list, impfs, thresholds, hazard, edge_rule="max_ratio"
+):
     """Build a NetworkImpactCalc and run ``disrupt_network``."""
     nic = NetworkImpactCalc(
         impf_set=ImpactFuncSet(impfs),
@@ -115,6 +107,7 @@ def _run_disrupt(network, exp_list, impfs, thresholds, hazard):
         haz=hazard,
         network=network,
         exp_list=exp_list,
+        edge_rule=edge_rule,
     )
     return nic.disrupt_network()
 
@@ -433,6 +426,7 @@ def test_network_impact_calc_init(funcstate_network):
     assert nic.haz is haz
     assert nic.exp_list == []
     assert nic.impf_thresh_set == {"healthcare": 0.5}
+    assert nic.edge_rule == "max_ratio"  # default
 
 
 # ========================================================================
@@ -577,9 +571,10 @@ def test_disrupt_network_edge_exposure(funcstate_network):
         _make_hazard(HAZ_DIAGONAL),
     )
 
-    # Edge 0 lies between centroids with intensity 10 and 20, where the
-    # impact function is 0; all other edges reach intensities >= 30.
-    assert network_disr.edges["func_internal"].tolist() == [1, 0, 0, 0]
+    # Largest damage ratio of the points of each edge: edge 0 (intensities
+    # 10 and 20) 0, edge 1 (20 and 30) 0.25, edge 2 (30 and 40) 0.5, edge 3
+    # (40 and 50) 0.75. Edges 2 and 3 are above the threshold 0.3.
+    assert network_disr.edges["func_internal"].tolist() == [1, 1, 0, 0]
     assert network_disr.edges["imp_dir"].iloc[0] == 0
     assert (network_disr.edges["imp_dir"].iloc[1:] > 0).all()
     assert "road" in imp_dict
@@ -774,6 +769,31 @@ def test_disrupt_network_threshold_inclusive(funcstate_network):
     assert _ci_values(network_disr.nodes, "healthcare", "func_internal") == [1]
 
 
+@pytest.mark.parametrize("threshold", [0.01, 0.99])
+@pytest.mark.parametrize("intensity, func_internal", [(49.9, 1), (50.0, 0)])
+def test_disrupt_network_step_impact_function(
+    funcstate_network, threshold, intensity, func_internal
+):
+    """With ImpactFunc.from_step_impf, a component fails from the step
+    intensity on (included), whatever the threshold between 0 and 1."""
+    exp = exposure_from_nodes(funcstate_network, "healthcare", value=1)
+    impf = ImpactFunc.from_step_impf(
+        (0, 50, 100), haz_type="TC", impf_id="healthcare"
+    )
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp],
+        [impf],
+        {"healthcare": threshold},
+        _make_hazard([[0, 0, 0, 0, intensity]]),  # hospital at node 4
+    )
+
+    assert _ci_values(network_disr.nodes, "healthcare", "func_internal") == [
+        func_internal
+    ]
+
+
 def test_disrupt_network_does_not_modify_exposures(funcstate_network):
     """The exposures get no impf_* / centr_* columns."""
     exp_nodes = exposure_from_nodes(funcstate_network, "healthcare", value=1)
@@ -937,7 +957,6 @@ def test_disrupt_network_exposure_not_from_network_raises(
         )
 
 
-@_xfail("I5", "threshold compared with the absolute impact (DI-1)")
 def test_disrupt_network_threshold_on_damage_ratio_nodes(funcstate_network):
     """A fully flooded people cell fails whatever its population count
     (resampled rasters give fractional counts, e.g. 0.3)."""
@@ -957,7 +976,6 @@ def test_disrupt_network_threshold_on_damage_ratio_nodes(funcstate_network):
     assert _ci_values(network_disr.nodes, "people", "func_internal") == [0]
 
 
-@_xfail("I5", "edge result depends on res: sum of point impacts (DI-1)")
 @pytest.mark.parametrize("res", [10_000, 50_000])
 def test_disrupt_network_threshold_on_damage_ratio_edges(funcstate_network, res):
     """A damage ratio of 0.25 at every point, below the threshold 0.3, leaves
@@ -973,6 +991,151 @@ def test_disrupt_network_threshold_on_damage_ratio_edges(funcstate_network, res)
     )
 
     assert _ci_values(network_disr.edges, "road", "func_internal") == [1, 1, 1, 1]
+
+
+def test_disrupt_network_damage_ratio_at_value_zero(funcstate_network):
+    """A flooded people cell with 0 people fails too: the damage ratio does not
+    depend on the exposure value."""
+    funcstate_network.nodes["counts"] = [0.0, np.nan, np.nan, np.nan, np.nan]
+    exp = exposure_from_nodes(funcstate_network, "people", value_col="counts")
+    people_impf = _make_impf("people", intensity=(0, 5, 6, 100), mdd=(0, 0, 1, 1))
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp],
+        [people_impf],
+        {"people": 0.5},
+        _make_hazard(HAZ_DIAGONAL),
+    )
+
+    assert _ci_values(network_disr.nodes, "people", "imp_dir") == [0]
+    assert _ci_values(network_disr.nodes, "people", "func_internal") == [0]
+
+
+def test_disrupt_network_edge_imp_dir_with_div(funcstate_network):
+    """With DIV, imp_dir of an edge is the damage to the edge value; the
+    functional state still follows the damage ratio (0.25 <= 0.3)."""
+    exp = exposure_from_edges(
+        funcstate_network,
+        "road",
+        res=10_000,
+        disagg_col="osm_id",  # 100, 101, 102, 103
+        disagg_met=u_lp.DisaggMethod.DIV,
+    )
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp],
+        [_make_impf("road")],
+        {"road": 0.3},
+        _make_hazard([[30.0] * 5]),  # damage ratio 0.25 at every point
+    )
+
+    assert _ci_values(network_disr.edges, "road", "imp_dir") == pytest.approx(
+        [25.0, 25.25, 25.5, 25.75]
+    )
+    assert _ci_values(network_disr.edges, "road", "func_internal") == [1, 1, 1, 1]
+
+
+# The 4 toy edges are 156.8-156.9 km long: with a damage ratio of 0.25 at
+# every point, each edge has 39.2 km damaged
+@pytest.mark.parametrize("res", [10_000, 50_000])
+@pytest.mark.parametrize(
+    "threshold, func_internal", [(39_000, [0, 0, 0, 0]), (40_000, [1, 1, 1, 1])]
+)
+def test_disrupt_network_damaged_length(
+    funcstate_network, res, threshold, func_internal
+):
+    """With the edge rule "damaged_length", an edge fails if its damaged
+    length in metres is above the threshold, whatever res."""
+    exp = exposure_from_edges(funcstate_network, "road", res=res)
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp],
+        [_make_impf("road")],
+        {"road": threshold},
+        _make_hazard([[30.0] * 5]),  # damage ratio 0.25 at every point
+        edge_rule="damaged_length",
+    )
+
+    assert _ci_values(network_disr.edges, "road", "func_internal") == func_internal
+
+
+@pytest.mark.parametrize(
+    "threshold, func_internal", [(100_000, [1, 1, 1, 1]), (50_000, [1, 0, 0, 1])]
+)
+def test_disrupt_network_damaged_length_partly_damaged_edges(
+    funcstate_network, threshold, func_internal
+):
+    """Edges 1 and 2 are fully damaged on half of their length (78.4 km): they
+    fail only if the threshold is below that. With the edge rule "max_ratio"
+    they fail in any case (test_disrupt_network_edge_fails_if_one_part_is_damaged)."""
+    exp = exposure_from_edges(funcstate_network, "road", res=10_000)
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp],
+        [_make_impf("road")],
+        {"road": threshold},
+        _make_hazard([[10.0, 10.0, 60.0, 10.0, 10.0]]),  # damaging at node 2 only
+        edge_rule="damaged_length",
+    )
+
+    assert _ci_values(network_disr.edges, "road", "func_internal") == func_internal
+
+
+def test_disrupt_network_edge_rule_per_tag(funcstate_network):
+    """edge_rule as a dict sets the rule of some edge exposures; the others use
+    "max_ratio"."""
+    main = funcstate_network.edges["osm_id"].isin([100, 101])  # edges 0, 1
+    exp_main = exposure_from_edges(
+        funcstate_network, "road", res=10_000, mask=main, tag="road_main"
+    )
+    exp_track = exposure_from_edges(
+        funcstate_network, "road", res=10_000, mask=~main, tag="road_track"
+    )
+
+    network_disr, _ = _run_disrupt(
+        funcstate_network,
+        [exp_main, exp_track],
+        [_make_impf("road_main"), _make_impf("road_track")],
+        # main roads: 39.2 km damaged <= 40 km; tracks: ratio 0.25 > 0.2
+        {"road_main": 40_000, "road_track": 0.2},
+        _make_hazard([[30.0] * 5]),  # damage ratio 0.25 at every point
+        edge_rule={"road_main": "damaged_length"},
+    )
+
+    assert network_disr.edges["func_internal"].tolist() == [1, 1, 0, 0]
+
+
+def test_disrupt_network_unknown_edge_rule_raises(funcstate_network):
+    exp = exposure_from_edges(funcstate_network, "road", res=10_000)
+
+    with pytest.raises(ValueError, match="Unknown edge_rule 'mean'"):
+        _run_disrupt(
+            funcstate_network,
+            [exp],
+            [_make_impf("road")],
+            {"road": 0.3},
+            _make_hazard(HAZ_DIAGONAL),
+            edge_rule="mean",
+        )
+
+
+def test_disrupt_network_edge_rule_for_node_exposure_raises(funcstate_network):
+    """A dict edge_rule may only name edge exposures."""
+    exp = exposure_from_nodes(funcstate_network, "healthcare")
+
+    with pytest.raises(ValueError, match="not tags of edge exposures"):
+        _run_disrupt(
+            funcstate_network,
+            [exp],
+            [_make_impf("healthcare")],
+            {"healthcare": 0.3},
+            _make_hazard(HAZ_DIAGONAL),
+            edge_rule={"healthcare": "damaged_length"},
+        )
 
 
 # ========================================================================

@@ -38,9 +38,17 @@ from climada_petals.engine.networks.nw_utils import (
     ADDED_COL,
     FUNCSTATE_COLS,
     _added_mask,
+    _edge_lengths_metres,
 )
 
 LOGGER = logging.getLogger(__name__)
+
+#: rules deciding whether an edge fails (argument edge_rule of
+#: NetworkImpactCalc): "max_ratio" compares the largest damage ratio of the
+#: points of the edge with the threshold (a ratio between 0 and 1);
+#: "damaged_length" compares the damaged length of the edge, in metres, with
+#: the threshold (in metres)
+EDGE_RULES = ("max_ratio", "damaged_length")
 
 
 # =============================================================================
@@ -373,6 +381,37 @@ def _check_exposure_rows(exp, tag, kind, labels, gdf):
         )
 
 
+def _damage_ratio(haz, exp, impf_set):
+    """Damage ratio at each point of an exposure.
+
+    The damage ratio is the impact for an exposure value of 1: the mean
+    damage degree (MDD) times the percentage of affected assets (PAA), both
+    read from the impact function at the hazard intensity of the point, times
+    the hazard fraction at the point. It is between 0 and 1. It is computed
+    with ``ImpactCalc`` on a copy of the exposure whose value is 1 at every
+    point, so that it does not depend on the exposure value (and is
+    defined at points with value 0).
+
+    Parameters
+    ----------
+    haz : Hazard
+        Hazard with a single event.
+    exp : Exposures
+        Exposure with its ``impf_<haz_type>`` column set.
+    impf_set : ImpactFuncSet
+        Impact function set containing the impact function of the exposure.
+
+    Returns
+    -------
+    pd.Series
+        Damage ratio per point, with the index of ``exp.gdf``.
+    """
+    exp_unit = exp.copy()
+    exp_unit.gdf["value"] = 1.0
+    imp_unit = ImpactCalc(exp_unit, impf_set, haz).impact(save_mat=True)
+    return pd.Series(imp_unit.imp_mat.toarray().ravel(), index=exp.gdf.index)
+
+
 def _impacts_to_network(gdf, labels, imp_dir, func_internal):
     """Write direct impacts and functional states to rows of ``gdf`` (in place).
 
@@ -417,8 +456,17 @@ class NetworkImpactCalc:
         ``exposure_from_nodes`` / ``exposure_from_edges``, and give each
         exposure its own ``tag``.
     impf_thresh_set : dict
-        Functionality threshold per exposure tag: components whose direct
-        impact is above the threshold become dysfunctional.
+        ``{tag: threshold}``: functionality threshold of each exposure. For a
+        node exposure, and for an edge exposure with the edge rule
+        ``"max_ratio"``, the threshold is a damage ratio between 0 and 1. For
+        an edge exposure with the edge rule ``"damaged_length"``, it is a
+        length in metres. A component above the threshold of its exposure
+        becomes dysfunctional (see ``disrupt_network``).
+    edge_rule : str or dict
+        Rule deciding whether an edge fails, ``"max_ratio"`` or
+        ``"damaged_length"`` (see ``disrupt_network``): one rule for all edge
+        exposures, or ``{tag: rule}`` for some edge exposures (the others use
+        ``"max_ratio"``).
     haz : Hazard
         Hazard with a single event, in the CRS of the network.
     network : Network
@@ -430,7 +478,9 @@ class NetworkImpactCalc:
         ``exposure_from_edges``.
     """
 
-    def __init__(self, impf_set, impf_thresh_set, haz, network, exp_list):
+    def __init__(
+        self, impf_set, impf_thresh_set, haz, network, exp_list, edge_rule="max_ratio"
+    ):
         """Create a network impact calculator
 
         Parameters
@@ -441,19 +491,35 @@ class NetworkImpactCalc:
             tag of the exposure (``Exposures.description``) and whose
             ``haz_type`` equals ``haz.haz_type``.
         impf_thresh_set : dict
-            ``{tag: threshold}``: functionality threshold per exposure tag.
+            ``{tag: threshold}``: functionality threshold of each exposure: a
+            damage ratio between 0 and 1 for node exposures and for edge
+            exposures with the edge rule ``"max_ratio"``, a length in metres
+            for edge exposures with the edge rule ``"damaged_length"``.
         haz : Hazard
             Hazard with a single event, in the CRS of the network.
         network : Network
             Network the exposures were built from.
         exp_list : list of Exposures
             Exposures built from ``network``.
+        edge_rule : str or dict, optional
+            Rule deciding whether an edge fails (see ``disrupt_network``):
+            ``"max_ratio"`` (default) or ``"damaged_length"``, for all edge
+            exposures; or ``{tag: rule}`` to set the rule of some edge
+            exposures, the others using ``"max_ratio"`` (e.g.
+            ``{"road": "damaged_length"}``).
         """
         self.impf_set = impf_set
         self.impf_thresh_set = impf_thresh_set
         self.haz = haz
         self.network = network
         self.exp_list = exp_list
+        self.edge_rule = edge_rule
+
+    def _edge_rule_of(self, tag):
+        """Edge rule of the edge exposure with the tag ``tag``."""
+        if isinstance(self.edge_rule, dict):
+            return self.edge_rule.get(tag, "max_ratio")
+        return self.edge_rule
 
     @staticmethod
     def calc_point_impacts(haz, exp, impf_set):
@@ -525,6 +591,30 @@ class NetworkImpactCalc:
             _check_exposure_rows(exp, tag, kind, labels, getattr(self.network, kind))
             rows[kind].append(pd.Series(tag, index=labels))
 
+        # edge_rule must name known rules; as a dict, its keys must be tags of
+        # edge exposures
+        if isinstance(self.edge_rule, dict):
+            rules = self.edge_rule
+            edge_tags = {
+                exp.description
+                for exp in self.exp_list
+                if _exposure_rows(exp)[0] == "edges"
+            }
+            not_edges = sorted(set(rules) - edge_tags)
+            if not_edges:
+                raise ValueError(
+                    f"edge_rule names {not_edges}, which are not tags of edge "
+                    "exposures in exp_list."
+                )
+        else:
+            rules = {"all edge exposures": self.edge_rule}
+        for name, rule in rules.items():
+            if rule not in EDGE_RULES:
+                raise ValueError(
+                    f"Unknown edge_rule '{rule}' for {name}: use one of "
+                    f"{list(EDGE_RULES)}."
+                )
+
         # each node and each edge can be in one exposure only
         for kind, tag_series in rows.items():
             if not tag_series:
@@ -544,14 +634,44 @@ class NetworkImpactCalc:
     def disrupt_network(self):
         """Compute the direct impacts and write them to a copy of the network
 
-        For each exposure of ``exp_list``: the impact is computed with the
-        impact function of the exposure tag; for edge exposures (two-level index
-        from ``exposure_from_edges``), the point impacts are summed per edge. The
-        network rows the exposure was built from (same row labels) get
+        For each exposure of ``exp_list``, the impact is computed with the
+        impact function of the exposure tag. The network rows the exposure was
+        built from (same row labels) get
 
-        - ``imp_dir``: the direct impact,
-        - ``func_internal``: 1 if ``imp_dir`` is at most the threshold of the
-          tag, else 0,
+        - ``imp_dir``: the direct impact, in the units of the exposure value.
+          For a node, the impact at the node. For an edge (exposure from
+          ``exposure_from_edges``, two-level index), the sum of the impacts at
+          its points. With ``disagg_met=DIV`` (see ``exposure_from_edges``)
+          this sum is the damage to the edge value. With ``FIX`` (default)
+          every point carries the full edge value, so the sum is the edge value
+          times the sum of the damage ratios of the points; with value 1 it is
+          about the number of damaged points, and depends on ``res``.
+        - ``func_internal``: 0 if the component is above the threshold of the
+          tag, else 1. What is compared with the threshold is built from the
+          damage ratio of each point: the impact for an exposure value of 1,
+          i.e. the mean damage degree (MDD) times the percentage of affected
+          assets (PAA), both read from the impact function at the hazard
+          intensity of the point, times the hazard fraction at the point. The
+          damage ratio is between 0 and 1 and does not depend on the exposure
+          value.
+
+          - Node: its damage ratio.
+          - Edge with the edge rule ``"max_ratio"`` (default): the largest
+            damage ratio of its points. The edge fails if any part of it is
+            damaged above the threshold (a road flooded on part of its length
+            is cut). The threshold is a damage ratio.
+          - Edge with the edge rule ``"damaged_length"``: the damaged length
+            of the edge in metres, i.e. the sum over its points of the damage
+            ratio times the length the point stands for (edge length divided
+            by the number of points). The edge fails if more than the
+            threshold, in metres, is damaged, e.g. 1000 for "a road fails if
+            more than 1 km of it is damaged". With a damage curve that stays
+            below 1 (e.g. at most 30 % of a road blocked), 1 km at damage
+            ratio 0.3 counts as 300 m. A threshold of 0 makes the edge fail as
+            soon as any part of it is damaged.
+
+          Neither edge rule depends on ``res``, except that a finer ``res``
+          places points on smaller damaged parts of an edge.
         - ``func_tot``: ``min(func_internal, func_tot)``, so a component that
           already failed (e.g. in the base-state cascade) stays failed.
 
@@ -559,6 +679,12 @@ class NetworkImpactCalc:
         are not modified. Run the cascade on the returned network to obtain
         the indirect impacts
         (``NetworkCalcs(network_disr, dep_table).cascade()``).
+
+        To make a component fail from a hazard intensity X on (e.g. a road
+        impassable from 0.3 m of water), use a step impact function, e.g.
+        ``ImpactFunc.from_step_impf((0, X, max_intensity), haz_type=...,
+        impf_id=tag)``: its damage ratio is 0 below X and 1 from X on
+        (included), so any threshold between 0 and 1 gives the same result.
 
         Returns
         -------
@@ -577,7 +703,27 @@ class NetworkImpactCalc:
             edge, if an exposure has rows that are not in the network (or have
             another ``ci_type`` there), or if the impact function or the
             threshold of a tag is missing.
+
+        Notes
+        -----
+        Limitations of the functionality threshold:
+
+        - For nodes it is compared with a damage ratio, not with an absolute
+          impact. A rule such as "a power plant fails if more than 50 MW of
+          capacity are damaged" has to be converted into a ratio for each
+          component.
+        - For edges, two edge rules are implemented: the largest damage ratio
+          and the damaged length in metres. A rule based on the damaged share
+          of the edge length (e.g. "an edge fails if more than 20 % of its
+          length is damaged") is not implemented. A finer ``res`` detects
+          smaller damaged parts of an edge.
+        - ``func_internal`` is 0 or 1: partial functionality (e.g. reduced
+          capacity) is not modelled.
+        - The failure is deterministic. If the impact function is a fragility
+          curve (damage ratio = probability of failure), the threshold turns
+          that probability into a yes or no.
         """
+
         self._check_inputs()
         network_disr = cp.deepcopy(self.network)
         haz_type = self.haz.haz_type
@@ -589,16 +735,34 @@ class NetworkImpactCalc:
             # to the exposure: work on a copy so that exp_list is not modified
             exp_calc = exp.copy()
             exp_calc.gdf[f"impf_{haz_type}"] = impf.id
-            imp = self.calc_point_impacts(self.haz, exp_calc, ImpactFuncSet([impf]))
+            impf_set = ImpactFuncSet([impf])
+            imp = self.calc_point_impacts(self.haz, exp_calc, impf_set)
+            ratio = _damage_ratio(self.haz, exp_calc, impf_set)
             kind, labels = _exposure_rows(exp)
             if kind == "edges":
                 # sum the impacts of the points of each edge: the result has
                 # one column per edge, in the same order as labels
                 imp = u_lp.impact_pnt_agg(imp, exp_calc.gdf, u_lp.AggMethod.SUM)
+                # value compared with the threshold, per edge and in the same
+                # order as labels (the edge rules are described in the
+                # docstring of disrupt_network)
+                ratio_by_edge = ratio.groupby(level=0, sort=False)
+                if self._edge_rule_of(tag) == "max_ratio":
+                    # largest damage ratio of the points of the edge
+                    compared = ratio_by_edge.max().loc[labels].to_numpy()
+                else:
+                    # damaged length in metres: each point stands for an equal
+                    # share of the edge length, so the damaged length is the
+                    # mean damage ratio of the points times the edge length
+                    lengths = _edge_lengths_metres(network_disr.edges.loc[labels])
+                    mean_ratio = ratio_by_edge.mean().loc[labels].to_numpy()
+                    compared = mean_ratio * np.asarray(lengths, dtype=float)
+            else:
+                compared = ratio.to_numpy()
             # one value per network row (the hazard has a single event,
             # checked in _check_inputs)
             imp_dir = imp.imp_mat.toarray().ravel()
-            func_internal = (imp_dir <= self.impf_thresh_set[tag]).astype(int)
+            func_internal = (compared <= self.impf_thresh_set[tag]).astype(int)
             _impacts_to_network(
                 getattr(network_disr, kind), labels, imp_dir, func_internal
             )
