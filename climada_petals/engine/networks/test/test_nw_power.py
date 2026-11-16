@@ -32,16 +32,17 @@ is about 1.1 km)::
 - Electrified people E1 (demand 60), E2 (40), E3 (50) and a hospital H depend
   on their closest power line node; N1 is not electrified (no link).
 
-The expected values follow the original model (``feature/networks``,
-``GraphCalcs.powercap_from_clusters`` and ``_propagate_check_fail``, used for
-Mühlhofer et al. 2024): in each power cluster, the supply / demand ratio
+The expected values follow the reference implementation: the earlier version
+of this module on branch ``feature/networks`` (``powercap_from_clusters`` and
+``_propagate_check_fail``), used for Mühlhofer et al. 2024. In each power
+cluster, the supply / demand ratio
 (capped at 1) is the capacity of its line nodes; dependants receive
 ``func_tot * capacity`` from their line node and need ``thresh_func``.
 
 Two layers of checks:
 
 - hand-computed cases (``SCENARIOS``);
-- a copy of the original algorithm (``_reference_cascade``), itself checked on
+- a copy of the reference implementation (``_reference_cascade``), itself checked on
   the hand-computed cases, compared with the new code on random power networks.
 
 Tests marked with ``_xfail(step, ...)`` describe behaviour implemented in the
@@ -196,7 +197,7 @@ def power_network_with_dependencies():
 
 
 def _power_dependency_table(thresh_people=0.6, thresh_healthcare=0.6, **columns):
-    """Dependency table of the original power model: electrified people and
+    """Dependency table as used with the reference implementation: electrified people and
     hospitals depend on their closest power line node (straight line).
     ``columns`` replace columns for both rows."""
     table = pd.DataFrame(
@@ -299,7 +300,7 @@ def _base_then_disrupted(network, dep_table, failures, access_check_method):
 
 
 # ========================================================================
-# Reference: the original algorithm (feature/networks)
+# Reference implementation (branch feature/networks)
 # ========================================================================
 # Copied from feature/networks (GraphCalcs.powercap_from_clusters,
 # _propagate_check_fail, cascade), changed only where needed to run with the
@@ -307,7 +308,7 @@ def _base_then_disrupted(network, dep_table, failures, access_check_method):
 # - connected_components() instead of the deprecated clusters();
 # - subgraph -> graph vertex mapping through a temporary attribute instead of
 #   relying on the vertex order of the induced subgraph;
-# - power lines are stored once (the original stored both directions and set
+# - power lines are stored once (the reference stored both directions and set
 #   the reverse of a failed line to 0 too: same clusters);
 # - only roads are left out of the internal update (no roads here).
 
@@ -321,7 +322,7 @@ def _ref_subgraph(graph, ci_types):
 
 
 def _ref_powercap(graph, p_source, p_sink, demand_ci, source_var, demand_var):
-    """Original ``powercap_from_clusters``."""
+    """``powercap_from_clusters`` of the reference implementation."""
     capacity_vars = [
         var for var in graph.vs.attributes() if f"capacity_{p_sink}_" in var
     ]
@@ -343,7 +344,7 @@ def _ref_powercap(graph, p_source, p_sink, demand_ci, source_var, demand_var):
 
 
 def _ref_propagate(graph, source, target, thresh_func):
-    """Original ``_propagate_check_fail``: capacities propagated along all
+    """``_propagate_check_fail`` of the reference implementation: capacities propagated along all
     edges between source and target vertices (adjacency matrix)."""
     subgraph = _ref_subgraph(graph, [source, target])
     adj_sub = subgraph.get_adjacency_sparse()
@@ -374,7 +375,7 @@ def _reference_cascade(
     source_var="el_generation",
     demand_var="el_consumption",
 ):
-    """Original cascade (power update, functional dependencies until no
+    """Cascade of the reference implementation (power update, functional dependencies until no
     change, then end users with fixed links) on a copy of the network."""
     graph = network.to_graph(directed=True)
     functional = dep_table[dep_table["type_I"] == "functional"]
@@ -457,7 +458,7 @@ def _assert_scenario(network, scenario):
 
 @pytest.mark.parametrize("name", list(SCENARIOS))
 def test_reference_reproduces_hand_cases(power_network_with_dependencies, name):
-    """The copy of the original algorithm gives the hand-computed values."""
+    """The reference implementation gives the hand-computed values."""
     scenario = SCENARIOS[name]
     dep_table = _power_dependency_table(scenario["thresh"], scenario["thresh"])
     nc = NetworkCalcs(power_network_with_dependencies, dep_table=dep_table)
@@ -471,7 +472,7 @@ def test_reference_reproduces_hand_cases(power_network_with_dependencies, name):
 def test_reference_merges_clusters_through_people(
     power_network_with_dependencies, power_dependency_table
 ):
-    """Original quirk Q2: people linked to two clusters merge them. E3 also
+    """Reference implementation: people linked to two clusters merge them. E3 also
     linked to L3 and P2 failed: one cluster, 100 / 150 -> 2/3 everywhere, so
     the hospital in cluster B (no working plant) stays functional."""
     network = _with_link(
@@ -622,7 +623,7 @@ def test_power_cascade_access_states(
 def test_power_cluster_without_demand_has_full_capacity(
     power_network_with_dependencies, power_dependency_table
 ):
-    """No person depends on cluster B: ratio 1 (as in the original)."""
+    """No person depends on cluster B: ratio 1 (as in the reference implementation)."""
     network = _without_link(power_network_with_dependencies, "L5", "E3")
 
     network = _base_then_disrupted(network, power_dependency_table, {}, "propagation")
@@ -639,7 +640,7 @@ def test_power_clusters_not_merged_through_people(
     """Same case as ``test_reference_merges_clusters_through_people``:
     clusters are found on the power network only, so cluster B (failed plant)
     has no supply and the hospital fails. Intended difference to the
-    original, only for people with links to several clusters."""
+    reference implementation, only for people with links to several clusters."""
     network = _with_link(
         power_network_with_dependencies, "L3", "E3", "dependency_power_line_people"
     )
@@ -671,7 +672,6 @@ def test_power_cascade_missing_source_var_raises(
 # ========================================================================
 
 
-@_xfail("P4", "rows without access constraint keep their links")
 def test_routing_keeps_links_without_access_constraint(
     power_network_with_dependencies, power_dependency_table
 ):
@@ -689,7 +689,6 @@ def test_routing_keeps_links_without_access_constraint(
     )
 
 
-@_xfail("P4", "rows without access constraint propagate capacity")
 def test_routing_uses_cluster_capacity(power_network_with_dependencies):
     """Cluster B covers 60 % of its demand, 70 % are needed."""
     dep_table = _power_dependency_table(0.7, 0.7)
@@ -701,7 +700,6 @@ def test_routing_uses_cluster_capacity(power_network_with_dependencies):
     _assert_scenario(network, SCENARIOS["thresh_0.7"])
 
 
-@_xfail("P4", "closest links, power clusters and fixed links together")
 def test_power_end_to_end(power_network, power_dependency_table):
     """As in the tutorial: setup_dependencies, base-state cascade, then a
     failed line node and the cascade again (default routing mode)."""
@@ -720,7 +718,7 @@ def test_power_end_to_end(power_network, power_dependency_table):
 
 
 # ========================================================================
-# New code vs the original algorithm on random power networks
+# New code vs the reference implementation on random power networks
 # ========================================================================
 
 SEEDS = range(8)
@@ -731,7 +729,7 @@ def _random_power_network(seed):
 
     12 line nodes forming a random forest (several clusters), 3 plants linked
     to random line nodes, 10 people (80 % electrified, each linked to one
-    random line node: k = 1 as in the original runs), 3 hospitals linked to
+    random line node: k = 1 as in Mühlhofer et al. 2024), 3 hospitals linked to
     random line nodes. Failures: power-line edges (incl. plant links) 20 %,
     line nodes 15 %, plants 25 %. ``thresh_func`` 0.3, 0.6 or 1.
 
@@ -887,6 +885,5 @@ def test_power_cascade_matches_reference_propagation():
     _compare_with_reference("propagation")
 
 
-@_xfail("P4", "rows without access constraint keep their links")
 def test_power_cascade_matches_reference_routing():
     _compare_with_reference("routing")

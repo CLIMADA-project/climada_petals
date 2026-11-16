@@ -2337,6 +2337,49 @@ def test_update_enduser_dependencies_routing(graph_calcs_with_source_fail):
     assert people_attr(gc.graph, "actual_supply_healthcare_people") == [0]
 
 
+def test_update_enduser_dependencies_routing_keeps_links_without_constraint(
+    graph_calcs,
+):
+    """Routing mode: a row without access constraint keeps its link. People
+    linked to road node 1 lose road access when node 1 fails, although road
+    node 2 works (no rerouting)."""
+    dep_table = pd.DataFrame(
+        {
+            "source": ["road"],
+            "target": ["people"],
+            "type_I": ["enduser"],
+            "access_cnstr": [False],
+            "via_link": ["none"],
+            "link_condition": ["closest"],
+            "thresh_dist": [10e6],
+            "thresh_dur": [np.inf],
+            "bidir_link": [False],
+            "thresh_func": [1.0],
+            "n_links": [1],
+        }
+    )
+    graph_calcs.network.initialize_capacity(dep_table)
+    graph_calcs.network.initialize_supply(dep_table)
+    make_enduser_dependencies(graph_calcs, dep_table)
+    links_before = [
+        (e.source, e.target)
+        for e in graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    ]
+    assert links_before == [(1, 0)]
+    graph_calcs.graph.vs[1]["func_tot"] = 0
+
+    graph_calcs.update_enduser_dependencies(
+        dep_table, friction_surf=None, access_check_method="routing"
+    )
+
+    links_after = [
+        (e.source, e.target)
+        for e in graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    ]
+    assert links_after == links_before
+    assert people_attr(graph_calcs.graph, "actual_supply_road_people") == [0]
+
+
 def test_update_enduser_dependencies_propagation(graph_calcs_with_source_fail):
     """Propagation cuts supply from failed hospitals to people who had it."""
     gc = graph_calcs_with_source_fail

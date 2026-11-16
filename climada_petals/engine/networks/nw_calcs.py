@@ -269,11 +269,18 @@ class NetworkCalcs:
         friction_surf : object, optional
             Friction surface for duration-based access checks. Default is ``None``.
         rerouting : bool, optional
-            If ``True``, end-users whose source or path failed can be linked to
-            another source. Default is ``True``.
+            If ``True``, end-users of dependencies with access constraint whose
+            source or path failed can be linked to another source (routing
+            mode). Dependencies without access constraint are never re-linked:
+            use ``n_links > 1`` in the dependency table for redundancy.
+            Default is ``True``.
         access_check_method : str, optional
-            Method to check end-user access, ``"routing"`` or ``"propagation"``.
-            Default is ``"routing"``.
+            Method to check end-user access for dependencies with access
+            constraint, ``"routing"`` or ``"propagation"``. Default is
+            ``"routing"``. Dependencies without access constraint
+            (``access_cnstr=False``, e.g. power supply) keep their links and
+            propagate capacity with both methods (see
+            ``GraphCalcs.update_enduser_dependencies``).
 
         Raises
         ------

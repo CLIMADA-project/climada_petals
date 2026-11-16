@@ -1512,6 +1512,25 @@ class GraphCalcs:
     ):
         """Update end-user dependencies for the cascade
 
+        How access is checked depends on the ``access_cnstr`` column of each
+        row:
+
+        - Rows with access constraint (``access_cnstr=True``, e.g. healthcare
+          reached along roads): with ``access_check_method="routing"``, the
+          path from the linked source to each end user along the
+          ``via_link`` edges is re-checked; with ``rerouting=True``, end users
+          who lost their source or their path are linked to another
+          functional source they can reach. With ``"propagation"``, they are
+          handled like the rows without access constraint (paths not
+          checked).
+        - Rows without access constraint (e.g. power supply, road access):
+          the dependency links created by ``setup_dependencies`` are kept,
+          with both methods. Each end user receives ``func_tot * capacity``
+          from its linked sources and is supplied if this reaches
+          ``thresh_func`` (``_propagate_check_fail``). To keep access as long
+          as one of several sources works, link the end users to several
+          sources (``n_links > 1``).
+
         Parameters
         ----------
         df_dependencies : pd.DataFrame
@@ -1519,12 +1538,15 @@ class GraphCalcs:
         friction_surf : object or None
             Friction surface used for routing when applicable.
         access_check_method : str, optional
-            Method to check access, either ``"routing"`` (paths along the via
-            links are re-checked) or ``"propagation"`` (capacity is propagated
-            along the dependency edges, via links are ignored).
-            Default is ``"routing"``.
+            Method to check access of the rows with access constraint, either
+            ``"routing"`` (paths along the via links are re-checked) or
+            ``"propagation"`` (capacity is propagated along the dependency
+            edges, via links are ignored). Default is ``"routing"``.
         rerouting : bool, optional
-            Whether to allow rerouting to alternative sources. Default is ``True``.
+            Whether end users of rows with access constraint can be linked to
+            another source in routing mode. Rows without access constraint are
+            never re-linked: use ``n_links > 1`` for redundancy. Default is
+            ``True``.
 
         Raises
         ------
@@ -1536,9 +1558,10 @@ class GraphCalcs:
             df_dependencies["type_I"] == "enduser"
         ].iterrows():
 
-            if access_check_method == "routing":
+            if access_check_method == "routing" and row.access_cnstr:
                 self._check_access(row, friction_surf, rerouting=rerouting)
-            elif access_check_method == "propagation":
+            elif access_check_method in ("routing", "propagation"):
+                # without access constraint: links of the base state are kept
                 if row.access_cnstr:
                     LOGGER.warning(
                         "Propagation method does not account for via-link "
