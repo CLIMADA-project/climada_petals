@@ -100,7 +100,10 @@ def _dependency_name(source, target):
     """Edge ``ci_type`` of the dependency edges from ``source`` to ``target``
 
     This is the only name under which the cascade (capacity propagation,
-    access checks, rerouting) looks up dependency edges.
+    access checks, rerouting) looks up dependency edges. The prefix
+    ``dependency_`` also identifies dependency edges in general: they get no
+    functional state and are left out of the functional-state sums and checks
+    (``GraphCalcs.funcstates_sum``, ``GraphCalcs.check_funcstates``).
 
     Parameters
     ----------

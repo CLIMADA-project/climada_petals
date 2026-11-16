@@ -502,7 +502,6 @@ def _setup(network, dep_table):
     return nc.network
 
 
-@_xfail("P2", "link_condition 'closest' and the target_filter column")
 def test_setup_dependencies_closest(power_network, power_dependency_table):
     """Each electrified person and the hospital are linked to their closest
     line node (straight line); N1 is not electrified."""
@@ -516,7 +515,6 @@ def test_setup_dependencies_closest(power_network, power_dependency_table):
     )
 
 
-@_xfail("P2", "link_condition 'closest'")
 def test_setup_dependencies_closest_without_target_filter(power_network):
     """Without a target filter, every person is linked."""
     dep_table = _power_dependency_table(target_filter=None)
@@ -528,7 +526,6 @@ def test_setup_dependencies_closest_without_target_filter(power_network):
     )
 
 
-@_xfail("P2", "link_condition 'closest'")
 def test_setup_dependencies_closest_n_links(power_network):
     """``n_links`` closest line nodes per target."""
     dep_table = _power_dependency_table(n_links=2)
@@ -545,7 +542,6 @@ def test_setup_dependencies_closest_n_links(power_network):
     )
 
 
-@_xfail("P2", "link_condition 'closest'")
 def test_setup_dependencies_closest_thresh_dist(power_network):
     """Straight-line distance in metres: E2 and E3 are 334 m from their line
     node, E1 352 m and H 401 m."""
@@ -559,7 +555,6 @@ def test_setup_dependencies_closest_thresh_dist(power_network):
     assert _dependency_pairs(network, "dependency_power_line_healthcare") == set()
 
 
-@_xfail("P2", "target_filter column checked")
 def test_setup_dependencies_target_filter_missing_column_raises(
     power_network, power_dependency_table
 ):
@@ -571,18 +566,19 @@ def test_setup_dependencies_target_filter_missing_column_raises(
         nc.setup_dependencies()
 
 
-@_xfail("P2", "dependency edges created after initialize_base_state get no state")
-def test_setup_dependencies_links_get_funcstates(network_calcs):
-    """Dependency edges are created after ``initialize_base_state`` (tutorial
-    order): they must be functional like the other edges (B5)."""
+def test_setup_dependencies_cascade_without_warning(network_calcs, nw_caplog):
+    """Tutorial order: dependency links created after ``initialize_base_state``
+    have no functional state, and the cascade does not report them (B5)."""
     network_calcs.initialize_base_state()
     network_calcs.setup_dependencies()
     edges = network_calcs.network.edges
     dep_edges = edges[edges["ci_type"].str.startswith("dependency_")]
-
     assert not dep_edges.empty
-    assert (dep_edges[["func_internal", "func_tot"]] == 1).all().all()
-    assert (dep_edges["imp_dir"] == 0).all()
+    assert dep_edges["func_tot"].isna().all()
+
+    network_calcs.cascade(access_check_method="propagation")
+
+    assert "have no functional state" not in nw_caplog.text
 
 
 # ========================================================================

@@ -19,7 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 import logging
 
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.graph_calcs import GraphCalcs
+from climada_petals.engine.networks.graph_calcs import GraphCalcs, _target_attrs
 from climada_petals.engine.networks.nw_utils import _dependency_name
 
 LOGGER = logging.getLogger(__name__)
@@ -187,13 +187,17 @@ class NetworkCalcs:
         For each row of the dependency table, targets are linked to their sources
         with edges of type ``dependency_{source}_{target}``, directed from source
         to target, following the row's ``link_condition`` (``"distance"``,
-        ``"duration"`` or ``"edgecond"``), thresholds and ``n_links``. The network
-        is updated in place.
+        ``"duration"``, ``"edgecond"`` or ``"closest"``), thresholds and
+        ``n_links``. The optional column ``target_filter`` names a boolean node
+        column: only the targets where it is ``True`` are linked (e.g.
+        ``"electrified"`` for the power supply of people). The network is
+        updated in place.
 
         Raises
         ------
         ValueError
-            If no dependency table was provided.
+            If no dependency table was provided, or if a ``target_filter`` is
+            not a node column.
 
         See Also
         --------
@@ -205,11 +209,20 @@ class NetworkCalcs:
                 "Cannot setup dependencies without a dependency table. Please provide a dependency table at initialization."
             )
 
+        for _, row in self.dep_table.iterrows():
+            target_attrs = _target_attrs(row)
+            missing = set(target_attrs).difference(self.network.nodes.columns)
+            if missing:
+                raise ValueError(
+                    f"target_filter {sorted(missing)} of the dependency "
+                    f"{row['source']} -> {row['target']} is not a node column."
+                )
+
         for i, row in self.dep_table.iterrows():
             dependency_name = _dependency_name(row["source"], row["target"])
             self._graph_calc.calc_dependencies(
                 source_attrs={"ci_type": row["source"]},
-                target_attrs={"ci_type": row["target"]},
+                target_attrs=_target_attrs(row),
                 via_attrs={"ci_type": row["via_link"]},
                 link_attrs={"ci_type": dependency_name},
                 link_condition=row["link_condition"],
@@ -267,6 +280,8 @@ class NetworkCalcs:
 
         Notes
         -----
+        - Components without a functional state are reported with a warning
+          (``GraphCalcs.check_funcstates``); dependency edges have none.
         - Internal and functional dependencies are updated until the functional
           states no longer change.
         - End-user dependencies are updated once, after convergence.
@@ -278,6 +293,8 @@ class NetworkCalcs:
             raise ValueError(
                 "Cannot propagate cascade failure without a dependency table. Please provide a dependency table at initialization."
             )
+
+        self._graph_calc.check_funcstates()
 
         delta = -1
         cycles = 0

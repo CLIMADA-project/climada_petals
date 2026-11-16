@@ -33,6 +33,7 @@ from climada_petals.engine.networks.nw_utils import (
     ACCESS_UNDISRUPTED,
     ADDED_COL,
     DEF_END_USER,
+    FUNCSTATE_COLS,
     _ckdnearest,
     _dependency_name,
     _edge_lengths_metres,
@@ -46,6 +47,30 @@ from climada.engine import ImpactCalc
 from climada.util import lines_polys_handler as u_lp
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _target_attrs(row):
+    """Vertex filters of the targets of a dependency table row
+
+    Targets are the vertices of ``ci_type == row["target"]``. If the optional
+    column ``target_filter`` holds the name of a boolean node column (e.g.
+    ``"electrified"``), only the targets where it is ``True`` are linked.
+
+    Parameters
+    ----------
+    row : pd.Series
+        Dependency table row.
+
+    Returns
+    -------
+    dict
+        Vertex attribute filters, e.g. ``{"ci_type": "people", "electrified": True}``.
+    """
+    attrs = {"ci_type": row["target"]}
+    target_filter = row.get("target_filter")
+    if isinstance(target_filter, str) and target_filter:
+        attrs[target_filter] = True
+    return attrs
 
 
 class GraphCalcs:
@@ -712,7 +737,15 @@ class GraphCalcs:
         """Create edges between source and target vertex lists
 
         Adds edge geometries and distances if missing in ``link_attrs``, and
-        marks the new edges with ``ADDED_COL = True`` (see ``nw_utils``).
+        marks the new edges with ``ADDED_COL = True`` (see ``nw_utils``). If the
+        graph already has functional states (``func_internal``, ``func_tot``,
+        ``imp_dir``), e.g. for physical links added after
+        ``NetworkCalcs.initialize_base_state``, the new edges are functional
+        (1, 1, 0). Only the state columns that already exist (on the vertices
+        or the edges) are set: a column is never created for the new edges
+        alone, since all other edges would get ``None`` in it.
+        Dependency links (``ci_type`` ``dependency_*``) get no state: they are
+        logical links, and the cascade only uses the state of their source.
 
         Parameters
         ----------
@@ -738,6 +771,18 @@ class GraphCalcs:
             self.graph.vs[v_ids_source]["geometry"],
             self.graph.vs[v_ids_target]["geometry"],
         )
+
+        # new physical links are functional if the graph has functional states
+        # already; dependency links (also the temporary "new_dependency_*"
+        # links of the rerouting) are logical and get no state
+        ci_type = str(link_attrs.get("ci_type", ""))
+        if not ci_type.startswith(("dependency_", "new_dependency_")):
+            existing_attrs = set(self.graph.vs.attributes()) | set(
+                self.graph.es.attributes()
+            )
+            for col, value in zip(FUNCSTATE_COLS, (1.0, 1.0, 0.0)):
+                if col in existing_attrs and col not in link_attrs:
+                    link_attrs[col] = value
 
         if "distance" not in link_attrs.keys():
             LOGGER.info("Adding edge distances for new links.")
@@ -1017,10 +1062,15 @@ class GraphCalcs:
             - ``"duration"``: travel duration on the friction surface shorter
               than ``dur_thresh``
             - ``"edgecond"``: an existing edge connects source and target
+            - ``"closest"``: the ``k`` closest sources in a straight line
+              within ``dist_thresh``, without a via network (``via_attrs``
+              not used), e.g. people and facilities supplied by their closest
+              power line node
         dist_thresh : float
             Maximum distance in meters. Path length for ``"distance"``;
-            straight-line pre-selection of candidates for ``"duration"``. Not
-            used for ``"edgecond"``.
+            straight-line distance for ``"closest"``; straight-line
+            pre-selection of candidates for ``"duration"``. Not used for
+            ``"edgecond"``.
         dur_thresh : float
             Maximum travel duration in minutes. Only used for ``"duration"``.
         k : int
@@ -1070,6 +1120,15 @@ class GraphCalcs:
                 dist_thresh=dist_thresh,
                 dur_thresh=dur_thresh,
                 k=k,
+                bidir=bidir_link,
+            )
+        elif link_condition == "closest":
+            self.link_vertices_closest_k(
+                source_attrs=source_attrs,
+                target_attrs=target_attrs,
+                dist_thresh=dist_thresh,
+                k=k,
+                link_attrs=link_attrs,
                 bidir=bidir_link,
             )
         elif link_condition == "edgecond":
@@ -1180,15 +1239,63 @@ class GraphCalcs:
     def funcstates_sum(self):
         """Sum functional states across vertices and edges
 
+        Dependency edges (``ci_type`` ``dependency_*``) are left out: they are
+        logical links without a functional state. Missing states of other
+        components (see ``check_funcstates``) are ignored, so that the sums
+        used to detect the end of the cascade are always finite.
+
         Returns
         -------
         tuple
             ``(sum_vertices, sum_edges)`` of ``func_tot``.
         """
+        func_es = self._func_tot(self.graph.es)[self._non_dependency_edges()]
         return (
-            sum(self.graph.vs.get_attribute_values("func_tot")),
-            sum(self.graph.es.get_attribute_values("func_tot")),
+            float(np.nansum(self._func_tot(self.graph.vs))),
+            float(np.nansum(func_es)),
         )
+
+    @staticmethod
+    def _func_tot(seq):
+        """``func_tot`` of a vertex or edge sequence as floats (NaN if missing)"""
+        if "func_tot" not in seq.attributes():
+            return np.full(len(seq), np.nan)
+        return np.array(seq["func_tot"], dtype=float)
+
+    def _non_dependency_edges(self):
+        """Boolean mask of the edges that are not dependency edges"""
+        if self.graph.ecount() == 0:
+            return np.zeros(0, dtype=bool)
+        ci_types = np.array(self.graph.es["ci_type"], dtype=str)
+        return ~np.char.startswith(ci_types, "dependency_")
+
+    def check_funcstates(self):
+        """Warn about nodes and edges without a functional state
+
+        Dependency edges are not checked (they have no state). Components
+        without ``func_tot`` (missing or NaN) are ignored when the end of the
+        cascade is detected, and never fail; this happens e.g. for links
+        added after ``NetworkCalcs.initialize_base_state`` by user code that
+        does not go through ``GraphCalcs``.
+
+        Returns
+        -------
+        tuple
+            ``(n_nodes, n_edges)`` without a functional state.
+        """
+        n_vs = int(np.isnan(self._func_tot(self.graph.vs)).sum())
+        func_es = self._func_tot(self.graph.es)[self._non_dependency_edges()]
+        n_es = int(np.isnan(func_es).sum())
+        if n_vs or n_es:
+            LOGGER.warning(
+                "%i nodes and %i edges (dependency edges not counted) have no "
+                "functional state (func_tot): they are ignored by the cascade. "
+                "Call initialize_base_state after adding all physical links or"
+                "add func_tot to new links manually.",
+                n_vs,
+                n_es,
+            )
+        return n_vs, n_es
 
     def update_internal_dependencies(self, p_source, p_sink, source_var, demand_var):
         """Update internal dependencies for networked CI types
@@ -1381,7 +1488,7 @@ class GraphCalcs:
 
         self.calc_dependencies(
             source_attrs={"ci_type": row["source"], "func_tot": 1},
-            target_attrs={"ci_type": row["target"]},
+            target_attrs=_target_attrs(row),
             via_attrs=via_attrs_dict,
             link_attrs={"ci_type": dependency_name},
             link_condition=row["link_condition"],
@@ -1397,7 +1504,7 @@ class GraphCalcs:
             # people who could have access if via links were functional
             self.calc_dependencies(
                 source_attrs={"ci_type": row["source"], "func_tot": 1},
-                target_attrs={"ci_type": row["target"]},
+                target_attrs=_target_attrs(row),
                 via_attrs={"ci_type": row["via_link"]},  # No func_tot requirement
                 link_attrs={"ci_type": "new_" + dependency_name},
                 link_condition=row["link_condition"],
@@ -1520,7 +1627,7 @@ class GraphCalcs:
                 # create subgraph
                 subgraph = self._create_subgraph(
                     source_attrs={"ci_type": row["source"], "func_tot": 1},
-                    target_attrs={"ci_type": row["target"]},
+                    target_attrs=_target_attrs(row),
                     via_attrs={"ci_type": row["via_link"], "func_tot": 1},
                 )
 
