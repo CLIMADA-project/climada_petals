@@ -586,7 +586,6 @@ def test_setup_dependencies_cascade_without_warning(network_calcs, nw_caplog):
 # ========================================================================
 
 
-@_xfail("P3", "power cluster capacities")
 @pytest.mark.parametrize("name", list(SCENARIOS))
 def test_power_cascade_hand_cases(power_network_with_dependencies, name):
     scenario = SCENARIOS[name]
@@ -602,7 +601,6 @@ def test_power_cascade_hand_cases(power_network_with_dependencies, name):
     _assert_scenario(network, scenario)
 
 
-@_xfail("P3", "power cluster capacities")
 def test_power_cascade_access_states(
     power_network_with_dependencies, power_dependency_table
 ):
@@ -621,7 +619,6 @@ def test_power_cascade_access_states(
     ]
 
 
-@_xfail("P3", "power cluster capacities")
 def test_power_cluster_without_demand_has_full_capacity(
     power_network_with_dependencies, power_dependency_table
 ):
@@ -636,7 +633,6 @@ def test_power_cluster_without_demand_has_full_capacity(
     assert _values(network, ["H"], "func_tot") == [1]
 
 
-@_xfail("P3", "power clusters on the power network only (DP-1)")
 def test_power_clusters_not_merged_through_people(
     power_network_with_dependencies, power_dependency_table
 ):
@@ -658,7 +654,6 @@ def test_power_clusters_not_merged_through_people(
     assert _values(network, ["H"], "func_tot") == [0]
 
 
-@_xfail("P3", "power cluster input checks")
 def test_power_cascade_missing_source_var_raises(
     power_network_with_dependencies, power_dependency_table
 ):
@@ -888,7 +883,6 @@ def test_random_power_networks_cover_the_cases():
     assert {0, 1} <= set(health)
 
 
-@_xfail("P3", "power cluster capacities")
 def test_power_cascade_matches_reference_propagation():
     _compare_with_reference("propagation")
 

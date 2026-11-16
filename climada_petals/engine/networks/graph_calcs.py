@@ -22,6 +22,7 @@ import pandas as pd
 import geopandas as gpd
 
 import scipy
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import (
@@ -1300,6 +1301,11 @@ class GraphCalcs:
     def update_internal_dependencies(self, p_source, p_sink, source_var, demand_var):
         """Update internal dependencies for networked CI types
 
+        - Roads: the end nodes of a failed road edge fail.
+        - Power: if the graph contains ``p_source`` and ``p_sink`` vertices,
+          the capacity of the power line nodes is the supply / demand ratio of
+          their power cluster (see ``powercap_from_clusters``).
+
         Parameters
         ----------
         p_source : str
@@ -1326,27 +1332,9 @@ class GraphCalcs:
                 "func_tot"
             ] = 0
 
-        # specifically for powerlines: check power clusters
+        # specifically for power lines: supply / demand ratio of power clusters
         if {p_source, p_sink}.issubset(set(self.graph.vs["ci_type"])):
-            raise NotImplementedError("Power cluster algorithm not yet implemented.")
-
             LOGGER.info("Updating power clusters")
-            # For another version using pandapower, see nw_utils.py
-            # Since powerlines are directed in a directed graph,
-            # make sure 'reverse' lines are also down
-
-            edges_dys = self.graph.es.select(ci_type="power_line").select(func_tot_eq=0)
-            reverse_edges = [(edge.target, edge.source) for edge in edges_dys]
-            eids = self.graph.get_eids(
-                pairs=reverse_edges, path=None, directed=True, error=True
-            )
-            self.graph.es[eids]["func_tot"] = 0
-            LOGGER.info(
-                "Using updated power line algorithm: dysfunc edges before: \
-                  %i, after: %i",
-                len(edges_dys),
-                len(self.graph.es.select(ci_type="power_line").select(func_tot_eq=0)),
-            )
             self.powercap_from_clusters(
                 p_source=p_source,
                 p_sink=p_sink,
@@ -1357,6 +1345,137 @@ class GraphCalcs:
 
         if self.auto_sync:
             self.sync()
+
+    def powercap_from_clusters(
+        self,
+        p_source="power_plant",
+        p_sink="power_line",
+        demand_ci=DEF_END_USER,
+        source_var="el_generation",
+        demand_var="el_consumption",
+    ):
+        """Set the capacity of power line nodes from their power cluster
+
+        A power cluster is a connected part of the power network: ``p_sink``
+        and ``p_source`` vertices joined by functional ``p_sink`` edges (power
+        lines, including the links of the plants), edge directions ignored.
+        For each cluster:
+
+        - supply: sum of ``source_var * func_tot`` of its ``p_source`` vertices;
+        - demand: sum of ``demand_var`` of the ``demand_ci`` vertices linked to
+          its line nodes by ``dependency_{p_sink}_{demand_ci}`` edges (a
+          vertex linked to several line nodes counts with an equal share at
+          each);
+        - ratio: ``min(1, supply / demand)``, 1 if the demand is 0.
+
+        The ratio is written to every ``capacity_{p_sink}_*`` attribute of the
+        cluster's line nodes, so that all dependants of power (end users and
+        facilities) receive ``func_tot * ratio`` from their line node in
+        ``_propagate_check_fail``.
+
+        A failed line node does not split its cluster (only failed edges,
+        ``func_tot < 1``, do); it delivers nothing itself since its ``func_tot``
+        is 0. The clusters are found on the power network only: dependants linked
+        to several clusters do not merge them.
+
+        Parameters
+        ----------
+        p_source : str, optional
+            Type of the power sources. Default is ``"power_plant"``.
+        p_sink : str, optional
+            Type of the power line nodes and edges. Default is ``"power_line"``.
+        demand_ci : str, optional
+            Type of the consumers. Default is ``DEF_END_USER`` (``"people"``).
+        source_var : str, optional
+            Vertex attribute with the generation of the sources. Default is
+            ``"el_generation"``.
+        demand_var : str, optional
+            Vertex attribute with the demand of the consumers. Default is
+            ``"el_consumption"``.
+
+        Raises
+        ------
+        ValueError
+            If ``source_var`` or ``demand_var`` is missing, or missing (NaN)
+            for a source or for a consumer linked to the power network.
+        """
+        n_vs = self.graph.vcount()
+        ci_types = np.array(self.graph.vs["ci_type"])
+        is_power = np.isin(ci_types, [p_source, p_sink])
+        sources = np.where(ci_types == p_source)[0]
+        sinks = np.where(ci_types == p_sink)[0]
+
+        for var, ci_type in ((source_var, p_source), (demand_var, demand_ci)):
+            if var not in self.graph.vs.attributes():
+                raise ValueError(
+                    f"Power clusters need the node column '{var}' ({ci_type})."
+                )
+
+        # edges of the power network that work
+        if self.graph.ecount() > 0:
+            edge_list = np.array(self.graph.get_edgelist(), dtype=int)
+            edge_src, edge_tgt = edge_list[:, 0], edge_list[:, 1]
+            edge_types = np.array(self.graph.es["ci_type"], dtype=str)
+        else:
+            edge_src = edge_tgt = np.zeros(0, dtype=int)
+            edge_types = np.zeros(0, dtype=str)
+        # functional states are 0 or 1; an edge works only with func_tot 1, as
+        # for the via edges and sources in the access checks. NaN: not failed
+        # (reported by check_funcstates)
+        failed = self._func_tot(self.graph.es) < 1
+        keep = (
+            (edge_types == p_sink) & ~failed & is_power[edge_src] & is_power[edge_tgt]
+        )
+        adjacency = scipy.sparse.coo_matrix(
+            (np.ones(keep.sum()), (edge_src[keep], edge_tgt[keep])),
+            shape=(n_vs, n_vs),
+        )
+        _, cluster = connected_components(adjacency, directed=False)
+
+        # supply per cluster
+        generation = np.array(self.graph.vs[sources.tolist()][source_var], dtype=float)
+        if np.isnan(generation).any():
+            raise ValueError(
+                f"'{source_var}' is missing for {np.isnan(generation).sum()} "
+                f"{p_source} nodes."
+            )
+        supply = np.bincount(
+            cluster[sources],
+            weights=generation * self._func_tot(self.graph.vs)[sources],
+            minlength=n_vs,
+        )
+
+        # demand per cluster, through the dependency edges of the consumers
+        dep = (
+            (edge_types == _dependency_name(p_sink, demand_ci))
+            & (ci_types[edge_src] == p_sink)
+            & (ci_types[edge_tgt] == demand_ci)
+        )
+        dep_src, dep_tgt = edge_src[dep], edge_tgt[dep]
+        consumption = np.array(self.graph.vs[demand_var], dtype=float)[dep_tgt]
+        if np.isnan(consumption).any():
+            n_missing = len(np.unique(dep_tgt[np.isnan(consumption)]))
+            raise ValueError(
+                f"'{demand_var}' is missing for {n_missing} {demand_ci} nodes "
+                "linked to the power network."
+            )
+        n_links = np.bincount(dep_tgt, minlength=n_vs)[dep_tgt]
+        demand = np.bincount(
+            cluster[dep_src], weights=consumption / n_links, minlength=n_vs
+        )
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(demand > 0, np.minimum(1, supply / demand), 1.0)
+
+        capacity_vars = [
+            var
+            for var in self.graph.vs.attributes()
+            if var.startswith(f"capacity_{p_sink}_")
+        ]
+        if not capacity_vars:
+            LOGGER.debug("No capacity_%s_* attribute: nothing to update.", p_sink)
+        for var in capacity_vars:
+            self.graph.vs[sinks.tolist()][var] = ratio[cluster[sinks]].tolist()
 
     def update_functional_dependencies(self, df_dependencies):
         """Update functional CI-to-CI dependencies

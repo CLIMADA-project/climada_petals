@@ -259,11 +259,13 @@ class NetworkCalcs:
         p_source : str, optional
             Type of power source nodes. Default is ``"power_plant"``.
         p_sink : str, optional
-            Type of power sink nodes. Default is ``"power_line"``.
+            Type of power line nodes and edges. Default is ``"power_line"``.
         source_var : str, optional
-            Attribute name for source generation. Default is ``"el_generation"``.
+            Node column with the generation of the sources. Default is
+            ``"el_generation"``.
         demand_var : str, optional
-            Attribute name for demand consumption. Default is ``"el_consumption"``.
+            Node column with the demand of the end users. Default is
+            ``"el_consumption"``.
         friction_surf : object, optional
             Friction surface for duration-based access checks. Default is ``None``.
         rerouting : bool, optional
@@ -283,7 +285,10 @@ class NetworkCalcs:
         - Components without a functional state are reported with a warning
           (``GraphCalcs.check_funcstates``); dependency edges have none.
         - Internal and functional dependencies are updated until the functional
-          states no longer change.
+          states no longer change. Internal: the end nodes of failed roads
+          fail; if the network contains ``p_source`` and ``p_sink`` nodes, the
+          capacity of the power line nodes is the supply / demand ratio of
+          their power cluster (``GraphCalcs.powercap_from_clusters``).
         - End-user dependencies are updated once, after convergence.
         - The network is then rebuilt from the graph, so that edges created or
           removed during the cascade are reflected, and the cached graph is reset.
