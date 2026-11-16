@@ -56,9 +56,13 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
+import rasterio
+import requests
 import scipy.sparse
+from rasterio.transform import from_origin
 from shapely.geometry import LineString, Point
 
+from climada_petals.engine.networks import nw_power
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_calcs import NetworkCalcs
 from climada_petals.engine.networks.nw_utils import (
@@ -887,3 +891,251 @@ def test_power_cascade_matches_reference_propagation():
 
 def test_power_cascade_matches_reference_routing():
     _compare_with_reference("routing")
+
+
+# ========================================================================
+# Power data: plants, electrification, consumption and generation (P1)
+# ========================================================================
+
+
+def test_load_power_plants_wri(tmp_path):
+    path = tmp_path / "wri.csv"
+    pd.DataFrame(
+        {
+            "country": ["VNM", "VNM", "THA"],
+            "name": ["a", "b", "c"],
+            "latitude": [10.0, 11.0, 12.0],
+            "longitude": [105.0, 106.0, 100.0],
+            "capacity_mw": [10.0, 20.0, 30.0],
+            "estimated_generation_gwh_2017": [100.0, None, 50.0],
+        }
+    ).to_csv(path, index=False)
+
+    plants = nw_power.load_power_plants_wri(path, "VNM")
+
+    assert plants["name"].tolist() == ["a", "b"]
+    assert plants.crs == "EPSG:4326"
+    assert [(p.x, p.y) for p in plants.geometry] == [(105.0, 10.0), (106.0, 11.0)]
+    generation = plants["estimated_generation_gwh_2017"]
+    assert generation.iloc[0] == 100 and np.isnan(generation.iloc[1])
+
+
+def test_load_power_plants_wri_no_plant(tmp_path):
+    path = tmp_path / "wri.csv"
+    pd.DataFrame(
+        {
+            "country": ["THA"],
+            "name": ["c"],
+            "latitude": [12.0],
+            "longitude": [100.0],
+            "estimated_generation_gwh_2017": [50.0],
+        }
+    ).to_csv(path, index=False)
+
+    assert nw_power.load_power_plants_wri(path, "VNM").empty
+
+
+class _FakeResponse:
+    """Response of the World Bank API with the given JSON content."""
+
+    def __init__(self, content):
+        self._content = content
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._content
+
+
+def test_get_electricity_access_rate(monkeypatch):
+    urls = []
+
+    def fake_get(url, timeout):
+        urls.append(url)
+        return _FakeResponse([{"page": 1}, [{"value": 75.3}]])
+
+    monkeypatch.setattr(nw_power.requests, "get", fake_get)
+
+    assert nw_power.get_electricity_access_rate("VNM") == 75.3
+    assert "country/vnm/indicator/EG.ELC.ACCS.ZS" in urls[0]
+
+
+@pytest.mark.parametrize(
+    "content", [[{"message": "invalid country"}], [{"page": 1}, [{"value": None}]]]
+)
+def test_get_electricity_access_rate_no_value_raises(monkeypatch, content):
+    monkeypatch.setattr(
+        nw_power.requests, "get", lambda url, timeout: _FakeResponse(content)
+    )
+
+    with pytest.raises(ValueError, match="no electricity access rate"):
+        nw_power.get_electricity_access_rate("XXX")
+
+
+def test_get_electricity_access_rate_offline_raises(monkeypatch):
+    calls = []
+
+    def fake_get(url, timeout):
+        calls.append(url)
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr(nw_power.requests, "get", fake_get)
+    monkeypatch.setattr(nw_power.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(RuntimeError, match="Pass a known rate"):
+        nw_power.get_electricity_access_rate("VNM", retries=2)
+    assert len(calls) == 2
+
+
+def _write_targets(path):
+    """Targets raster: 4 x 4 cells of 0.01 degree (x and y from 0 to 0.04);
+    only the top-left cell (centre (0.005, 0.035)) is electrified."""
+    values = np.zeros((4, 4), dtype="float32")
+    values[0, 0] = 1
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=4,
+        width=4,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(0, 0.04, 0.01, 0.01),
+    ) as dst:
+        dst.write(values, 1)
+    return path
+
+
+def _people_cells():
+    """A (10 people) in the electrified cell, B (10) in the next cell to the
+    east (0.01 from A), C (80) far away; index not starting at 0."""
+    return gpd.GeoDataFrame(
+        {"counts": [10.0, 10.0, 80.0]},
+        geometry=[Point(0.005, 0.035), Point(0.015, 0.035), Point(0.035, 0.005)],
+        index=[10, 11, 12],
+        crs="EPSG:4326",
+    )
+
+
+def test_assign_electrification_full_access():
+    """From 90 % on, every cell is electrified (no raster needed)."""
+    electrified = nw_power.assign_electrification(_people_cells(), 95)
+
+    assert electrified.tolist() == [True, True, True]
+    assert electrified.index.tolist() == [10, 11, 12]
+
+
+@pytest.mark.parametrize(
+    "el_rate, expected",
+    [
+        # A alone (10 %) reaches the rate
+        (5, [True, False, False]),
+        # one widening by 0.01 reaches B (20 %)
+        (15, [True, True, False]),
+    ],
+)
+def test_assign_electrification_targets(tmp_path, el_rate, expected):
+    targets = _write_targets(tmp_path / "targets.tif")
+
+    electrified = nw_power.assign_electrification(_people_cells(), el_rate, targets)
+
+    assert electrified.tolist() == expected
+    assert electrified.index.tolist() == [10, 11, 12]
+
+
+def test_assign_electrification_rate_not_reached_warns(tmp_path, nw_caplog):
+    """One widening reaches 20 %, below the rate of 85 %."""
+    targets = _write_targets(tmp_path / "targets.tif")
+
+    electrified = nw_power.assign_electrification(
+        _people_cells(), 85, targets, max_iter=1
+    )
+
+    assert electrified.tolist() == [True, True, False]
+    assert "below the access rate" in nw_caplog.text
+
+
+def test_assign_electrification_needs_targets():
+    with pytest.raises(ValueError, match="targets raster"):
+        nw_power.assign_electrification(_people_cells(), 50)
+
+
+def test_assign_electrification_invalid_rate():
+    with pytest.raises(ValueError, match="percentage"):
+        nw_power.assign_electrification(_people_cells(), 120)
+
+
+def test_load_final_consumption(tmp_path):
+    path = tmp_path / "consumption.csv"
+    pd.DataFrame({"ISO3": ["VNM", "THA"], "el_consumption": [123.0, 45.0]}).to_csv(
+        path, index=False
+    )
+
+    assert nw_power.load_final_consumption(path, "VNM") == 123.0
+    assert np.isnan(nw_power.load_final_consumption(path, "CHE"))
+
+
+def _people_and_plants(generation=(1.0, 3.0)):
+    """Electrified cells with 10 and 30 people, one non-electrified cell (60);
+    two plants with the given WRI generation."""
+    people = gpd.GeoDataFrame(
+        {"counts": [10.0, 30.0, 60.0], "electrified": [True, True, False]},
+        geometry=[Point(0, 0)] * 3,
+        crs="EPSG:4326",
+    )
+    plants = gpd.GeoDataFrame(
+        {"estimated_generation_gwh_2017": list(generation)},
+        geometry=[Point(0, 0)] * 2,
+        crs="EPSG:4326",
+    )
+    return people, plants
+
+
+@pytest.mark.parametrize(
+    "generation, total, consumption, expected_generation",
+    [
+        # total distributed by population and by WRI generation
+        ((1.0, 3.0), 100.0, [25, 75, 0], [25, 75]),
+        # missing WRI generation: mean of the others
+        ((np.nan, 2.0), 100.0, [25, 75, 0], [50, 50]),
+        # no WRI generation at all: equal shares
+        ((np.nan, np.nan), 100.0, [25, 75, 0], [50, 50]),
+        # no total: consumption = population, generation equal
+        ((1.0, 3.0), None, [10, 30, 0], [20, 20]),
+        ((1.0, 3.0), np.nan, [10, 30, 0], [20, 20]),
+    ],
+)
+def test_assign_el_consumption_generation(
+    generation, total, consumption, expected_generation
+):
+    people, plants = _people_and_plants(generation)
+
+    people_out, plants_out = nw_power.assign_el_consumption_generation(
+        people, plants, total
+    )
+
+    np.testing.assert_allclose(people_out["el_consumption"], consumption)
+    np.testing.assert_allclose(plants_out["el_generation"], expected_generation)
+    # total generation = total consumption; inputs not modified
+    assert plants_out["el_generation"].sum() == pytest.approx(
+        people_out["el_consumption"].sum()
+    )
+    assert "el_consumption" not in people.columns
+    assert "el_generation" not in plants.columns
+
+
+def test_assign_el_consumption_generation_no_plant_raises():
+    people, plants = _people_and_plants()
+
+    with pytest.raises(ValueError, match="No power plant"):
+        nw_power.assign_el_consumption_generation(people, plants.iloc[:0], 100.0)
+
+
+def test_assign_el_consumption_generation_nobody_electrified_raises():
+    people, plants = _people_and_plants()
+    people["electrified"] = False
+
+    with pytest.raises(ValueError, match="No electrified"):
+        nw_power.assign_el_consumption_generation(people, plants, 100.0)

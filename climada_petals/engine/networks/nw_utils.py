@@ -30,12 +30,6 @@ import logging
 from pathlib import Path
 import urllib.request
 
-# requests, time, u_coords, TJ_TO_GWH, HRS_PER_YEAR: used by PowerFunctionalData on
-# feature/nw_update (moves to its own module with the power PR)
-import requests
-import time
-
-from climada.util import coordinates as u_coords
 from climada.util.constants import EARTH_RADIUS_KM
 from climada.util.coordinates import compute_geodesic_lengths
 from climada_petals.util.constants import DICT_SPEEDS
@@ -83,8 +77,6 @@ ADDED_COL = "added"
 FUNCSTATE_COLS = ("func_internal", "func_tot", "imp_dir")
 
 # Energy conversion factors
-TJ_TO_GWH = 0.277778
-HRS_PER_YEAR = 8760
 
 LOGGER = logging.getLogger(__name__)
 
