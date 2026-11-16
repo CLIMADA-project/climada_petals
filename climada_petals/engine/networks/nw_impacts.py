@@ -479,7 +479,14 @@ class NetworkImpactCalc:
     """
 
     def __init__(
-        self, impf_set, impf_thresh_set, haz, network, exp_list, edge_rule="max_ratio"
+        self,
+        impf_set,
+        impf_thresh_set,
+        haz,
+        network,
+        exp_list,
+        edge_rule="max_ratio",
+        combine_exposures=False,
     ):
         """Create a network impact calculator
 
@@ -507,6 +514,14 @@ class NetworkImpactCalc:
             exposures; or ``{tag: rule}`` to set the rule of some edge
             exposures, the others using ``"max_ratio"`` (e.g.
             ``{"road": "damaged_length"}``).
+        combine_exposures : bool, optional
+            If ``False`` (default), each node and each edge may be in one
+            exposure only, and ``disrupt_network`` raises otherwise (e.g.
+            overlapping masks by mistake). If ``True``, a component may be in
+            several exposures, e.g. power lines exposed to two damage
+            mechanisms (line and tower fragility) with their own impact
+            functions and thresholds: it fails if one of its exposures makes
+            it fail, and its ``imp_dir`` is the sum of their impacts.
         """
         self.impf_set = impf_set
         self.impf_thresh_set = impf_thresh_set
@@ -514,6 +529,7 @@ class NetworkImpactCalc:
         self.network = network
         self.exp_list = exp_list
         self.edge_rule = edge_rule
+        self.combine_exposures = combine_exposures
 
     def _edge_rule_of(self, tag):
         """Edge rule of the edge exposure with the tag ``tag``."""
@@ -615,9 +631,9 @@ class NetworkImpactCalc:
                     f"{list(EDGE_RULES)}."
                 )
 
-        # each node and each edge can be in one exposure only
+        # each node and each edge can be in one exposure only, unless combined
         for kind, tag_series in rows.items():
-            if not tag_series:
+            if not tag_series or self.combine_exposures:
                 continue
             tag_by_row = pd.concat(tag_series)
             shared = tag_by_row.index.duplicated(keep=False)
@@ -628,7 +644,8 @@ class NetworkImpactCalc:
                 raise ValueError(
                     f"The exposures '{first}' and '{second}' both contain {item} "
                     f"{label} (row label in network.{kind}): each {item} can be "
-                    "in one exposure only (use complementary masks)."
+                    "in one exposure only (use complementary masks), unless "
+                    "combine_exposures=True."
                 )
 
     def disrupt_network(self):
@@ -641,6 +658,10 @@ class NetworkImpactCalc:
         - ``func_internal``: 0 if the component is above its threshold, else 1,
         - ``func_tot``: ``min(func_internal, func_tot)``, so components that
           already failed (e.g. in the base-state cascade) stay failed.
+
+        With ``combine_exposures=True``, a component in several exposures
+        fails if one of them makes it fail, and its ``imp_dir`` is the sum of
+        their impacts.
 
         The threshold is compared with the damage ratio of each point, i.e.
         the impact for an exposure value of 1 (MDD x PAA at the hazard
@@ -673,7 +694,8 @@ class NetworkImpactCalc:
         ValueError
             Before any computation, if the inputs are inconsistent: hazard with
             several events, network without functional states, duplicate tags,
-            a node or edge in two exposures, exposure rows not in the network,
+            a node or edge in two exposures (unless ``combine_exposures=True``),
+            exposure rows not in the network,
             missing impact function or threshold.
 
         Notes
@@ -686,6 +708,9 @@ class NetworkImpactCalc:
         network_disr = cp.deepcopy(self.network)
         haz_type = self.haz.haz_type
         imp_dict = {}
+        col_func_internal, _, col_imp_dir = FUNCSTATE_COLS
+        # rows written by an earlier exposure of exp_list (combine_exposures)
+        written = {"nodes": pd.Index([]), "edges": pd.Index([])}
         for exp in self.exp_list:
             tag = exp.description
             impf = self.impf_set.get_func(haz_type=haz_type, fun_id=tag)
@@ -721,8 +746,21 @@ class NetworkImpactCalc:
             # checked in _check_inputs)
             imp_dir = imp.imp_mat.toarray().ravel()
             func_internal = (compared <= self.impf_thresh_set[tag]).astype(int)
-            _impacts_to_network(
-                getattr(network_disr, kind), labels, imp_dir, func_internal
-            )
+            gdf = getattr(network_disr, kind)
+            # rows already written by another exposure: combine the results
+            again = labels.isin(written[kind])
+            if again.any():
+                imp_dir = np.where(
+                    again, gdf.loc[labels, col_imp_dir].to_numpy() + imp_dir, imp_dir
+                )
+                func_internal = np.where(
+                    again,
+                    np.minimum(
+                        gdf.loc[labels, col_func_internal].to_numpy(), func_internal
+                    ),
+                    func_internal,
+                )
+            _impacts_to_network(gdf, labels, imp_dir, func_internal)
+            written[kind] = written[kind].union(labels)
             imp_dict[tag] = imp
         return network_disr, imp_dict

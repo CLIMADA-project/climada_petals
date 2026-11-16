@@ -103,7 +103,13 @@ def _make_impf(fun_id, intensity=(0, 20, 40, 60), mdd=(0, 0, 0.5, 1)):
 
 
 def _run_disrupt(
-    network, exp_list, impfs, thresholds, hazard, edge_rule="max_ratio"
+    network,
+    exp_list,
+    impfs,
+    thresholds,
+    hazard,
+    edge_rule="max_ratio",
+    combine_exposures=False,
 ):
     """Build a NetworkImpactCalc and run ``disrupt_network``."""
     nic = NetworkImpactCalc(
@@ -113,6 +119,7 @@ def _run_disrupt(
         network=network,
         exp_list=exp_list,
         edge_rule=edge_rule,
+        combine_exposures=combine_exposures,
     )
     return nic.disrupt_network()
 
@@ -954,6 +961,72 @@ def test_disrupt_network_overlapping_exposures_raises(funcstate_network):
             [exp_all, exp_2],
             [_make_impf("road_all"), _make_impf("road_2")],
             {"road_all": 0.3, "road_2": 0.3},
+            _make_hazard(HAZ_DIAGONAL),
+        )
+
+
+def _power_line_network(network):
+    """The toy chain as a power network: nodes 1-3 and all edges power lines."""
+    network.nodes.loc[network.nodes["ci_type"] == "road", "ci_type"] = "power_line"
+    network.edges["ci_type"] = "power_line"
+    return network
+
+
+def _line_and_tower_exposures(network):
+    """Two damage mechanisms on the same power lines: all lines exposed to
+    conductor damage ("power_line", default impact function), and the line of
+    edge 1 also to tower collapse ("power_tower": damage ratio 1 from
+    intensity 20, e.g. towers of a weaker design)."""
+    edges = network.edges
+    exp_line = exposure_from_edges(network, "power_line", res=10_000)
+    exp_tower = exposure_from_edges(
+        network, "power_line", res=10_000, mask=edges["id"] == 1, tag="power_tower"
+    )
+    impfs = [
+        _make_impf("power_line"),
+        _make_impf("power_tower", intensity=(0, 10, 20, 60), mdd=(0, 0, 1, 1)),
+    ]
+    return [exp_line, exp_tower], impfs
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_disrupt_network_combined_exposures(funcstate_network, reverse):
+    """combine_exposures: a power line fails if one of its exposures makes it
+    fail, whatever the order of exp_list. Conductor damage (threshold 0.6,
+    largest ratios 0, 0.25, 0.5, 0.75) fails edge 3; tower collapse fails
+    edge 1."""
+    network = _power_line_network(funcstate_network)
+    exp_list, impfs = _line_and_tower_exposures(network)
+    if reverse:
+        exp_list = exp_list[::-1]
+
+    network_disr, imp_dict = _run_disrupt(
+        network,
+        exp_list,
+        impfs,
+        {"power_line": 0.6, "power_tower": 0.3},
+        _make_hazard(HAZ_DIAGONAL),
+        combine_exposures=True,
+    )
+
+    assert network_disr.edges["func_internal"].tolist() == [1, 0, 1, 0]
+    assert network_disr.edges["func_tot"].tolist() == [1, 0, 1, 0]
+    # imp_dir: sum of the impacts of both exposures (edge 1 only in both)
+    expected = imp_dict["power_line"].imp_mat.toarray().ravel()
+    expected[1] += imp_dict["power_tower"].imp_mat.toarray().ravel()[0]
+    np.testing.assert_allclose(network_disr.edges["imp_dir"], expected)
+
+
+def test_disrupt_network_shared_edge_raises_without_combine(funcstate_network):
+    network = _power_line_network(funcstate_network)
+    exp_list, impfs = _line_and_tower_exposures(network)
+
+    with pytest.raises(ValueError, match="combine_exposures=True"):
+        _run_disrupt(
+            network,
+            exp_list,
+            impfs,
+            {"power_line": 0.6, "power_tower": 0.3},
             _make_hazard(HAZ_DIAGONAL),
         )
 
