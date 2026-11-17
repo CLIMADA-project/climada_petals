@@ -913,7 +913,7 @@ def test_load_power_plants_wri(tmp_path):
 
     plants = nw_power.load_power_plants_wri(path, "VNM")
 
-    assert plants["name"].tolist() == ["a", "b"]
+    assert plants["plant_name"].tolist() == ["a", "b"]
     assert plants.crs == "EPSG:4326"
     assert [(p.x, p.y) for p in plants.geometry] == [(105.0, 10.0), (106.0, 11.0)]
     generation = plants["estimated_generation_gwh_2017"]
@@ -1060,6 +1060,13 @@ def test_assign_electrification_rate_not_reached_warns(tmp_path, nw_caplog):
 def test_assign_electrification_needs_targets():
     with pytest.raises(ValueError, match="targets raster"):
         nw_power.assign_electrification(_people_cells(), 50)
+
+
+def test_assign_electrification_missing_raster(tmp_path):
+    with pytest.raises(FileNotFoundError, match="zenodo.org/records/3628142"):
+        nw_power.assign_electrification(
+            _people_cells(), 50, targets_path=tmp_path / "targets.tif"
+        )
 
 
 def test_assign_electrification_invalid_rate():

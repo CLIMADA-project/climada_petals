@@ -45,14 +45,17 @@ Data sources:
   ``estimated_generation_gwh_2017``);
 - electricity access rate: World Bank indicator ``EG.ELC.ACCS.ZS``
   (share of the population with access to electricity, in %);
-- electrified areas: an electrification-targets raster (e.g. the gridfinder
-  "targets" layer, Arderne et al. 2020), non-zero cells are electrified;
+- electrified areas: an electrification-targets raster, non-zero cells are
+  electrified, e.g. the gridfinder ``targets.tif`` (Arderne et al. 2020,
+  https://zenodo.org/records/3628142);
 - total electricity consumption: a CSV with the columns ``ISO3`` and
   ``el_consumption`` (e.g. IEA "Total final consumption, electricity").
 """
 
 import logging
 import time
+import warnings
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -68,6 +71,12 @@ LOGGER = logging.getLogger(__name__)
 
 WB_ACCESS_INDICATOR = "EG.ELC.ACCS.ZS"
 """World Bank indicator: access to electricity (% of population)."""
+
+TARGETS_SOURCE = (
+    "gridfinder electrification targets (targets.tif), Arderne et al. 2020, "
+    "https://zenodo.org/records/3628142 (doi 10.5281/zenodo.3628142)"
+)
+"""Source of the electrification-targets raster used by ``assign_electrification``."""
 
 WB_API_URL = (
     "https://api.worldbank.org/v2/country/{iso3}/indicator/{indicator}"
@@ -91,15 +100,16 @@ def load_power_plants_wri(path, iso3, generation_col="estimated_generation_gwh_2
     Returns
     -------
     gpd.GeoDataFrame
-        One point per plant (EPSG:4326) with the columns ``name`` and
-        ``generation_col`` (numeric, NaN where missing). Empty if the country
-        has no plant in the database.
+        One point per plant (EPSG:4326) with the columns ``plant_name`` (the
+        column ``name`` of the database; ``name`` is reserved in ``Network``)
+        and ``generation_col`` (numeric, NaN where missing). Empty if the
+        country has no plant in the database.
     """
     plants = pd.read_csv(path, low_memory=False)
     plants = plants.loc[plants["country"] == iso3].reset_index(drop=True)
     return gpd.GeoDataFrame(
         {
-            "name": plants["name"],
+            "plant_name": plants["name"],
             generation_col: pd.to_numeric(plants[generation_col], errors="coerce"),
         },
         geometry=gpd.points_from_xy(plants["longitude"], plants["latitude"]),
@@ -245,6 +255,9 @@ def assign_electrification(
     ValueError
         If ``el_rate`` is not between 0 and 100, or if ``targets_path`` is
         missing although it is needed.
+    FileNotFoundError
+        If ``targets_path`` does not exist (the error names where to download
+        the raster).
     """
     if not 0 <= el_rate <= 100:
         raise ValueError(f"el_rate must be a percentage (0 to 100), got {el_rate}.")
@@ -253,7 +266,13 @@ def assign_electrification(
     if targets_path is None:
         raise ValueError(
             f"An electrification-targets raster (targets_path) is needed for an "
-            f"access rate below {full_access_rate} % (got {el_rate} %)."
+            f"access rate below {full_access_rate} % (got {el_rate} %), e.g. the "
+            f"{TARGETS_SOURCE}."
+        )
+    if not Path(targets_path).is_file():
+        raise FileNotFoundError(
+            f"Electrification-targets raster not found: {targets_path}. "
+            f"Download e.g. the {TARGETS_SOURCE}."
         )
 
     with rasterio.open(targets_path) as src:
@@ -274,7 +293,12 @@ def assign_electrification(
     share = 100 * population[electrified].sum() / total if total else 100.0
     n_iter = 0
     while share < el_rate and n_iter < max_iter:
-        targets = gpd.GeoDataFrame(geometry=targets.buffer(buffer_step), crs=raster_crs)
+        with warnings.catch_warnings():
+            # the widening is in the units of the raster CRS by design (see
+            # buffer_step): no warning for geographic coordinates
+            warnings.filterwarnings("ignore", message="Geometry is in a geographic CRS")
+            widened = targets.buffer(buffer_step)
+        targets = gpd.GeoDataFrame(geometry=widened, crs=raster_crs)
         electrified = electrified_cells(targets)
         share = 100 * population[electrified].sum() / total
         n_iter += 1
