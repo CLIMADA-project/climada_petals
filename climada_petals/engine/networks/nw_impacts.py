@@ -460,6 +460,8 @@ class NetworkImpactCalc:
         Exposures built from ``network``.
     edge_rule : str or dict
         Rule that decides how an edge fails.
+    combine_exposures : bool
+        Whether a node or edge may belong to several exposures.
     """
 
     def __init__(
@@ -516,6 +518,17 @@ class NetworkImpactCalc:
             tags, and edge exposures whose tag is not in the dict use
             ``"max_ratio"``, e.g. ``{"road": "damaged_length"}``. Defaults to
             ``"max_ratio"``.
+        combine_exposures : bool, optional
+            Whether a node or edge may belong to several exposures in
+            ``exp_list``. If ``False``, ``disrupt_network`` raises an error
+            when two exposures contain the same node or edge (e.g. because of
+            overlapping masks). Set it to ``True`` to assess a component with
+            several impact functions, e.g. power lines exposed to two damage
+            mechanisms (conductor damage and tower collapse), each in its own
+            exposure with its own impact function and failure threshold. The
+            component then fails if at least one of its exposures makes it
+            fail, and its ``imp_dir`` is the sum of the impacts of its
+            exposures. Defaults to ``False``.
         """
         self.impf_set = impf_set
         self.failure_thresh = failure_thresh
@@ -648,8 +661,8 @@ class NetworkImpactCalc:
         """Compute the direct impacts and write them to a copy of the network
 
         Each exposure in ``exp_list`` is assessed with the impact function and
-        the failure threshold of its tag. The network rows the exposure was built from
-        get:
+        the failure threshold of its tag. The network rows the exposure was
+        built from get:
 
         - ``imp_dir``: the direct impact (for an edge, the sum of the impacts
           at its points),
@@ -657,6 +670,10 @@ class NetworkImpactCalc:
           above the failure threshold of its exposure, else 1,
         - ``func_tot``: ``min(func_internal, func_tot)``, so components that
           already failed (e.g. in the base-state cascade) stay failed.
+
+        If a component belongs to several exposures (``combine_exposures=True``),
+        it fails if at least one of its exposures makes it fail, and its
+        ``imp_dir`` is the sum of the impacts of its exposures.
 
         The damage of a component is computed from the damage ratio of its
         points. The damage ratio of a point is its impact for an exposure
