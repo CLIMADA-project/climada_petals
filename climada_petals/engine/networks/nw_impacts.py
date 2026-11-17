@@ -45,9 +45,9 @@ LOGGER = logging.getLogger(__name__)
 
 #: rules deciding whether an edge fails (argument edge_rule of
 #: NetworkImpactCalc): "max_ratio" compares the largest damage ratio of the
-#: points of the edge with the threshold (a ratio between 0 and 1);
+#: points of the edge with the failure threshold (a ratio between 0 and 1);
 #: "damaged_length" compares the damaged length of the edge, in metres, with
-#: the threshold (in metres)
+#: the failure threshold (in metres)
 EDGE_RULES = ("max_ratio", "damaged_length")
 
 
@@ -155,8 +155,8 @@ def exposure_from_nodes(
         (e.g. ``"counts"`` for people). Only used when ``value`` is ``None``.
     tag : str, optional
         Tag stored as ``Exposures.description``. ``disrupt_network`` uses it
-        to select the impact function (``id``) and the functionality
-        threshold. Default ``None`` uses ``ci_type``.
+        to select the impact function (``id``) and the failure threshold.
+        Default ``None`` uses ``ci_type``.
     mask : pd.Series or array-like of bool, optional
         Selects a subset of the nodes of type ``ci_type``, e.g. to give
         hospitals and clinics (both ``"healthcare"``) different impact
@@ -233,8 +233,8 @@ def exposure_from_edges(
         ``disagg_val`` is ``None``.
     tag : str, optional
         Tag stored as ``Exposures.description``. ``disrupt_network`` uses it
-        to select the impact function (``id``) and the functionality
-        threshold. Default ``None`` uses ``ci_type``.
+        to select the impact function (``id``) and the failure threshold.
+        Default ``None`` uses ``ci_type``.
     mask : pd.Series or array-like of bool, optional
         Selects a subset of the edges of type ``ci_type``. A Series must have
         the index of ``network.edges``, an array its length. Default ``None``
@@ -264,7 +264,8 @@ def exposure_from_edges(
 
     Examples
     --------
-    Main roads and tracks with different impact functions and thresholds,
+    Main roads and tracks with different impact functions and failure
+    thresholds,
     using an OSM ``highway`` column:
 
     >>> main = network.edges["highway"].isin(["motorway", "trunk", "primary"])
@@ -276,7 +277,8 @@ def exposure_from_edges(
     ... )
 
     The impact function set then needs impact functions with ids
-    ``"road_main"`` and ``"road_track"``, and the thresholds both keys.
+    ``"road_main"`` and ``"road_track"``, and ``failure_thresh`` (see
+    ``NetworkImpactCalc``) needs both keys.
     """
 
     if disagg_col is not None:
@@ -448,8 +450,8 @@ class NetworkImpactCalc:
     ----------
     impf_set : ImpactFuncSet
         Impact functions of the exposures.
-    impf_thresh_set : dict
-        Functionality threshold of each exposure, by exposure tag.
+    failure_thresh : dict
+        Failure threshold of each exposure, by exposure tag.
     haz : Hazard
         Hazard with a single event.
     network : Network
@@ -463,7 +465,7 @@ class NetworkImpactCalc:
     def __init__(
         self,
         impf_set,
-        impf_thresh_set,
+        failure_thresh,
         haz,
         network,
         exp_list,
@@ -483,13 +485,15 @@ class NetworkImpactCalc:
             tracks), build one exposure per group with the ``mask`` argument
             of ``exposure_from_nodes`` or ``exposure_from_edges``, and give
             each exposure its own ``tag``.
-        impf_thresh_set : dict
-            Functionality threshold of each exposure, as ``{tag: threshold}``.
-            A component whose damage is above the threshold of its exposure
-            becomes dysfunctional (see ``disrupt_network``). The threshold is
-            a damage ratio between 0 and 1 for node exposures and for edge
-            exposures with the edge rule ``"max_ratio"``. It is a length in
-            metres for edge exposures with the edge rule ``"damaged_length"``.
+        failure_thresh : dict
+            Failure threshold of each exposure, as ``{tag: threshold}``. A
+            component whose damage from the hazard is above the failure
+            threshold of its exposure fails directly (``func_internal = 0``,
+            see ``disrupt_network``). The failure threshold is a damage ratio
+            between 0 and 1 for node exposures and for edge exposures with the
+            edge rule ``"max_ratio"``. It is a length in metres for edge
+            exposures with the edge rule ``"damaged_length"``. It is not the
+            supply threshold ``thresh_func`` of the dependency table.
         haz : Hazard
             Hazard with a single event, in the CRS of the network.
         network : Network
@@ -514,7 +518,7 @@ class NetworkImpactCalc:
             ``"max_ratio"``.
         """
         self.impf_set = impf_set
-        self.impf_thresh_set = impf_thresh_set
+        self.failure_thresh = failure_thresh
         self.haz = haz
         self.network = network
         self.exp_list = exp_list
@@ -590,10 +594,10 @@ class NetworkImpactCalc:
                     f"impf_set has no impact function with id '{tag}' and "
                     f"haz_type '{haz_type}' (exposure tag '{tag}')."
                 )
-            if tag not in self.impf_thresh_set:
+            if tag not in self.failure_thresh:
                 raise ValueError(
-                    "impf_thresh_set has no functionality threshold for the "
-                    f"exposure tag '{tag}'."
+                    "failure_thresh has no failure threshold for the exposure "
+                    f"tag '{tag}'."
                 )
             kind, labels = _exposure_rows(exp)
             _check_exposure_rows(exp, tag, kind, labels, getattr(self.network, kind))
@@ -644,13 +648,13 @@ class NetworkImpactCalc:
         """Compute the direct impacts and write them to a copy of the network
 
         Each exposure in ``exp_list`` is assessed with the impact function and
-        the threshold of its tag. The network rows the exposure was built from
+        the failure threshold of its tag. The network rows the exposure was built from
         get:
 
         - ``imp_dir``: the direct impact (for an edge, the sum of the impacts
           at its points),
         - ``func_internal``: 0 if the damage of the component (see below) is
-          above the threshold of its exposure, else 1,
+          above the failure threshold of its exposure, else 1,
         - ``func_tot``: ``min(func_internal, func_tot)``, so components that
           already failed (e.g. in the base-state cascade) stay failed.
 
@@ -658,7 +662,7 @@ class NetworkImpactCalc:
         points. The damage ratio of a point is its impact for an exposure
         value of 1 (MDD x PAA at the hazard intensity, times the hazard
         fraction), between 0 and 1. The damage that is compared with the
-        threshold is:
+        failure threshold is:
 
         - for a node, its damage ratio;
         - for an edge with the edge rule ``"max_ratio"`` (default), the
@@ -689,13 +693,16 @@ class NetworkImpactCalc:
             Before any computation, if the inputs are inconsistent: hazard with
             several events, network without functional states, duplicate tags,
             a node or edge in two exposures (unless ``combine_exposures=True``),
-            exposure rows not in the network,
-            missing impact function or threshold.
+            exposure rows not in the network, missing impact function or
+            failure threshold.
 
         Notes
         -----
-        Thresholds of nodes are compared with damage ratios, which include the
-        hazard fraction, and not with absolute impacts.
+        Failure thresholds of nodes are compared with damage ratios, which
+        include the hazard fraction, and not with absolute impacts. The failure
+        threshold is not the supply threshold ``thresh_func`` of the dependency
+        table, which applies in the cascade: the minimum supply a component
+        needs from its sources.
         """
 
         self._check_inputs()
@@ -720,7 +727,7 @@ class NetworkImpactCalc:
                 # sum the impacts of the points of each edge: the result has
                 # one column per edge, in the same order as labels
                 imp = u_lp.impact_pnt_agg(imp, exp_calc.gdf, u_lp.AggMethod.SUM)
-                # value compared with the threshold, per edge and in the same
+                # value compared with the failure threshold, per edge and in the same
                 # order as labels (the edge rules are described in the
                 # docstring of disrupt_network)
                 ratio_by_edge = ratio.groupby(level=0, sort=False)
@@ -739,7 +746,7 @@ class NetworkImpactCalc:
             # one value per network row (the hazard has a single event,
             # checked in _check_inputs)
             imp_dir = imp.imp_mat.toarray().ravel()
-            func_internal = (compared <= self.impf_thresh_set[tag]).astype(int)
+            func_internal = (compared <= self.failure_thresh[tag]).astype(int)
             gdf = getattr(network_disr, kind)
             # rows already written by another exposure: combine the results
             again = labels.isin(written[kind])

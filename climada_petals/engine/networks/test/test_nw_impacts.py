@@ -114,7 +114,7 @@ def _run_disrupt(
     """Build a NetworkImpactCalc and run ``disrupt_network``."""
     nic = NetworkImpactCalc(
         impf_set=ImpactFuncSet(impfs),
-        impf_thresh_set=thresholds,
+        failure_thresh=thresholds,
         haz=hazard,
         network=network,
         exp_list=exp_list,
@@ -428,7 +428,7 @@ def test_network_impact_calc_init(funcstate_network):
     haz = MagicMock()
     nic = NetworkImpactCalc(
         impf_set=impf_set,
-        impf_thresh_set={"healthcare": 0.5},
+        failure_thresh={"healthcare": 0.5},
         haz=haz,
         network=funcstate_network,
         exp_list=[],
@@ -437,7 +437,7 @@ def test_network_impact_calc_init(funcstate_network):
     assert nic.network is funcstate_network
     assert nic.haz is haz
     assert nic.exp_list == []
-    assert nic.impf_thresh_set == {"healthcare": 0.5}
+    assert nic.failure_thresh == {"healthcare": 0.5}
     assert nic.edge_rule == "max_ratio"  # default
 
 
