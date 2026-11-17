@@ -1167,7 +1167,8 @@ class GraphCalcs:
         type_I : str
             Type of dependency (enduser vs functional).
         thresh_func : float
-            Functional threshold for target nodes.
+            Supply threshold: minimum supply a target must receive, i.e. the
+            sum of ``func_tot * capacity`` over the sources linked to it.
 
         Notes
         -----
