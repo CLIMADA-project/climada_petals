@@ -400,8 +400,9 @@ class Network:
         """Load network from a compressed zip archive
 
         Reads a network previously saved with :py:meth:`save_network_zip` from
-        a zip archive containing Feather files. If the archive or individual files
-        are not found, returns a Network with empty GeoDataFrames and prints warnings.
+        a zip archive containing Feather files. Raise an error if the archive does
+        not exists. If individual part files (edges, nodes) are not found in the archive,
+        returns a Network with an empty GeoDataFrames for the missing parts.
 
         Parameters
         ----------
@@ -432,8 +433,7 @@ class Network:
         edges = None
 
         if not zip_path.exists():
-            LOGGER.info("Archive %s not found", zip_path)
-            return Network(edges=edges, nodes=nodes)
+            raise FileNotFoundError(f"Archive {zip_path} not found.")
 
         with ZipFile(zip_path, mode="r") as zf:
             nodes_name = f"{savename}_nodes.feather"
