@@ -29,6 +29,7 @@ from datetime import date
 import cdsapi
 import pandas as pd
 from ruamel.yaml import YAML
+import requests
 
 from climada_petals.hazard.rf_glofas.cds_glofas_downloader import (
     glofas_request,
@@ -36,6 +37,7 @@ from climada_petals.hazard.rf_glofas.cds_glofas_downloader import (
     request_to_md5,
     cleanup_download_dir,
     datetime_index_to_request,
+    purge_path_list,
     DEFAULT_REQUESTS,
     CLIENT_KW_DEFAULT,
 )
@@ -49,7 +51,7 @@ class TestDateTimeIndexToRequest(unittest.TestCase):
         self.index_default = pd.date_range("2000-01-01", "2001-02-02", freq="1D")
         self.target_default = {
             "year": ["2000", "2001"],
-            "month": [f"{month:02}" for month in range (1, 13)],
+            "month": [f"{month:02}" for month in range(1, 13)],
             "day": [f"{day:02}" for day in range(1, 32)],
         }
 
@@ -72,6 +74,20 @@ class TestDateTimeIndexToRequest(unittest.TestCase):
             request,
             {"year": ["2000", "2001"], "month": ["01"], "day": ["01"]},
         )
+
+
+class TestPureList(unittest.TestCase):
+    """Test purging lists"""
+
+    def test_purge(self):
+        path_list = [None, "a", None, "b", None]
+        result = purge_path_list(path_list)
+        self.assertEqual(result, ["a", "b"])
+
+    def test_purge_empty_result(self):
+        path_list = [None, None]
+        result = purge_path_list(path_list)
+        self.assertEqual(result, [])
 
 
 class TestGloFASRequest(unittest.TestCase):
@@ -156,6 +172,34 @@ class TestGloFASRequest(unittest.TestCase):
             self.assertEqual(call_args[1], new_request)
             self.assertIn(request_to_md5(new_request), call_args[2].stem)
 
+    @mock.patch(
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.Client", autospec=True
+    )
+    def test_request_single_error_handling(self, client_mock):
+        """Single request error handling"""
+        product = "product"
+        request = deepcopy(DEFAULT_REQUESTS["forecast"])
+        outdir = Path(self.tempdir.name)
+        client_obj_mock = mock.create_autospec(cdsapi.Client)
+        client_obj_mock.retrieve.side_effect = requests.exceptions.HTTPError("foo!")
+        client_mock.return_value = client_obj_mock
+
+        # Allow failure
+        with self.assertLogs(
+            "climada_petals.hazard.rf_glofas.cds_glofas_downloader", "INFO"
+        ) as cm:
+            result = glofas_request_single(
+                product, request, outdir, use_cache=True, allow_failure=True
+            )
+        self.assertIs(result, None)
+        self.assertIn("Error occurred while retrieving data", cm.output[1])
+
+        # Raise error
+        with self.assertRaisesRegex(requests.exceptions.HTTPError, "foo"):
+            glofas_request_single(
+                product, request, outdir, use_cache=True, allow_failure=False
+            )
+
     @mock.patch.multiple(
         "climada_petals.hazard.rf_glofas.cds_glofas_downloader",
         glofas_request_single=mock.DEFAULT,
@@ -176,6 +220,7 @@ class TestGloFASRequest(unittest.TestCase):
             self.tempdir.name,
             True,
             None,
+            allow_failure=False,
         )
         glofas_request_multiple.assert_not_called()
 
@@ -243,7 +288,7 @@ class TestGloFASRequest(unittest.TestCase):
             "forecast",
             self.tempdir.name,
             request_kw=request_kw,
-            requests=[{"month": "03"}]  # Also test if request is sanitized
+            requests=[{"month": "03"}],  # Also test if request is sanitized
         )
         glofas_request_multiple.assert_not_called()
         request = glofas_request_single.call_args.args[1]
@@ -258,7 +303,7 @@ class TestGloFASRequest(unittest.TestCase):
             "forecast",
             self.tempdir.name,
             request_kw=request_kw,
-            requests=[{"month": "03"}, {"month": "04"}]
+            requests=[{"month": "03"}, {"month": "04"}],
         )
         glofas_request_single.assert_not_called()
         requests = glofas_request_multiple.call_args.args[1]
@@ -268,6 +313,24 @@ class TestGloFASRequest(unittest.TestCase):
         self.assertEqual(requests[0]["month"], ["03"])
         self.assertEqual(requests[1]["month"], ["04"])
         self.assertEqual(glofas_request_multiple.call_args.args[2], self.tempdir.name)
+        glofas_request_single.reset_mock()
+        glofas_request_multiple.reset_mock()
+
+    @mock.patch(
+        "climada_petals.hazard.rf_glofas.cds_glofas_downloader.glofas_request_multiple",
+        autospec=True,
+    )
+    def test_multiple_request_with_failure(self, glofas_request_multiple):
+        glofas_request_multiple.return_value = ["a", None]
+        request_kw = {"year": ["2000", "2001"], "day": ["01", "02"]}
+        files = glofas_request(
+            "forecast",
+            self.tempdir.name,
+            request_kw=request_kw,
+            allow_failure=True,
+            requests=[{"month": "03"}, {"month": "04"}],
+        )
+        self.assertEqual(files, ["a"])
 
     @mock.patch.multiple(
         "climada_petals.hazard.rf_glofas.cds_glofas_downloader",
@@ -287,6 +350,7 @@ class TestGloFASRequest(unittest.TestCase):
             self.tempdir.name,
             True,
             None,
+            allow_failure=False,
         )
 
     def test_wrong_product(self):

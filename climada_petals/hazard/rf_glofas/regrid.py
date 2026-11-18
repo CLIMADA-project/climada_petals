@@ -31,7 +31,7 @@ from .transform_ops import sel_lon_lat_slice
 
 def regrid(
     return_period: xr.DataArray,
-    flood_maps: xr.DataArray,
+    flood_maps: xr.Dataset,
     method: str = "bilinear",
     regridder: Optional[xe.Regridder] = None,
     return_regridder: bool = False,
@@ -75,7 +75,7 @@ def regrid(
 
     # NOTE: Masking here would omit all return periods outside flood plains
     #       (This might be desirable at some point?)
-    flood = flood_maps.isel(return_period=-1).to_dataset(name="data")
+    flood = flood_maps["inundation"].isel(return_period=-1).to_dataset(name="data")
     flood["mask"] = xr.where(~np.isnan(flood["data"]), 1, 0).astype(np.int8)
 
     # Build regridder

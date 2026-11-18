@@ -21,7 +21,6 @@ User Interface for GloFAS River Flood Module
 
 import logging
 from contextlib import contextmanager
-from typing import Union
 
 import xarray as xr
 import pandas as pd
@@ -77,8 +76,12 @@ def dask_client(n_workers, threads_per_worker, memory_limit, *args, **kwargs):
 
 
 def hazard_series_from_dataset(
-    data: xr.Dataset, intensity: str, event_dim: str, scale_frequency: bool = True
-) -> Union[pd.Series, Hazard]:
+    data: xr.Dataset,
+    intensity: str,
+    event_dim: str,
+    fraction: str = "",
+    scale_frequency: bool = True,
+) -> pd.Series | Hazard:
     """Create a series of Hazard objects from a multi-dimensional dataset
 
     The input flood data is usually multi-dimensional. For example, you might have
@@ -101,6 +104,9 @@ def hazard_series_from_dataset(
         Name of the dimension to be used as event dimension in the hazards. All other
         dimension names except the dimensions for longitude and latitude will make up the
         hierarchy of the ``MultiIndex`` of the resulting series.
+    fraction : str
+        Name of the variable to read as flood fraction. By default, no flood fraction
+        will be read (and the value will effectively be 1.0 at every location).
     scale_frequency : bool
         If ``True`` (default), the hazard event frequency will be divided by the number
         of events for each hazard object.
@@ -149,8 +155,8 @@ def hazard_series_from_dataset(
             hazard_type="RF",
             intensity=intensity,
             intensity_unit="m",
-            coordinate_vars=dict(event=event_dim),
-            data_vars=dict(date="time"),
+            coordinate_vars={"event": event_dim},
+            data_vars={"date": "time", "fraction": fraction},
             rechunk=True,
         )
         if scale_frequency:
