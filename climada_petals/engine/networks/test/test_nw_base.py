@@ -459,10 +459,8 @@ def test_save_and_load_empty_network(temp_dir):
 
 def test_load_network_zip_nonexistent(temp_dir):
     """Loading a missing archive returns an empty network."""
-    network = Network.load_network_zip(temp_dir, "nonexistent")
-
-    assert network.nodes.empty
-    assert network.edges.empty
+    with pytest.raises(FileNotFoundError):
+        Network.load_network_zip(temp_dir, "nonexistent")
 
 
 # ========================================================================
