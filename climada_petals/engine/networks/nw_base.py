@@ -29,12 +29,13 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import io
 from pathlib import Path
 from climada.util.coordinates import equal_crs
-from climada_petals.engine.networks.nw_utils import (
-    infra_plot,
-    enduser_plot,
-    dep_plot,
+from climada_petals.engine.networks.nw_plots import (
     access_plot,
+    dep_plot,
+    enduser_plot,
+    infra_plot,
 )
+from climada_petals.engine.networks.nw_utils import ACCESS_NO_BASE, ACCESS_UNDEFINED
 
 LOGGER = logging.getLogger(__name__)
 
@@ -150,6 +151,9 @@ class Network:
     - ``distance`` (``edges``): length in meters, used as routing weight. It
       is computed for new links only if absent, so an existing column must
       be in meters as well.
+    - ``added`` (``edges``): True on the edges added by the module (cluster
+      links, physical links, dependency edges), missing on the input edges.
+      Added edges are not counted as infrastructure in the statistics.
     - ``func_internal``, ``func_tot``, ``imp_dir``: functional states and
       direct impacts, set by ``initialize_funcstates`` and updated by the
       impact calculation and the cascade.
@@ -332,13 +336,17 @@ class Network:
             node_gdf = net.nodes.reset_index(drop=True)
             edge_gdf[EDGE_FROM_COL] = edge_gdf[EDGE_FROM_COL] + id_counter_nodes
             edge_gdf[EDGE_TO_COL] = edge_gdf[EDGE_TO_COL] + id_counter_nodes
-            node_gdf[VERTEX_ID_COL] = range(id_counter_nodes, id_counter_nodes + len(node_gdf))
+            node_gdf[VERTEX_ID_COL] = range(
+                id_counter_nodes, id_counter_nodes + len(node_gdf)
+            )
             id_counter_nodes += len(node_gdf)
             edges.append(edge_gdf)
             nodes.append(node_gdf)
         edges = pd.concat(edges)
         nodes = pd.concat(nodes)
-        edges[[EDGE_FROM_COL, EDGE_TO_COL]] = edges[[EDGE_FROM_COL, EDGE_TO_COL]].astype(int)
+        edges[[EDGE_FROM_COL, EDGE_TO_COL]] = edges[
+            [EDGE_FROM_COL, EDGE_TO_COL]
+        ].astype(int)
 
         return cls(
             edges=edges.reset_index(drop=True), nodes=nodes.reset_index(drop=True)
@@ -569,8 +577,8 @@ class Network:
             gdf_nodes = gdf_nodes.drop(NAME_COL, axis=1)
         return gdf_nodes
 
-    # copied from nw_preps
-    # TODO : decide if this should be a method of nw_preps or nw_base
+    # column order expected by igraph; used by _from_es / _from_vs (the
+    # copies in nw_preps were removed)
     @staticmethod
     def _ecols_to_graphorder(gdf_edges):
         """Order edge columns as igraph expects them for building a graph
@@ -606,7 +614,8 @@ class Network:
             Node data with 'id' as the first column.
         """
         return gdf_nodes.reindex(
-            [VERTEX_ID_COL] + [x for x in list(gdf_nodes) if x not in [VERTEX_ID_COL]], axis=1
+            [VERTEX_ID_COL] + [x for x in list(gdf_nodes) if x not in [VERTEX_ID_COL]],
+            axis=1,
         )
 
     def _from_es(self, gdf_edges, gdf_nodes, directed=True):
@@ -765,9 +774,13 @@ class Network:
         >>> network.nodes['actual_supply_road_people']  # 0 for all nodes
         """
         for __, row in dep_table.loc[dep_table[TYPE_I_COL] == ENDUSER_TYPE].iterrows():
-            self.nodes[f'access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = "undefined"
-            self.nodes[f'actual_supply_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = 0.0
+            self.nodes[f"access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}"] = (
+                "undefined"
+            )
+            self.nodes[f"actual_supply_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}"] = (
+                0.0
+            )
             self.nodes.loc[
                 self.nodes[CI_TYPE_COL] == row[DEP_TARGET_COL],
-                f'access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}',
+                f"access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}",
             ] = "no base access"

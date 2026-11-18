@@ -19,7 +19,8 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 import logging
 
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
+from climada_petals.engine.networks.graph_calcs import GraphCalcs
+from climada_petals.engine.networks.nw_utils import _dependency_name
 
 LOGGER = logging.getLogger(__name__)
 
