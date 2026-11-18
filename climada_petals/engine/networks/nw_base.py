@@ -38,6 +38,20 @@ from climada_petals.engine.networks.nw_utils import (
 
 LOGGER = logging.getLogger(__name__)
 
+NAME_COL = "name"
+VERTEX_ID_COL = "id"
+EDGE_FROM_COL = "from_id"
+EDGE_TO_COL = "to_id"
+DEFAULT_CRS = "EPSG:4326"
+INTERNAL_FUNC_STATE_COL = "func_internal"
+TOTAL_FUNC_STATE_COL = "func_tot"
+DIRECT_IMPACT_STATE_COL = "imp_dir"
+CI_TYPE_COL = "ci_type"
+DEP_SOURCE_COL = "source"
+DEP_TARGET_COL = "target"
+TYPE_I_COL = "type_I"
+ENDUSER_TYPE = "enduser"
+
 # reserved column names: (gdf, column) -> what happens to an existing column
 _RESERVED_COLUMNS = {
     ("nodes", "name"): (
@@ -209,7 +223,7 @@ class Network:
                 )
         if edges is None:
             edges = gpd.GeoDataFrame(
-                columns=["from_id", "to_id", "id", "geometry"],
+                columns=[EDGE_FROM_COL, EDGE_TO_COL, VERTEX_ID_COL, "geometry"],
                 geometry="geometry",
                 crs=crs_edges,
             )
@@ -225,10 +239,10 @@ class Network:
             nodes = _set_missing_crs(nodes, crs_nodes)
 
         # assign returns a copy: the caller's GeoDataFrames are not modified
-        if "id" not in edges.columns:
-            edges = edges.assign(id=range(len(edges)))
-        if "id" not in nodes.columns:
-            nodes = nodes.assign(id=range(len(nodes)))
+        if VERTEX_ID_COL not in edges.columns:
+            edges = edges.assign(**{VERTEX_ID_COL: range(len(edges))})
+        if VERTEX_ID_COL not in nodes.columns:
+            nodes = nodes.assign(**{VERTEX_ID_COL: range(len(nodes))})
         _warn_reserved_columns(edges, nodes)
 
         self.edges = edges
@@ -317,15 +331,15 @@ class Network:
                 )
             edge_gdf = net.edges.reset_index(drop=True)
             node_gdf = net.nodes.reset_index(drop=True)
-            edge_gdf["from_id"] = edge_gdf["from_id"] + id_counter_nodes
-            edge_gdf["to_id"] = edge_gdf["to_id"] + id_counter_nodes
-            node_gdf["id"] = range(id_counter_nodes, id_counter_nodes + len(node_gdf))
+            edge_gdf[EDGE_FROM_COL] = edge_gdf[EDGE_FROM_COL] + id_counter_nodes
+            edge_gdf[EDGE_TO_COL] = edge_gdf[EDGE_TO_COL] + id_counter_nodes
+            node_gdf[VERTEX_ID_COL] = range(id_counter_nodes, id_counter_nodes + len(node_gdf))
             id_counter_nodes += len(node_gdf)
             edges.append(edge_gdf)
             nodes.append(node_gdf)
         edges = pd.concat(edges)
         nodes = pd.concat(nodes)
-        edges[["from_id", "to_id"]] = edges[["from_id", "to_id"]].astype(int)
+        edges[[EDGE_FROM_COL, EDGE_TO_COL]] = edges[[EDGE_FROM_COL, EDGE_TO_COL]].astype(int)
 
         return Network(
             edges=edges.reset_index(drop=True), nodes=nodes.reset_index(drop=True)
@@ -478,16 +492,16 @@ class Network:
 
         edges = gpd.GeoDataFrame(
             graphs.get_edge_dataframe().rename(
-                {"source": "from_id", "target": "to_id"}, axis=1
+                {"source": EDGE_FROM_COL, "target": EDGE_TO_COL}, axis=1
             ),
             geometry="geometry",
             crs=crs,
         )
         nodes = graphs.get_vertex_dataframe()
-        if "id" in nodes.columns:
-            nodes.pop("id")
+        if VERTEX_ID_COL in nodes.columns:
+            nodes.pop(VERTEX_ID_COL)
         nodes = gpd.GeoDataFrame(
-            nodes.reset_index().rename({"vertex ID": "id"}, axis=1),
+            nodes.reset_index().rename({"vertex ID": VERTEX_ID_COL}, axis=1),
             geometry="geometry",
             crs=crs,
         )
@@ -570,8 +584,8 @@ class Network:
             Edge data with 'from_id' and 'to_id' as the first two columns.
         """
         return gdf_edges.reindex(
-            ["from_id", "to_id"]
-            + [x for x in list(gdf_edges) if x not in ["from_id", "to_id"]],
+            [EDGE_FROM_COL, EDGE_TO_COL]
+            + [x for x in list(gdf_edges) if x not in [EDGE_FROM_COL, EDGE_TO_COL]],
             axis=1,
         )
 
@@ -589,7 +603,7 @@ class Network:
             Node data with 'id' as the first column.
         """
         return gdf_nodes.reindex(
-            ["id"] + [x for x in list(gdf_nodes) if x not in ["id"]], axis=1
+            [VERTEX_ID_COL] + [x for x in list(gdf_nodes) if x not in [VERTEX_ID_COL]], axis=1
         )
 
     def _from_es(self, gdf_edges, gdf_nodes, directed=True):
@@ -659,10 +673,10 @@ class Network:
         >>> network.nodes['func_tot']  # All values are 1
         >>> network.edges['imp_dir']   # All values are 0
         """
-        self.edges[["func_internal", "func_tot"]] = 1.0
-        self.nodes[["func_internal", "func_tot"]] = 1.0
-        self.edges["imp_dir"] = 0.0
-        self.nodes["imp_dir"] = 0.0
+        self.edges[[INTERNAL_FUNC_STATE_COL, TOTAL_FUNC_STATE_COL]] = 1.0
+        self.nodes[[INTERNAL_FUNC_STATE_COL, TOTAL_FUNC_STATE_COL]] = 1.0
+        self.edges[DIRECT_IMPACT_STATE_COL] = 0.0
+        self.nodes[DIRECT_IMPACT_STATE_COL] = 0.0
 
     def initialize_capacity(self, dep_table):
         """Initialize capacity attributes for dependency relationships
@@ -698,14 +712,14 @@ class Network:
         initialize_supply : Initialize supply attributes for enduser dependencies
         """
         for __, row in dep_table.iterrows():
-            source = row["source"]
-            target = row["target"]
+            source = row[DEP_SOURCE_COL]
+            target = row[DEP_TARGET_COL]
             self.nodes[f"capacity_{source}_{target}"] = 0
             self.nodes.loc[
-                self.nodes["ci_type"] == f"{source}", f"capacity_{source}_{target}"
+                self.nodes[CI_TYPE_COL] == f"{source}", f"capacity_{source}_{target}"
             ] = 1
             self.nodes.loc[
-                self.nodes["ci_type"] == f"{target}", f"capacity_{source}_{target}"
+                self.nodes[CI_TYPE_COL] == f"{target}", f"capacity_{source}_{target}"
             ] = -1
 
     def initialize_supply(self, dep_table):
@@ -744,11 +758,11 @@ class Network:
         initialize_capacity : Initialize capacity attributes
         initialize_funcstates : Initialize functional state attributes
         """
-        for __, row in dep_table.loc[dep_table["type_I"] == "enduser"].iterrows():
-            self.nodes[f'access_state_{row["source"]}_{row["target"]}'] = "undefined"
-            self.nodes[f'actual_supply_{row["source"]}_{row["target"]}'] = 0.0
-            # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row["source"]}_people'] = 1
+        for __, row in dep_table.loc[dep_table[TYPE_I_COL] == "enduser"].iterrows():
+            self.nodes[f'access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = "undefined"
+            self.nodes[f'actual_supply_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = 0.0
+            # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row[DEP_SOURCE_COL]}_people'] = 1
             self.nodes.loc[
-                self.nodes["ci_type"] == row["target"],
-                f'access_state_{row["source"]}_{row["target"]}',
+                self.nodes[CI_TYPE_COL] == row[DEP_TARGET_COL],
+                f'access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}',
             ] = "no base access"
