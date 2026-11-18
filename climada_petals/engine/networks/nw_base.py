@@ -52,19 +52,24 @@ DEP_TARGET_COL = "target"
 TYPE_I_COL = "type_I"
 ENDUSER_TYPE = "enduser"
 
+I_GRAPH_SOURCE = "source"
+I_GRAPH_TARGET = "target"
+
+ORIG_ID = "_orig_id"
+
 # reserved column names: (gdf, column) -> what happens to an existing column
 _RESERVED_COLUMNS = {
-    ("nodes", "name"): (
+    ("nodes", NAME_COL): (
         "igraph uses it for vertex names, so it is dropped when the network is "
         "converted to a graph; rename it (e.g. to 'label') to keep it"
     ),
-    ("nodes", "_orig_id"): "used internally by graph calculations, overwritten",
-    ("edges", "_orig_id"): "used internally by graph calculations, overwritten",
-    ("edges", "source"): (
+    ("nodes", ORIG_ID): "used internally by graph calculations, overwritten",
+    ("edges", ORIG_ID): "used internally by graph calculations, overwritten",
+    ("edges", I_GRAPH_SOURCE): (
         "igraph uses it for the edge's first vertex, so it collides with the "
         "vertex index when the network is rebuilt from a graph"
     ),
-    ("edges", "target"): (
+    ("edges", I_GRAPH_TARGET): (
         "igraph uses it for the edge's second vertex, so it collides with the "
         "vertex index when the network is rebuilt from a graph"
     ),
@@ -557,9 +562,8 @@ class Network:
         gpd.GeoDataFrame
             GeoDataFrame with 'name' column removed if it existed
         """
-        if "name" in gdf_nodes.columns:
-            warnings.warn("Reserved column 'name' found in nodes GeoDataFrame. It will be dropped.")
-            gdf_nodes = gdf_nodes.drop("name", axis=1)
+        if NAME_COL in gdf_nodes.columns:
+            gdf_nodes = gdf_nodes.drop(NAME_COL, axis=1)
         return gdf_nodes
 
     # copied from nw_preps
@@ -752,7 +756,7 @@ class Network:
         initialize_capacity : Initialize capacity attributes
         initialize_funcstates : Initialize functional state attributes
         """
-        for __, row in dep_table.loc[dep_table[TYPE_I_COL] == "enduser"].iterrows():
+        for __, row in dep_table.loc[dep_table[TYPE_I_COL] == ENDUSER_TYPE].iterrows():
             self.nodes[f'access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = "undefined"
             self.nodes[f'actual_supply_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = 0.0
             # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row[DEP_SOURCE_COL]}_people'] = 1
