@@ -23,6 +23,7 @@ import re
 import unittest
 from unittest.mock import MagicMock, call, patch
 import pytest
+from climada_petals.engine.supplychain.mriot_handling import check_mriot_members
 import pymrio
 import pandas as pd
 import numpy as np
@@ -754,8 +755,69 @@ class TestDownloadMRIOT(unittest.TestCase):
 
 
 class TestParseMriot(unittest.TestCase):
+
+    @patch("pymrio.calc_x")
+    @patch("pymrio.calc_A")
+    @patch("pymrio.calc_L")
+    @patch("pymrio.calc_B")
+    @patch("pymrio.calc_G")
+    def test_check_mriot_members(self,mock_calc_G, mock_calc_B, mock_calc_L, mock_calc_A, mock_calc_x):
+        mock_mriot = MagicMock()
+        mock_mriot.Y = pd.DataFrame(
+            [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, -12, 3, 4]],
+            index=pd.MultiIndex.from_tuples(
+                [("reg1", "sec1"), ("reg1", "sec2"), ("reg2", "sec1"), ("reg2", "sec2")]
+            ),
+            columns=pd.MultiIndex.from_tuples(
+                [("reg1", "fd1"), ("reg1", "fd2"), ("reg2", "fd1"), ("reg2", "fd2")]
+            ),
+        )
+        Y_no_negatives = pd.DataFrame(
+            [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 0, 3, 4]],
+            index=pd.MultiIndex.from_tuples(
+                [("reg1", "sec1"), ("reg1", "sec2"), ("reg2", "sec1"), ("reg2", "sec2")]
+            ),
+            columns=pd.MultiIndex.from_tuples(
+                [("reg1", "fd1"), ("reg1", "fd2"), ("reg2", "fd1"), ("reg2", "fd2")]
+            ),
+        )
+        mock_mriot.Z = "Z"
+        mock_calc_x.return_value = "x"
+        mock_calc_A.return_value = "A"
+        mock_calc_L.return_value = "L"
+        mock_calc_B.return_value = "B"
+        mock_calc_G.return_value = "G"
+        out = check_mriot_members(mock_mriot)
+
+        pd.testing.assert_frame_equal(
+            mock_calc_x.call_args[0][1],
+            Y_no_negatives
+        )
+        mock_calc_x.assert_called_once()
+        mock_calc_A.assert_called_once_with(
+            mock_mriot.Z, "x"
+        )
+        mock_calc_L.assert_called_once_with(
+            "A"
+        )
+        mock_calc_B.assert_called_once_with(
+            mock_mriot.Z, "x"
+        )
+        mock_calc_G.assert_called_once_with(
+            "B"
+        )
+        self.assertEqual(out.x, "x")
+        pd.testing.assert_frame_equal(out.Y, Y_no_negatives)
+        self.assertEqual(out.Z, "Z")
+        self.assertEqual(out.A, "A")
+        self.assertEqual(out.L, "L")
+        self.assertEqual(out.B, "B")
+        self.assertEqual(out.G, "G")
+
+
+    @patch("climada_petals.engine.supplychain.mriot_handling.check_mriot_members")
     @patch("climada_petals.engine.supplychain.mriot_handling.build_exio3_from_zip")
-    def test_parse_mriot_exiobase3(self, mock_build_exio3):
+    def test_parse_mriot_exiobase3(self, mock_build_exio3, mock_check_members):
         # Mock return object for pymrio.parse_exiobase3
         mock_mriot = MagicMock()
         mock_mriot.Y = pd.DataFrame(
@@ -776,12 +838,16 @@ class TestParseMriot(unittest.TestCase):
         mock_build_exio3.assert_called_once_with(
             mrio_zip=downloaded_file, testkwarg="testkwarg"
         )
+        mock_check_members.assert_called_once_with(
+            mock_mriot
+        )
         mock_mriot.meta.change_meta.assert_has_calls(
             [ call("name", "EXIOBASE3-2010") ], any_order=True
         )
 
+    @patch("climada_petals.engine.supplychain.mriot_handling.check_mriot_members")
     @patch("climada_petals.engine.supplychain.mriot_handling.parse_wiod_v2016")
-    def test_parse_mriot_wiod16(self, mock_parse_wiod):
+    def test_parse_mriot_wiod16(self, mock_parse_wiod, mock_check_members):
         mock_mriot = MagicMock()
         mock_mriot.Y = pd.DataFrame(
             [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]],
@@ -799,12 +865,16 @@ class TestParseMriot(unittest.TestCase):
 
         # Assert pymrio.parse_exiobase3 was called correctly
         mock_parse_wiod.assert_called_once_with(mrio_xlsb=downloaded_file)
+        mock_check_members.assert_called_once_with(
+            mock_mriot
+        )
         mock_mriot.meta.change_meta.assert_has_calls(
             [ call("name", "WIOD16-2010") ], any_order=True
         )
 
+    @patch("climada_petals.engine.supplychain.mriot_handling.check_mriot_members")
     @patch("climada_petals.engine.supplychain.mriot_handling.build_oecd_from_csv")
-    def test_parse_mriot_oecd23(self, mock_build_oecd):
+    def test_parse_mriot_oecd23(self, mock_build_oecd, mock_check_members):
         # Mock return object for pymrio.parse_oecd
         mock_mriot = MagicMock()
         mock_mriot.Y = pd.DataFrame(
@@ -823,12 +893,16 @@ class TestParseMriot(unittest.TestCase):
 
         # Assert pymrio.parse_oecd was called correctly
         mock_build_oecd.assert_called_once_with(mrio_csv=downloaded_file, year=2010)
+        mock_check_members.assert_called_once_with(
+            mock_mriot
+        )
         mock_mriot.meta.change_meta.assert_has_calls(
             [ call("name", "OECD23-2010") ], any_order=True
         )
 
+    @patch("climada_petals.engine.supplychain.mriot_handling.check_mriot_members")
     @patch("climada_petals.engine.supplychain.mriot_handling.build_eora_from_zip")
-    def test_parse_mriot_eora26(self, mock_build_eora):
+    def test_parse_mriot_eora26(self, mock_build_eora, mock_check_members):
         # Mock return object for pymrio.parse_oecd
         mock_mriot = MagicMock()
 
@@ -858,6 +932,9 @@ class TestParseMriot(unittest.TestCase):
 
         # Assert pymrio.parse_oecd was called correctly
         mock_build_eora.assert_called_once_with(mrio_zip=downloaded_file)
+        mock_check_members.assert_called_once_with(
+            mock_mriot
+        )
         mock_mriot.meta.change_meta.assert_has_calls(
             calls=[ call("name", "EORA26-2010") ], any_order=True
         )
