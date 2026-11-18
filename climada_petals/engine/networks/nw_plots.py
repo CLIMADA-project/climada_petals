@@ -273,16 +273,21 @@ def infra_plot(
                 plot_df = plot_df[~_added_mask(plot_df)]
 
             line_kw = dict(
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
                 transform=transform,
                 label=ci_type,
                 linestyle=line_style,
                 zorder=1,
             )
-            line_kw.update(ci_kwargs)
-            plot_df.plot(plot_col, ax=axes, **line_kw)
+            if plot_col == "ci_type":
+                # One CI type per call: plot with a plain colour, not by the
+                # text column.
+                line_kw["color"] = color
+                line_kw.update(ci_kwargs)
+                plot_df.plot(ax=axes, **line_kw)
+            else:
+                line_kw.update(cmap=cmap, vmin=vmin, vmax=vmax)
+                line_kw.update(ci_kwargs)
+                plot_df.plot(plot_col, ax=axes, **line_kw)
         else:
             plot_df = network.nodes[network.nodes.ci_type == ci_type]
             if mask_func_ci and "func_tot" in plot_df.columns:
