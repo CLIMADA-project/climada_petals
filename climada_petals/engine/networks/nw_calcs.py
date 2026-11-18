@@ -19,7 +19,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 import logging
 
 from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.graph_calcs import GraphCalcs
+from climada_petals.engine.networks.graph_calcs import GraphCalcs, _target_attrs
 from climada_petals.engine.networks.nw_utils import _dependency_name
 
 LOGGER = logging.getLogger(__name__)
@@ -187,13 +187,17 @@ class NetworkCalcs:
         For each row of the dependency table, targets are linked to their sources
         with edges of type ``dependency_{source}_{target}``, directed from source
         to target, following the row's ``link_condition`` (``"distance"``,
-        ``"duration"`` or ``"edgecond"``), thresholds and ``n_links``. The network
-        is updated in place.
+        ``"duration"``, ``"edgecond"`` or ``"closest"``), thresholds and
+        ``n_links``. The optional column ``target_filter`` names a boolean node
+        column: only the targets where it is ``True`` are linked (e.g.
+        ``"electrified"`` for the power supply of people). The network is
+        updated in place.
 
         Raises
         ------
         ValueError
-            If no dependency table was provided.
+            If no dependency table was provided, or if a ``target_filter`` is
+            not a node column.
 
         See Also
         --------
@@ -205,11 +209,20 @@ class NetworkCalcs:
                 "Cannot setup dependencies without a dependency table. Please provide a dependency table at initialization."
             )
 
+        for _, row in self.dep_table.iterrows():
+            target_attrs = _target_attrs(row)
+            missing = set(target_attrs).difference(self.network.nodes.columns)
+            if missing:
+                raise ValueError(
+                    f"target_filter {sorted(missing)} of the dependency "
+                    f"{row['source']} -> {row['target']} is not a node column."
+                )
+
         for i, row in self.dep_table.iterrows():
             dependency_name = _dependency_name(row["source"], row["target"])
             self._graph_calc.calc_dependencies(
                 source_attrs={"ci_type": row["source"]},
-                target_attrs={"ci_type": row["target"]},
+                target_attrs=_target_attrs(row),
                 via_attrs={"ci_type": row["via_link"]},
                 link_attrs={"ci_type": dependency_name},
                 link_condition=row["link_condition"],
@@ -246,19 +259,28 @@ class NetworkCalcs:
         p_source : str, optional
             Type of power source nodes. Default is ``"power_plant"``.
         p_sink : str, optional
-            Type of power sink nodes. Default is ``"power_line"``.
+            Type of power line nodes and edges. Default is ``"power_line"``.
         source_var : str, optional
-            Attribute name for source generation. Default is ``"el_generation"``.
+            Node column with the generation of the sources. Default is
+            ``"el_generation"``.
         demand_var : str, optional
-            Attribute name for demand consumption. Default is ``"el_consumption"``.
+            Node column with the demand of the end users. Default is
+            ``"el_consumption"``.
         friction_surf : object, optional
             Friction surface for duration-based access checks. Default is ``None``.
         rerouting : bool, optional
-            If ``True``, end-users whose source or path failed can be linked to
-            another source. Default is ``True``.
+            If ``True``, end-users of dependencies with access constraint whose
+            source or path failed can be linked to another source (routing
+            mode). Dependencies without access constraint are never re-linked:
+            use ``n_links > 1`` in the dependency table for redundancy.
+            Default is ``True``.
         access_check_method : str, optional
-            Method to check end-user access, ``"routing"`` or ``"propagation"``.
-            Default is ``"routing"``.
+            Method to check end-user access for dependencies with access
+            constraint, ``"routing"`` or ``"propagation"``. Default is
+            ``"routing"``. Dependencies without access constraint
+            (``access_cnstr=False``, e.g. power supply) keep their links and
+            propagate capacity with both methods (see
+            ``GraphCalcs.update_enduser_dependencies``).
 
         Raises
         ------
@@ -267,8 +289,13 @@ class NetworkCalcs:
 
         Notes
         -----
+        - Components without a functional state are reported with a warning
+          (``GraphCalcs.check_funcstates``); dependency edges have none.
         - Internal and functional dependencies are updated until the functional
-          states no longer change.
+          states no longer change. Internal: the end nodes of failed roads
+          fail; if the network contains ``p_source`` and ``p_sink`` nodes, the
+          capacity of the power line nodes is the supply / demand ratio of
+          their power cluster (``GraphCalcs.powercap_from_clusters``).
         - End-user dependencies are updated once, after convergence.
         - The network is then rebuilt from the graph, so that edges created or
           removed during the cascade are reflected, and the cached graph is reset.
@@ -278,6 +305,8 @@ class NetworkCalcs:
             raise ValueError(
                 "Cannot propagate cascade failure without a dependency table. Please provide a dependency table at initialization."
             )
+
+        self._graph_calc.check_funcstates()
 
         delta = -1
         cycles = 0

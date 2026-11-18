@@ -22,6 +22,7 @@ import pandas as pd
 import geopandas as gpd
 
 import scipy
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 from climada_petals.engine.networks.nw_base import Network
 from climada_petals.engine.networks.nw_utils import (
@@ -33,6 +34,7 @@ from climada_petals.engine.networks.nw_utils import (
     ACCESS_UNDISRUPTED,
     ADDED_COL,
     DEF_END_USER,
+    FUNCSTATE_COLS,
     _ckdnearest,
     _dependency_name,
     _edge_lengths_metres,
@@ -46,6 +48,30 @@ from climada.engine import ImpactCalc
 from climada.util import lines_polys_handler as u_lp
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _target_attrs(row):
+    """Vertex filters of the targets of a dependency table row
+
+    Targets are the vertices of ``ci_type == row["target"]``. If the optional
+    column ``target_filter`` holds the name of a boolean node column (e.g.
+    ``"electrified"``), only the targets where it is ``True`` are linked.
+
+    Parameters
+    ----------
+    row : pd.Series
+        Dependency table row.
+
+    Returns
+    -------
+    dict
+        Vertex attribute filters, e.g. ``{"ci_type": "people", "electrified": True}``.
+    """
+    attrs = {"ci_type": row["target"]}
+    target_filter = row.get("target_filter")
+    if isinstance(target_filter, str) and target_filter:
+        attrs[target_filter] = True
+    return attrs
 
 
 class GraphCalcs:
@@ -712,7 +738,15 @@ class GraphCalcs:
         """Create edges between source and target vertex lists
 
         Adds edge geometries and distances if missing in ``link_attrs``, and
-        marks the new edges with ``ADDED_COL = True`` (see ``nw_utils``).
+        marks the new edges with ``ADDED_COL = True`` (see ``nw_utils``). If the
+        graph already has functional states (``func_internal``, ``func_tot``,
+        ``imp_dir``), e.g. for physical links added after
+        ``NetworkCalcs.initialize_base_state``, the new edges are functional
+        (1, 1, 0). Only the state columns that already exist (on the vertices
+        or the edges) are set: a column is never created for the new edges
+        alone, since all other edges would get ``None`` in it.
+        Dependency links (``ci_type`` ``dependency_*``) get no state: they are
+        logical links, and the cascade only uses the state of their source.
 
         Parameters
         ----------
@@ -738,6 +772,18 @@ class GraphCalcs:
             self.graph.vs[v_ids_source]["geometry"],
             self.graph.vs[v_ids_target]["geometry"],
         )
+
+        # new physical links are functional if the graph has functional states
+        # already; dependency links (also the temporary "new_dependency_*"
+        # links of the rerouting) are logical and get no state
+        ci_type = str(link_attrs.get("ci_type", ""))
+        if not ci_type.startswith(("dependency_", "new_dependency_")):
+            existing_attrs = set(self.graph.vs.attributes()) | set(
+                self.graph.es.attributes()
+            )
+            for col, value in zip(FUNCSTATE_COLS, (1.0, 1.0, 0.0)):
+                if col in existing_attrs and col not in link_attrs:
+                    link_attrs[col] = value
 
         if "distance" not in link_attrs.keys():
             LOGGER.info("Adding edge distances for new links.")
@@ -1017,10 +1063,15 @@ class GraphCalcs:
             - ``"duration"``: travel duration on the friction surface shorter
               than ``dur_thresh``
             - ``"edgecond"``: an existing edge connects source and target
+            - ``"closest"``: the ``k`` closest sources in a straight line
+              within ``dist_thresh``, without a via network (``via_attrs``
+              not used), e.g. people and facilities supplied by their closest
+              power line node
         dist_thresh : float
             Maximum distance in meters. Path length for ``"distance"``;
-            straight-line pre-selection of candidates for ``"duration"``. Not
-            used for ``"edgecond"``.
+            straight-line distance for ``"closest"``; straight-line
+            pre-selection of candidates for ``"duration"``. Not used for
+            ``"edgecond"``.
         dur_thresh : float
             Maximum travel duration in minutes. Only used for ``"duration"``.
         k : int
@@ -1072,6 +1123,15 @@ class GraphCalcs:
                 k=k,
                 bidir=bidir_link,
             )
+        elif link_condition == "closest":
+            self.link_vertices_closest_k(
+                source_attrs=source_attrs,
+                target_attrs=target_attrs,
+                dist_thresh=dist_thresh,
+                k=k,
+                link_attrs=link_attrs,
+                bidir=bidir_link,
+            )
         elif link_condition == "edgecond":
             self.link_vertices_edgecond(
                 target_attrs=target_attrs,
@@ -1107,7 +1167,8 @@ class GraphCalcs:
         type_I : str
             Type of dependency (enduser vs functional).
         thresh_func : float
-            Functional threshold for target nodes.
+            Supply threshold: minimum supply a target must receive, i.e. the
+            sum of ``func_tot * capacity`` over the sources linked to it.
 
         Notes
         -----
@@ -1180,18 +1241,71 @@ class GraphCalcs:
     def funcstates_sum(self):
         """Sum functional states across vertices and edges
 
+        Dependency edges (``ci_type`` ``dependency_*``) are left out: they are
+        logical links without a functional state. Missing states of other
+        components (see ``check_funcstates``) are ignored, so that the sums
+        used to detect the end of the cascade are always finite.
+
         Returns
         -------
         tuple
             ``(sum_vertices, sum_edges)`` of ``func_tot``.
         """
+        func_es = self._func_tot(self.graph.es)[self._non_dependency_edges()]
         return (
-            sum(self.graph.vs.get_attribute_values("func_tot")),
-            sum(self.graph.es.get_attribute_values("func_tot")),
+            float(np.nansum(self._func_tot(self.graph.vs))),
+            float(np.nansum(func_es)),
         )
+
+    @staticmethod
+    def _func_tot(seq):
+        """``func_tot`` of a vertex or edge sequence as floats (NaN if missing)"""
+        if "func_tot" not in seq.attributes():
+            return np.full(len(seq), np.nan)
+        return np.array(seq["func_tot"], dtype=float)
+
+    def _non_dependency_edges(self):
+        """Boolean mask of the edges that are not dependency edges"""
+        if self.graph.ecount() == 0:
+            return np.zeros(0, dtype=bool)
+        ci_types = np.array(self.graph.es["ci_type"], dtype=str)
+        return ~np.char.startswith(ci_types, "dependency_")
+
+    def check_funcstates(self):
+        """Warn about nodes and edges without a functional state
+
+        Dependency edges are not checked (they have no state). Components
+        without ``func_tot`` (missing or NaN) are ignored when the end of the
+        cascade is detected, and never fail; this happens e.g. for links
+        added after ``NetworkCalcs.initialize_base_state`` by user code that
+        does not go through ``GraphCalcs``.
+
+        Returns
+        -------
+        tuple
+            ``(n_nodes, n_edges)`` without a functional state.
+        """
+        n_vs = int(np.isnan(self._func_tot(self.graph.vs)).sum())
+        func_es = self._func_tot(self.graph.es)[self._non_dependency_edges()]
+        n_es = int(np.isnan(func_es).sum())
+        if n_vs or n_es:
+            LOGGER.warning(
+                "%i nodes and %i edges (dependency edges not counted) have no "
+                "functional state (func_tot): they are ignored by the cascade. "
+                "Call initialize_base_state after adding all physical links or"
+                "add func_tot to new links manually.",
+                n_vs,
+                n_es,
+            )
+        return n_vs, n_es
 
     def update_internal_dependencies(self, p_source, p_sink, source_var, demand_var):
         """Update internal dependencies for networked CI types
+
+        - Roads: the end nodes of a failed road edge fail.
+        - Power: if the graph contains ``p_source`` and ``p_sink`` vertices,
+          the capacity of the power line nodes is the supply / demand ratio of
+          their power cluster (see ``powercap_from_clusters``).
 
         Parameters
         ----------
@@ -1219,27 +1333,9 @@ class GraphCalcs:
                 "func_tot"
             ] = 0
 
-        # specifically for powerlines: check power clusters
+        # specifically for power lines: supply / demand ratio of power clusters
         if {p_source, p_sink}.issubset(set(self.graph.vs["ci_type"])):
-            raise NotImplementedError("Power cluster algorithm not yet implemented.")
-
             LOGGER.info("Updating power clusters")
-            # For another version using pandapower, see nw_utils.py
-            # Since powerlines are directed in a directed graph,
-            # make sure 'reverse' lines are also down
-
-            edges_dys = self.graph.es.select(ci_type="power_line").select(func_tot_eq=0)
-            reverse_edges = [(edge.target, edge.source) for edge in edges_dys]
-            eids = self.graph.get_eids(
-                pairs=reverse_edges, path=None, directed=True, error=True
-            )
-            self.graph.es[eids]["func_tot"] = 0
-            LOGGER.info(
-                "Using updated power line algorithm: dysfunc edges before: \
-                  %i, after: %i",
-                len(edges_dys),
-                len(self.graph.es.select(ci_type="power_line").select(func_tot_eq=0)),
-            )
             self.powercap_from_clusters(
                 p_source=p_source,
                 p_sink=p_sink,
@@ -1250,6 +1346,137 @@ class GraphCalcs:
 
         if self.auto_sync:
             self.sync()
+
+    def powercap_from_clusters(
+        self,
+        p_source="power_plant",
+        p_sink="power_line",
+        demand_ci=DEF_END_USER,
+        source_var="el_generation",
+        demand_var="el_consumption",
+    ):
+        """Set the capacity of power line nodes from their power cluster
+
+        A power cluster is a connected part of the power network: ``p_sink``
+        and ``p_source`` vertices joined by functional ``p_sink`` edges (power
+        lines, including the links of the plants), edge directions ignored.
+        For each cluster:
+
+        - supply: sum of ``source_var * func_tot`` of its ``p_source`` vertices;
+        - demand: sum of ``demand_var`` of the ``demand_ci`` vertices linked to
+          its line nodes by ``dependency_{p_sink}_{demand_ci}`` edges (a
+          vertex linked to several line nodes counts with an equal share at
+          each);
+        - ratio: ``min(1, supply / demand)``, 1 if the demand is 0.
+
+        The ratio is written to every ``capacity_{p_sink}_*`` attribute of the
+        cluster's line nodes, so that all dependants of power (end users and
+        facilities) receive ``func_tot * ratio`` from their line node in
+        ``_propagate_check_fail``.
+
+        A failed line node does not split its cluster (only failed edges,
+        ``func_tot < 1``, do); it delivers nothing itself since its ``func_tot``
+        is 0. The clusters are found on the power network only: dependants linked
+        to several clusters do not merge them.
+
+        Parameters
+        ----------
+        p_source : str, optional
+            Type of the power sources. Default is ``"power_plant"``.
+        p_sink : str, optional
+            Type of the power line nodes and edges. Default is ``"power_line"``.
+        demand_ci : str, optional
+            Type of the consumers. Default is ``DEF_END_USER`` (``"people"``).
+        source_var : str, optional
+            Vertex attribute with the generation of the sources. Default is
+            ``"el_generation"``.
+        demand_var : str, optional
+            Vertex attribute with the demand of the consumers. Default is
+            ``"el_consumption"``.
+
+        Raises
+        ------
+        ValueError
+            If ``source_var`` or ``demand_var`` is missing, or missing (NaN)
+            for a source or for a consumer linked to the power network.
+        """
+        n_vs = self.graph.vcount()
+        ci_types = np.array(self.graph.vs["ci_type"])
+        is_power = np.isin(ci_types, [p_source, p_sink])
+        sources = np.where(ci_types == p_source)[0]
+        sinks = np.where(ci_types == p_sink)[0]
+
+        for var, ci_type in ((source_var, p_source), (demand_var, demand_ci)):
+            if var not in self.graph.vs.attributes():
+                raise ValueError(
+                    f"Power clusters need the node column '{var}' ({ci_type})."
+                )
+
+        # edges of the power network that work
+        if self.graph.ecount() > 0:
+            edge_list = np.array(self.graph.get_edgelist(), dtype=int)
+            edge_src, edge_tgt = edge_list[:, 0], edge_list[:, 1]
+            edge_types = np.array(self.graph.es["ci_type"], dtype=str)
+        else:
+            edge_src = edge_tgt = np.zeros(0, dtype=int)
+            edge_types = np.zeros(0, dtype=str)
+        # functional states are 0 or 1; an edge works only with func_tot 1, as
+        # for the via edges and sources in the access checks. NaN: not failed
+        # (reported by check_funcstates)
+        failed = self._func_tot(self.graph.es) < 1
+        keep = (
+            (edge_types == p_sink) & ~failed & is_power[edge_src] & is_power[edge_tgt]
+        )
+        adjacency = scipy.sparse.coo_matrix(
+            (np.ones(keep.sum()), (edge_src[keep], edge_tgt[keep])),
+            shape=(n_vs, n_vs),
+        )
+        _, cluster = connected_components(adjacency, directed=False)
+
+        # supply per cluster
+        generation = np.array(self.graph.vs[sources.tolist()][source_var], dtype=float)
+        if np.isnan(generation).any():
+            raise ValueError(
+                f"'{source_var}' is missing for {np.isnan(generation).sum()} "
+                f"{p_source} nodes."
+            )
+        supply = np.bincount(
+            cluster[sources],
+            weights=generation * self._func_tot(self.graph.vs)[sources],
+            minlength=n_vs,
+        )
+
+        # demand per cluster, through the dependency edges of the consumers
+        dep = (
+            (edge_types == _dependency_name(p_sink, demand_ci))
+            & (ci_types[edge_src] == p_sink)
+            & (ci_types[edge_tgt] == demand_ci)
+        )
+        dep_src, dep_tgt = edge_src[dep], edge_tgt[dep]
+        consumption = np.array(self.graph.vs[demand_var], dtype=float)[dep_tgt]
+        if np.isnan(consumption).any():
+            n_missing = len(np.unique(dep_tgt[np.isnan(consumption)]))
+            raise ValueError(
+                f"'{demand_var}' is missing for {n_missing} {demand_ci} nodes "
+                "linked to the power network."
+            )
+        n_links = np.bincount(dep_tgt, minlength=n_vs)[dep_tgt]
+        demand = np.bincount(
+            cluster[dep_src], weights=consumption / n_links, minlength=n_vs
+        )
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(demand > 0, np.minimum(1, supply / demand), 1.0)
+
+        capacity_vars = [
+            var
+            for var in self.graph.vs.attributes()
+            if var.startswith(f"capacity_{p_sink}_")
+        ]
+        if not capacity_vars:
+            LOGGER.debug("No capacity_%s_* attribute: nothing to update.", p_sink)
+        for var in capacity_vars:
+            self.graph.vs[sinks.tolist()][var] = ratio[cluster[sinks]].tolist()
 
     def update_functional_dependencies(self, df_dependencies):
         """Update functional CI-to-CI dependencies
@@ -1286,6 +1513,25 @@ class GraphCalcs:
     ):
         """Update end-user dependencies for the cascade
 
+        How access is checked depends on the ``access_cnstr`` column of each
+        row:
+
+        - Rows with access constraint (``access_cnstr=True``, e.g. healthcare
+          reached along roads): with ``access_check_method="routing"``, the
+          path from the linked source to each end user along the
+          ``via_link`` edges is re-checked; with ``rerouting=True``, end users
+          who lost their source or their path are linked to another
+          functional source they can reach. With ``"propagation"``, they are
+          handled like the rows without access constraint (paths not
+          checked).
+        - Rows without access constraint (e.g. power supply, road access):
+          the dependency links created by ``setup_dependencies`` are kept,
+          with both methods. Each end user receives ``func_tot * capacity``
+          from its linked sources and is supplied if this reaches
+          ``thresh_func`` (``_propagate_check_fail``). To keep access as long
+          as one of several sources works, link the end users to several
+          sources (``n_links > 1``).
+
         Parameters
         ----------
         df_dependencies : pd.DataFrame
@@ -1293,12 +1539,15 @@ class GraphCalcs:
         friction_surf : object or None
             Friction surface used for routing when applicable.
         access_check_method : str, optional
-            Method to check access, either ``"routing"`` (paths along the via
-            links are re-checked) or ``"propagation"`` (capacity is propagated
-            along the dependency edges, via links are ignored).
-            Default is ``"routing"``.
+            Method to check access of the rows with access constraint, either
+            ``"routing"`` (paths along the via links are re-checked) or
+            ``"propagation"`` (capacity is propagated along the dependency
+            edges, via links are ignored). Default is ``"routing"``.
         rerouting : bool, optional
-            Whether to allow rerouting to alternative sources. Default is ``True``.
+            Whether end users of rows with access constraint can be linked to
+            another source in routing mode. Rows without access constraint are
+            never re-linked: use ``n_links > 1`` for redundancy. Default is
+            ``True``.
 
         Raises
         ------
@@ -1310,9 +1559,10 @@ class GraphCalcs:
             df_dependencies["type_I"] == "enduser"
         ].iterrows():
 
-            if access_check_method == "routing":
+            if access_check_method == "routing" and row.access_cnstr:
                 self._check_access(row, friction_surf, rerouting=rerouting)
-            elif access_check_method == "propagation":
+            elif access_check_method in ("routing", "propagation"):
+                # without access constraint: links of the base state are kept
                 if row.access_cnstr:
                     LOGGER.warning(
                         "Propagation method does not account for via-link "
@@ -1381,7 +1631,7 @@ class GraphCalcs:
 
         self.calc_dependencies(
             source_attrs={"ci_type": row["source"], "func_tot": 1},
-            target_attrs={"ci_type": row["target"]},
+            target_attrs=_target_attrs(row),
             via_attrs=via_attrs_dict,
             link_attrs={"ci_type": dependency_name},
             link_condition=row["link_condition"],
@@ -1397,7 +1647,7 @@ class GraphCalcs:
             # people who could have access if via links were functional
             self.calc_dependencies(
                 source_attrs={"ci_type": row["source"], "func_tot": 1},
-                target_attrs={"ci_type": row["target"]},
+                target_attrs=_target_attrs(row),
                 via_attrs={"ci_type": row["via_link"]},  # No func_tot requirement
                 link_attrs={"ci_type": "new_" + dependency_name},
                 link_condition=row["link_condition"],
@@ -1520,7 +1770,7 @@ class GraphCalcs:
                 # create subgraph
                 subgraph = self._create_subgraph(
                     source_attrs={"ci_type": row["source"], "func_tot": 1},
-                    target_attrs={"ci_type": row["target"]},
+                    target_attrs=_target_attrs(row),
                     via_attrs={"ci_type": row["via_link"], "func_tot": 1},
                 )
 

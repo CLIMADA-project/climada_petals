@@ -460,10 +460,19 @@ class NetworkImpactCalc:
         Exposures built from ``network``.
     edge_rule : str or dict
         Rule that decides how an edge fails.
+    combine_exposures : bool
+        Whether a node or edge may belong to several exposures.
     """
 
     def __init__(
-        self, impf_set, failure_thresh, haz, network, exp_list, edge_rule="max_ratio"
+        self,
+        impf_set,
+        failure_thresh,
+        haz,
+        network,
+        exp_list,
+        edge_rule="max_ratio",
+        combine_exposures=False,
     ):
         """Create a network impact calculator
 
@@ -509,6 +518,17 @@ class NetworkImpactCalc:
             tags, and edge exposures whose tag is not in the dict use
             ``"max_ratio"``, e.g. ``{"road": "damaged_length"}``. Defaults to
             ``"max_ratio"``.
+        combine_exposures : bool, optional
+            Whether a node or edge may belong to several exposures in
+            ``exp_list``. If ``False``, ``disrupt_network`` raises an error
+            when two exposures contain the same node or edge (e.g. because of
+            overlapping masks). Set it to ``True`` to assess a component with
+            several impact functions, e.g. power lines exposed to two damage
+            mechanisms (conductor damage and tower collapse), each in its own
+            exposure with its own impact function and failure threshold. The
+            component then fails if at least one of its exposures makes it
+            fail, and its ``imp_dir`` is the sum of the impacts of its
+            exposures. Defaults to ``False``.
         """
         self.impf_set = impf_set
         self.failure_thresh = failure_thresh
@@ -516,6 +536,7 @@ class NetworkImpactCalc:
         self.network = network
         self.exp_list = exp_list
         self.edge_rule = edge_rule
+        self.combine_exposures = combine_exposures
 
     def _edge_rule_of(self, tag):
         """Return the edge rule of the edge exposure with the tag ``tag``."""
@@ -619,9 +640,9 @@ class NetworkImpactCalc:
                     f"{list(EDGE_RULES)}."
                 )
 
-        # each node and each edge can be in one exposure only
+        # each node and each edge can be in one exposure only, unless combined
         for kind, tag_series in rows.items():
-            if not tag_series:
+            if not tag_series or self.combine_exposures:
                 continue
             tag_by_row = pd.concat(tag_series)
             shared = tag_by_row.index.duplicated(keep=False)
@@ -632,15 +653,16 @@ class NetworkImpactCalc:
                 raise ValueError(
                     f"The exposures '{first}' and '{second}' both contain {item} "
                     f"{label} (row label in network.{kind}): each {item} can be "
-                    "in one exposure only (use complementary masks)."
+                    "in one exposure only (use complementary masks), unless "
+                    "combine_exposures=True."
                 )
 
     def disrupt_network(self):
         """Compute the direct impacts and write them to a copy of the network
 
         Each exposure in ``exp_list`` is assessed with the impact function and
-        the failure threshold of its tag. The network rows the exposure was built from
-        get:
+        the failure threshold of its tag. The network rows the exposure was
+        built from get:
 
         - ``imp_dir``: the direct impact (for an edge, the sum of the impacts
           at its points),
@@ -648,6 +670,10 @@ class NetworkImpactCalc:
           above the failure threshold of its exposure, else 1,
         - ``func_tot``: ``min(func_internal, func_tot)``, so components that
           already failed (e.g. in the base-state cascade) stay failed.
+
+        If a component belongs to several exposures (``combine_exposures=True``),
+        it fails if at least one of its exposures makes it fail, and its
+        ``imp_dir`` is the sum of the impacts of its exposures.
 
         The damage of a component is computed from the damage ratio of its
         points. The damage ratio of a point is its impact for an exposure
@@ -683,8 +709,9 @@ class NetworkImpactCalc:
         ValueError
             Before any computation, if the inputs are inconsistent: hazard with
             several events, network without functional states, duplicate tags,
-            a node or edge in two exposures, exposure rows not in the network,
-            missing impact function or failure threshold.
+            a node or edge in two exposures (unless ``combine_exposures=True``),
+            exposure rows not in the network, missing impact function or
+            failure threshold.
 
         Notes
         -----
@@ -699,6 +726,9 @@ class NetworkImpactCalc:
         network_disr = cp.deepcopy(self.network)
         haz_type = self.haz.haz_type
         imp_dict = {}
+        col_func_internal, _, col_imp_dir = FUNCSTATE_COLS
+        # rows written by an earlier exposure of exp_list (combine_exposures)
+        written = {"nodes": pd.Index([]), "edges": pd.Index([])}
         for exp in self.exp_list:
             tag = exp.description
             impf = self.impf_set.get_func(haz_type=haz_type, fun_id=tag)
@@ -734,8 +764,21 @@ class NetworkImpactCalc:
             # checked in _check_inputs)
             imp_dir = imp.imp_mat.toarray().ravel()
             func_internal = (compared <= self.failure_thresh[tag]).astype(int)
-            _impacts_to_network(
-                getattr(network_disr, kind), labels, imp_dir, func_internal
-            )
+            gdf = getattr(network_disr, kind)
+            # rows already written by another exposure: combine the results
+            again = labels.isin(written[kind])
+            if again.any():
+                imp_dir = np.where(
+                    again, gdf.loc[labels, col_imp_dir].to_numpy() + imp_dir, imp_dir
+                )
+                func_internal = np.where(
+                    again,
+                    np.minimum(
+                        gdf.loc[labels, col_func_internal].to_numpy(), func_internal
+                    ),
+                    func_internal,
+                )
+            _impacts_to_network(gdf, labels, imp_dir, func_internal)
+            written[kind] = written[kind].union(labels)
             imp_dict[tag] = imp
         return network_disr, imp_dict

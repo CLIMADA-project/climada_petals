@@ -150,7 +150,12 @@ class Network:
       node ids are set to the vertex index whenever the network is rebuilt
       from the graph.
     - ``ci_type``: type of each component, used for all selections.
-      Dependency links get the type ``dependency_{source}_{target}``.
+      Dependency links get the type ``dependency_{source}_{target}``. The
+      module relies on this name and reserves the prefix ``dependency_``:
+      dependency links under another name are ignored by the cascade and
+      treated like physical edges (e.g. reported without a functional
+      state), and other edges named ``dependency_*`` are treated as
+      dependency links.
     - ``geometry``: set on every link created by the module.
     - ``distance`` (``edges``): length in meters, used as routing weight. It
       is computed for new links only if absent, so an existing column must

@@ -1312,6 +1312,94 @@ def test_edges_from_vlists_with_distance(graph_calcs):
     assert new_edge["distance"] == 1000.0
 
 
+def test_edges_from_vlists_functional_states(graph_calcs):
+    """New links are functional if the graph has functional states; states the
+    graph does not have (here func_internal, imp_dir) are not created."""
+    graph_calcs.build_graph()
+    assert "func_tot" in graph_calcs.graph.es.attributes()
+
+    graph_calcs._edges_from_vlists([1], [2], link_attrs={"ci_type": "test_link"})
+
+    new_edge = graph_calcs.graph.es[graph_calcs.graph.ecount() - 1]
+    assert new_edge["func_tot"] == 1
+    assert "func_internal" not in graph_calcs.graph.es.attributes()
+    assert "imp_dir" not in graph_calcs.graph.es.attributes()
+
+
+def test_edges_from_vlists_dependency_links_have_no_state(graph_calcs):
+    """Dependency links are logical: no functional state."""
+    graph_calcs.build_graph()
+
+    graph_calcs._edges_from_vlists(
+        [1], [0], link_attrs={"ci_type": "dependency_road_people"}
+    )
+
+    new_edge = graph_calcs.graph.es[graph_calcs.graph.ecount() - 1]
+    assert new_edge["func_tot"] is None
+
+
+def test_funcstates_sum_ignores_dependency_edges(graph_calcs):
+    """Dependency edges are not summed, whatever their state."""
+    graph_calcs.build_graph()
+    n_edges = graph_calcs.graph.ecount()
+    graph_calcs._edges_from_vlists(
+        [1, 2], [0, 0], link_attrs={"ci_type": "dependency_road_people"}
+    )
+    graph_calcs.graph.es[n_edges + 1]["func_tot"] = 0
+
+    sum_vs, sum_es = graph_calcs.funcstates_sum()
+
+    assert sum_vs == graph_calcs.graph.vcount()
+    assert sum_es == n_edges
+
+
+def test_check_funcstates_warns(graph_calcs, nw_caplog):
+    """A node and a road edge without func_tot are reported, the dependency
+    link is not."""
+    graph_calcs.build_graph()
+    graph_calcs._edges_from_vlists(
+        [1], [0], link_attrs={"ci_type": "dependency_road_people"}
+    )
+    graph_calcs.graph.vs[2]["func_tot"] = np.nan
+    graph_calcs.graph.es[0]["func_tot"] = None
+
+    assert graph_calcs.check_funcstates() == (1, 1)
+    assert "1 nodes and 1 edges" in nw_caplog.text
+
+
+def test_check_funcstates_complete(graph_calcs, nw_caplog):
+    graph_calcs.build_graph()
+    graph_calcs._edges_from_vlists(
+        [1], [0], link_attrs={"ci_type": "dependency_road_people"}
+    )
+
+    assert graph_calcs.check_funcstates() == (0, 0)
+    assert "have no functional state" not in nw_caplog.text
+
+
+def test_calc_dependencies_closest(graph_calcs_with_remote_node):
+    """Straight-line link to the closest functional source: the remote
+    healthcare node 5 at (4, 50) when node 4 fails."""
+    gc = graph_calcs_with_remote_node
+    gc.build_graph()
+    gc.graph.vs[4]["func_tot"] = 0
+
+    gc.calc_dependencies(
+        source_attrs={"ci_type": "healthcare", "func_tot": 1},
+        target_attrs={"ci_type": "people"},
+        via_attrs={"ci_type": "road"},
+        link_attrs={"ci_type": "dependency_healthcare_people"},
+        link_condition="closest",
+        dist_thresh=np.inf,
+        dur_thresh=np.inf,
+        k=1,
+        bidir_link=False,
+    )
+
+    links = gc.graph.es.select(ci_type="dependency_healthcare_people")
+    assert [(e.source, e.target) for e in links] == [(5, 0)]
+
+
 def test_calc_dependencies_distance(graph_calcs):
     """Test calculating dependencies with distance criterion"""
     graph_calcs.build_graph()
@@ -2247,6 +2335,49 @@ def test_update_enduser_dependencies_routing(graph_calcs_with_source_fail):
         "access disrupted source"
     ]
     assert people_attr(gc.graph, "actual_supply_healthcare_people") == [0]
+
+
+def test_update_enduser_dependencies_routing_keeps_links_without_constraint(
+    graph_calcs,
+):
+    """Routing mode: a row without access constraint keeps its link. People
+    linked to road node 1 lose road access when node 1 fails, although road
+    node 2 works (no rerouting)."""
+    dep_table = pd.DataFrame(
+        {
+            "source": ["road"],
+            "target": ["people"],
+            "type_I": ["enduser"],
+            "access_cnstr": [False],
+            "via_link": ["none"],
+            "link_condition": ["closest"],
+            "thresh_dist": [10e6],
+            "thresh_dur": [np.inf],
+            "bidir_link": [False],
+            "thresh_func": [1.0],
+            "n_links": [1],
+        }
+    )
+    graph_calcs.network.initialize_capacity(dep_table)
+    graph_calcs.network.initialize_supply(dep_table)
+    make_enduser_dependencies(graph_calcs, dep_table)
+    links_before = [
+        (e.source, e.target)
+        for e in graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    ]
+    assert links_before == [(1, 0)]
+    graph_calcs.graph.vs[1]["func_tot"] = 0
+
+    graph_calcs.update_enduser_dependencies(
+        dep_table, friction_surf=None, access_check_method="routing"
+    )
+
+    links_after = [
+        (e.source, e.target)
+        for e in graph_calcs.graph.es.select(ci_type="dependency_road_people")
+    ]
+    assert links_after == links_before
+    assert people_attr(graph_calcs.graph, "actual_supply_road_people") == [0]
 
 
 def test_update_enduser_dependencies_propagation(graph_calcs_with_source_fail):
