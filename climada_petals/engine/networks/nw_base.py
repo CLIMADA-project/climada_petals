@@ -236,11 +236,11 @@ class Network:
         else:
             nodes = _set_missing_crs(nodes, crs)
 
-        # assign returns a copy: the caller's GeoDataFrames are not modified
         if VERTEX_ID_COL not in edges.columns:
             edges = edges.assign(**{VERTEX_ID_COL: range(len(edges))})
         if VERTEX_ID_COL not in nodes.columns:
             nodes = nodes.assign(**{VERTEX_ID_COL: range(len(nodes))})
+
         _warn_reserved_columns(edges, nodes)
 
         self.edges = edges
@@ -270,8 +270,8 @@ class Network:
 
         Examples
         --------
-        >>> network.reproject('EPSG:3857')  # Web Mercator
-        >>> network.reproject('EPSG:4326')  # WGS84
+        >>> Network.reproject('EPSG:3857')  # Web Mercator
+        >>> Network.reproject('EPSG:4326')  # WGS84
 
         See Also
         --------
@@ -302,17 +302,17 @@ class Network:
             A new Network instance containing all edges and nodes from input networks
             with renumbered 'id', 'from_id', and 'to_id' fields.
 
+        Notes
+        -----
+        All input networks must have the same CRS (defaults to EPSG:4326).
+        Node IDs are renumbered sequentially across all networks.
+
         Examples
         --------
         >>> road_network = Network(edges=road_edges)
         >>> health_network = Network(nodes=health_nodes)
         >>> people_network = Network(nodes=people_nodes)
         >>> combined = Network.from_networks([road_network, health_network, people_network])
-
-        Notes
-        -----
-        All input networks must have the same CRS (defaults to EPSG:4326).
-        Node IDs are renumbered sequentially across all networks.
         """
         id_counter_nodes = 0
         edges = []
@@ -323,9 +323,7 @@ class Network:
         for net in networks:
             if not equal_crs(net.crs, def_crs):
                 raise ValueError(
-                    "All networks must have the same CRS. Found %s and %s",
-                    net.crs,
-                    def_crs,
+                    f"All networks must have the same CRS. Found {net.crs} and {def_crs}"
                 )
             edge_gdf = net.edges.reset_index(drop=True)
             node_gdf = net.nodes.reset_index(drop=True)
@@ -339,7 +337,7 @@ class Network:
         nodes = pd.concat(nodes)
         edges[[EDGE_FROM_COL, EDGE_TO_COL]] = edges[[EDGE_FROM_COL, EDGE_TO_COL]].astype(int)
 
-        return Network(
+        return cls(
             edges=edges.reset_index(drop=True), nodes=nodes.reset_index(drop=True)
         )
 
@@ -365,15 +363,15 @@ class Network:
         pathlib.Path
             Path to the created zip archive.
 
-        Examples
-        --------
-        >>> network.save_network_zip('/path/to/save', 'my_network')
-        PosixPath('/path/to/save/my_network.zip')
-
         See Also
         --------
         load_network_zip : Load network from saved archive
         geopandas.GeoDataFrame.to_feather : Underlying serialization method
+
+        Examples
+        --------
+        >>> network.save_network_zip('/path/to/save', 'my_network')
+        PosixPath('/path/to/save/my_network.zip')
         """
         path_save = Path(path_save)
         path_save.mkdir(parents=True, exist_ok=True)
@@ -415,14 +413,14 @@ class Network:
             Network instance with loaded nodes and edges GeoDataFrames.
             If files are missing, the corresponding GeoDataFrames will be empty.
 
-        Examples
-        --------
-        >>> network = Network.load_network_zip('/path/to/archives', 'my_network')
-
         See Also
         --------
         save_network_zip : Save network to archive
         geopandas.read_feather : Underlying deserialization method
+
+        Examples
+        --------
+        >>> network = Network.load_network_zip('/path/to/archives', 'my_network')
         """
         path_load = Path(path_load)
         zip_path = path_load / f"{savename}.zip"
@@ -478,6 +476,7 @@ class Network:
         Notes
         -----
         This method:
+
         - Renames graph columns 'source'/'target' to 'from_id'/'to_id' for edges
         - Resets node index and renames 'vertex ID' to 'id'
         - Maintains specified CRS
@@ -545,7 +544,8 @@ class Network:
             graph = self._from_vs(gdf_nodes=self.nodes, directed=directed)
         return graph
 
-    def _remove_namecol(self, gdf_nodes):
+    @staticmethod
+    def _remove_namecol(gdf_nodes):
         """Remove 'name' column from GeoDataFrame to avoid igraph conflicts
 
         The igraph library uses 'name' as a reserved attribute for vertices.
@@ -568,7 +568,8 @@ class Network:
 
     # copied from nw_preps
     # TODO : decide if this should be a method of nw_preps or nw_base
-    def _ecols_to_graphorder(self, gdf_edges):
+    @staticmethod
+    def _ecols_to_graphorder(gdf_edges):
         """Order edge columns as igraph expects them for building a graph
 
         Parameters
@@ -587,7 +588,8 @@ class Network:
             axis=1,
         )
 
-    def _vcols_to_graphorder(self, gdf_nodes):
+    @staticmethod
+    def _vcols_to_graphorder(gdf_nodes):
         """Order node columns as igraph expects them for building a graph
 
         Parameters
@@ -656,6 +658,7 @@ class Network:
         This should be called before running cascade simulations or impact assessments.
 
         The method creates the following attributes:
+
         - ``func_internal``: Internal functionality state (1 = fully functional)
         - ``func_tot``: Total functionality state (1 = fully functional)
         - ``imp_dir``: Direct impact from hazards (0 = no impact)
@@ -692,6 +695,7 @@ class Network:
         Notes
         -----
         For each dependency, creates a column ``capacity_{source}_{target}`` where:
+
         - Source nodes (providers) have capacity = 1
         - Target nodes (consumers) have capacity = -1
         - Other nodes have capacity = 0
@@ -736,9 +740,15 @@ class Network:
         Notes
         -----
         For each enduser dependency, creates two attributes:
+
         - ``access_state_{source}_{target}``: Access state ("undefined" initially,
           "no base access" for the target nodes)
         - ``actual_supply_{source}_{target}``: Current supply level (0 initially)
+
+        See Also
+        --------
+        initialize_capacity : Initialize capacity attributes
+        initialize_funcstates : Initialize functional state attributes
 
         Examples
         --------
@@ -750,16 +760,10 @@ class Network:
         >>> network.initialize_supply(dep_table)
         >>> network.nodes['access_state_healthcare_people']  # "no base access" for people
         >>> network.nodes['actual_supply_road_people']  # 0 for all nodes
-
-        See Also
-        --------
-        initialize_capacity : Initialize capacity attributes
-        initialize_funcstates : Initialize functional state attributes
         """
         for __, row in dep_table.loc[dep_table[TYPE_I_COL] == ENDUSER_TYPE].iterrows():
             self.nodes[f'access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = "undefined"
             self.nodes[f'actual_supply_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}'] = 0.0
-            # self.nodes.loc[self.nodes['ci_type']=='people',f'actual_supply_{row[DEP_SOURCE_COL]}_people'] = 1
             self.nodes.loc[
                 self.nodes[CI_TYPE_COL] == row[DEP_TARGET_COL],
                 f'access_state_{row[DEP_SOURCE_COL]}_{row[DEP_TARGET_COL]}',
