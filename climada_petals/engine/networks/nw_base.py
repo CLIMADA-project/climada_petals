@@ -245,7 +245,10 @@ class Network:
 
         self.edges = edges
         self.nodes = nodes
-        self.crs = nodes.crs
+
+    @property
+    def crs(self):
+        return self.nodes.crs
 
     @classmethod
     def reproject(cls, network, crs):
