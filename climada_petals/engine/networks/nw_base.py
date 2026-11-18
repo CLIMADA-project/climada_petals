@@ -207,36 +207,29 @@ class Network:
                     f"{label} have no CRS. Set it explicitly, e.g. "
                     "gdf.set_crs('EPSG:4326')."
                 )
-        crs_edges = edges.crs if edges is not None else None
-        crs_nodes = nodes.crs if nodes is not None else None
-        if crs_edges and not crs_nodes:
-            crs_nodes = crs_edges
-        elif crs_nodes and not crs_edges:
-            crs_edges = crs_nodes
-        elif not crs_edges and not crs_nodes:
-            crs_edges = "EPSG:4326"
-            crs_nodes = "EPSG:4326"
-        else:
-            if not equal_crs(crs_edges, crs_nodes):
-                raise ValueError(
-                    f"Edges and nodes must have the same CRS {crs_edges}, {crs_nodes}"
-                )
+
+        crss = [g.crs for g in (edges, nodes) if g is not None and g.crs is not None]
+        if len(crss) == 2 and not equal_crs(*crss):
+            raise ValueError(
+                f"Edges and nodes must have the same CRS, got {crss[0]} and {crss[1]}"
+            )
+
+        crs = crss[0] if crss else DEFAULT_CRS
         if edges is None:
             edges = gpd.GeoDataFrame(
                 columns=[EDGE_FROM_COL, EDGE_TO_COL, VERTEX_ID_COL, "geometry"],
                 geometry="geometry",
-                crs=crs_edges,
+                crs=crs,
             )
         else:
-            edges = _set_missing_crs(edges, crs_edges)
+            edges = _set_missing_crs(edges, crs)
+
         if nodes is None:
             nodes = gpd.GeoDataFrame(
-                columns=["id", "geometry"],
-                geometry="geometry",
-                crs=crs_nodes,
+                columns=[VERTEX_ID_COL, "geometry"], geometry="geometry", crs=crs
             )
         else:
-            nodes = _set_missing_crs(nodes, crs_nodes)
+            nodes = _set_missing_crs(nodes, crs)
 
         # assign returns a copy: the caller's GeoDataFrames are not modified
         if VERTEX_ID_COL not in edges.columns:
@@ -247,7 +240,7 @@ class Network:
 
         self.edges = edges
         self.nodes = nodes
-        self.crs = self.nodes.crs
+        self.crs = nodes.crs
 
     @classmethod
     def reproject(cls, network, crs):
