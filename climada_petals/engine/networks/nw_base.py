@@ -382,15 +382,15 @@ class Network:
 
         with ZipFile(zip_path, mode="w", compression=ZIP_DEFLATED) as zf:
             # Save nodes
-            if hasattr(self, "nodes") and not self.nodes.empty:
+            if not self.nodes.empty:
                 buf_nodes = io.BytesIO()
-                gpd.GeoDataFrame(self.nodes).to_feather(buf_nodes)
+                self.nodes.to_feather(buf_nodes)
                 zf.writestr(f"{savename}_nodes.feather", buf_nodes.getvalue())
 
             # Save edges
-            if hasattr(self, "edges") and not self.edges.empty:
+            if not self.edges.empty:
                 buf_edges = io.BytesIO()
-                gpd.GeoDataFrame(self.edges).to_feather(buf_edges)
+                self.edges.to_feather(buf_edges)
                 zf.writestr(f"{savename}_edges.feather", buf_edges.getvalue())
 
         return zip_path
