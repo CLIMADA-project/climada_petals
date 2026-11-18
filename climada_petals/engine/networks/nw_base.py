@@ -565,6 +565,7 @@ class Network:
             GeoDataFrame with 'name' column removed if it existed
         """
         if "name" in gdf_nodes.columns:
+            warnings.warn("Reserved column 'name' found in nodes GeoDataFrame. It will be dropped.")
             gdf_nodes = gdf_nodes.drop("name", axis=1)
         return gdf_nodes
 
