@@ -77,6 +77,11 @@ POP_COL = "counts"
 #: links, dependency edges): True on them, missing on the input edges
 ADDED_COL = "added"
 
+#: functional-state columns of nodes and edges, created by
+#: Network.initialize_funcstates: own state (1 = functional), state after the
+#: dependencies (cascade), direct impact of the hazard
+FUNCSTATE_COLS = ("func_internal", "func_tot", "imp_dir")
+
 # Energy conversion factors
 TJ_TO_GWH = 0.277778
 HRS_PER_YEAR = 8760
