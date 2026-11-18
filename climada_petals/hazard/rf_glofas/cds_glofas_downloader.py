@@ -92,7 +92,7 @@ def datetime_index_to_request(
     index: pd.DatetimeIndex, product: str
 ) -> dict[str, list[str]]:
     """Create a request-compatible dict from a series"""
-    prefix = "" if product == "forecast" else "h"
+    prefix = ""
     return {
         prefix + "year": list(map(str, index.year.unique())),
         prefix + "month": list(map(lambda x: f"{x:02d}", index.month.unique())),
