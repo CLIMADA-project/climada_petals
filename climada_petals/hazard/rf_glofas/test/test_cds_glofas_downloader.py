@@ -57,18 +57,14 @@ class TestDateTimeIndexToRequest(unittest.TestCase):
 
     def test_range_default(self):
         """Test transfering default range"""
-        for product in ("historical", "forecast"):
-            with self.subTest(product=product):
-                request = datetime_index_to_request(self.index_default, product=product)
-                request_test = self.target_default
-                if product == "historical":
-                    request_test = {"h" + key: val for key, val in request_test.items()}
-                self.assertDictEqual(request, request_test)
+        request = datetime_index_to_request(self.index_default)
+        request_test = self.target_default
+        self.assertDictEqual(request, request_test)
 
     def test_year_range(self):
         """Test range of two year starts"""
         request = datetime_index_to_request(
-            pd.date_range("2000-01-01", "2001-01-01", freq="YS"), product="forecast"
+            pd.date_range("2000-01-01", "2001-01-01", freq="YS")
         )
         self.assertDictEqual(
             request,
