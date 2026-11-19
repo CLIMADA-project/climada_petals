@@ -40,6 +40,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import scipy as sp
+from matplotlib import pyplot as plt
 from scipy import sparse
 from shapely.geometry import LineString, Point
 
@@ -216,7 +217,6 @@ def test_init(calc):
     """Input variables, metric names and unit are set."""
     assert calc._input_var_names == ("nw_input_var", "impf_input_var", "haz_input_var")
     assert tuple(calc._metric_names) == ("imp_met",)
-    assert calc.value_unit == "people"
     assert calc.ci_types == CI_TYPES
     assert calc.impact_kwargs == {}
     assert calc.cascade_kwargs == {}
@@ -293,6 +293,14 @@ def test_uncertainty(calc, unc_output):
     } <= set(unc_df.columns)
     # only the requested ci_types are evaluated (not e.g. road)
     assert not any(col.startswith("road_") for col in unc_df.columns)
+    # one unit per statistic: hospitals are counted, the rest is population
+    assert list(unc_output.imp_met_unit_df.columns) == list(unc_df.columns)
+    units = unc_output.imp_met_units
+    assert units["healthcare_infra_impact"] == "nodes"
+    assert units["healthcare_access_loss"] == "people"
+    assert {
+        unit for col, unit in units.items() if "_infra_" not in col
+    } == {"people"}
 
     np.testing.assert_allclose(unc_df["total_population"], POP * samples_df["x_pop"])
     np.testing.assert_allclose(
@@ -467,6 +475,9 @@ def test_uncertainty_line_ci_type():
     unc_df = unc_output.imp_met_unc_df
     assert unc_df.loc[0, "road_infra_impact"] == 0  # roads are not exposed
     assert unc_df.loc[0, "road_infra_total"] > 0
+    units = unc_output.imp_met_units
+    assert units["road_infra_total"] == "m"
+    assert units["healthcare_infra_total"] == "nodes"
 
 
 @pytest.mark.parametrize(
@@ -521,7 +532,8 @@ def test_compute_metrics_is_evaluated_immediately(calc, monkeypatch):
 
     def fake_map(sample_chunks, *args):
         calls.append(len(sample_chunks))
-        return pd.DataFrame({"total_population": [0.0] * len(sample_chunks)})
+        stats = pd.DataFrame({"total_population": [0.0] * len(sample_chunks)})
+        return stats, {"total_population": "people"}
 
     monkeypatch.setattr(calc_cascade, "_map_cascade_calc", fake_map)
     calc.friction_surf = None
@@ -551,6 +563,8 @@ def test_sensitivity(calc):
     sens_df = sens_output.imp_met_sens_df
     assert "healthcare_access_loss" in sens_df.columns
     assert set(sens_df["param"].dropna()) >= {"x_pop", "x_haz"}
+    sens_output.plot_sensitivity()
+    plt.close("all")
 
 
 def test_unc_cascade_output_init():
@@ -562,16 +576,82 @@ def test_unc_cascade_output_init():
 
     assert output.unit == "people"
     assert output.imp_met_unc_df is imp_met_unc_df
+    assert output.imp_met_unit_df is None
     assert output.imp_met_sens_df is None
+    # without a units table, every statistic has the unit `unit`
+    assert output.imp_met_units == {"healthcare_access_loss": "people"}
     pd.testing.assert_frame_equal(output.get_uncertainty(), imp_met_unc_df)
 
 
 def test_save_load(unc_output, tmp_path):
-    """The uncertainty output can be saved to and loaded from hdf5."""
+    """The uncertainty output is saved to and loaded from hdf5 with its
+    units, as an UncCascadeOutput."""
     filename = unc_output.to_hdf5(tmp_path / "unc_cascade")
 
-    loaded = UncOutput.from_hdf5(filename)
+    loaded = UncCascadeOutput.from_hdf5(filename)
 
+    assert isinstance(loaded, UncCascadeOutput)
     assert loaded.unit == "people"
+    assert loaded.imp_met_units == unc_output.imp_met_units
+    assert loaded.imp_met_sens_df is None
     pd.testing.assert_frame_equal(loaded.imp_met_unc_df, unc_output.imp_met_unc_df)
     pd.testing.assert_frame_equal(loaded.samples_df, unc_output.samples_df)
+    # the base class loads the same data (without the unit labels in plots)
+    loaded_base = UncOutput.from_hdf5(filename)
+    pd.testing.assert_frame_equal(
+        loaded_base.imp_met_unit_df, unc_output.imp_met_unit_df
+    )
+
+
+def test_from_hdf5_without_units_table(tmp_path):
+    """Outputs saved without a units table load with the unit `unit` for
+    every statistic."""
+    output = UncCascadeOutput(
+        pd.DataFrame({"x_pop": [1.0, 0.5]}),
+        "people",
+        pd.DataFrame({"healthcare_access_loss": [100.0, 0.0]}),
+    )
+    filename = output.to_hdf5(tmp_path / "unc_cascade_no_units")
+
+    loaded = UncCascadeOutput.from_hdf5(filename)
+
+    assert isinstance(loaded, UncCascadeOutput)
+    assert loaded.imp_met_unit_df is None
+    assert loaded.imp_met_units == {"healthcare_access_loss": "people"}
+
+
+def test_from_hdf5_not_cascade_output_raises(tmp_path):
+    """A file without imp_met_unc_df is not an output of CalcCascade."""
+    filename = UncOutput(pd.DataFrame({"x_pop": [1.0, 0.5]})).to_hdf5(
+        tmp_path / "unc_other"
+    )
+
+    with pytest.raises(ValueError, match="not an output of CalcCascade"):
+        UncCascadeOutput.from_hdf5(filename)
+
+
+def test_plot_uncertainty_labels_with_units():
+    """Each statistic is labelled with its own unit."""
+    rng = np.random.default_rng(0)
+    output = UncCascadeOutput(
+        pd.DataFrame({"x_pop": rng.uniform(size=20)}),
+        "people",
+        pd.DataFrame(
+            {
+                "healthcare_access_loss": rng.uniform(0, 100, size=20),
+                "road_infra_impact": rng.uniform(0, 5000, size=20),
+            }
+        ),
+        pd.DataFrame([{"healthcare_access_loss": "people", "road_infra_impact": "m"}]),
+    )
+
+    axes = output.plot_uncertainty()
+
+    labels = {
+        ax.get_xlabel().split(" [")[0]: ax.get_xlabel()
+        for ax in np.ravel(axes)
+        if ax.get_xlabel()
+    }
+    plt.close("all")
+    assert labels["healthcare_access_loss"].endswith(" people] ")
+    assert labels["road_infra_impact"].endswith(" m] ")

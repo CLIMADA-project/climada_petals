@@ -53,6 +53,11 @@ IMPACT_ARGS_SET = ("impf_set", "failure_thresh", "haz", "network", "exp_list")
 #: arguments of ``uncertainty`` (not allowed in ``cascade_kwargs``)
 CASCADE_ARGS_SET = ("friction_surf",)
 
+#: unit of the population statistics of ``make_network_stat``, saved as the
+#: ``unit`` of ``UncCascadeOutput`` (the infrastructure statistics are in
+#: metres or numbers of nodes, see ``UncCascadeOutput.imp_met_units``)
+POP_UNIT = "people"
+
 
 class CalcCascade(Calc):
     """
@@ -90,8 +95,6 @@ class CalcCascade(Calc):
         ``haz.select(event_id=[event_id])``).
     ci_types : list(str)
         ci_types for which the network statistics are computed.
-    value_unit : str
-        Unit of the output metrics ('people').
     friction_surf : object or None
         Friction surface used in the cascade, set by :py:meth:`uncertainty`.
     impact_kwargs : dict
@@ -158,7 +161,6 @@ class CalcCascade(Calc):
         self.impf_input_var = InputVar.var_to_inputvar(impf_input_var)
         self.haz_input_var = InputVar.var_to_inputvar(haz_input_var)
         self.ci_types = list(ci_types)
-        self.value_unit = "people"
         self.friction_surf = None
         self.impact_kwargs = {}
         self.cascade_kwargs = {}
@@ -212,8 +214,9 @@ class CalcCascade(Calc):
         -------
         unc_output : climada_petals.engine.unsequa.UncCascadeOutput
             Uncertainty data object with the network statistics for each
-            sample (``imp_met_unc_df``, one column per statistic) and all the
-            sample data copied over from unc_sample.
+            sample (``imp_met_unc_df``, one column per statistic), the unit of
+            each statistic (``imp_met_unit_df``) and all the sample data
+            copied over from unc_sample.
 
         Raises
         ------
@@ -267,15 +270,22 @@ class CalcCascade(Calc):
         elapsed_time = time.time() - start
         self.est_comp_time(unc_sample.n_samples, elapsed_time, processes)
 
-        imp_met_list = self._compute_metrics(
+        chunk_results = self._compute_metrics(
             samples_df, chunksize=chunksize, processes=processes
         )
-        imp_met_unc_df = pd.concat(imp_met_list, ignore_index=True)
+        imp_met_unc_df = pd.concat(
+            [stats for stats, _ in chunk_results], ignore_index=True
+        )
+        units = {}
+        for _, chunk_units in chunk_results:
+            units.update(chunk_units)
+        imp_met_unit_df = pd.DataFrame([units], columns=imp_met_unc_df.columns)
 
         return UncCascadeOutput(
             samples_df=samples_df,
-            unit=self.value_unit,
+            unit=POP_UNIT,
             imp_met_unc_df=imp_met_unc_df,
+            imp_met_unit_df=imp_met_unit_df,
         )
 
     def _compute_metrics(self, samples_df, chunksize, processes):
@@ -292,8 +302,10 @@ class CalcCascade(Calc):
 
         Returns
         -------
-        list(pd.DataFrame)
-            network statistics, one dataframe per chunk of samples
+        list(tuple)
+            one tuple ``(stats, units)`` per chunk of samples: the network
+            statistics (pd.DataFrame) and their units (dict), see
+            ``_map_cascade_calc``
         """
         with log_level(level="ERROR", name_prefix="climada"):
             p_iterator = _sample_parallel_iterator(
@@ -356,10 +368,13 @@ def _map_cascade_calc(
 
     Returns
     -------
-    pd.DataFrame
+    stats : pd.DataFrame
         Network statistics (columns) for each sample (rows) of the chunk
+    units : dict
+        Unit of each statistic, ``{column: unit}`` (see ``_statistic_units``)
     """
     uncertainty_values = []
+    units = {}
     for _, sample in sample_chunks.iterrows():
         nw_samples = sample[nw_input_var.labels].to_dict()
         impf_samples = sample[impf_input_var.labels].to_dict()
@@ -398,10 +413,10 @@ def _map_cascade_calc(
             **cascade_kwargs,
         )
 
-        uncertainty_values.append(
-            nwu.make_network_stat(nw_calc.network, ci_types=ci_types)
-        )
-    return pd.DataFrame.from_records(uncertainty_values)
+        stats = nwu.make_network_stat(nw_calc.network, ci_types=ci_types)
+        uncertainty_values.append(stats)
+        units.update(_statistic_units(nw_calc.network, ci_types, stats))
+    return pd.DataFrame.from_records(uncertainty_values), units
 
 
 def _check_kwargs(kwargs, func, args_set, name):
@@ -495,8 +510,9 @@ def _check_ci_types(network, ci_types):
     ------
     ValueError
         If one of ``ci_types`` is not a ``ci_type`` of the nodes or edges of
-        ``network``. Without this check, ``make_network_stat`` would return
-        zero impacts for it.
+        ``network``. ``make_network_stat`` would raise too, but only after
+        the impact and cascade calculation, and without listing the ci_types
+        of the network.
     """
     present = set()
     for gdf in (network.nodes, network.edges):
@@ -511,3 +527,37 @@ def _check_ci_types(network, ci_types):
             f"ci_types {missing} are not in the network. ci_types of the "
             f"network: {in_network}."
         )
+
+
+def _statistic_units(network, ci_types, columns, pop_unit=POP_UNIT):
+    """Unit of each network statistic of ``make_network_stat``
+
+    Parameters
+    ----------
+    network : Network
+        Network the statistics were computed on.
+    ci_types : list(str)
+        ci_types of the statistics.
+    columns : iterable(str)
+        Names of the statistics.
+    pop_unit : str, optional
+        Unit of the population statistics. The default is ``POP_UNIT``
+        (``"people"``).
+
+    Returns
+    -------
+    dict
+        ``{column: unit}``: ``"m"`` for ``{ci_type}_infra_impact`` /
+        ``{ci_type}_infra_total`` of line types (ci_types of the edges, whose
+        statistics are sums of the edge column ``distance`` in metres),
+        ``"nodes"`` for those of point types (numbers of nodes), ``pop_unit``
+        for all other statistics (population).
+    """
+    edge_types = set(network.edges["ci_type"].dropna().unique())
+    units = {column: pop_unit for column in columns}
+    for ci_type in ci_types:
+        unit = "m" if ci_type in edge_types else "nodes"
+        for column in (f"{ci_type}_infra_impact", f"{ci_type}_infra_total"):
+            if column in units:
+                units[column] = unit
+    return units
