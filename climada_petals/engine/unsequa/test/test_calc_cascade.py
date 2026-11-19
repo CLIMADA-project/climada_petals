@@ -1,0 +1,411 @@
+"""
+This file is part of CLIMADA.
+
+Copyright (C) 2017 ETH Zurich, CLIMADA contributors listed in AUTHORS.
+
+CLIMADA is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free
+Software Foundation, version 3.
+
+CLIMADA is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+Tests for the network cascade uncertainty calculation (CalcCascade)
+
+The toy model is a chain network
+
+    people(0) - road(1) - road(2) - road(3) - healthcare(4)
+
+where people depend on the hospital via the road. Two parameters are sampled:
+
+- ``x_pop`` scales the population of the people node (``POP * x_pop``),
+- ``x_haz`` scales a uniform hazard intensity. The hospital fails when its
+  impact exceeds 0.5, i.e. when ``x_haz > HAZ_THRESH``.
+
+Hence, for each sample, the population losing healthcare access is
+``POP * x_pop`` if ``x_haz > HAZ_THRESH`` and 0 otherwise.
+"""
+
+import copy as cp
+import functools
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import pytest
+import scipy as sp
+from scipy import sparse
+from shapely.geometry import LineString, Point
+
+from climada.engine.unsequa import InputVar, UncOutput
+from climada.entity import ImpactFunc, ImpactFuncSet
+from climada.hazard import Centroids, Hazard
+
+from climada_petals.engine.networks.nw_base import Network
+from climada_petals.engine.networks.nw_calcs import NetworkCalcs
+from climada_petals.engine.networks.nw_impacts import exposure_from_nodes
+from climada_petals.engine.networks.nw_utils import POP_COL
+from climada_petals.engine.unsequa import CalcCascade, UncCascadeOutput
+from climada_petals.engine.unsequa import calc_cascade
+
+POP = 100.0
+HAZ_THRESH = 1.5
+CI_TYPES = ["healthcare"]
+
+DEP_TABLE = pd.DataFrame(
+    [
+        {
+            "source": "healthcare",
+            "target": "people",
+            "type_I": "enduser",
+            "type_II": "logical",
+            "via_link": "road",
+            "thresh_func": 1,
+            "link_condition": "distance",
+            "thresh_dist": 1e7,
+            "thresh_dur": np.inf,
+            "bidir_link": False,
+            "access_cnstr": True,
+            "n_links": 1,
+        }
+    ]
+)
+
+
+# ========================================================================
+# Toy model and input variables
+# ========================================================================
+
+
+@functools.lru_cache(maxsize=1)
+def _base_network():
+    """Chain network with base state, dependencies and base cascade."""
+    points = [Point(i, i) for i in range(5)]
+    nodes = gpd.GeoDataFrame(
+        {
+            "ci_type": ["people", "road", "road", "road", "healthcare"],
+            POP_COL: [POP, 0, 0, 0, 0],
+            "geometry": points,
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    edges = gpd.GeoDataFrame(
+        {
+            "from_id": [0, 1, 2, 3],
+            "to_id": [1, 2, 3, 4],
+            "ci_type": "road",
+            "distance": [157200.0] * 4,
+            "geometry": [LineString([points[i], points[i + 1]]) for i in range(4)],
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    nw_calc = NetworkCalcs(Network(edges=edges, nodes=nodes), dep_table=DEP_TABLE)
+    nw_calc.initialize_base_state()
+    nw_calc.setup_dependencies()
+    nw_calc.cascade()
+    return nw_calc.network
+
+
+def _nw_func(x_pop=1.0):
+    """Network input: (network, dep_table, exp_list)."""
+    network = cp.deepcopy(_base_network())
+    is_people = network.nodes["ci_type"] == "people"
+    network.nodes.loc[is_people, POP_COL] = POP * x_pop
+    exp_list = [exposure_from_nodes(network, "healthcare", value=1)]
+    return network, DEP_TABLE, exp_list
+
+
+def _impf_tuple():
+    """Impact function input: (impf_set, failure_thresh).
+
+    The impact of the hospital grows linearly from 0 at intensity 1 to 1 at
+    intensity 2; the hospital fails when the impact exceeds 0.5.
+    """
+    impf = ImpactFunc(
+        haz_type="TC",
+        id="healthcare",
+        intensity=np.array([0.0, 1.0, 2.0, 100.0]),
+        mdd=np.array([0.0, 0.0, 1.0, 1.0]),
+        paa=np.ones(4),
+        intensity_unit="m/s",
+        name="healthcare",
+    )
+    return ImpactFuncSet([impf]), {"healthcare": 0.5}
+
+
+def _haz_func(x_haz=1.0):
+    """Single event hazard with intensity x_haz at all nodes."""
+    coords = np.arange(5.0)
+    return Hazard(
+        haz_type="TC",
+        centroids=Centroids(lat=coords, lon=coords),
+        event_id=np.array([1]),
+        event_name=["ev1"],
+        date=np.array([1]),
+        frequency=np.array([1.0]),
+        intensity=sparse.csr_matrix(np.full((1, 5), x_haz)),
+        fraction=sparse.csr_matrix(np.ones((1, 5))),
+    )
+
+
+def _expected_access_loss(samples_df):
+    """Expected population losing healthcare access for each sample."""
+    return np.where(samples_df["x_haz"] > HAZ_THRESH, POP * samples_df["x_pop"], 0.0)
+
+
+@pytest.fixture
+def calc():
+    """CalcCascade with uncertain population and hazard intensity."""
+    nw_iv = InputVar(_nw_func, {"x_pop": sp.stats.uniform(0.5, 0.5)})
+    haz_iv = InputVar(_haz_func, {"x_haz": sp.stats.uniform(0.5, 4)})
+    return CalcCascade(nw_iv, _impf_tuple(), haz_iv, ci_types=CI_TYPES)
+
+
+@pytest.fixture
+def unc_output(calc):
+    """Uncertainty output for 6 latin hypercube samples."""
+    unc_sample = calc.make_sample(
+        N=6, sampling_method="latin", sampling_kwargs={"seed": 42}
+    )
+    return calc.uncertainty(unc_sample)
+
+
+# ========================================================================
+# Initialisation and sampling
+# ========================================================================
+
+
+def test_init(calc):
+    """Input variables, metric names and unit are set."""
+    assert calc._input_var_names == ("nw_input_var", "impf_input_var", "haz_input_var")
+    assert tuple(calc._metric_names) == ("imp_met",)
+    assert calc.value_unit == "people"
+    assert calc.ci_types == CI_TYPES
+    assert set(calc.distr_dict) == {"x_pop", "x_haz"}
+
+    network, dep_table, exp_list = calc.nw_input_var.evaluate(x_pop=0.5)
+    assert network.nodes.loc[0, POP_COL] == 0.5 * POP
+    assert dep_table is DEP_TABLE
+    assert exp_list[0].description == "healthcare"
+    impf_set, failure_thresh = calc.impf_input_var.evaluate()
+    assert failure_thresh == {"healthcare": 0.5}
+    assert calc.haz_input_var.evaluate(x_haz=2).intensity.max() == 2
+
+
+def test_init_fixed_inputs():
+    """Fixed tuples and a Hazard can be given instead of InputVars."""
+    calc = CalcCascade(_nw_func(), _impf_tuple(), _haz_func(), ci_types=CI_TYPES)
+
+    assert calc.distr_dict == {}
+    network, _, _ = calc.nw_input_var.evaluate()
+    impf_set, _ = calc.impf_input_var.evaluate()
+    hazard = calc.haz_input_var.evaluate()
+    assert isinstance(network, Network)
+    assert isinstance(impf_set, ImpactFuncSet)
+    assert isinstance(hazard, Hazard)
+
+
+def test_make_sample(calc):
+    """Samples are drawn for all parameters of all input variables."""
+    unc_sample = calc.make_sample(N=2, sampling_kwargs={"calc_second_order": True})
+
+    assert unc_sample.n_samples == 2 * (2 * 2 + 2)  # N * (2 * D + 2)
+    assert list(unc_sample.samples_df.columns) == ["x_pop", "x_haz"]
+
+    unc_sample = calc.make_sample(
+        N=3, sampling_method="latin", sampling_kwargs={"seed": 1}
+    )
+    assert unc_sample.n_samples == 3
+
+
+# ========================================================================
+# Uncertainty
+# ========================================================================
+
+
+def test_uncertainty_without_sample_raises(calc):
+    """uncertainty needs samples."""
+    with pytest.raises(ValueError, match="No sample"):
+        calc.uncertainty(UncOutput(pd.DataFrame()))
+
+
+def test_uncertainty(calc, unc_output):
+    """One row of network statistics per sample, with the expected values."""
+    samples_df = unc_output.samples_df
+    unc_df = unc_output.imp_met_unc_df
+
+    assert isinstance(unc_output, UncCascadeOutput)
+    assert unc_output.unit == "people"
+    assert unc_output.uncertainty_metrics == ["imp_met"]
+    assert len(unc_df) == len(samples_df) == 6
+    assert {
+        "total_population",
+        "directly_affected",
+        "indirectly_affected",
+        "total_affected",
+        "healthcare_access_loss",
+        "healthcare_infra_impact",
+    } <= set(unc_df.columns)
+    # only the requested ci_types are evaluated (not e.g. road)
+    assert not any(col.startswith("road_") for col in unc_df.columns)
+
+    np.testing.assert_allclose(unc_df["total_population"], POP * samples_df["x_pop"])
+    np.testing.assert_allclose(
+        unc_df["healthcare_access_loss"], _expected_access_loss(samples_df)
+    )
+    np.testing.assert_array_equal(
+        unc_df["healthcare_infra_impact"],
+        (samples_df["x_haz"] > HAZ_THRESH).astype(int),
+    )
+    # both outcomes are present in the sample
+    assert 0 < (samples_df["x_haz"] > HAZ_THRESH).sum() < len(samples_df)
+
+
+def test_uncertainty_fixed_network_not_modified():
+    """A fixed (network, dep_table, exp_list) tuple is reused for all samples:
+    the calculation must not change it."""
+    network, dep_table, exp_list = _nw_func()
+    nodes_before = network.nodes.copy()
+    edges_before = network.edges.copy()
+    haz_iv = InputVar(_haz_func, {"x_haz": sp.stats.uniform(0.5, 4)})
+    calc = CalcCascade(
+        (network, dep_table, exp_list), _impf_tuple(), haz_iv, ci_types=CI_TYPES
+    )
+    unc_sample = calc.make_sample(
+        N=4, sampling_method="latin", sampling_kwargs={"seed": 3}
+    )
+
+    unc_output = calc.uncertainty(unc_sample)
+
+    pd.testing.assert_frame_equal(network.nodes, nodes_before)
+    pd.testing.assert_frame_equal(network.edges, edges_before)
+    np.testing.assert_allclose(
+        unc_output.imp_met_unc_df["healthcare_access_loss"],
+        np.where(unc_output.samples_df["x_haz"] > HAZ_THRESH, POP, 0.0),
+    )
+
+
+def test_uncertainty_hazard_with_several_events_raises():
+    """The network impact calculation needs a hazard with one event."""
+    haz = _haz_func()
+    haz_two = Hazard(
+        haz_type="TC",
+        centroids=haz.centroids,
+        event_id=np.array([1, 2]),
+        event_name=["ev1", "ev2"],
+        date=np.array([1, 2]),
+        frequency=np.array([1.0, 1.0]),
+        intensity=sparse.csr_matrix(np.full((2, 5), 2.0)),
+        fraction=sparse.csr_matrix(np.ones((2, 5))),
+    )
+    nw_iv = InputVar(_nw_func, {"x_pop": sp.stats.uniform(0.5, 0.5)})
+    calc = CalcCascade(nw_iv, _impf_tuple(), haz_two, ci_types=CI_TYPES)
+    unc_sample = calc.make_sample(
+        N=2, sampling_method="latin", sampling_kwargs={"seed": 1}
+    )
+
+    with pytest.raises(ValueError, match="one event"):
+        calc.uncertainty(unc_sample)
+
+
+def test_uncertainty_stores_cascade_options(calc):
+    """Cascade options are stored and used."""
+    unc_sample = calc.make_sample(
+        N=2, sampling_method="latin", sampling_kwargs={"seed": 1}
+    )
+
+    unc_output = calc.uncertainty(
+        unc_sample, rerouting=False, access_check_method="routing"
+    )
+
+    assert calc.rerouting is False
+    assert calc.access_check_method == "routing"
+    assert calc.friction_surf is None
+    np.testing.assert_allclose(
+        unc_output.imp_met_unc_df["healthcare_access_loss"],
+        _expected_access_loss(unc_output.samples_df),
+    )
+
+
+def test_uncertainty_parallel(calc, unc_output):
+    """Parallel computation gives the same results."""
+    unc_sample = calc.make_sample(
+        N=6, sampling_method="latin", sampling_kwargs={"seed": 42}
+    )
+
+    unc_output_pool = calc.uncertainty(unc_sample, processes=2)
+
+    pd.testing.assert_frame_equal(
+        unc_output_pool.imp_met_unc_df, unc_output.imp_met_unc_df
+    )
+
+
+def test_compute_metrics_is_evaluated_immediately(calc, monkeypatch):
+    """_compute_metrics runs the computation when called (not lazily), so
+    that the timing used for the computation time estimate is meaningful."""
+    calls = []
+
+    def fake_map(sample_chunks, *args):
+        calls.append(len(sample_chunks))
+        return pd.DataFrame({"total_population": [0.0] * len(sample_chunks)})
+
+    monkeypatch.setattr(calc_cascade, "_map_cascade_calc", fake_map)
+    calc.friction_surf = None
+    samples_df = pd.DataFrame({"x_pop": [1.0, 1.0, 1.0], "x_haz": [1.0, 1.0, 1.0]})
+
+    result = calc._compute_metrics(samples_df, chunksize=2, processes=1)
+
+    assert calls == [2, 1]
+    assert isinstance(result, list)
+    assert len(result) == 2
+
+
+# ========================================================================
+# Sensitivity and output
+# ========================================================================
+
+
+def test_sensitivity(calc):
+    """Sobol indices are computed for every network statistic."""
+    unc_sample = calc.make_sample(N=4)
+    unc_output = calc.uncertainty(unc_sample)
+
+    sens_output = calc.sensitivity(unc_output, sensitivity_method="sobol")
+
+    assert sens_output.sensitivity_method == "sobol"
+    assert sens_output.sensitivity_metrics == ["imp_met"]
+    sens_df = sens_output.imp_met_sens_df
+    assert "healthcare_access_loss" in sens_df.columns
+    assert set(sens_df["param"].dropna()) >= {"x_pop", "x_haz"}
+
+
+def test_unc_cascade_output_init():
+    """The output stores samples, unit and the metric dataframe."""
+    samples_df = pd.DataFrame({"x_pop": [1.0, 0.5]})
+    imp_met_unc_df = pd.DataFrame({"healthcare_access_loss": [100.0, 0.0]})
+
+    output = UncCascadeOutput(samples_df, "people", imp_met_unc_df)
+
+    assert output.unit == "people"
+    assert output.imp_met_unc_df is imp_met_unc_df
+    assert output.imp_met_sens_df is None
+    pd.testing.assert_frame_equal(output.get_uncertainty(), imp_met_unc_df)
+
+
+def test_save_load(unc_output, tmp_path):
+    """The uncertainty output can be saved to and loaded from hdf5."""
+    filename = unc_output.to_hdf5(tmp_path / "unc_cascade")
+
+    loaded = UncOutput.from_hdf5(filename)
+
+    assert loaded.unit == "people"
+    pd.testing.assert_frame_equal(loaded.imp_met_unc_df, unc_output.imp_met_unc_df)
+    pd.testing.assert_frame_equal(loaded.samples_df, unc_output.samples_df)

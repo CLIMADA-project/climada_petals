@@ -16,75 +16,80 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Define Uncertainty Impact class
+Define the uncertainty class for network cascade calculations
 """
 
 __all__ = ["CalcCascade"]
 
-import copy as cp
 import itertools
 import logging
 import time
 from typing import Union
 
-import numpy as np
 import pandas as pd
-import pathos.multiprocessing as mp
 
-# import network from petals
-from climada_petals.engine.networks import nw_utils as nwu
-from climada_petals.engine.networks.nw_base import Network
-from climada_petals.engine.networks.nw_calcs import NetworkCalcs
-from climada_petals.engine.networks.nw_impacts import NetworkImpactCalc
-from climada.entity import ImpactFuncSet
 from climada.engine.unsequa.calc_base import (
     Calc,
     _multiprocess_chunksize,
     _sample_parallel_iterator,
-    _transpose_chunked_data,
 )
 from climada.engine.unsequa.input_var import InputVar
-from climada.engine.unsequa.calc_base import Calc
-from climada_petals.engine.unsequa.unc_output import UncCascadeOutput
 from climada.hazard import Hazard
 from climada.util import log_level
 
-# use pathos.multiprocess fork of multiprocessing for compatibility
-# wiht notebooks and other environments https://stackoverflow.com/a/65001152/12454103
-
+from climada_petals.engine.networks import nw_utils as nwu
+from climada_petals.engine.networks.nw_calcs import NetworkCalcs
+from climada_petals.engine.networks.nw_impacts import NetworkImpactCalc
+from climada_petals.engine.unsequa.unc_output import UncCascadeOutput
 
 LOGGER = logging.getLogger(__name__)
 
 
 class CalcCascade(Calc):
     """
-    Cascade uncertainty caclulation class.
+    Cascade uncertainty calculation class.
 
-    This is the class to perform uncertainty analysis on the outputs of a
-    climada_petals network cascade object.
+    Uncertainty and sensitivity analysis of the service access disruption
+    computed with a climada_petals network cascade: for each sample of the
+    input parameters, the network is disrupted by the hazard, the failure
+    cascade is computed, and the network statistics of
+    :py:func:`climada_petals.engine.networks.nw_utils.make_network_stat`
+    are stored (e.g. number of people losing access to each ci_type).
 
     Attributes
     ----------
-    rp : list(int)
-        List of the chosen return periods.
-    calc_eai_exp : bool
-        Compute eai_exp or not
-    calc_at_event : bool
-        Compute eai_exp or not
+    nw_input_var : InputVar
+        Network uncertainty variable. Its evaluation must return a tuple
+        ``(network, dep_table, exp_list)``: the network with its dependencies
+        and functional states (e.g. after ``NetworkCalcs.initialize_base_state``,
+        ``setup_dependencies`` and a base-state ``cascade``), the dependency
+        table used for the cascade, and the exposures built from this network
+        with ``exposure_from_nodes`` / ``exposure_from_edges``. The network
+        and the exposures are not modified by the calculation, so the same
+        objects can be returned for every sample. A function that changes the
+        network for a sample (e.g. scales the population) must change a copy.
+    impf_input_var : InputVar
+        Impact function uncertainty variable. Its evaluation must return a
+        tuple ``(impf_set, failure_thresh)``: the impact functions and the
+        failure threshold of each exposure, as ``{tag: threshold}`` (see
+        ``NetworkImpactCalc``). Sampling the failure thresholds is a way to
+        include the uncertainty of the fragility of the components.
+    haz_input_var : InputVar
+        Hazard uncertainty variable. Its evaluation must return a hazard with
+        a single event, in the CRS of the network. To include several events,
+        sample the event as a parameter of the hazard input variable (e.g.
+        ``haz.select(event_id=[event_id])``).
+    ci_types : list(str)
+        ci_types for which the network statistics are computed.
     value_unit : str
-        Unit of the exposures value
-    exp_input_var : InputVar or Exposures
-        Exposure uncertainty variable
-    impf_input_var : InputVar if ImpactFuncSet
-        Impact function set uncertainty variable
-    haz_input_var: InputVar or Hazard
-        Hazard uncertainty variable
+        Unit of the output metrics ('people').
+    friction_surf : object or None
+        Friction surface used in the cascade, set by :py:meth:`uncertainty`.
     _input_var_names : tuple(str)
         Names of the required uncertainty input variables
-        ('exp_input_var', 'impf_input_var', 'haz_input_var')
+        ('nw_input_var', 'impf_input_var', 'haz_input_var')
     _metric_names : tuple(str)
-        Names of the impact output metrics
-        ('aai_agg', 'freq_curve', 'at_event', 'eai_exp')
+        Names of the output metrics ('imp_met',)
     """
 
     _input_var_names = (
@@ -94,32 +99,32 @@ class CalcCascade(Calc):
     )
     """Names of the required uncertainty variables"""
 
-    _metric_names = [
-        "imp_met"
-    ]  # need to be a list instead of tuple in case of unique metric
-    """Names of the cost benefit output metrics"""
+    _metric_names = ("imp_met",)
+    """Names of the cascade output metrics"""
 
     def __init__(
         self,
-        nw_input_var: Union[InputVar, Network],
-        impf_input_var: Union[InputVar, ImpactFuncSet],
+        nw_input_var: Union[InputVar, tuple],
+        impf_input_var: Union[InputVar, tuple],
         haz_input_var: Union[InputVar, Hazard],
         ci_types: list,
     ):
-        """Initialize UncCalcImpact
-
-        Sets the uncertainty input variables, the impact metric_names, and the
-        units.
+        """Initialize CalcCascade
 
         Parameters
         ----------
-        nw_input_var : climada.engine.uncertainty.input_var.InputVar or network
-            Exposure uncertainty variable or network
-        impf_input_var : climada.engine.uncertainty.input_var.InputVar or climada.entity.ImpactFuncSet
-            Impact function set uncertainty variable or Impact function set
-        haz_input_var : climada.engine.uncertainty.input_var.InputVar or climada.hazard.Hazard
-            Hazard uncertainty variable or Hazard
-
+        nw_input_var : InputVar or tuple
+            Network uncertainty variable, or a fixed tuple
+            ``(network, dep_table, exp_list)``. See the class attributes.
+        impf_input_var : InputVar or tuple
+            Impact function uncertainty variable, or a fixed tuple
+            ``(impf_set, failure_thresh)``. See the class attributes.
+        haz_input_var : InputVar or climada.hazard.Hazard
+            Hazard uncertainty variable, or a Hazard with a single event. See
+            the class attributes.
+        ci_types : list(str)
+            ci_types for which the network statistics are computed, e.g.
+            ``["healthcare", "education"]``.
         """
 
         Calc.__init__(self)
@@ -128,46 +133,43 @@ class CalcCascade(Calc):
         self.haz_input_var = InputVar.var_to_inputvar(haz_input_var)
         self.ci_types = ci_types
         self.value_unit = "people"
+        self.friction_surf = None
+        self.rerouting = True
+        self.access_check_method = "routing"
         self.check_distr()
 
     def uncertainty(
         self,
         unc_sample,
-        friction_surf,
+        friction_surf=None,
+        rerouting=True,
+        access_check_method="routing",
         processes=1,
         chunksize=None,
     ):
         """
-        Computes the impact for each sample in unc_data.sample_df.
+        Compute the network statistics for each sample in unc_sample.samples_df.
 
-        By default, number of people losing access to each ci_type is computed
-        along with the number of people directly affected.
-
-        This sets the attributes self.rp, self.calc_eai_exp,
-        self.calc_at_event, self.metrics.
-
-        This sets the attributes:
-        unc_output.aai_agg_unc_df,
-        unc_output.freq_curve_unc_df
-        unc_output.eai_exp_unc_df
-        unc_output.at_event_unc_df
-        unc_output.unit
+        This sets the attributes self.friction_surf, self.rerouting and
+        self.access_check_method.
 
         Parameters
         ----------
-        unc_sample : climada.engine.uncertainty.unc_output.UncOutput
+        unc_sample : climada.engine.unsequa.UncOutput
             Uncertainty data object with the input parameters samples
-        rp : list(int), optional
-            Return periods in years to be computed.
-            The default is [5, 10, 20, 50, 100, 250].
-        calc_eai_exp : boolean, optional
-            Toggle computation of the impact at each centroid location.
-            The default is False.
-        calc_at_event : boolean, optional
-            Toggle computation of the impact for each event.
-            The default is False.
+        friction_surf : object, optional
+            Friction surface used in the cascade for duration-based
+            dependencies. The default is None.
+        rerouting : bool, optional
+            Passed to ``NetworkCalcs.cascade``: end users of dependencies with
+            access constraint can be linked to another source when their
+            source or path fails. The default is True.
+        access_check_method : str, optional
+            Passed to ``NetworkCalcs.cascade``: access check of the
+            dependencies with access constraint, ``"routing"`` or
+            ``"propagation"``. The default is ``"routing"``.
         processes : int, optional
-            Number of CPUs to use for parralel computations.
+            Number of CPUs to use for parallel computations.
             The default is 1 (not parallel)
         chunksize: int, optional
             Size of the sample chunks for parallel processing.
@@ -176,80 +178,57 @@ class CalcCascade(Calc):
 
         Returns
         -------
-        unc_output : climada.engine.uncertainty.unc_output.UncImpactOutput
-            Uncertainty data object with the impact outputs for each sample
-            and all the sample data copied over from unc_sample.
+        unc_output : climada_petals.engine.unsequa.UncCascadeOutput
+            Uncertainty data object with the network statistics for each
+            sample (``imp_met_unc_df``, one column per statistic) and all the
+            sample data copied over from unc_sample.
 
         Raises
         ------
-        ValueError:
-            If no sampling parameters defined, the distribution cannot
-            be computed.
+        ValueError
+            If ``unc_sample`` has no samples. Errors of the network
+            calculation (e.g. a hazard with several events, a missing failure
+            threshold) are raised by the first sample, which is computed
+            before the others to estimate the computation time.
 
         Notes
         -----
         Parallelization logic is described in the base class
         here :py:class:`~climada.engine.unsequa.calc_base.Calc`
-
-        See Also
-        --------
-        climada.engine.impact:
-            compute impact and risk.
-
         """
 
         if unc_sample.samples_df.empty:
             raise ValueError(
-                "No sample was found. Please create one first"
-                "using UncImpact.make_sample(N)"
+                "No sample was found. Please create one first "
+                "using CalcCascade.make_sample(N)"
             )
 
         # copy may not be needed, but is kept to prevent potential
         # data corruption issues. The computational cost should be
-        # minimal as only a list of floats is copied.'''
+        # minimal as only a list of floats is copied.
         samples_df = unc_sample.samples_df.copy(deep=True)
 
         if chunksize is None:
             chunksize = _multiprocess_chunksize(samples_df, processes)
-        unit = self.value_unit
         self.friction_surf = friction_surf
+        self.rerouting = rerouting
+        self.access_check_method = access_check_method
+
         one_sample = samples_df.iloc[0:1]
         start = time.time()
         self._compute_metrics(one_sample, chunksize=1, processes=1)
         elapsed_time = time.time() - start
         self.est_comp_time(unc_sample.n_samples, elapsed_time, processes)
 
-        imp_met_unc_list = self._compute_metrics(
+        imp_met_list = self._compute_metrics(
             samples_df, chunksize=chunksize, processes=processes
         )
+        imp_met_unc_df = pd.concat(imp_met_list, ignore_index=True)
 
-        # Assign computed impact distribution data to self
-        imp_met_unc_df = pd.concat(
-            imp_met_unc_list, ignore_index=True
-        )  # pd.concat(imp_met_unc_list, ignore_index=True)
-        # imp_met_unc_df = pd.DataFrame(imp_met_list, index=self.ci_types).T
-        # freq_curve_unc_df = pd.DataFrame(
-        #    freq_curve_list, columns=["rp" + str(n) for n in rp]
-        # )
-        # eai_exp_unc_df = pd.DataFrame(eai_exp_list)
-        ## Note: sparse dataframes are not used as they are not nativel y compatible with .to_hdf5
-        # at_event_unc_df = pd.DataFrame(at_event_list)
-        #
-        # if calc_eai_exp:
-        #    exp = self.exp_input_var.evaluate()
-        #    coord_df = pd.DataFrame(
-        #        dict(latitude=exp.latitude, longitude=exp.longitude)
-        #    )
-        # else:
-        #    coord_df = pd.DataFrame([])
         return UncCascadeOutput(
             samples_df=samples_df,
-            unit=unit,
+            unit=self.value_unit,
             imp_met_unc_df=imp_met_unc_df,
-            # freq_curve_unc_df=freq_curve_unc_df,
-            # eai_exp_unc_df=eai_exp_unc_df,
-            # at_event_unc_df=at_event_unc_df,
-            # coord_df=coord_df,
         )
 
     def _compute_metrics(self, samples_df, chunksize, processes):
@@ -266,10 +245,9 @@ class CalcCascade(Calc):
 
         Returns
         -------
-        list
-            values of impact metrics per sample
+        list(pd.DataFrame)
+            network statistics, one dataframe per chunk of samples
         """
-        # Compute impact distributions
         with log_level(level="ERROR", name_prefix="climada"):
             p_iterator = _sample_parallel_iterator(
                 samples=samples_df,
@@ -279,97 +257,92 @@ class CalcCascade(Calc):
                 haz_input_var=self.haz_input_var,
                 ci_types=self.ci_types,
                 friction_surf=self.friction_surf,
+                rerouting=self.rerouting,
+                access_check_method=self.access_check_method,
             )
             if processes > 1:
-                from multiprocess import get_context
-
                 # need to use multiprocess instead of multiprocessing
                 # to avoid pickling error and get_context to avoid deadlocks
+                from multiprocess import get_context
+
                 with get_context("spawn").Pool(processes=processes) as pool:
                     LOGGER.info("Using %s CPUs.", processes)
-                    imp_metrics = pool.starmap(_map_impact_calc, p_iterator)
-            else:
-                imp_metrics = itertools.starmap(_map_impact_calc, p_iterator)
-
-        # Perform the actual computation
-        with log_level(level="ERROR", name_prefix="climada"):
-            return imp_metrics  # _transpose_chunked_data(imp_metrics)
+                    return pool.starmap(_map_cascade_calc, p_iterator)
+            # itertools.starmap is lazy: evaluate it here, inside the
+            # log_level context and before timing ends
+            return list(itertools.starmap(_map_cascade_calc, p_iterator))
 
 
-def _map_impact_calc(
+def _map_cascade_calc(
     sample_chunks,
     nw_input_var,
     impf_input_var,
     haz_input_var,
     ci_types,
     friction_surf,
+    rerouting,
+    access_check_method,
 ):
     """
-    Map to compute impact for all parameter samples in parallel
+    Map to compute the cascade for all parameter samples in parallel
 
     Parameters
     ----------
     sample_chunks : pd.DataFrame
         Dataframe of the parameter samples
-    nw_input_var : InputVar or Network
-        Network uncertainty variable
-    impf_input_var : InputVar if ImpactFuncSet
-        Impact function set uncertainty variable
-    haz_input_var: InputVar or Hazard
+    nw_input_var : InputVar
+        Network uncertainty variable, evaluating to
+        ``(network, dep_table, exp_list)``
+    impf_input_var : InputVar
+        Impact function uncertainty variable, evaluating to
+        ``(impf_set, failure_thresh)``
+    haz_input_var: InputVar
         Hazard uncertainty variable
     ci_types : list(str)
-        List of the chosen critical infrastructures for which to compute impacts
-
+        ci_types for which the network statistics are computed
+    friction_surf : object or None
+        Friction surface used in the cascade
+    rerouting : bool
+        Allow rerouting in the cascade
+    access_check_method : str
+        Access check method of the cascade
 
     Returns
     -------
-        : list
-        impact metrics list for all samples containing aai_agg, rp_curve,
-        eai_exp (np.array([]) if self.calc_eai_exp=False) and at_event
-        (np.array([]) if self.calc_at_event=False).
-
+    pd.DataFrame
+        Network statistics (columns) for each sample (rows) of the chunk
     """
-    # uncertainty_values = {k: [] for k in ci_types}
     uncertainty_values = []
     for _, sample in sample_chunks.iterrows():
         nw_samples = sample[nw_input_var.labels].to_dict()
         impf_samples = sample[impf_input_var.labels].to_dict()
         haz_samples = sample[haz_input_var.labels].to_dict()
 
-        nw, df_dep, exp_list = nw_input_var.evaluate(**nw_samples)  # create network
-        impf, thresh_func_dict = impf_input_var.evaluate(**impf_samples)
+        network, dep_table, exp_list = nw_input_var.evaluate(**nw_samples)
+        impf_set, failure_thresh = impf_input_var.evaluate(**impf_samples)
         haz = haz_input_var.evaluate(**haz_samples)
 
-        # disrupt network
-        # create nw_impact_object
+        # disrupt the network with the direct impacts
         nw_impact_calc = NetworkImpactCalc(
-            network=nw,
-            impf_set=impf,
-            impf_thresh_set=thresh_func_dict,
+            network=network,
+            impf_set=impf_set,
+            failure_thresh=failure_thresh,
             haz=haz,
             exp_list=exp_list,
         )
+        network_disr, _ = nw_impact_calc.disrupt_network()
 
-        # run impact calculation
-        nw_disr, _ = nw_impact_calc.disrupt_network()
-
-        # cascade
+        # propagate the failures
         nw_calc = NetworkCalcs(
-            network=nw_disr, dep_table=df_dep, friction_surf=friction_surf
+            network=network_disr, dep_table=dep_table, friction_surf=friction_surf
         )
-        nw_calc.cascade(rerouting=True, friction_surf=friction_surf)
-        nw_disr_casc = nw_calc.network
+        nw_calc.cascade(
+            friction_surf=friction_surf,
+            rerouting=rerouting,
+            access_check_method=access_check_method,
+        )
 
-        # CALC IMPACTSTATS
-        imp_dict = nwu.make_network_stat(nw_disr_casc)
-        # imp_types = [
-        #    ci_type + "_access" if ci_type != "people" else ci_type
-        #    for ci_type in ci_types
-        # ]
-        # print(imp_types)
-        # {uncertainty_values[k].append(v) for k, v in imp_dict.items()}
-        # imp_list = [imp_dict[imp_type] for imp_type in imp_types]
-        # imp_list = [imp_dict[k] for k in imp_dict.keys()]
-        uncertainty_values.append(imp_dict)
-        # uncertainty_values.append(pd.DataFrame.from_dict(imp_dict, orient="index").T)
-    return pd.DataFrame.from_dict(uncertainty_values)
+        uncertainty_values.append(
+            nwu.make_network_stat(nw_calc.network, ci_types=ci_types)
+        )
+    return pd.DataFrame.from_records(uncertainty_values)

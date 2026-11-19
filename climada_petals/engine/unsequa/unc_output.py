@@ -16,32 +16,22 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 ---
 
-Define Uncertainty class.
+Define the uncertainty output class for network cascade calculations
 """
 
 __all__ = [
     "UncCascadeOutput",
 ]
 
-import datetime as dt
 import logging
-from abc import ABC, abstractmethod
-from itertools import zip_longest
-from pathlib import Path
-
-import h5py
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-from matplotlib import colormaps as cm
 
 from climada.engine.unsequa.unc_output import UncOutput
 
 LOGGER = logging.getLogger(__name__)
 
+
 class UncCascadeOutput(UncOutput):
-    """Extension of UncOutput specific for CalcImpact, returned by the
+    """Extension of UncOutput specific for CalcCascade, returned by the
     uncertainty() method.
     """
 
@@ -53,7 +43,7 @@ class UncCascadeOutput(UncOutput):
     ):
         """Constructor
 
-        Uncertainty output values from impact.calc for each sample
+        Uncertainty output values of the network cascade for each sample
 
         Parameters
         ----------
@@ -62,9 +52,9 @@ class UncCascadeOutput(UncOutput):
         unit : str
             value unit
         imp_met_unc_df : pandas.DataFrame
-            Each row contains the values of the number of people losing access to
-            ci_types defined in the columns, computed over the sample (row of
-
+            Network statistics for each sample (rows), e.g. the number of
+            people losing access to each ci_type (columns), as computed by
+            :py:func:`climada_petals.engine.networks.nw_utils.make_network_stat`.
         """
         super().__init__(samples_df, unit)
         self.imp_met_unc_df = imp_met_unc_df
