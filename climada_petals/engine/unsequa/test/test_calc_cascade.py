@@ -244,6 +244,12 @@ def test_init_fixed_inputs():
     assert isinstance(hazard, Hazard)
 
 
+def test_init_ci_types_string_raises():
+    """ci_types must be a list: a string would be read letter by letter."""
+    with pytest.raises(TypeError, match=r"\['healthcare'\]"):
+        CalcCascade(_nw_func(), _impf_tuple(), _haz_func(), ci_types="healthcare")
+
+
 def test_make_sample(calc):
     """Samples are drawn for all parameters of all input variables."""
     unc_sample = calc.make_sample(N=2, sampling_kwargs={"calc_second_order": True})
@@ -435,6 +441,64 @@ def test_uncertainty_kwargs_checked(calc, kwargs, match):
 
     with pytest.raises(ValueError, match=match):
         calc.uncertainty(unc_sample, **kwargs)
+
+
+def test_uncertainty_unknown_ci_type_raises():
+    """ci_types that are not in the network raise instead of giving zero
+    impacts."""
+    calc = CalcCascade(
+        _nw_func(), _impf_tuple(), _haz_func(), ci_types=["healthcare", "hospital"]
+    )
+    unc_sample = UncOutput(pd.DataFrame({"unused": [0.0]}))  # fixed inputs
+
+    with pytest.raises(ValueError, match=r"\['hospital'\] are not in the network"):
+        calc.uncertainty(unc_sample)
+
+
+def test_uncertainty_line_ci_type():
+    """A ci_type of the edges (road) is accepted."""
+    calc = CalcCascade(
+        _nw_func(), _impf_tuple(), _haz_func(), ci_types=["healthcare", "road"]
+    )
+    unc_sample = UncOutput(pd.DataFrame({"unused": [0.0]}))  # fixed inputs
+
+    unc_output = calc.uncertainty(unc_sample)
+
+    unc_df = unc_output.imp_met_unc_df
+    assert unc_df.loc[0, "road_infra_impact"] == 0  # roads are not exposed
+    assert unc_df.loc[0, "road_infra_total"] > 0
+
+
+@pytest.mark.parametrize(
+    "nw_input, impf_input, match",
+    [
+        (
+            lambda: _nw_func()[0],
+            _impf_tuple,
+            r"nw_input_var must evaluate to a tuple \(network, dep_table, "
+            r"exp_list\), got Network",
+        ),
+        (
+            lambda: _nw_func()[:2],
+            _impf_tuple,
+            r"nw_input_var .* got tuple of length 2",
+        ),
+        (
+            _nw_func,
+            lambda: _impf_tuple()[0],
+            r"impf_input_var must evaluate to a tuple \(impf_set, "
+            r"failure_thresh\), got ImpactFuncSet",
+        ),
+    ],
+)
+def test_uncertainty_wrong_input_shape_raises(nw_input, impf_input, match):
+    """Input variables that evaluate to the wrong shape raise a TypeError
+    naming the expected tuple."""
+    calc = CalcCascade(nw_input(), impf_input(), _haz_func(), ci_types=CI_TYPES)
+    unc_sample = UncOutput(pd.DataFrame({"unused": [0.0]}))  # fixed inputs
+
+    with pytest.raises(TypeError, match=match):
+        calc.uncertainty(unc_sample)
 
 
 def test_uncertainty_parallel(calc, unc_output):

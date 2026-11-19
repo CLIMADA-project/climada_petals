@@ -139,14 +139,25 @@ class CalcCascade(Calc):
             the class attributes.
         ci_types : list(str)
             ci_types for which the network statistics are computed, e.g.
-            ``["healthcare", "education"]``.
+            ``["healthcare", "education"]``. Each must be a ``ci_type`` of the
+            nodes or edges of the network (checked on the first sample).
+
+        Raises
+        ------
+        TypeError
+            If ``ci_types`` is a string instead of a list of strings.
         """
 
+        if isinstance(ci_types, str):
+            raise TypeError(
+                f"ci_types must be a list of ci_type names, e.g. ['{ci_types}'], "
+                f"not the string '{ci_types}'."
+            )
         Calc.__init__(self)
         self.nw_input_var = InputVar.var_to_inputvar(nw_input_var)
         self.impf_input_var = InputVar.var_to_inputvar(impf_input_var)
         self.haz_input_var = InputVar.var_to_inputvar(haz_input_var)
-        self.ci_types = ci_types
+        self.ci_types = list(ci_types)
         self.value_unit = "people"
         self.friction_surf = None
         self.impact_kwargs = {}
@@ -209,10 +220,18 @@ class CalcCascade(Calc):
         ValueError
             If ``unc_sample`` has no samples, or if ``impact_kwargs`` /
             ``cascade_kwargs`` contain an argument that is set by
-            ``CalcCascade`` or that the called function does not have. Errors of the network
-            calculation (e.g. a hazard with several events, a missing failure
-            threshold) are raised by the first sample, which is computed
-            before the others to estimate the computation time.
+            ``CalcCascade`` or that the called function does not have.
+        ValueError
+            If one of ``ci_types`` is not a ``ci_type`` of the network.
+        TypeError
+            If ``nw_input_var`` does not evaluate to a tuple
+            ``(network, dep_table, exp_list)``, or ``impf_input_var`` to a
+            tuple ``(impf_set, failure_thresh)``.
+
+        The checks on the evaluated input variables and the errors of the
+        network calculation (e.g. a hazard with several events, a missing
+        failure threshold) are raised by the first sample, which is computed
+        before the others to estimate the computation time.
 
         Notes
         -----
@@ -346,9 +365,18 @@ def _map_cascade_calc(
         impf_samples = sample[impf_input_var.labels].to_dict()
         haz_samples = sample[haz_input_var.labels].to_dict()
 
-        network, dep_table, exp_list = nw_input_var.evaluate(**nw_samples)
-        impf_set, failure_thresh = impf_input_var.evaluate(**impf_samples)
+        network, dep_table, exp_list = _unpack_input(
+            nw_input_var.evaluate(**nw_samples),
+            ("network", "dep_table", "exp_list"),
+            "nw_input_var",
+        )
+        impf_set, failure_thresh = _unpack_input(
+            impf_input_var.evaluate(**impf_samples),
+            ("impf_set", "failure_thresh"),
+            "impf_input_var",
+        )
         haz = haz_input_var.evaluate(**haz_samples)
+        _check_ci_types(network, ci_types)
 
         # disrupt the network with the direct impacts
         nw_impact_calc = NetworkImpactCalc(
@@ -419,3 +447,67 @@ def _check_kwargs(kwargs, func, args_set, name):
             f"{func.__qualname__}. Possible arguments: {sorted(allowed)}."
         )
     return kwargs
+
+
+def _unpack_input(value, names, var_name):
+    """Return the evaluation of an input variable as a tuple of ``len(names)``
+
+    Parameters
+    ----------
+    value : object
+        Evaluation of the input variable.
+    names : tuple(str)
+        Names of the expected elements, used in the error message.
+    var_name : str
+        Name of the input variable, used in the error message.
+
+    Returns
+    -------
+    tuple
+        ``value`` as a tuple.
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is not a tuple (or list) with one element per name.
+    """
+    if isinstance(value, (tuple, list)) and len(value) == len(names):
+        return tuple(value)
+    got = type(value).__name__
+    if isinstance(value, (tuple, list)):
+        got = f"{got} of length {len(value)}"
+    raise TypeError(
+        f"{var_name} must evaluate to a tuple ({', '.join(names)}), got {got}."
+    )
+
+
+def _check_ci_types(network, ci_types):
+    """Check that the ci_types of the statistics are in the network
+
+    Parameters
+    ----------
+    network : Network
+        Network of the sample.
+    ci_types : list(str)
+        ci_types for which the network statistics are computed.
+
+    Raises
+    ------
+    ValueError
+        If one of ``ci_types`` is not a ``ci_type`` of the nodes or edges of
+        ``network``. Without this check, ``make_network_stat`` would return
+        zero impacts for it.
+    """
+    present = set()
+    for gdf in (network.nodes, network.edges):
+        if "ci_type" in gdf.columns:
+            present.update(gdf["ci_type"].dropna().unique())
+    missing = [ci_type for ci_type in ci_types if ci_type not in present]
+    if missing:
+        in_network = sorted(
+            ci_type for ci_type in present if not str(ci_type).startswith("dependency_")
+        )
+        raise ValueError(
+            f"ci_types {missing} are not in the network. ci_types of the "
+            f"network: {in_network}."
+        )
