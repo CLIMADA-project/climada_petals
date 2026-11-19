@@ -18,7 +18,7 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 
-from climada_petals.engine.networks.nw_base import Network
+from climada_petals.engine.networks.nw_base import Network, CI_TYPE_COL
 from climada_petals.engine.networks.graph_calcs import GraphCalcs, _dependency_name
 
 LOGGER = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ class NetworkCalcs:
             self._graph_calc.link_clusters(
                 dist_thresh=dist_thresh,
                 graph_connectivity_mode=graph_connectivity_mode,
-                link_attrs={"ci_type": ci_type},
+                link_attrs={CI_TYPE_COL: ci_type},
             )
             iter_count += 1
             self.network = Network.from_graphs(self.graph, crs=self.network.crs)
@@ -130,9 +130,9 @@ class NetworkCalcs:
 
         for i, row in physical_dependencies.iterrows():
             self._graph_calc.link_vertices_closest_k(
-                source_attrs={"ci_type": row["source"]},
-                target_attrs={"ci_type": row["target"]},
-                link_attrs={"ci_type": row["link"]},
+                source_attrs={CI_TYPE_COL: row["source"]},
+                target_attrs={CI_TYPE_COL: row["target"]},
+                link_attrs={CI_TYPE_COL: row["link"]},
                 dist_thresh=row["thresh_dist"],
                 bidir=bool(row.get("bidir_link", False)),
                 k=row["n_links"],
@@ -180,6 +180,7 @@ class NetworkCalcs:
         self.network.initialize_capacity(self.dep_table)
         self.network.initialize_supply(self.dep_table)
 
+
     def setup_dependencies(self):
         """Create the dependency links of the dependency table
 
@@ -207,10 +208,10 @@ class NetworkCalcs:
         for i, row in self.dep_table.iterrows():
             dependency_name = _dependency_name(row["source"], row["target"])
             self._graph_calc.calc_dependencies(
-                source_attrs={"ci_type": row["source"]},
-                target_attrs={"ci_type": row["target"]},
-                via_attrs={"ci_type": row["via_link"]},
-                link_attrs={"ci_type": dependency_name},
+                source_attrs={CI_TYPE_COL: row["source"]},
+                target_attrs={CI_TYPE_COL: row["target"]},
+                via_attrs={CI_TYPE_COL: row["via_link"]},
+                link_attrs={CI_TYPE_COL: dependency_name},
                 link_condition=row["link_condition"],
                 dist_thresh=row["thresh_dist"],
                 dur_thresh=row["thresh_dur"],

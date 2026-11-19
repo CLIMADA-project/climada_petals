@@ -24,7 +24,7 @@ import pyproj
 
 import scipy
 from scipy.spatial.distance import cdist
-from climada_petals.engine.networks.nw_base import Network
+from climada_petals.engine.networks.nw_base import Network, CI_TYPE_COL, TOTAL_FUNC_STATE_COL, ENDUSER_TYPE, TYPE_I_COL
 from climada_petals.engine.networks.nw_utils import make_edge_geometries, _ckdnearest
 
 from climada.entity.exposures.base import Exposures
@@ -382,9 +382,9 @@ class GraphCalcs:
         for edge in pot_edges:
             source_vx = self.graph.vs[edge.source]
             target_vx = self.graph.vs[edge.target]
-            if source_vx["ci_type"] == edge_attrs["ci_type"]:
+            if source_vx[CI_TYPE_COL] == edge_attrs[CI_TYPE_COL]:
                 source, target = edge.source, edge.target
-            elif target_vx["ci_type"] == edge_attrs["ci_type"]:
+            elif target_vx[CI_TYPE_COL] == edge_attrs[CI_TYPE_COL]:
                 source, target = edge.target, edge.source
             else:
                 raise ValueError("Edge does not connect correct ci_types!")
@@ -683,8 +683,8 @@ class GraphCalcs:
         else:
             LOGGER.info(
                 "No vertices found matching source %s or target %s; no links created.",
-                source_attrs["ci_type"],
-                target_attrs["ci_type"],
+                source_attrs[CI_TYPE_COL],
+                target_attrs[CI_TYPE_COL],
             )
 
         if self.auto_sync:
@@ -1069,20 +1069,20 @@ class GraphCalcs:
             If ``link_condition`` is not one of the values above.
         """
         dependency_name = _dependency_name(
-            source_attrs["ci_type"], target_attrs["ci_type"]
+            source_attrs[CI_TYPE_COL], target_attrs[CI_TYPE_COL]
         )
-        if "ci_type" not in link_attrs:
-            link_attrs["ci_type"] = dependency_name
+        if CI_TYPE_COL not in link_attrs:
+            link_attrs[CI_TYPE_COL] = dependency_name
             LOGGER.info(
                 "No ci_type specified for links; defaulting to %s",
-                link_attrs["ci_type"],
+                link_attrs[CI_TYPE_COL],
             )
         # "new_" + name is used internally for temporary edges during rerouting
-        elif link_attrs["ci_type"] not in (dependency_name, "new_" + dependency_name):
+        elif link_attrs[CI_TYPE_COL] not in (dependency_name, "new_" + dependency_name):
             LOGGER.warning(
                 "Links are named %s instead of %s: they will be ignored in the"
                 " cascade (capacity propagation, access checks and rerouting).",
-                link_attrs["ci_type"],
+                link_attrs[CI_TYPE_COL],
                 dependency_name,
             )
         if link_condition == "distance":
@@ -1150,11 +1150,11 @@ class GraphCalcs:
         no capacity.
         """
         dependency_name = _dependency_name(source, target)
-        ci_types = np.array(self.graph.vs["ci_type"])
+        ci_types = np.array(self.graph.vs[CI_TYPE_COL])
         target_graph_ids = np.where(ci_types == target)[0].tolist()
 
         # capacity provided by each vertex: func_tot * capacity
-        func_capa = np.array(self.graph.vs["func_tot"], dtype=float) * np.array(
+        func_capa = np.array(self.graph.vs[TOTAL_FUNC_STATE_COL], dtype=float) * np.array(
             self.graph.vs[f"capacity_{source}_{target}"], dtype=float
         )
 
@@ -1183,7 +1183,7 @@ class GraphCalcs:
         supply_attr = f"actual_supply_{source}_{target}"
         access_attr = f"access_state_{source}_{target}"
 
-        if type_I == "enduser":
+        if type_I == ENDUSER_TYPE:
             # Read previous supply in batch
             prev_supply = np.array(
                 self.graph.vs[target_graph_ids][supply_attr], dtype=float
@@ -1207,10 +1207,10 @@ class GraphCalcs:
         else:
             # For functional dependencies: func_tot = min(capa_suff, orig_func)
             orig_func = np.array(
-                self.graph.vs[target_graph_ids]["func_tot"], dtype=float
+                self.graph.vs[target_graph_ids][TOTAL_FUNC_STATE_COL], dtype=float
             )
             new_func = np.minimum(target_capa_suff, orig_func)
-            self.graph.vs[target_graph_ids]["func_tot"] = new_func.tolist()
+            self.graph.vs[target_graph_ids][TOTAL_FUNC_STATE_COL] = new_func.tolist()
 
     def funcstates_sum(self):
         """Sum functional states across vertices and edges
@@ -1221,8 +1221,8 @@ class GraphCalcs:
             ``(sum_vertices, sum_edges)`` of ``func_tot``.
         """
         return (
-            sum(self.graph.vs.get_attribute_values("func_tot")),
-            sum(self.graph.es.get_attribute_values("func_tot")),
+            sum(self.graph.vs.get_attribute_values(TOTAL_FUNC_STATE_COL)),
+            sum(self.graph.es.get_attribute_values(TOTAL_FUNC_STATE_COL)),
         )
 
     def update_internal_dependencies(self, p_source, p_sink, source_var, demand_var):
@@ -1241,7 +1241,7 @@ class GraphCalcs:
         """
 
         # specifically for roads: if edge is dysfunctional, render its target vertex dysfunctional
-        if {"road"}.issubset(set(self.graph.vs["ci_type"])):
+        if {"road"}.issubset(set(self.graph.vs[CI_TYPE_COL])):
             LOGGER.info("Updating roads")
             sources_targets_dys = [
                 [edge.source, edge.target]
@@ -1251,11 +1251,11 @@ class GraphCalcs:
                 np.array(sources_targets_dys).flatten().tolist()
             )  # flatten array
             self.graph.vs.select(sources_targets_dys).select(ci_type="road")[
-                "func_tot"
+                TOTAL_FUNC_STATE_COL
             ] = 0
 
         # specifically for powerlines: check power clusters
-        if {p_source, p_sink}.issubset(set(self.graph.vs["ci_type"])):
+        if {p_source, p_sink}.issubset(set(self.graph.vs[CI_TYPE_COL])):
             raise NotImplementedError("Power cluster algorithm not yet implemented.")
 
             LOGGER.info("Updating power clusters")
@@ -1268,7 +1268,7 @@ class GraphCalcs:
             eids = self.graph.get_eids(
                 pairs=reverse_edges, path=None, directed=True, error=True
             )
-            self.graph.es[eids]["func_tot"] = 0
+            self.graph.es[eids][TOTAL_FUNC_STATE_COL] = 0
             LOGGER.info(
                 "Using updated power line algorithm: dysfunc edges before: \
                   %i, after: %i",
@@ -1296,7 +1296,7 @@ class GraphCalcs:
         """
 
         for __, row in df_dependencies[
-            df_dependencies["type_I"] == "functional"
+            df_dependencies[TYPE_I_COL] == "functional"
         ].iterrows():
 
             if row.access_cnstr:
@@ -1342,7 +1342,7 @@ class GraphCalcs:
         """
 
         for __, row in df_dependencies[
-            df_dependencies["type_I"] == "enduser"
+            df_dependencies[TYPE_I_COL] == ENDUSER_TYPE
         ].iterrows():
 
             if access_check_method == "routing":
@@ -1385,7 +1385,7 @@ class GraphCalcs:
         ppl_former_access_source_failed = [
             edge.target
             for edge in es_access_base
-            if self.graph.vs[edge.source]["func_tot"] < 1
+            if self.graph.vs[edge.source][TOTAL_FUNC_STATE_COL] < 1
         ]
         return es_access_base, ppl_former_access, ppl_former_access_source_failed
 
@@ -1410,15 +1410,15 @@ class GraphCalcs:
         self.graph.delete_edges(ci_type=dependency_name)
 
         # If access_cnstr is False, compute dependencies without requiring functional via edges
-        via_attrs_dict = {"ci_type": row["via_link"]}
+        via_attrs_dict = {CI_TYPE_COL: row["via_link"]}
         if row.access_cnstr:
-            via_attrs_dict["func_tot"] = 1
+            via_attrs_dict[TOTAL_FUNC_STATE_COL] = 1
 
         self.calc_dependencies(
-            source_attrs={"ci_type": row["source"], "func_tot": 1},
-            target_attrs={"ci_type": row["target"]},
+            source_attrs={CI_TYPE_COL: row["source"], TOTAL_FUNC_STATE_COL: 1},
+            target_attrs={CI_TYPE_COL: row["target"]},
             via_attrs=via_attrs_dict,
-            link_attrs={"ci_type": dependency_name},
+            link_attrs={CI_TYPE_COL: dependency_name},
             link_condition=row["link_condition"],
             dist_thresh=row["thresh_dist"],
             dur_thresh=row["thresh_dur"],
@@ -1431,10 +1431,10 @@ class GraphCalcs:
             # Compute dependencies without requiring functional via edges to identify
             # people who could have access if via links were functional
             self.calc_dependencies(
-                source_attrs={"ci_type": row["source"], "func_tot": 1},
-                target_attrs={"ci_type": row["target"]},
-                via_attrs={"ci_type": row["via_link"]},  # No func_tot requirement
-                link_attrs={"ci_type": "new_" + dependency_name},
+                source_attrs={CI_TYPE_COL: row["source"], TOTAL_FUNC_STATE_COL: 1},
+                target_attrs={CI_TYPE_COL: row["target"]},
+                via_attrs={CI_TYPE_COL: row["via_link"]},  # No func_tot requirement
+                link_attrs={CI_TYPE_COL: "new_" + dependency_name},
                 link_condition=row["link_condition"],
                 dist_thresh=row["thresh_dist"],
                 dur_thresh=row["thresh_dur"],
@@ -1535,7 +1535,7 @@ class GraphCalcs:
         failed_edge_indices = []
         for edge in es_access_base:
             src, tgt = edge.source, edge.target
-            if self.graph.vs[src]["func_tot"] >= 1:
+            if self.graph.vs[src][TOTAL_FUNC_STATE_COL] >= 1:
                 func_source_pairs.append((src, tgt))
             else:
                 failed_edge_indices.append(edge.index)
@@ -1554,9 +1554,9 @@ class GraphCalcs:
             if len(func_source_pairs) > 0:
                 # create subgraph
                 subgraph = self._create_subgraph(
-                    source_attrs={"ci_type": row["source"], "func_tot": 1},
-                    target_attrs={"ci_type": row["target"]},
-                    via_attrs={"ci_type": row["via_link"], "func_tot": 1},
+                    source_attrs={CI_TYPE_COL: row["source"], TOTAL_FUNC_STATE_COL: 1},
+                    target_attrs={CI_TYPE_COL: row["target"]},
+                    via_attrs={CI_TYPE_COL: row["via_link"], TOTAL_FUNC_STATE_COL: 1},
                 )
 
                 # Check which former dependency edges still have valid paths
@@ -1766,7 +1766,7 @@ class GraphCalcs:
         """
         es_check = self.graph.es.select(ci_type=_dependency_name(source_ci, target_ci))
 
-        bools_check = [self.graph.vs[edge.source]["func_tot"] > 0 for edge in es_check]
+        bools_check = [self.graph.vs[edge.source][TOTAL_FUNC_STATE_COL] > 0 for edge in es_check]
 
         es_check = [
             edge for edge, bool_check in zip(es_check, bools_check) if bool_check
@@ -1800,7 +1800,7 @@ class GraphCalcs:
                 int(v): int(k) for k, v in subgraph_graph_vsdict.items()
             }
             subgraph.delete_edges(subgraph.es.select(func_tot_lt=1))
-            wrong_edges = set(subgraph.es["ci_type"]).difference({via_ci})
+            wrong_edges = set(subgraph.es[CI_TYPE_COL]).difference({via_ci})
             subgraph.delete_edges(subgraph.es.select(ci_type_in=wrong_edges))
 
             for ix, source, target, bool_f in zip(
