@@ -56,6 +56,7 @@ from climada_petals.engine.unsequa import calc_cascade
 
 POP = 100.0
 HAZ_THRESH = 1.5
+HAZ_THRESH_B = 1.25
 CI_TYPES = ["healthcare"]
 
 DEP_TABLE = pd.DataFrame(
@@ -141,6 +142,34 @@ def _impf_tuple():
     return ImpactFuncSet([impf]), {"healthcare": 0.5}
 
 
+def _nw_func_two_exposures(x_pop=1.0):
+    """Network input with two exposures of the hospital (tags ``healthcare``
+    and ``healthcare_b``), e.g. two damage mechanisms."""
+    network, dep_table, exp_list = _nw_func(x_pop)
+    exp_list.append(
+        exposure_from_nodes(network, "healthcare", value=1, tag="healthcare_b")
+    )
+    return network, dep_table, exp_list
+
+
+def _impf_tuple_two_exposures():
+    """Impact functions of the two hospital exposures: the same curve, but the
+    exposure ``healthcare_b`` fails when the impact exceeds 0.25, i.e. when
+    the intensity exceeds ``HAZ_THRESH_B``."""
+    impf_set, failure_thresh = _impf_tuple()
+    impf_b = ImpactFunc(
+        haz_type="TC",
+        id="healthcare_b",
+        intensity=np.array([0.0, 1.0, 2.0, 100.0]),
+        mdd=np.array([0.0, 0.0, 1.0, 1.0]),
+        paa=np.ones(4),
+        intensity_unit="m/s",
+        name="healthcare_b",
+    )
+    impf_set.append(impf_b)
+    return impf_set, {**failure_thresh, "healthcare_b": 0.25}
+
+
 def _haz_func(x_haz=1.0):
     """Single event hazard with intensity x_haz at all nodes."""
     coords = np.arange(5.0)
@@ -189,6 +218,8 @@ def test_init(calc):
     assert tuple(calc._metric_names) == ("imp_met",)
     assert calc.value_unit == "people"
     assert calc.ci_types == CI_TYPES
+    assert calc.impact_kwargs == {}
+    assert calc.cascade_kwargs == {}
     assert set(calc.distr_dict) == {"x_pop", "x_haz"}
 
     network, dep_table, exp_list = calc.nw_input_var.evaluate(x_pop=0.5)
@@ -317,22 +348,93 @@ def test_uncertainty_hazard_with_several_events_raises():
 
 
 def test_uncertainty_stores_cascade_options(calc):
-    """Cascade options are stored and used."""
+    """Cascade options are stored and used (no rerouting: same result, as the
+    hospital is the only source)."""
     unc_sample = calc.make_sample(
         N=2, sampling_method="latin", sampling_kwargs={"seed": 1}
     )
 
-    unc_output = calc.uncertainty(
-        unc_sample, rerouting=False, access_check_method="routing"
-    )
+    unc_output = calc.uncertainty(unc_sample, cascade_kwargs={"rerouting": False})
 
-    assert calc.rerouting is False
-    assert calc.access_check_method == "routing"
+    assert calc.cascade_kwargs == {"rerouting": False}
     assert calc.friction_surf is None
+    assert calc.impact_kwargs == {}
     np.testing.assert_allclose(
         unc_output.imp_met_unc_df["healthcare_access_loss"],
         _expected_access_loss(unc_output.samples_df),
     )
+
+
+def test_uncertainty_impact_kwargs_combine_exposures():
+    """impact_kwargs reach NetworkImpactCalc: two exposures on the hospital
+    raise without combine_exposures; with it, the hospital fails if one of
+    them makes it fail (here the second one, above HAZ_THRESH_B)."""
+    nw_iv = InputVar(_nw_func_two_exposures, {"x_pop": sp.stats.uniform(0.5, 0.5)})
+    haz_iv = InputVar(_haz_func, {"x_haz": sp.stats.uniform(0.5, 4)})
+    calc = CalcCascade(nw_iv, _impf_tuple_two_exposures(), haz_iv, ci_types=CI_TYPES)
+    # x_haz = 1.4: only the exposure healthcare_b fails
+    unc_sample = UncOutput(
+        pd.DataFrame({"x_pop": [1.0, 1.0, 1.0], "x_haz": [1.0, 1.4, 2.0]})
+    )
+
+    with pytest.raises(ValueError, match="combine_exposures"):
+        calc.uncertainty(unc_sample)
+
+    unc_output = calc.uncertainty(
+        unc_sample, impact_kwargs={"combine_exposures": True}
+    )
+
+    assert calc.impact_kwargs == {"combine_exposures": True}
+    np.testing.assert_allclose(
+        unc_output.imp_met_unc_df["healthcare_access_loss"], [0.0, POP, POP]
+    )
+
+
+def test_uncertainty_cascade_kwargs_reach_cascade(calc, monkeypatch):
+    """cascade_kwargs are passed to NetworkCalcs.cascade, with friction_surf."""
+    _base_network()  # built before the spy, so that its cascade is not recorded
+    calls = []
+    original = NetworkCalcs.cascade
+
+    @functools.wraps(original)  # keeps the signature checked by uncertainty
+    def recording_cascade(self, **kwargs):
+        calls.append(kwargs)
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(NetworkCalcs, "cascade", recording_cascade)
+    unc_sample = UncOutput(pd.DataFrame({"x_pop": [1.0], "x_haz": [2.0]}))
+
+    cascade_kwargs = {"rerouting": False, "source_var": "generation"}
+
+    calc.uncertainty(unc_sample, cascade_kwargs=cascade_kwargs)
+
+    assert calc.cascade_kwargs == cascade_kwargs
+    # one call for the computation time estimate, one for the sample
+    assert calls == 2 * [
+        {
+            "friction_surf": None,
+            "rerouting": False,
+            "source_var": "generation",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"impact_kwargs": {"haz": None}}, "set by CalcCascade"),
+        ({"impact_kwargs": {"edge_rul": "max_ratio"}}, "not arguments of NetworkImpactCalc"),
+        ({"cascade_kwargs": {"friction_surf": None}}, "set by CalcCascade"),
+        ({"cascade_kwargs": {"p_sourc": "plant"}}, r"not arguments of NetworkCalcs\.cascade"),
+    ],
+)
+def test_uncertainty_kwargs_checked(calc, kwargs, match):
+    """impact_kwargs and cascade_kwargs may only contain arguments of the
+    called function that CalcCascade does not set itself."""
+    unc_sample = UncOutput(pd.DataFrame({"x_pop": [1.0], "x_haz": [2.0]}))
+
+    with pytest.raises(ValueError, match=match):
+        calc.uncertainty(unc_sample, **kwargs)
 
 
 def test_uncertainty_parallel(calc, unc_output):

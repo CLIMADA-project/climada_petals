@@ -21,6 +21,7 @@ Define the uncertainty class for network cascade calculations
 
 __all__ = ["CalcCascade"]
 
+import inspect
 import itertools
 import logging
 import time
@@ -43,6 +44,14 @@ from climada_petals.engine.networks.nw_impacts import NetworkImpactCalc
 from climada_petals.engine.unsequa.unc_output import UncCascadeOutput
 
 LOGGER = logging.getLogger(__name__)
+
+#: arguments of ``NetworkImpactCalc`` that ``CalcCascade`` sets from the input
+#: variables (not allowed in ``impact_kwargs``)
+IMPACT_ARGS_SET = ("impf_set", "failure_thresh", "haz", "network", "exp_list")
+
+#: arguments of ``NetworkCalcs.cascade`` that ``CalcCascade`` sets from the
+#: arguments of ``uncertainty`` (not allowed in ``cascade_kwargs``)
+CASCADE_ARGS_SET = ("friction_surf",)
 
 
 class CalcCascade(Calc):
@@ -85,6 +94,12 @@ class CalcCascade(Calc):
         Unit of the output metrics ('people').
     friction_surf : object or None
         Friction surface used in the cascade, set by :py:meth:`uncertainty`.
+    impact_kwargs : dict
+        Further arguments of ``NetworkImpactCalc``, set by
+        :py:meth:`uncertainty`.
+    cascade_kwargs : dict
+        Further arguments of ``NetworkCalcs.cascade``, set by
+        :py:meth:`uncertainty`.
     _input_var_names : tuple(str)
         Names of the required uncertainty input variables
         ('nw_input_var', 'impf_input_var', 'haz_input_var')
@@ -134,40 +149,32 @@ class CalcCascade(Calc):
         self.ci_types = ci_types
         self.value_unit = "people"
         self.friction_surf = None
-        self.rerouting = True
-        self.access_check_method = "routing"
+        self.impact_kwargs = {}
+        self.cascade_kwargs = {}
         self.check_distr()
 
     def uncertainty(
         self,
         unc_sample,
         friction_surf=None,
-        rerouting=True,
-        access_check_method="routing",
         processes=1,
         chunksize=None,
+        impact_kwargs=None,
+        cascade_kwargs=None,
     ):
         """
         Compute the network statistics for each sample in unc_sample.samples_df.
 
-        This sets the attributes self.friction_surf, self.rerouting and
-        self.access_check_method.
+        This sets the attributes self.friction_surf, self.impact_kwargs and
+        self.cascade_kwargs.
 
         Parameters
         ----------
         unc_sample : climada.engine.unsequa.UncOutput
             Uncertainty data object with the input parameters samples
         friction_surf : object, optional
-            Friction surface used in the cascade for duration-based
-            dependencies. The default is None.
-        rerouting : bool, optional
-            Passed to ``NetworkCalcs.cascade``: end users of dependencies with
-            access constraint can be linked to another source when their
-            source or path fails. The default is True.
-        access_check_method : str, optional
-            Passed to ``NetworkCalcs.cascade``: access check of the
-            dependencies with access constraint, ``"routing"`` or
-            ``"propagation"``. The default is ``"routing"``.
+            Friction surface for duration-based dependencies, passed to
+            ``NetworkCalcs`` and ``NetworkCalcs.cascade``. The default is None.
         processes : int, optional
             Number of CPUs to use for parallel computations.
             The default is 1 (not parallel)
@@ -175,6 +182,20 @@ class CalcCascade(Calc):
             Size of the sample chunks for parallel processing.
             Default is equal to the number of samples divided by the
             number of processes.
+        impact_kwargs : dict, optional
+            Further arguments of ``NetworkImpactCalc``, the same for all
+            samples, e.g. ``{"edge_rule": "damaged_length"}`` or
+            ``{"combine_exposures": True}``. The arguments set from the input
+            variables (``impf_set``, ``failure_thresh``, ``haz``, ``network``,
+            ``exp_list``) are not allowed. The default is None (defaults of
+            ``NetworkImpactCalc``).
+        cascade_kwargs : dict, optional
+            Further arguments of ``NetworkCalcs.cascade``, the same for all
+            samples, e.g. ``{"rerouting": False}``,
+            ``{"access_check_method": "propagation"}`` or the names of the
+            power columns (``{"source_var": "generation"}``).
+            ``friction_surf`` is not allowed: use the argument of this method.
+            The default is None (defaults of ``NetworkCalcs.cascade``).
 
         Returns
         -------
@@ -186,7 +207,9 @@ class CalcCascade(Calc):
         Raises
         ------
         ValueError
-            If ``unc_sample`` has no samples. Errors of the network
+            If ``unc_sample`` has no samples, or if ``impact_kwargs`` /
+            ``cascade_kwargs`` contain an argument that is set by
+            ``CalcCascade`` or that the called function does not have. Errors of the network
             calculation (e.g. a hazard with several events, a missing failure
             threshold) are raised by the first sample, which is computed
             before the others to estimate the computation time.
@@ -203,6 +226,13 @@ class CalcCascade(Calc):
                 "using CalcCascade.make_sample(N)"
             )
 
+        self.impact_kwargs = _check_kwargs(
+            impact_kwargs, NetworkImpactCalc, IMPACT_ARGS_SET, "impact_kwargs"
+        )
+        self.cascade_kwargs = _check_kwargs(
+            cascade_kwargs, NetworkCalcs.cascade, CASCADE_ARGS_SET, "cascade_kwargs"
+        )
+
         # copy may not be needed, but is kept to prevent potential
         # data corruption issues. The computational cost should be
         # minimal as only a list of floats is copied.
@@ -211,8 +241,6 @@ class CalcCascade(Calc):
         if chunksize is None:
             chunksize = _multiprocess_chunksize(samples_df, processes)
         self.friction_surf = friction_surf
-        self.rerouting = rerouting
-        self.access_check_method = access_check_method
 
         one_sample = samples_df.iloc[0:1]
         start = time.time()
@@ -257,8 +285,8 @@ class CalcCascade(Calc):
                 haz_input_var=self.haz_input_var,
                 ci_types=self.ci_types,
                 friction_surf=self.friction_surf,
-                rerouting=self.rerouting,
-                access_check_method=self.access_check_method,
+                impact_kwargs=self.impact_kwargs,
+                cascade_kwargs=self.cascade_kwargs,
             )
             if processes > 1:
                 # need to use multiprocess instead of multiprocessing
@@ -280,8 +308,8 @@ def _map_cascade_calc(
     haz_input_var,
     ci_types,
     friction_surf,
-    rerouting,
-    access_check_method,
+    impact_kwargs,
+    cascade_kwargs,
 ):
     """
     Map to compute the cascade for all parameter samples in parallel
@@ -302,10 +330,10 @@ def _map_cascade_calc(
         ci_types for which the network statistics are computed
     friction_surf : object or None
         Friction surface used in the cascade
-    rerouting : bool
-        Allow rerouting in the cascade
-    access_check_method : str
-        Access check method of the cascade
+    impact_kwargs : dict
+        Further arguments of ``NetworkImpactCalc``
+    cascade_kwargs : dict
+        Further arguments of ``NetworkCalcs.cascade``
 
     Returns
     -------
@@ -329,6 +357,7 @@ def _map_cascade_calc(
             failure_thresh=failure_thresh,
             haz=haz,
             exp_list=exp_list,
+            **impact_kwargs,
         )
         network_disr, _ = nw_impact_calc.disrupt_network()
 
@@ -338,11 +367,55 @@ def _map_cascade_calc(
         )
         nw_calc.cascade(
             friction_surf=friction_surf,
-            rerouting=rerouting,
-            access_check_method=access_check_method,
+            **cascade_kwargs,
         )
 
         uncertainty_values.append(
             nwu.make_network_stat(nw_calc.network, ci_types=ci_types)
         )
     return pd.DataFrame.from_records(uncertainty_values)
+
+
+def _check_kwargs(kwargs, func, args_set, name):
+    """Check the further arguments passed to a function of the network module
+
+    Parameters
+    ----------
+    kwargs : dict or None
+        Further arguments, e.g. ``impact_kwargs`` of ``CalcCascade.uncertainty``.
+    func : callable
+        Function or class the arguments are passed to.
+    args_set : tuple(str)
+        Arguments of ``func`` that ``CalcCascade`` sets itself.
+    name : str
+        Name of ``kwargs`` in the error messages.
+
+    Returns
+    -------
+    dict
+        A copy of ``kwargs`` (empty if ``kwargs`` is None).
+
+    Raises
+    ------
+    ValueError
+        If ``kwargs`` contains an argument of ``args_set`` or an argument that
+        ``func`` does not have.
+    """
+    kwargs = dict(kwargs or {})
+    set_by_calc = sorted(set(kwargs).intersection(args_set))
+    if set_by_calc:
+        raise ValueError(
+            f"{name} cannot contain {set_by_calc}: these arguments are set by "
+            "CalcCascade (from the input variables or the arguments of "
+            "uncertainty)."
+        )
+    allowed = set(inspect.signature(func).parameters).difference(
+        {"self", *args_set}
+    )
+    unknown = sorted(set(kwargs).difference(allowed))
+    if unknown:
+        raise ValueError(
+            f"{name} contains {unknown}, which are not arguments of "
+            f"{func.__qualname__}. Possible arguments: {sorted(allowed)}."
+        )
+    return kwargs
