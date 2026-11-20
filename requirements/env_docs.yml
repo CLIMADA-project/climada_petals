@@ -3,13 +3,16 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - boario=0.5
   - cdsapi>=0.7
-  - meson-python=0.15
+  - gfortran>=13.0
+  - libgdal>=3.10
+  - lxml>=6
+  - meson>=1.4,<1.5  # meson >=1.5 may break geoclaw setup (at least for python 3.11)
+  - meson-python>=0.18
   - osm-flex>=1.1
   - overpy>=0.7
-  - pymrio>=0.5
-  - rioxarray>=0.18
+  - pooch>=1.9
+  - rioxarray>=0.19
   - ruamel.yaml>=0.18
   - scikit-image>=0.25
   - xesmf>=0.8
@@ -21,6 +24,7 @@ dependencies:
   - pandoc
   - pip
   - sphinx>=2.0,<9.0
+  - lxml
   - pip:
     - coverage>=4.5
     - descartes
@@ -32,3 +36,8 @@ dependencies:
     - sphinx-book-theme
     - sphinx-markdown-tables
     - sphinx-mdinclude
+    - pymoo
+    - pymrio>=0.6
+    - boario>=0.6.2
+    - country-converter>=0.8  # implicitly required by pymrio
+    - progressbar2>=4.2  # implicitly required by boario
