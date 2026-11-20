@@ -346,9 +346,14 @@ def download_glofas_discharge(
     return files
 
 
+DISCHARGE_ALIASES = ("avg_dis",)
+"""Other names of the GloFAS discharge variable ``dis24`` (mean discharge in the last 24
+hours). The same parameter is decoded under these names by some ecCodes versions."""
+
+
 def open_glofas_discharge(
     files: Sequence[Path | str],
-    preprocess: Callable[[xr.DataArray], xr.DataArray] | None = None,
+    preprocess: Callable[[xr.Dataset], xr.Dataset] | None = None,
     **open_mfdataset_kwargs,
 ) -> xr.DataArray:
     """Conveniently open GloFAS discharge data into a single xarray DataArray.
@@ -358,22 +363,29 @@ def open_glofas_discharge(
     files : Sequence of Path or str
         The files to open.
     preprocess : Callable, optional
-        A function taking the DataArray as argument and returning a transformed
-        DataArray.
+        A function taking the Dataset of each file as argument and returning a
+        transformed Dataset. It is applied after renaming the discharge to ``dis24``.
     open_mfdataset_kwargs
         Optional keyword arguments for the ``xarray.open_mfdataset`` function.
 
     Returns
     -------
     xr.DataArray
-        The discharge data opened as single data array.
+        The discharge data opened as single data array named ``dis24``, also if the
+        files name it with one of the :py:const:`DISCHARGE_ALIASES` (e.g. ``avg_dis``).
     """
+
+    def rename_and_preprocess(ds: xr.Dataset) -> xr.Dataset:
+        """Rename the discharge of one file to 'dis24', then apply 'preprocess'"""
+        ds = ds.rename({name: "dis24" for name in DISCHARGE_ALIASES if name in ds})
+        return ds if preprocess is None else preprocess(ds)
+
     # Set arguments for 'open_mfdataset'
     open_kwargs = {
         "chunks": "auto",
         "combine": "nested",
         "concat_dim": "time",
-        "preprocess": preprocess,
+        "preprocess": rename_and_preprocess,
         "engine": "cfgrib",
     } | open_mfdataset_kwargs
 
@@ -390,7 +402,7 @@ def get_glofas_discharge(
     download_path: Union[str, Path] = CDS_DOWNLOAD_DIR,
     countries: Optional[Union[List[str], str]] = None,
     split_request: bool | str = True,
-    preprocess: Callable[[xr.DataArray], xr.DataArray] | None = None,
+    preprocess: Callable[[xr.Dataset], xr.Dataset] | None = None,
     open_mfdataset_kws: Mapping[str, Any] | None = None,
     **request_kwargs,
 ) -> xr.DataArray:
@@ -421,8 +433,8 @@ def get_glofas_discharge(
         (``freq="1D"``) is chosen for ``forecast`` products and 1 year (``freq="1YS"``)
         is chosen for ``historical`` (or other) products.
     preprocess : Callable
-        A function taking the DataArray as argument and returning a transformed
-        DataArray.
+        A function taking the Dataset of each file as argument and returning a
+        transformed Dataset. See :py:func:`open_glofas_discharge`.
     open_mfdataset_kws
         Additional keyword arguments to ``xarray.open_mfdataset``.
     request_kwargs

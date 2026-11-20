@@ -138,6 +138,15 @@ class TestGlofasDownloadOps(unittest.TestCase):
         npt.assert_array_equal(ds["x"].data, [0, 1, 2])
         npt.assert_array_equal(ds.data, [[0, 1, 2], [10, 11, 12]])
 
+    def test_open_discharge_alias(self):
+        """Discharge named 'avg_dis' (newer ecCodes) is opened as 'dis24', also mixed"""
+        file_alias = Path(self.tempdir.name, "file-alias.nc")
+        self.arr2.rename("avg_dis").to_netcdf(file_alias, engine="netcdf4")
+        files = [Path(self.tempdir.name, "file-1.nc"), file_alias]
+        ds = open_glofas_discharge(files, engine="netcdf4")
+        self.assertEqual(ds.name, "dis24")
+        npt.assert_array_equal(ds.data, [[0, 1, 2], [10, 11, 12]])
+
     def test_get(self):
         """Basic case for 'get_glofas_discharge' operation"""
         out_dir = Path(self.tempdir.name, "bla")
