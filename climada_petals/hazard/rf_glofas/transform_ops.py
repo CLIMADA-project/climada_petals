@@ -291,10 +291,10 @@ def download_glofas_discharge(
 
     # Split requests according to dates
     if split_request_freq is None:
-        requests = [datetime_index_to_request(dates)]
+        requests = [datetime_index_to_request(dates, product)]
     else:
         requests = [
-            datetime_index_to_request(series.index)
+            datetime_index_to_request(series.index, product)
             for _, series in dates.to_series().groupby(
                 pd.Grouper(freq=split_request_freq, closed="left")
             )
