@@ -86,8 +86,9 @@ DEP_TABLE = pd.DataFrame(
 
 
 @functools.lru_cache(maxsize=1)
-def _base_network():
-    """Chain network with base state, dependencies and base cascade."""
+def _network_with_dependencies():
+    """Chain network with base state and dependencies, before the base-state
+    cascade (cached: built once per process, copied before any change)."""
     points = [Point(i, i) for i in range(5)]
     nodes = gpd.GeoDataFrame(
         {
@@ -112,15 +113,18 @@ def _base_network():
     nw_calc = NetworkCalcs(Network(edges=edges, nodes=nodes), dep_table=DEP_TABLE)
     nw_calc.initialize_base_state()
     nw_calc.setup_dependencies()
-    nw_calc.cascade()
     return nw_calc.network
 
 
 def _nw_func(x_pop=1.0):
-    """Network input: (network, dep_table, exp_list)."""
-    network = cp.deepcopy(_base_network())
+    """Network input: (network, dep_table, exp_list), with x_pop times the
+    population and the base-state cascade run with this population."""
+    network = cp.deepcopy(_network_with_dependencies())
     is_people = network.nodes["ci_type"] == "people"
     network.nodes.loc[is_people, POP_COL] = POP * x_pop
+    nw_calc = NetworkCalcs(network, dep_table=DEP_TABLE)
+    nw_calc.cascade()
+    network = nw_calc.network
     exp_list = [exposure_from_nodes(network, "healthcare", value=1)]
     return network, DEP_TABLE, exp_list
 
@@ -404,9 +408,11 @@ def test_uncertainty_impact_kwargs_combine_exposures():
     )
 
 
-def test_uncertainty_cascade_kwargs_reach_cascade(calc, monkeypatch):
+def test_uncertainty_cascade_kwargs_reach_cascade(monkeypatch):
     """cascade_kwargs are passed to NetworkCalcs.cascade, with friction_surf."""
-    _base_network()  # built before the spy, so that its cascade is not recorded
+    # fixed inputs, built before the spy: only the cascades run by CalcCascade
+    # are recorded (not the base-state cascade of _nw_func)
+    calc = CalcCascade(_nw_func(), _impf_tuple(), _haz_func(2.0), ci_types=CI_TYPES)
     calls = []
     original = NetworkCalcs.cascade
 
@@ -416,7 +422,7 @@ def test_uncertainty_cascade_kwargs_reach_cascade(calc, monkeypatch):
         return original(self, **kwargs)
 
     monkeypatch.setattr(NetworkCalcs, "cascade", recording_cascade)
-    unc_sample = UncOutput(pd.DataFrame({"x_pop": [1.0], "x_haz": [2.0]}))
+    unc_sample = UncOutput(pd.DataFrame({"unused": [0.0]}))  # fixed inputs
 
     cascade_kwargs = {"rerouting": False, "source_var": "generation"}
 

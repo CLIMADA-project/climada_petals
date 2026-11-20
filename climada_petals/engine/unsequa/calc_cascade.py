@@ -81,7 +81,12 @@ class CalcCascade(Calc):
         with ``exposure_from_nodes`` / ``exposure_from_edges``. The network
         and the exposures are not modified by the calculation, so the same
         objects can be returned for every sample. A function that changes the
-        network for a sample (e.g. scales the population) must change a copy.
+        network for a sample (e.g. scales the population) must change a copy,
+        run the base-state cascade on it (``NetworkCalcs.cascade``) and build
+        the exposures from the result, so that the base state and the
+        disrupted state of the sample are computed with the same data.
+        ``setup_dependencies`` (costly for large networks) can stay outside the
+        function as long as the change does not affect the links.
     impf_input_var : InputVar
         Impact function uncertainty variable. Its evaluation must return a
         tuple ``(impf_set, failure_thresh)``: the impact functions and the
