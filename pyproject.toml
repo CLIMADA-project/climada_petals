@@ -31,8 +31,12 @@ dependencies = [
     "rioxarray",
     "ruamel.yaml",
     "scikit-image",
-    "xesmf",
     "pymoo"
+]
+
+[project.optional-dependencies]
+esmf = [
+    "xesmf>=0.8",
 ]
 
 [project.urls]

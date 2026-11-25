@@ -20,7 +20,11 @@ lint : ## Static code analysis with Pylint
 
 .PHONY : unit_test
 unit_test : ## Unit tests execution with coverage and xml reports
-	python -m pytest $(PYTEST_ARGS) --ignore=climada_petals/test climada_petals/
+	python -m pytest $(PYTEST_ARGS) --ignore=climada_petals/test --ignore=climada_petals/hazard/rf_glofas climada_petals/
+
+.PHONY : unit_test_rf_glofas
+unit_test : ## Unit tests execution with coverage and xml reports
+	python -m pytest $(PYTEST_ARGS) climada_petals/hazard/rf_glofas
 
 .PHONY : install_test
 install_test : ## Test installation was successful
