@@ -367,6 +367,28 @@ class TestGlofasDownloadOps(unittest.TestCase):
             glofas_request_multiple.call_args.args[1][1]
             | {"year": ["2000"], "month": ["03"], "day": ["11"]},
         )
+        reset_mocks()
+
+        # Reforecasts select dates with 'hyear', 'hmonth', 'hday'
+        download_glofas_discharge(
+            "reforecast",
+            pd.DatetimeIndex(["2000-01-03", "2000-01-06", "2000-02-03"]),
+            42,
+            self.tempdir.name,
+            split_request="1MS",
+        )
+        glofas_request_single.assert_not_called()
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][0],
+            glofas_request_multiple.call_args.args[1][0]
+            | {"hyear": ["2000"], "hmonth": ["01"], "hday": ["03", "06"]},
+        )
+        self.assertNotIn("year", glofas_request_multiple.call_args.args[1][0])
+        self.assertDictEqual(
+            glofas_request_multiple.call_args.args[1][1],
+            glofas_request_multiple.call_args.args[1][1]
+            | {"hyear": ["2000"], "hmonth": ["02"], "hday": ["03"]},
+        )
 
     def test_handling_unsuccessful_downloads(self):
         # With warning

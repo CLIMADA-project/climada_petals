@@ -88,12 +88,16 @@ CLIENT_KW_DEFAULT = {"quiet": False, "debug": False, "timeout": 240, "sleep_max"
 """Default keyword argument for the API client"""
 
 
-def datetime_index_to_request(index: pd.DatetimeIndex) -> dict[str, list[str]]:
+def datetime_index_to_request(
+    index: pd.DatetimeIndex, product: str
+) -> dict[str, list[str]]:
     """Create a request-compatible dict from a series"""
+    # Reforecasts select dates with 'hyear', 'hmonth', 'hday'
+    prefix = "h" if product == "reforecast" else ""
     return {
-        "year": list(map(str, index.year.unique())),
-        "month": list(map(lambda x: f"{x:02d}", index.month.unique())),
-        "day": list(map(lambda x: f"{x:02d}", index.day.unique())),
+        prefix + "year": list(map(str, index.year.unique())),
+        prefix + "month": list(map(lambda x: f"{x:02d}", index.month.unique())),
+        prefix + "day": list(map(lambda x: f"{x:02d}", index.day.unique())),
     }
 
 
