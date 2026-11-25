@@ -744,7 +744,6 @@ class TestTransformOps(unittest.TestCase):
                 "latitude": np.arange(3),
             },
         )
-        print(fraction.sel(return_period=1))
         ds_flood_maps = xr.Dataset({"inundation": inundation, "fraction": fraction})
         ds_result = flood_depth(da_return_period, ds_flood_maps)
         xrt.assert_allclose(ds_result["flood_depth"], da_return_period.clip(1, 100))
@@ -760,6 +759,9 @@ class TestTransformOps(unittest.TestCase):
         ).astype(np.float32)
         ds_result = flood_depth(da_return_period_2d, ds_flood_maps)
         xrt.assert_allclose(ds_result["flood_depth"], da_return_period_2d.clip(1, 100))
+        xrt.assert_allclose(
+            ds_result["fraction"], (da_return_period_2d * 0.01).clip(0.1, 1.0)
+        )
 
         # Check NaN shortcut
         ds_flood_maps_nan = xr.Dataset(
@@ -778,6 +780,7 @@ class TestTransformOps(unittest.TestCase):
         )
         ds_result = flood_depth(da_return_period, ds_flood_maps_nan)
         self.assertTrue(ds_result["flood_depth"].isnull().all())
+        self.assertTrue(ds_result["fraction"].isnull().all())
 
         # Check NaN sanitizer
         ds_flood_maps_nan_2 = xr.Dataset(
@@ -798,6 +801,12 @@ class TestTransformOps(unittest.TestCase):
         ds_result = flood_depth(da_return_period, ds_flood_maps_nan_2)
         xrt.assert_allclose(
             ds_result["flood_depth"], (da_return_period - 1).clip(min=0)
+        )
+        xrt.assert_allclose(
+            ds_result["fraction"],
+            xr.ones_like(inundation.isel(return_period=0, drop=True)).where(
+                ds_result["flood_depth"] > 0
+            ),
         )
 
         # Check that DataArrays have to be aligned

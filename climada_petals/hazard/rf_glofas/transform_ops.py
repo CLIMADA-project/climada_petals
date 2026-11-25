@@ -981,6 +981,7 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.Dataset) -> xr.Datas
         dask_gufunc_kwargs=dict(allow_rechunk=True),
     )
     out = xr.Dataset({"flood_depth": inundation})
+
     if "fraction" in flood_maps:
         fraction = xr.apply_ufunc(
             interpolate,
@@ -993,9 +994,11 @@ def flood_depth(return_period: xr.DataArray, flood_maps: xr.Dataset) -> xr.Datas
             output_dtypes=[np.float32],
             dask_gufunc_kwargs=dict(allow_rechunk=True),
         )
-        out["fraction"] = fraction
+        out["fraction"] = fraction.where(inundation > 0)
+
     if needs_expand:
         out = out.squeeze(dim=expand_dim, drop=True)
+
     return out
 
 
