@@ -1,10 +1,10 @@
-name: climada_env_esmf
+name: climada_env
 channels:
   - conda-forge
   - nodefaults
 dependencies:
   - cdsapi>=0.7
-  - esmpy>=8.4.2
+  - esmpy>=8.9
   - libgdal>=3.12,<3.13
   - lxml>=6.1
   - meson>=1.4,<1.5  # meson >=1.5 may break geoclaw setup (at least for python 3.11)
@@ -14,7 +14,7 @@ dependencies:
   - rioxarray>=0.19
   - ruamel.yaml>=0.18
   - scikit-image>=0.25
-  - xesmf>=0.8
+  - xesmf>=0.9
   - pip:
     - boario>=0.6.2
     - country-converter>=0.8  # implicitly required by pymrio
