@@ -14,7 +14,7 @@ dependencies:
   - ruamel.yaml>=0.18
   - scikit-image>=0.25
   - pip:
-    - boario>=0.6.2
+    - boario>=0.7
     - country-converter>=0.8  # implicitly required by pymrio
     - progressbar2>=4.2  # implicitly required by boario
     - pymrio>=0.7
