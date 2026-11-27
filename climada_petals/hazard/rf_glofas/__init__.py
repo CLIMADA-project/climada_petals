@@ -18,8 +18,20 @@ with CLIMADA. If not, see <https://www.gnu.org/licenses/>.
 
 Export functions of the GloFAS River Flood Module
 """
+# ruff: noqa
 
-from .setup import setup_all
-from .river_flood_computation import RiverFloodInundation
-from .rf_glofas import hazard_series_from_dataset
-from .transform_ops import save_file
+try:
+    from .setup import setup_all
+    from .river_flood_computation import RiverFloodInundation
+    from .rf_glofas import hazard_series_from_dataset
+    from .transform_ops import save_file
+except ImportError as e:
+    if 'xesmf' in str(e) or 'esmpy' in str(e):
+        raise ImportError(
+            "climada_petals.hazard.rf_glofas requires ESMF support. "
+            "Install it with:\n"
+            "  conda install -c conda-forge esmpy xesmf\n"
+            "Note: On Windows ESMF support may not be available."
+        ) from e
+    raise
+
